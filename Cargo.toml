@@ -1,5 +1,6 @@
 [workspace]
-members = ["src-tauri", "perf"]
+members = ["crates/islet-core", "crates/islet-render", "crates/islet", "src-tauri", "perf"]
+default-members = ["crates/islet-core", "crates/islet-render", "crates/islet", "perf"]
 resolver = "2"
 
 [workspace.package]

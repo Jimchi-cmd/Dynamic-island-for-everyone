@@ -1,0 +1,15 @@
+[package]
+name = "islet-render"
+description = "CPU vector renderer for the Islet pill (tiny-skia)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+islet-core = { path = "../islet-core" }
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
+
+[dev-dependencies]
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }

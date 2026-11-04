@@ -11,6 +11,36 @@ pub struct Rect {
     pub h: f64,
 }
 
+impl Rect {
+    pub const fn new(x: f64, y: f64, w: f64, h: f64) -> Self {
+        Self { x, y, w, h }
+    }
+
+    pub fn right(&self) -> f64 {
+        self.x + self.w
+    }
+
+    pub fn bottom(&self) -> f64 {
+        self.y + self.h
+    }
+
+    pub fn contains(&self, px: f64, py: f64) -> bool {
+        px >= self.x && px < self.right() && py >= self.y && py < self.bottom()
+    }
+
+    /// Smallest rect containing both.
+    pub fn union(&self, o: &Rect) -> Rect {
+        let x = self.x.min(o.x);
+        let y = self.y.min(o.y);
+        Rect { x, y, w: self.right().max(o.right()) - x, h: self.bottom().max(o.bottom()) - y }
+    }
+
+    /// Grow by `d` on every side.
+    pub fn inflate(&self, d: f64) -> Rect {
+        Rect { x: self.x - d, y: self.y - d, w: self.w + 2.0 * d, h: self.h + 2.0 * d }
+    }
+}
+
 /// A rectangle in physical pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PhysRect {
@@ -72,6 +102,16 @@ mod tests {
     #[test]
     fn window_wider_than_monitor_still_centres() {
         assert_eq!(top_center((0, 0), (300, 200), 400), (-50, 0));
+    }
+
+    #[test]
+    fn union_contains_inflate() {
+        let a = Rect::new(10.0, 10.0, 10.0, 10.0);
+        let b = Rect::new(0.0, 15.0, 5.0, 20.0);
+        assert_eq!(a.union(&b), Rect::new(0.0, 10.0, 20.0, 25.0));
+        assert!(a.contains(10.0, 19.9));
+        assert!(!a.contains(20.0, 15.0));
+        assert_eq!(a.inflate(1.0), Rect::new(9.0, 9.0, 12.0, 12.0));
     }
 
     #[test]

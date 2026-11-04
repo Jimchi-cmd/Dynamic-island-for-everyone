@@ -4,12 +4,20 @@ A Dynamic Island-style overlay for macOS, Windows and Linux. Music controls, nav
 
 > **Status: early development (Phase 0).** Nothing to download yet.
 
-- Plan and architecture: [`docs/`](docs/)
+The island is a tiny native program with no web browser inside. On Linux it currently idles at **under 2 MB of RAM and 0 % CPU**, so it runs fine on 4 GB laptops.
+
+- Architecture: [`docs/architecture.md`](docs/architecture.md)
 - Performance budgets and measurements: [`docs/perf.md`](docs/perf.md)
 
 ## Build from source
 
-Requirements: Rust (stable), Node 22, and the [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS (on Linux, also `libgtk-layer-shell-dev`).
+Requirements: Rust (stable).
+
+```bash
+cargo run --release -p islet          # the island
+```
+
+The Settings app additionally needs Node 22 and the [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS:
 
 ```bash
 npm ci

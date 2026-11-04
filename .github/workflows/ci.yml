@@ -18,8 +18,8 @@ jobs:
     name: Lint & unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 22, cache: npm }
       - uses: dtolnay/rust-toolchain@stable
         with: { components: "clippy, rustfmt" }
@@ -43,17 +43,17 @@ jobs:
         include:
           - os: ubuntu-latest
             bundles: deb,rpm,appimage
-            app: target/release/islet
+            exe: ""
           - os: windows-latest
             bundles: msi,nsis
-            app: target/release/islet.exe
+            exe: .exe
           - os: macos-latest
             bundles: app,dmg
-            app: target/release/islet
+            exe: ""
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 22, cache: npm }
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -62,43 +62,61 @@ jobs:
       - run: npm ci
       - run: npm run build # generate_context! needs dist/
       - run: cargo test --workspace
-      - name: Build installers
-        run: npx tauri build --bundles ${{ matrix.bundles }}
-      - run: cargo build --release -p islet-perf
+      - run: cargo build --release -p islet -p islet-perf
+      # Linux runners have no display: GUI processes run under Xvfb.
+      - name: Define run_gui helper
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/run_gui.sh" <<'EOF'
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            exec xvfb-run -a -s "-screen 0 1920x1080x24" dbus-run-session -- "$@"
+          fi
+          exec "$@"
+          EOF
 
-      - name: Installer sizes
+      # The island itself: a native, webview-free overlay. Budgets enforced.
+      - name: Perf budgets (native island)
+        shell: bash
+        run: >
+          bash "$RUNNER_TEMP/run_gui.sh" target/release/islet-perf run --app target/release/islet${{ matrix.exe }}
+          --idle-secs 60 --active-secs 20 --json perf-native.json --markdown perf-native.md --enforce
+
+      - name: Build installers (Tauri settings app)
+        run: npx tauri build --bundles ${{ matrix.bundles }}
+
+      - name: Installer and binary sizes
         shell: bash
         run: |
           shopt -s nullglob
-          files=(target/release/bundle/{deb/*.deb,rpm/*.rpm,appimage/*.AppImage,msi/*.msi,nsis/*.exe,dmg/*.dmg})
+          files=(target/release/islet${{ matrix.exe }} target/release/bundle/{deb/*.deb,rpm/*.rpm,appimage/*.AppImage,msi/*.msi,nsis/*.exe,dmg/*.dmg})
           target/release/islet-perf size "${files[@]}" --markdown size.md --enforce
-          cat size.md >> "$GITHUB_STEP_SUMMARY"
 
-      # Phase 0 gate: report numbers without failing the build until the
-      # budget decision is made. Flip continue-on-error to false afterwards.
-      - name: Perf budgets
+      # Phase 0 baseline: the same pill drawn by a Tauri webview. Reported for
+      # comparison only; it is expected to exceed the RAM budget.
+      - name: Perf baseline (Tauri webview pill)
         continue-on-error: true
         shell: bash
-        run: |
-          args=(run --app ${{ matrix.app }} --idle-secs 60 --active-secs 20 --json perf.json --markdown perf.md --enforce)
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            xvfb-run -a -s "-screen 0 1920x1080x24" dbus-run-session -- target/release/islet-perf "${args[@]}"
-          else
-            target/release/islet-perf "${args[@]}"
-          fi
-      - name: Perf summary
+        run: >
+          bash "$RUNNER_TEMP/run_gui.sh" target/release/islet-perf run --app target/release/islet-settings${{ matrix.exe }}
+          --idle-secs 30 --active-secs 15 --json perf-tauri.json --markdown perf-tauri.md
+
+      - name: Job summary
         if: always()
         shell: bash
-        run: '[ -f perf.md ] && cat perf.md >> "$GITHUB_STEP_SUMMARY" || true'
+        run: |
+          for f in perf-native.md size.md perf-tauri.md; do
+            if [ -f "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY"; fi
+          done
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: islet-${{ matrix.os }}
           path: |
-            perf.json
-            perf.md
+            perf-*.json
+            perf-*.md
             size.md
+            target/release/islet${{ matrix.exe }}
             target/release/bundle/**/*.deb
             target/release/bundle/**/*.rpm
             target/release/bundle/**/*.msi

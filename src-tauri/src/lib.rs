@@ -1,6 +1,6 @@
 //! Islet core.
 
-pub mod geometry;
+pub use islet_core::geometry;
 mod platform;
 
 use geometry::Rect;

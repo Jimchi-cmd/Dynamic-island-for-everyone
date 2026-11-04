@@ -1,5 +1,5 @@
 [package]
-name = "islet"
+name = "islet-settings"
 description = "A lightweight Dynamic Island-style overlay"
 version.workspace = true
 edition.workspace = true
@@ -8,13 +8,14 @@ repository.workspace = true
 rust-version.workspace = true
 
 [lib]
-name = "islet_lib"
+name = "islet_settings_lib"
 crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+islet-core = { path = "../crates/islet-core" }
 tauri = { version = "2", features = ["macos-private-api"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
