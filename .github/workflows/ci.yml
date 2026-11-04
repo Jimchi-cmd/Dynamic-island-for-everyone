@@ -64,7 +64,14 @@ jobs:
       - run: npm ci
       - run: npm run build # generate_context! needs dist/
       - run: cargo test --workspace
-      - run: cargo build --release -p islet -p islet-perf
+      - run: cargo build --release -p islet -p islet-perf -p islet-mediaremote
+      # Informational: can the MediaRemote helper read Now Playing on this
+      # macOS version? (Nothing plays on CI, so "info=0" is expected.)
+      - name: MediaRemote helper probe (macOS)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        shell: bash
+        run: target/release/islet --mediaremote-probe | tee -a "$GITHUB_STEP_SUMMARY"
       # Linux runners have no display: GUI processes run under Xvfb.
       - name: Define run_gui helper
         shell: bash

@@ -34,6 +34,11 @@ fn main() {
 
 fn run() -> platform::Result<()> {
     let started = Instant::now();
+    // Diagnostics: does the macOS MediaRemote helper work on this Mac?
+    #[cfg(target_os = "macos")]
+    if std::env::args().any(|a| a == "--mediaremote-probe") {
+        std::process::exit(if providers::macos_mediaremote::probe() { 0 } else { 1 });
+    }
     let env_on = |k: &str| std::env::var_os(k).is_some_and(|v| v != "0");
     let demo = match std::env::var("ISLET_DEMO").as_deref() {
         Ok("tour") => Demo::Tour,

@@ -1818,6 +1818,7 @@ version = "0.0.1"
 dependencies = [
  "block2",
  "islet-core",
+ "islet-mediaremote",
  "islet-render",
  "libc",
  "objc2",
@@ -1840,6 +1841,17 @@ version = "0.0.1"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "islet-mediaremote"
+version = "0.0.1"
+dependencies = [
+ "block2",
+ "dispatch2",
+ "libc",
+ "objc2",
+ "objc2-foundation",
 ]
 
 [[package]]

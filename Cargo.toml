@@ -1,6 +1,6 @@
 [workspace]
-members = ["crates/islet-core", "crates/islet-render", "crates/islet", "src-tauri", "perf"]
-default-members = ["crates/islet-core", "crates/islet-render", "crates/islet", "perf"]
+members = ["crates/islet-core", "crates/islet-render", "crates/islet", "crates/islet-mediaremote", "src-tauri", "perf"]
+default-members = ["crates/islet-core", "crates/islet-render", "crates/islet", "crates/islet-mediaremote", "perf"]
 resolver = "2"
 
 [workspace.package]

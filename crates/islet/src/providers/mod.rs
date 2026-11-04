@@ -17,6 +17,8 @@ mod linux_tests;
 mod macos_battery;
 #[cfg(target_os = "macos")]
 mod macos_media;
+#[cfg(target_os = "macos")]
+pub mod macos_mediaremote;
 #[cfg(target_os = "windows")]
 mod windows_battery;
 #[cfg(target_os = "windows")]
@@ -230,5 +232,7 @@ fn platform_start(sink: Sink) -> Option<Sender<MediaCommand>> {
 #[cfg(target_os = "macos")]
 fn platform_start(sink: Sink) -> Option<Sender<MediaCommand>> {
     macos_battery::start(sink.clone());
-    macos_media::start(sink)
+    // Every app's Now Playing via the MediaRemote helper; falls back to the
+    // Spotify / Apple Music notifications if the helper can't run.
+    macos_mediaremote::start(sink)
 }
