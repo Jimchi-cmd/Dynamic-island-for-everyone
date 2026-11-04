@@ -14,6 +14,10 @@ use std::sync::mpsc::Sender;
 pub enum Control {
     NavStart(Trip),
     NavStop,
+    /// Quit the island (Settings restarts it after an update).
+    Quit,
+    /// Is an island running? Answered by the control thread itself.
+    Ping,
 }
 
 fn token() -> String {
@@ -43,6 +47,7 @@ pub fn serve(tx: Sender<Control>, waker: Waker) {
     let _ = std::thread::Builder::new().name("islet-control".into()).spawn(move || {
         for stream in listener.incoming().flatten() {
             let reply = match handle(&stream, &token) {
+                Ok(Control::Ping) => "ok".to_string(),
                 Ok(c) => {
                     let ok = tx.send(c).is_ok();
                     waker.wake();
@@ -69,6 +74,8 @@ fn handle(stream: &TcpStream, token: &str) -> Result<Control, String> {
     match (parts.next(), parts.next()) {
         (Some("nav-start"), Some(json)) => serde_json::from_str(json).map(Control::NavStart).map_err(|e| e.to_string()),
         (Some("nav-stop"), _) => Ok(Control::NavStop),
+        (Some("quit"), _) => Ok(Control::Quit),
+        (Some("ping"), _) => Ok(Control::Ping),
         _ => Err("unknown command".into()),
     }
 }
@@ -86,6 +93,8 @@ pub fn send(cmd: &Control) -> Result<(), String> {
             format!("{token}\tnav-start\t{}", serde_json::to_string(trip).map_err(|e| e.to_string())?)
         }
         Control::NavStop => format!("{token}\tnav-stop"),
+        Control::Quit => format!("{token}\tquit"),
+        Control::Ping => format!("{token}\tping"),
     };
     writeln!(stream, "{line}").map_err(|e| e.to_string())?;
     let mut reply = String::new();
@@ -117,6 +126,8 @@ mod tests {
         assert_eq!(rx.recv().unwrap(), Control::NavStart(trip));
         send(&Control::NavStop).unwrap();
         assert_eq!(rx.recv().unwrap(), Control::NavStop);
+        send(&Control::Ping).unwrap();
+        assert!(rx.try_recv().is_err(), "pings are answered without waking the island");
         let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -7,7 +7,7 @@
 //! islet key routes                        read a Google Routes API key from stdin into the OS keychain
 //! ```
 
-use crate::{config, control, secrets};
+use crate::{autostart, config, control, secrets};
 use control::Control;
 use islet_core::nav::{TravelMode, Trip};
 
@@ -20,6 +20,11 @@ Usage:
   islet nav stop                           stop showing the trip
   islet key routes                         store your Google Routes API key in the OS
                                            keychain (reads one line from stdin)
+  islet key routes --clear                 remove it
+  islet autostart on|off                   start Islet when you log in (or stop doing so)
+  islet status [--json]                    is Islet running, and how it is set up
+  islet quit                               close the running island
+  islet --version
   islet --help                             this text";
 
 /// Run a command if `args` (without the program name) names one.
@@ -28,11 +33,18 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
     Some(match a.as_slice() {
         [] => return None,
-        [flag, ..] if flag.starts_with("--") && !matches!(*flag, "--help" | "-h") => return None,
+        [flag, ..] if flag.starts_with("--") && !matches!(*flag, "--help" | "-h" | "--version") => return None,
         ["--help" | "-h" | "help", ..] => Ok(USAGE.to_string()),
+        ["--version" | "-V"] => Ok(format!("islet {}", env!("CARGO_PKG_VERSION"))),
         ["nav", "start", rest @ ..] => parse_trip(rest).and_then(start_trip),
         ["nav", "stop"] => stop_trip(),
         ["key", "routes"] => store_key(),
+        ["key", "routes", "--clear"] => secrets::clear_routes_key().map(|()| "Removed.".into()),
+        ["autostart", "on"] => autostart::set(true).map(|()| "Islet will start when you log in.".into()),
+        ["autostart", "off"] => autostart::set(false).map(|()| "Islet will no longer start at login.".into()),
+        ["status"] => Ok(status(false)),
+        ["status", "--json"] => Ok(status(true)),
+        ["quit"] => control::send(&Control::Quit).map(|()| "Closed.".into()),
         _ => Err(format!("unknown command\n\n{USAGE}")),
     })
 }
@@ -83,6 +95,31 @@ fn stop_trip() -> Result<String, String> {
     Ok("Stopped.".into())
 }
 
+fn status(json: bool) -> String {
+    let running = control::send(&Control::Ping).is_ok();
+    let autostart = autostart::is_on();
+    let key = secrets::routes_key().is_ok();
+    let trip = config::load_trip();
+    if json {
+        return serde_json::json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            "running": running,
+            "autostart": autostart,
+            "routesKey": key,
+            "trip": trip,
+        })
+        .to_string();
+    }
+    let yes = |b: bool| if b { "yes" } else { "no" };
+    format!(
+        "Running: {}\nStarts at login: {}\nGoogle Routes key: {}\nTrip: {}",
+        yes(running),
+        yes(autostart),
+        if key { "saved" } else { "not set" },
+        trip.as_ref().map_or("none".to_string(), |t| format!("{} (from {})", t.title(), t.origin))
+    )
+}
+
 fn store_key() -> Result<String, String> {
     eprintln!("Paste your Google Routes API key and press Enter:");
     let mut key = String::new();
@@ -116,5 +153,6 @@ mod tests {
         assert!(run(&["--mediaremote-probe".into()]).is_none());
         assert!(run(&["--help".into()]).unwrap().unwrap().contains("nav start"));
         assert!(run(&["bogus".into()]).unwrap().is_err());
+        assert!(run(&["--version".into()]).unwrap().unwrap().starts_with("islet "));
     }
 }

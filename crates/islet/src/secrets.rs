@@ -28,6 +28,23 @@ pub fn set_routes_key(key: &str) -> Result<(), String> {
     keyring::Entry::new(SERVICE, ACCOUNT).and_then(|e| e.set_password(key)).map_err(|e| e.to_string())
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub fn clear_routes_key() -> Result<(), String> {
+    match keyring::Entry::new(SERVICE, ACCOUNT).and_then(|e| e.delete_credential()) {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub fn clear_routes_key() -> Result<(), String> {
+    let status = std::process::Command::new("secret-tool")
+        .args(["clear", "application", SERVICE, "key", ACCOUNT])
+        .status()
+        .map_err(|e| format!("secret-tool is needed to manage secrets (package libsecret-tools): {e}"))?;
+    status.success().then_some(()).ok_or_else(|| "secret-tool could not remove the key".into())
+}
+
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn get() -> Option<String> {
     let out = std::process::Command::new("secret-tool")

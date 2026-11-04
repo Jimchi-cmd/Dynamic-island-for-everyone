@@ -13,6 +13,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod autostart;
 mod cli;
 mod clock;
 mod config;
@@ -55,12 +56,25 @@ fn main() {
 
 fn run() -> platform::Result<()> {
     let started = Instant::now();
+    // One island per user: a second launch (login item + Settings) just exits.
+    if control::send(&Control::Ping).is_ok() {
+        println!("Islet is already running.");
+        return Ok(());
+    }
     // Diagnostics: does the macOS MediaRemote helper work on this Mac?
     #[cfg(target_os = "macos")]
     if std::env::args().any(|a| a == "--mediaremote-probe") {
         std::process::exit(if providers::macos_mediaremote::probe() { 0 } else { 1 });
     }
     let env_on = |k: &str| std::env::var_os(k).is_some_and(|v| v != "0");
+    // ISLET_TRACE_STARTUP=1: time each startup stage (stderr).
+    let trace_on = env_on("ISLET_TRACE_STARTUP");
+    let trace = |stage: &str| {
+        if trace_on {
+            eprintln!("ISLET_TRACE {stage} {:.1} ms", started.elapsed().as_secs_f64() * 1000.0);
+        }
+    };
+    trace("main");
     let demo = match std::env::var("ISLET_DEMO").as_deref() {
         Ok("tour") => Demo::Tour,
         Ok("toggle") => Demo::Toggle,
@@ -73,6 +87,7 @@ fn run() -> platform::Result<()> {
     let mut text: Option<TextEngine> = None;
 
     let mut win = Native::create(WindowSpec { width: WINDOW.0, height: WINDOW.1 })?;
+    trace("window created");
     let new_pixmap = |win: &Native| {
         let (w, h) = win.size_px();
         Pixmap::new(w.max(1), h.max(1)).ok_or_else(|| "could not allocate frame buffer".to_string())
@@ -84,6 +99,7 @@ fn run() -> platform::Result<()> {
         .and_then(|v| v.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))))
         .or(win.notch());
     app.set_notch(notch, 0.0);
+    trace("notch checked");
     let epoch = Instant::now();
     let now = || epoch.elapsed().as_secs_f64();
 
@@ -91,6 +107,7 @@ fn run() -> platform::Result<()> {
     let (control_tx, control_rx) = std::sync::mpsc::channel::<Control>();
     control::serve(control_tx, win.waker());
     let mut nav_card_open = false;
+    trace("providers started");
 
     let mut needs_frame = true;
     let mut first_frame = true;
@@ -137,10 +154,12 @@ fn run() -> platform::Result<()> {
         }
         // `islet nav start/stop` from the command line.
         while let Ok(c) = control_rx.try_recv() {
-            providers.nav(match c {
-                Control::NavStart(trip) => NavMsg::Start(trip),
-                Control::NavStop => NavMsg::Stop,
-            });
+            match c {
+                Control::NavStart(trip) => providers.nav(NavMsg::Start(trip)),
+                Control::NavStop => providers.nav(NavMsg::Stop),
+                Control::Quit => return Ok(()),
+                Control::Ping => {}
+            }
         }
         for action in app.take_nav_actions() {
             let trip = app.nav_trip().cloned();
@@ -180,11 +199,15 @@ fn run() -> platform::Result<()> {
                 let clip = islet_render::clip_mask(&frame, pixmap.width(), pixmap.height(), scale);
                 islet_render::elements::draw_elements(&mut pixmap, &elements, engine, scale, clip.as_ref());
             }
+            if first_frame {
+                trace("first frame drawn");
+            }
             win.present(&pixmap)?;
             last_frame = Instant::now();
             needs_frame = false;
             if first_frame {
                 first_frame = false;
+                trace("first frame presented");
                 println!("ISLET_VISIBLE {}", started.elapsed().as_millis());
                 let _ = std::io::stdout().flush();
             }

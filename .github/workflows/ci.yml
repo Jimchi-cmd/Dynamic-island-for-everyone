@@ -72,6 +72,20 @@ jobs:
         continue-on-error: true
         shell: bash
         run: target/release/islet --mediaremote-probe | tee -a "$GITHUB_STEP_SUMMARY"
+      # Informational: where startup time goes (first launch, then a warm one).
+      - name: Startup trace (macOS)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        shell: bash
+        run: |
+          for run in cold warm; do
+            echo "--- $run"
+            ISLET_TRACE_STARTUP=1 target/release/islet > /dev/null &
+            pid=$!
+            sleep 4
+            target/release/islet quit || kill $pid
+            wait $pid || true
+          done
       # Linux runners have no display: GUI processes run under Xvfb.
       - name: Define run_gui helper
         shell: bash
