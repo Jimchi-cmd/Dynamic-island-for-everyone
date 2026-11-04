@@ -18,7 +18,7 @@ fn scene(name: &str, w: u32, h: u32, frame: PillFrame, elements: &[Element]) {
     let mut pm = Pixmap::new((w as f32 * SCALE) as u32, (h as f32 * SCALE) as u32).unwrap();
     draw(&mut pm, &frame, SCALE);
     let clip = clip_mask(&frame, pm.width(), pm.height(), SCALE);
-    let mut text = TextEngine::new();
+    let mut text = TextEngine::bundled_only();
     draw_elements(&mut pm, elements, &mut text, SCALE, clip.as_ref());
     compare(name, &pm);
 }

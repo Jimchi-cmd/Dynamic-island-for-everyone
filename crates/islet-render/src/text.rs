@@ -73,10 +73,20 @@ impl Default for TextEngine {
 
 impl TextEngine {
     pub fn new() -> Self {
+        Self::build(true)
+    }
+
+    /// Only the bundled Inter, ignoring the OS font: identical output on
+    /// every OS (golden-image tests).
+    pub fn bundled_only() -> Self {
+        Self::build(false)
+    }
+
+    fn build(system_font: bool) -> Self {
         let mut db = fontdb::Database::new();
         db.load_font_source(fontdb::Source::Binary(Arc::new(INTER_REGULAR)));
         db.load_font_source(fontdb::Source::Binary(Arc::new(INTER_SEMIBOLD)));
-        let family = system_ui_family(&mut db).unwrap_or_else(|| INTER.to_string());
+        let family = system_font.then(|| system_ui_family(&mut db)).flatten().unwrap_or_else(|| INTER.to_string());
         let locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
         let fonts = FontSystem::new_with_locale_and_db(locale, db);
         Self { fonts, cache: SwashCache::new(), family, buffer: None }
