@@ -4,7 +4,9 @@ A Dynamic Island-style overlay for macOS, Windows and Linux. Music controls, nav
 
 > **Status: early development (Phase 0).** Nothing to download yet.
 
-The island is a tiny native program with no web browser inside. On Linux it currently idles at **under 2 MB of RAM and 0 % CPU**, so it runs fine on 4 GB laptops.
+The island is a tiny native program with no web browser inside. It idles at **a few MB of RAM, 0 % CPU and zero wakeups**, so it runs fine on 4 GB laptops.
+
+**Works today (early):** the island's shapes and motion (peek, expand, hold for the large view, the gooey split for two activities), a clock, **Now Playing** with album art, waveform, progress, scrubbing and controls, and **battery pop-ups** when headphones, earbuds, mice, keyboards or controllers connect, plus low-battery and charger alerts. See [`docs/roadmap.md`](docs/roadmap.md) for what each OS supports.
 
 - Roadmap: [`docs/roadmap.md`](docs/roadmap.md)
 - Design spec (look and motion): [`docs/design-spec.md`](docs/design-spec.md)
@@ -16,8 +18,11 @@ The island is a tiny native program with no web browser inside. On Linux it curr
 Requirements: Rust (stable).
 
 ```bash
-cargo run --release -p islet          # the island
+cargo run --release -p islet                      # the island
+ISLET_DEMO=media cargo run --release -p islet     # a scripted music + battery demo
 ```
+
+Right-click the island to quit (a proper menu comes later).
 
 The Settings app additionally needs Node 22 and the [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS:
 

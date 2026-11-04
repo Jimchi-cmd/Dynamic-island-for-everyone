@@ -13,7 +13,7 @@ All numbers are in **logical px** (1 px = 1 iOS point). They are approximations 
   - **Windows and Linux:** **Inter** (SIL Open Font License 1.1) is bundled. It is an independent interface typeface with a very similar feel, and its tabular figures suit timers and percentages. It is subset to Latin, Greek and Cyrillic (about 300 KB), and other scripts fall back to the OS fonts. Its licence ships in `THIRD_PARTY_LICENSES`.
   - Settings → Appearance can switch to the OS font (Segoe UI Variable or the fontconfig default).
   - San Francisco is never bundled, and no other font is presented as it.
-- **Icons:** Lucide (ISC licence) or original artwork. No SF Symbols and no Apple glyphs, sounds or images.
+- **Icons:** original vector drawings made in code on a 24 × 24 grid (`islet-render/src/elements.rs`). No SF Symbols and no Apple glyphs, sounds or images.
 - **Animate only transforms and opacity, conceptually.** The renderer re-rasterises the shape every frame, but layout never changes during an animation: every animated property is a spring value.
 
 ## 2. Placement
