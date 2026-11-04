@@ -42,6 +42,8 @@ const CONTENT_FADE_H: f64 = 60.0;
 /// …and cards are treated as at least this tall for the fade.
 const CONTENT_MIN_FULL_H: f64 = 84.0;
 const IDLE_W: f64 = 126.0;
+/// At most one activity switch per this many seconds of scrolling.
+const SWITCH_COOLDOWN: f64 = 0.35;
 /// Height of the expanded clock and media cards.
 const CLOCK_H: f64 = 124.0;
 const MEDIA_H: f64 = 160.0;
@@ -135,6 +137,12 @@ pub struct App {
     closed: Presentation,
     /// The MacBook notch (width, height), when the island wraps one.
     notch: Option<(f64, f64)>,
+    /// Scroll-to-switch: how far the live activities are rotated, the
+    /// scroll accumulated towards the next step, and when the last step was.
+    rotation: usize,
+    scroll_acc: f64,
+    last_switch: f64,
+    live_count: usize,
 }
 
 impl App {
@@ -165,6 +173,10 @@ impl App {
             open_h: MEDIA_H,
             closed: Presentation::Idle,
             notch: None,
+            rotation: 0,
+            scroll_acc: 0.0,
+            last_switch: f64::NEG_INFINITY,
+            live_count: 0,
         };
         app.anim_region = app.target_bounds();
         app
@@ -224,7 +236,32 @@ impl App {
     }
 
     fn live(&self, t: f64) -> Vec<Live> {
-        self.activities.live(t)
+        let mut v = self.activities.live(t);
+        if v.len() > 1 {
+            let n = self.rotation % v.len();
+            v.rotate_left(n);
+        }
+        v
+    }
+
+    /// Scroll or two-finger swipe over the island: step to the next live
+    /// activity once enough has accumulated (one step per gesture).
+    fn scroll(&mut self, dx: f64, dy: f64, t: f64) -> bool {
+        if self.activities.live(t).len() < 2 {
+            return false;
+        }
+        self.scroll_acc += if dy.abs() >= dx.abs() { dy } else { dx };
+        if self.scroll_acc.abs() < 1.0 || t - self.last_switch < SWITCH_COOLDOWN {
+            return false;
+        }
+        self.scroll_acc = 0.0;
+        self.last_switch = t;
+        self.rotation = self.rotation.wrapping_add(1);
+        let start = self.bounds(t);
+        let p = self.island.presentation();
+        self.set_targets(self.target_dims(p, t), spring_for(p, p), t);
+        self.anim_region = start.union(&self.target_bounds());
+        true
     }
 
     fn open_content(&self, live: &[Live]) -> OpenContent<'_> {
@@ -305,7 +342,7 @@ impl App {
                     // The lasting activity (music) keeps the pill; a transient
                     // battery peek is the one that buds off and merges back.
                     let (pill, bubble) = match (first, live.get(1)) {
-                        (Live::Battery { .. }, Some(second)) => (second, Some(first)),
+                        (Live::Battery { .. }, Some(second)) if self.rotation == 0 => (second, Some(first)),
                         _ => (first, live.get(1)),
                     };
                     out.extend(content::minimal(p, self.bubble_circle(t), pill, bubble, t, co));
@@ -386,6 +423,10 @@ impl App {
     /// Bring the presentation and size in line with what is live.
     fn sync_live(&mut self, t: f64) -> bool {
         let n = self.live(t).len();
+        if n != self.live_count {
+            self.live_count = n;
+            self.rotation = 0; // a new set of activities starts from the top
+        }
         let mut changed = self.signal(Signal::LiveActivities(n), t);
         // Same presentation, new content size (a battery peek handing over to
         // media): glide to the new size.
@@ -484,6 +525,7 @@ impl App {
                 false
             }
             Event::Key(Key::Escape) => self.signal(Signal::Escape, t),
+            Event::Scroll { dx, dy } if self.hovered => self.scroll(dx, dy, t),
             Event::Redraw | Event::ScaleChanged(_) => true,
             _ => false,
         }
@@ -850,6 +892,26 @@ mod tests {
         assert_eq!(solo.presentation(), Compact);
         assert!((solo.pill_rect(3.0).w - content::COMPACT_BATTERY_W).abs() < 0.01);
         assert_eq!(texts(&solo, 3.0, &mut engine), ["Earbuds", "87%"]);
+    }
+
+    #[test]
+    fn scrolling_switches_between_live_activities() {
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.report(Report::Media(Some(song(true))), 0.0);
+        app.report(Report::DeviceConnected(buds()), 0.0);
+        let (x, y) = centre(&app, 0.5);
+        app.handle(Event::PointerMove { x, y }, 0.5);
+        let ring_in_bubble = |app: &App, t, engine: &mut TextEngine| {
+            app.elements(t, engine).iter().any(|e| matches!(e, Element::Ring { .. }))
+        };
+        assert!(ring_in_bubble(&app, 1.0, &mut engine), "battery peek in the bubble");
+        assert!(!app.handle(Event::Scroll { dx: 0.0, dy: 0.4 }, 1.0), "a small scroll accumulates");
+        assert!(app.handle(Event::Scroll { dx: 0.0, dy: 0.7 }, 1.1), "a full step switches");
+        assert!(!app.handle(Event::Scroll { dx: 0.0, dy: 3.0 }, 1.2), "one switch per gesture");
+        let first_art =
+            app.elements(1.5, &mut engine).iter().any(|e| matches!(e, Element::Art { size, .. } if *size == 25.0));
+        assert!(first_art, "music art still shown after switching");
     }
 
     #[test]

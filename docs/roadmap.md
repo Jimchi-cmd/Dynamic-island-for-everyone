@@ -5,8 +5,8 @@ Each phase ships with tests and green CI on Windows, macOS and Linux before the 
 | Phase | Scope | Status |
 |---|---|---|
 | **0** | Scaffold, perf harness, CI matrix, stack decision (native island) | ✅ done |
-| **1** | Island shell: full state machine, squircle morph, metaball split, input (hover, click, hold, scroll, Esc), notch wrap on Macs, Wayland layer-shell, macOS click-through, text rendering (Inter / San Francisco), clock activity, AccessKit, golden-image tests | in progress: ✅ state machine, morph, metaball split, hover/click/hold/Esc/auto-collapse, text (Inter; San Francisco on macOS), clock · ⬜ scroll to switch, notch, Wayland layer-shell, macOS click-through, AccessKit, golden images |
-| **2** | Activity framework and the **music controller** (Windows SMTC, Linux MPRIS, macOS media adapter): art, title, progress and scrubbing, controls, waveform. **Device battery**: connect pop-ups for headphones, mice, keyboards and controllers, low-battery alerts, laptop charging | in progress: ✅ views (compact, two-at-once, player card, device list), activity logic, Linux MPRIS + UPower (tested end to end), Windows SMTC + Bluetooth battery + laptop (compiles; needs testing on a PC), macOS Spotify/Music + IOKit battery (compiles; needs testing on a Mac) · ⬜ macOS MediaRemote adapter (all apps, album art), AirPods per-earbud levels, settings, exclusions list |
+| **1** | Island shell: full state machine, squircle morph, metaball split, input (hover, click, hold, scroll, Esc), notch wrap on Macs, Wayland layer-shell, macOS click-through, text rendering (Inter / San Francisco), clock activity, AccessKit, golden-image tests | in progress: ✅ state machine, morph, metaball split, hover/click/hold/Esc/auto-collapse, scroll to switch, text (Inter; San Francisco on macOS), clock, notch wrapping and click-through on macOS (needs testing on a Mac), golden-image tests · ⬜ native Wayland layer-shell (runs via XWayland today), AccessKit screen-reader support |
+| **2** | Activity framework and the **music controller** (Windows SMTC, Linux MPRIS, macOS media adapter): art, title, progress and scrubbing, controls, waveform. **Device battery**: connect pop-ups for headphones, mice, keyboards and controllers, low-battery alerts, laptop charging | in progress: ✅ views (compact, two-at-once, player card, device list), activity logic, Linux MPRIS + UPower (tested end to end), Windows SMTC + Bluetooth battery + laptop (compiles; needs testing on a PC), macOS every app with album art via the MediaRemote helper, falling back to Spotify/Music, + IOKit battery (compiles; needs testing on a Mac) · ⬜ AirPods per-earbud levels, settings, exclusions list |
 | **3** | Navigation ETA (Google Routes, bring your own key) and Google Maps / Waze hand-off; optional Spotify Web API | |
 | **4** | Release pipeline and v0.1.0: installers for every OS, auto-update, Settings app, first-run permissions screen | |
 | **5** | Notifications, volume/brightness/caps-lock HUD, calendar, file shelf, focus timer, weather | |
@@ -31,7 +31,7 @@ Islet can only show a level the device reports to the OS. If your OS's own setti
 |---|---|---|---|
 | Linux | any MPRIS player (Spotify, browsers, VLC, mpv, Rhythmbox…) | from local `file://` art only | web art (e.g. Spotify's `https://` covers) is not downloaded; an opt-in setting comes with Settings |
 | Windows | any app with a system media session (Spotify, browsers, Apple Music, Media Player…) | yes (the session's thumbnail) | |
-| macOS | Spotify and Apple Music | not yet | the MediaRemote adapter (all apps, art) is next; controls ask once for Automation permission |
+| macOS | any app (Safari, Chrome, Spotify, Music, Podcasts…) via Islet's MediaRemote helper in `/usr/bin/perl` | yes | if the helper can't run, falls back to Spotify and Apple Music only (no art; controls ask once for Automation permission). `islet --mediaremote-probe` checks a Mac |
 
 ## Trying it without a media player
 
