@@ -1,0 +1,13 @@
+/* The window is transparent; only the pill is drawn. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow: hidden;
+  font-family: system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}

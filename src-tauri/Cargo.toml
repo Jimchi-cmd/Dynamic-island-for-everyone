@@ -1,0 +1,29 @@
+[package]
+name = "islet"
+description = "A lightweight Dynamic Island-style overlay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "islet_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"

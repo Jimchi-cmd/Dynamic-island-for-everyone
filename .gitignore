@@ -1,0 +1,19 @@
+node_modules/
+dist/
+target/
+src-tauri/gen/
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+perf.json
+perf.md
+size.md
+# Never commit secrets or signing material
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx

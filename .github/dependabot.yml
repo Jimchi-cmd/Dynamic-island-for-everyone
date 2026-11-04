@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      tauri: { patterns: ["tauri*"] }
+    commit-message: { prefix: "chore(deps)" }
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      dev: { dependency-type: development }
+    commit-message: { prefix: "chore(deps)" }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
+    commit-message: { prefix: "ci" }
