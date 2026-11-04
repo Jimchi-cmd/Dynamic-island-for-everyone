@@ -97,6 +97,31 @@ impl Squircle {
         pb.close();
         pb.finish()
     }
+
+    /// Like [`Squircle::path`], but with square top corners: the shape
+    /// hangs from the top screen edge, as a MacBook notch does.
+    pub fn path_flat_top(&self) -> Option<Path> {
+        if !(self.w > 0.0 && self.h > 0.0) || !self.x.is_finite() || !self.y.is_finite() {
+            return None;
+        }
+        // With square top corners the whole height is available to the
+        // bottom ones.
+        let r = self.radius.max(0.0).min(self.w / 2.0).min(self.h);
+        let mut pb = PathBuilder::new();
+        let (x0, y0, x1, y1) = (self.x, self.y, self.x + self.w, self.y + self.h);
+        if r <= 0.01 {
+            pb.push_rect(tiny_skia::Rect::from_xywh(self.x, self.y, self.w, self.h)?);
+            return pb.finish();
+        }
+        let s = self.smoothing.clamp(0.0, 1.0);
+        let (sh, sv) = (fit_smoothing(s, r, self.w / 2.0), fit_smoothing(s, r, self.h));
+        pb.move_to(x0, y0);
+        pb.line_to(x1, y0);
+        corner(&mut pb, V(x1, y1), V(0.0, 1.0), V(-1.0, 0.0), r, sv, sh);
+        corner(&mut pb, V(x0, y1), V(-1.0, 0.0), V(0.0, -1.0), r, sh, sv);
+        pb.close();
+        pb.finish()
+    }
 }
 
 /// One corner: line to the start of the corner, incoming transition,
@@ -194,6 +219,27 @@ mod tests {
         let s = Squircle { x: 0.0, y: 0.0, w: 100.0, h: 100.0, radius: 40.0, smoothing: 0.6 };
         let (sh, sv) = s.edge_smoothing();
         assert!((sh - 0.25).abs() < 1e-6 && (sv - 0.25).abs() < 1e-6, "{sh} {sv}");
+    }
+
+    #[test]
+    fn flat_top_hangs_from_the_edge() {
+        let s = Squircle { x: 10.0, y: 0.0, w: 200.0, h: 34.0, radius: 10.0, smoothing: 0.6 };
+        let b = s.path_flat_top().unwrap().bounds();
+        assert!((b.left() - 10.0).abs() < 0.01 && (b.right() - 210.0).abs() < 0.01 && b.top().abs() < 0.01);
+        assert!((b.bottom() - 34.0).abs() < 0.01);
+        // The top-left pixel is covered (square corner); the bottom-left is not.
+        let mut pm = tiny_skia::Pixmap::new(220, 40).unwrap();
+        let mut paint = tiny_skia::Paint::default();
+        paint.set_color_rgba8(0, 0, 0, 255);
+        pm.fill_path(
+            &s.path_flat_top().unwrap(),
+            &paint,
+            tiny_skia::FillRule::Winding,
+            tiny_skia::Transform::identity(),
+            None,
+        );
+        assert_eq!(pm.pixel(10, 0).unwrap().alpha(), 255);
+        assert_eq!(pm.pixel(10, 33).unwrap().alpha(), 0);
     }
 
     #[test]

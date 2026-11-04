@@ -115,4 +115,10 @@ pub trait Backend: Sized {
 
     /// A thread-safe handle that makes a blocked `wait` return early.
     fn waker(&self) -> Waker;
+
+    /// The display's camera notch (width, height in logical px), if the
+    /// island sits on one (notched MacBooks).
+    fn notch(&self) -> Option<(f64, f64)> {
+        None
+    }
 }

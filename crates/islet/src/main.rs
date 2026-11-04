@@ -57,6 +57,12 @@ fn run() -> platform::Result<()> {
         Pixmap::new(w.max(1), h.max(1)).ok_or_else(|| "could not allocate frame buffer".to_string())
     };
     let mut pixmap = new_pixmap(&win)?;
+    // On a notched MacBook the island wraps the notch (ISLET_NOTCH=WxH fakes one for testing).
+    let notch = std::env::var("ISLET_NOTCH")
+        .ok()
+        .and_then(|v| v.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))))
+        .or(win.notch());
+    app.set_notch(notch, 0.0);
     let epoch = Instant::now();
     let now = || epoch.elapsed().as_secs_f64();
 

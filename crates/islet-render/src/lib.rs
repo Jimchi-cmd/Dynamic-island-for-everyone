@@ -21,11 +21,22 @@ pub struct PillFrame {
     pub bubble: Option<Circle>,
     /// Opacity of the 1 px inner highlight (0 = none).
     pub highlight: f32,
+    /// Square top corners: on a notched MacBook the island hangs from the
+    /// top edge, so it reads as the notch growing.
+    pub flat_top: bool,
 }
 
 impl PillFrame {
     pub fn pill(shape: Squircle) -> Self {
-        Self { shape, bubble: None, highlight: 0.0 }
+        Self { shape, bubble: None, highlight: 0.0, flat_top: false }
+    }
+
+    fn outline(&self) -> Option<tiny_skia::Path> {
+        if self.flat_top {
+            self.shape.path_flat_top()
+        } else {
+            self.shape.path()
+        }
     }
 
     /// The round end of the pill that the bubble buds from: the top-right
@@ -42,7 +53,7 @@ impl PillFrame {
 pub fn clip_mask(frame: &PillFrame, width: u32, height: u32, scale: f32) -> Option<Mask> {
     let ts = Transform::from_scale(scale, scale);
     let mut mask = Mask::new(width, height)?;
-    mask.fill_path(&frame.shape.path()?, FillRule::Winding, true, ts);
+    mask.fill_path(&frame.outline()?, FillRule::Winding, true, ts);
     if let Some(b) = frame.bubble {
         if let Some(circle) = PathBuilder::from_circle(b.x, b.y, b.r) {
             mask.fill_path(&circle, FillRule::Winding, true, ts);
@@ -58,7 +69,7 @@ pub fn clip_mask(frame: &PillFrame, width: u32, height: u32, scale: f32) -> Opti
 pub fn draw(pixmap: &mut Pixmap, frame: &PillFrame, scale: f32) {
     pixmap.fill(Color::TRANSPARENT);
     let ts = Transform::from_scale(scale, scale);
-    let Some(path) = frame.shape.path() else { return };
+    let Some(path) = frame.outline() else { return };
     let mut paint = Paint::default();
     paint.set_color_rgba8(0, 0, 0, 255);
     paint.anti_alias = true;

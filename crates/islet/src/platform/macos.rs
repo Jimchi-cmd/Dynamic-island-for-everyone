@@ -26,12 +26,34 @@ use objc2_core_graphics::{
 };
 use objc2_foundation::{NSDate, NSDefaultRunLoopMode, NSObject, NSPoint, NSRect, NSSize};
 use objc2_quartz_core::CATransaction;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::time::Instant;
 use tiny_skia::Pixmap;
 
 thread_local! {
     static QUEUE: RefCell<Vec<Event>> = const { RefCell::new(Vec::new()) };
+    /// The input region (logical px, top-left origin) and the panel, for
+    /// click-through: the panel ignores the mouse except over the island.
+    static REGION: Cell<(f64, f64, f64, f64)> = const { Cell::new((0.0, 0.0, 0.0, 0.0)) };
+    static PANEL: RefCell<Option<Retained<NSPanel>>> = const { RefCell::new(None) };
+    static INTERACTIVE: Cell<bool> = const { Cell::new(false) };
+}
+
+fn in_region(x: f64, y: f64) -> bool {
+    let (rx, ry, rw, rh) = REGION.with(|r| r.get());
+    x >= rx && x < rx + rw && y >= ry && y < ry + rh
+}
+
+/// Let the mouse reach the island (true) or pass through to the apps
+/// below (false).
+fn set_interactive(on: bool) {
+    if INTERACTIVE.with(|i| i.replace(on)) != on {
+        PANEL.with(|p| {
+            if let Some(panel) = &*p.borrow() {
+                panel.setIgnoresMouseEvents(!on);
+            }
+        });
+    }
 }
 
 fn push(e: Event) {
@@ -101,11 +123,15 @@ define_class!(
         fn mouse_moved(&self, event: &NSEvent) {
             let (x, y) = self.local(event);
             push(Event::PointerMove { x, y });
+            if !in_region(x, y) {
+                set_interactive(false); // off the island: let clicks through again
+            }
         }
 
         #[unsafe(method(mouseExited:))]
         fn mouse_exited(&self, _event: &NSEvent) {
             push(Event::PointerLeave);
+            set_interactive(false);
         }
 
         #[unsafe(method(scrollWheel:))]
@@ -145,6 +171,21 @@ pub struct Mac {
     color_space: CFRetained<CGColorSpace>,
     scale: f64,
     size: (u32, u32),
+    notch: Option<(f64, f64)>,
+    /// Keeps the global mouse monitor registered.
+    _monitor: Option<Retained<AnyObject>>,
+}
+
+/// The camera notch of `screen`: the gap between the menu-bar areas on
+/// either side of it (macOS 12+), with the safe-area height.
+fn notch_of(screen: &NSScreen) -> Option<(f64, f64)> {
+    let top = screen.safeAreaInsets().top;
+    if top <= 0.0 {
+        return None;
+    }
+    let (left, right) = (screen.auxiliaryTopLeftArea(), screen.auxiliaryTopRightArea());
+    let width = screen.frame().size.width - left.size.width - right.size.width;
+    (width > 0.0 && left.size.width > 0.0).then_some((width, top))
 }
 
 impl Backend for Mac {
@@ -204,6 +245,25 @@ impl Backend for Mac {
         };
         view.addTrackingArea(&area);
         panel.setContentView(Some(&view));
+        // Click-through: ignore the mouse until it moves over the island. A
+        // global monitor sees moves destined for other apps (no permission
+        // is needed for mouse events) and turns the island interactive.
+        panel.setIgnoresMouseEvents(true);
+        PANEL.with(|p| *p.borrow_mut() = Some(panel.clone()));
+        let watch = panel.clone();
+        let handler = block2::RcBlock::new(move |_event: std::ptr::NonNull<NSEvent>| {
+            let p = NSEvent::mouseLocation();
+            let f = watch.frame();
+            let (x, y) = (p.x - f.origin.x, f.origin.y + f.size.height - p.y);
+            if in_region(x, y) {
+                set_interactive(true);
+                push(Event::PointerMove { x, y });
+            }
+        });
+        let monitor = NSEvent::addGlobalMonitorForEventsMatchingMask_handler(
+            NSEventMask::MouseMoved | NSEventMask::LeftMouseDragged,
+            &handler,
+        );
         panel.orderFrontRegardless();
 
         // SAFETY: reading a CoreGraphics constant.
@@ -211,7 +271,8 @@ impl Backend for Mac {
             .or_else(CGColorSpace::new_device_rgb)
             .ok_or("no colour space")?;
         let size = ((spec.width * scale).round() as u32, (spec.height * scale).round() as u32);
-        Ok(Self { app, panel, view, color_space, scale, size })
+        let notch = notch_of(&screen);
+        Ok(Self { app, panel, view, color_space, scale, size, notch, _monitor: monitor })
     }
 
     fn scale(&self) -> f64 {
@@ -289,9 +350,13 @@ impl Backend for Mac {
         })
     }
 
-    fn set_input_region(&mut self, _rect: Rect) -> Result<()> {
-        // Phase 1: toggle ignoresMouseEvents from a global mouse monitor.
+    fn set_input_region(&mut self, rect: Rect) -> Result<()> {
+        REGION.with(|r| r.set((rect.x, rect.y, rect.w, rect.h)));
         Ok(())
+    }
+
+    fn notch(&self) -> Option<(f64, f64)> {
+        self.notch
     }
 
     fn wait(&mut self, deadline: Option<Instant>, out: &mut Vec<Event>) -> Result<()> {

@@ -133,6 +133,8 @@ pub struct App {
     /// The last closed presentation (Compact or Minimal): its layout is
     /// used for compact content while the island opens or closes.
     closed: Presentation,
+    /// The MacBook notch (width, height), when the island wraps one.
+    notch: Option<(f64, f64)>,
 }
 
 impl App {
@@ -162,6 +164,7 @@ impl App {
             h24: true,
             open_h: MEDIA_H,
             closed: Presentation::Idle,
+            notch: None,
         };
         app.anim_region = app.target_bounds();
         app
@@ -178,6 +181,27 @@ impl App {
 
     pub fn set_clock_style(&mut self, h24: bool) {
         self.h24 = h24;
+    }
+
+    /// Wrap a physical notch (width, height in logical px): idle becomes the
+    /// notch itself, compact content sits either side of it and expanded
+    /// content below it, and the top corners are square.
+    pub fn set_notch(&mut self, notch: Option<(f64, f64)>, t: f64) {
+        self.notch = notch;
+        let p = self.island.presentation();
+        let dims = self.target_dims(p, t);
+        for (a, v) in [(&mut self.w, dims.0), (&mut self.h, dims.1), (&mut self.r, dims.2)] {
+            a.snap(v);
+        }
+        self.anim_region = self.target_bounds();
+    }
+
+    /// Where expanded content goes: below the notch, if there is one.
+    fn content_rect(&self, pill: Rect) -> Rect {
+        match self.notch {
+            Some((_, nh)) => Rect::new(pill.x, pill.y + nh, pill.w, (pill.h - nh).max(0.0)),
+            None => pill,
+        }
     }
 
     /// Commands for the media session, collected since the last call.
@@ -251,11 +275,12 @@ impl App {
         let p = self.pill_rect(t);
         let mut out = Vec::new();
         let eo = self.expanded_opacity(t);
+        let cr = self.content_rect(p);
         if eo > 0.0 {
             match self.open_content(&live) {
-                OpenContent::Media(m) => out.extend(content::expanded_media(p, m, t, eo, self.scrub, engine)),
+                OpenContent::Media(m) => out.extend(content::expanded_media(cr, m, t, eo, self.scrub, engine)),
                 OpenContent::Battery => out.extend(content::expanded_battery(
-                    p,
+                    cr,
                     &self.activities.devices(),
                     self.activities.laptop(),
                     eo,
@@ -263,7 +288,7 @@ impl App {
                 )),
                 OpenContent::Clock => {
                     if let Some(now) = self.clock {
-                        out.extend(content::expanded_clock(p, &now, self.h24, eo, engine));
+                        out.extend(content::expanded_clock(cr, &now, self.h24, eo, engine));
                     }
                 }
             }
@@ -296,7 +321,7 @@ impl App {
     fn target_dims(&self, p: Presentation, t: f64) -> (f64, f64, f64) {
         let (w, h, r) = target_size(p, None);
         let live = self.live(t);
-        match p {
+        let dims = match p {
             Presentation::Compact => (live.first().map_or(w, content::compact_width), h, r),
             Presentation::Expanded => {
                 let h = match self.open_content(&live) {
@@ -310,6 +335,10 @@ impl App {
                 (w, h, r)
             }
             _ => (w, h, r),
+        };
+        match self.notch {
+            None => dims,
+            Some((nw, nh)) => notch_dims(p, dims, nw, nh),
         }
     }
 
@@ -400,14 +429,15 @@ impl App {
         if !matches!(self.open_content(&self.live(t)), OpenContent::Media(_)) {
             return None;
         }
-        content::media_controls(self.pill_rect(t)).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, c)| c)
+        let cr = self.content_rect(self.pill_rect(t));
+        content::media_controls(cr).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, c)| c)
     }
 
     /// Returns true when the event changed what is on screen.
     pub fn handle(&mut self, e: Event, t: f64) -> bool {
         match e {
             Event::PointerMove { x, .. } if self.control == Some(Control::Scrub) => {
-                self.scrub = Some(content::scrub_fraction(self.pill_rect(t), x));
+                self.scrub = Some(content::scrub_fraction(self.content_rect(self.pill_rect(t)), x));
                 true
             }
             Event::PointerMove { x, y } => self.pointer_at(x, y, t),
@@ -417,7 +447,7 @@ impl App {
                     Some(c) => {
                         self.control = Some(c);
                         if c == Control::Scrub && self.activities.media().is_some_and(|m| m.caps.seek) {
-                            self.scrub = Some(content::scrub_fraction(self.pill_rect(t), x));
+                            self.scrub = Some(content::scrub_fraction(self.content_rect(self.pill_rect(t)), x));
                         }
                         true
                     }
@@ -604,7 +634,25 @@ impl App {
             },
             bubble: self.bubble_circle(t),
             highlight: 0.0,
+            flat_top: self.notch.is_some(),
         }
+    }
+}
+
+/// Space beside the notch for compact content (art on the left, waveform
+/// or ring on the right); the notch itself hides whatever is drawn there.
+const NOTCH_SIDE: f64 = 46.0;
+/// The physical notch's bottom corner radius (approximate).
+const NOTCH_R: f64 = 9.0;
+
+/// Sizes when wrapping a notch of `nw` × `nh`.
+fn notch_dims(p: Presentation, (w, h, r): (f64, f64, f64), nw: f64, nh: f64) -> (f64, f64, f64) {
+    match p {
+        Presentation::Idle => (nw, nh, NOTCH_R),
+        Presentation::Peek => (nw + 12.0, nh + 3.0, NOTCH_R + 2.0),
+        Presentation::Compact => (w.max(nw + 2.0 * NOTCH_SIDE), nh, NOTCH_R + 4.0),
+        Presentation::Minimal => (nw + 2.0 * NOTCH_SIDE - 12.0, nh, NOTCH_R + 4.0),
+        Presentation::Expanded | Presentation::Large => (w.max(nw + 40.0), h + nh, r),
     }
 }
 
@@ -882,6 +930,34 @@ mod tests {
     }
 
     #[test]
+    fn notch_mode_hides_idle_in_the_notch_and_keeps_content_beside_or_below_it() {
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_notch(Some((200.0, 32.0)), 0.0);
+        let idle = app.pill_rect(0.0);
+        assert_eq!((idle.w, idle.h), (200.0, 32.0), "idle is exactly the notch");
+        assert!(app.frame(0.0).flat_top);
+
+        app.report(Report::Media(Some(song(true))), 0.0);
+        let p = app.pill_rect(5.0);
+        let notch_left = (WINDOW.0 - 200.0) / 2.0;
+        let art = app.elements(5.0, &mut engine).into_iter().find_map(|e| match e {
+            Element::Art { x, size, .. } => Some((x as f64, size as f64)),
+            _ => None,
+        });
+        let (ax, asize) = art.expect("album art in compact");
+        assert!(ax + asize <= notch_left, "art sits left of the notch, not under it");
+        assert!(p.w >= 200.0 + 2.0 * NOTCH_SIDE);
+
+        click(&mut app, 5.0);
+        let t = 10.0;
+        let card = app.pill_rect(t);
+        assert!((card.h - (MEDIA_H + 32.0)).abs() < 0.01, "the card grows by the notch height");
+        let (r, _) = content::media_controls(app.content_rect(card))[0];
+        assert!(r.y >= card.y + 32.0, "controls are below the notch");
+    }
+
+    #[test]
     fn every_state_fits_the_window_with_overshoot() {
         for p in [Idle, Peek, Compact, Minimal, Expanded, Large] {
             let (w, h, _) = target_size(p, None);
@@ -911,6 +987,9 @@ mod tests {
         let art = ArtImage { width: aw, height: ah, rgba: Arc::new(rgba), dominant: [120, 70, 160] };
         let mut app = App::new(Demo::None, false);
         app.set_time(NOW, 0.0);
+        if std::env::var_os("ISLET_CONTACT_NOTCH").is_some() {
+            app.set_notch(Some((200.0, 32.0)), 0.0);
+        }
         let mut engine = TextEngine::new();
         let mut m = MediaInfo {
             art: Some(art),
