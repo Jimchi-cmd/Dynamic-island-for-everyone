@@ -108,6 +108,26 @@ impl TextEngine {
         self.layout(text, style).layout_runs().map(|run| run.line_w).fold(0.0, f32::max)
     }
 
+    /// `text`, shortened with "…" so it fits in `max_width`.
+    pub fn ellipsize(&mut self, text: &str, style: &TextStyle, max_width: f32) -> String {
+        if self.measure(text, style) <= max_width {
+            return text.to_string();
+        }
+        let chars: Vec<char> = text.chars().collect();
+        // Binary search for the longest prefix that fits with the ellipsis.
+        let (mut lo, mut hi) = (0usize, chars.len());
+        while lo < hi {
+            let mid = (lo + hi).div_ceil(2);
+            let candidate: String = chars[..mid].iter().collect::<String>().trim_end().to_string() + "…";
+            if self.measure(&candidate, style) <= max_width {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        chars[..lo].iter().collect::<String>().trim_end().to_string() + "…"
+    }
+
     /// Draw `item` at `scale` (physical px per logical px), clipped to `clip`.
     pub fn draw(&mut self, pixmap: &mut Pixmap, item: &TextItem, scale: f32, clip: Option<&Mask>) {
         let style = item.style;

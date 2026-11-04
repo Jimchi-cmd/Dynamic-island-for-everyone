@@ -4,6 +4,7 @@
 //! selected at compile time; the event loop itself is portable (main.rs).
 
 use islet_core::geometry::Rect;
+use std::sync::Arc;
 use std::time::Instant;
 use tiny_skia::Pixmap;
 
@@ -75,6 +76,21 @@ pub struct WindowSpec {
     pub height: f64,
 }
 
+/// Wakes the event loop from another thread (media and battery providers),
+/// so updates arrive immediately without the loop ever polling.
+#[derive(Clone)]
+pub struct Waker(Arc<dyn Fn() + Send + Sync>);
+
+impl Waker {
+    pub fn new(f: impl Fn() + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+
+    pub fn wake(&self) {
+        (self.0)()
+    }
+}
+
 pub trait Backend: Sized {
     /// Create the window at the top centre of the primary display and show it.
     fn create(spec: WindowSpec) -> Result<Self>;
@@ -96,4 +112,7 @@ pub trait Backend: Sized {
     /// append events to `out`. `None` waits indefinitely: when nothing is
     /// animating the process sleeps with zero wakeups.
     fn wait(&mut self, deadline: Option<Instant>, out: &mut Vec<Event>) -> Result<()>;
+
+    /// A thread-safe handle that makes a blocked `wait` return early.
+    fn waker(&self) -> Waker;
 }

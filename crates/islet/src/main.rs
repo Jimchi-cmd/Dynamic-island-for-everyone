@@ -3,6 +3,7 @@
 //! Environment:
 //! - `ISLET_PERF_DEMO=1`: expand/collapse every 1.2 s (perf harness)
 //! - `ISLET_DEMO=tour`: walk through every presentation (visual review)
+//! - `ISLET_DEMO=media`: a scripted music + battery session (no OS services)
 //! - `ISLET_REDUCE_MOTION=1`: snap instead of animating
 //!
 //! Right-click the island to quit (until the context menu exists).
@@ -12,9 +13,12 @@
 
 mod app;
 mod clock;
+mod content;
 mod platform;
+mod providers;
 
 use app::{App, Demo, FRAME, WINDOW};
+use islet_core::activity::Report;
 use islet_render::text::TextEngine;
 use platform::{Backend, Event, Native, WindowSpec};
 use std::io::Write;
@@ -51,6 +55,8 @@ fn run() -> platform::Result<()> {
     let epoch = Instant::now();
     let now = || epoch.elapsed().as_secs_f64();
 
+    let providers = providers::Providers::start(win.waker());
+
     let mut needs_frame = true;
     let mut first_frame = true;
     let mut last_frame = epoch;
@@ -60,11 +66,10 @@ fn run() -> platform::Result<()> {
 
     loop {
         let t = now();
-        // Sleep until the next animation frame, the next timer, or an event.
-        let mut deadline: Option<Instant> = None;
-        if needs_frame || app.animating(t) {
-            deadline = Some((last_frame + FRAME).max(Instant::now()));
-        }
+        // Sleep until the next frame (only while something moves), the next
+        // timer, or an event. With nothing moving there is no deadline at all.
+        let interval = if needs_frame { Some(FRAME) } else { app.frame_interval(t) };
+        let mut deadline = interval.map(|iv| (last_frame + iv).max(Instant::now()));
         if let Some(secs) = app.next_timer(t) {
             let d = Instant::now() + Duration::from_secs_f64(secs);
             deadline = Some(deadline.map_or(d, |x| x.min(d)));
@@ -85,6 +90,16 @@ fn run() -> platform::Result<()> {
             }
             needs_frame |= app.handle(e, t);
         }
+        // Reports from the media and battery providers.
+        while let Ok((mut report, sampled)) = providers.reports.try_recv() {
+            if let Report::Media(Some(m)) = &mut report {
+                m.position_at = sampled.saturating_duration_since(epoch).as_secs_f64();
+            }
+            needs_frame |= app.report(report, t);
+        }
+        for cmd in app.take_commands() {
+            providers.command(cmd);
+        }
         if app.wants_quit() {
             return Ok(());
         }
@@ -97,23 +112,21 @@ fn run() -> platform::Result<()> {
             win.set_input_region(region)?;
         }
 
-        let frame_due = Instant::now() >= last_frame + FRAME;
-        if (needs_frame || app.animating(t)) && frame_due {
+        let interval = if needs_frame { Some(FRAME) } else { app.frame_interval(t) };
+        if let Some(iv) = interval.filter(|iv| Instant::now() >= last_frame + *iv) {
+            let _ = iv;
             let scale = win.scale() as f32;
             let frame = app.frame(t);
             islet_render::draw(&mut pixmap, &frame, scale);
-            if app.content_opacity(t) > 0.0 {
+            if app.has_content(t) {
                 let engine = text.get_or_insert_with(TextEngine::new);
-                let items = app.text_items(t, engine);
+                let elements = app.elements(t, engine);
                 let clip = islet_render::clip_mask(&frame, pixmap.width(), pixmap.height(), scale);
-                for item in &items {
-                    engine.draw(&mut pixmap, item, scale, clip.as_ref());
-                }
+                islet_render::elements::draw_elements(&mut pixmap, &elements, engine, scale, clip.as_ref());
             }
             win.present(&pixmap)?;
             last_frame = Instant::now();
-            // One extra frame after settling draws the exact final shape.
-            needs_frame = app.animating(t);
+            needs_frame = false;
             if first_frame {
                 first_frame = false;
                 println!("ISLET_VISIBLE {}", started.elapsed().as_millis());

@@ -6,9 +6,10 @@
 //! - XShape input region so clicks outside the pill reach the desktop;
 //! - the loop sleeps in poll(2) on the X socket: zero wakeups when idle.
 
-use super::{Backend, Button, Event, Key, Result, WindowSpec};
+use super::{Backend, Button, Event, Key, Result, Waker, WindowSpec};
 use islet_core::geometry::{top_center, Rect};
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::sync::Arc;
 use std::time::Instant;
 use tiny_skia::Pixmap;
 use x11rb::connection::{Connection, RequestConnection};
@@ -51,6 +52,8 @@ pub struct X11 {
     has_shape: bool,
     /// Frame converted to the server's pixel layout (BGRA on little-endian).
     buf: Vec<u8>,
+    /// eventfd that other threads write to wake `poll`.
+    wake_fd: Arc<OwnedFd>,
 }
 
 fn xe<E: std::fmt::Display>(e: E) -> String {
@@ -199,7 +202,14 @@ impl Backend for X11 {
 
         conn.map_window(win).map_err(xe)?;
         conn.flush().map_err(xe)?;
-        Ok(Self { conn, win, gc, depth, lsb, scale, size, atoms, esc_keycode, has_shape, buf: Vec::new() })
+        // SAFETY: eventfd returns a new descriptor (or -1, checked) that we own.
+        let raw = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK | libc::EFD_CLOEXEC) };
+        if raw < 0 {
+            return Err(format!("eventfd: {}", std::io::Error::last_os_error()));
+        }
+        // SAFETY: `raw` is a valid, owned file descriptor.
+        let wake_fd = Arc::new(unsafe { OwnedFd::from_raw_fd(raw) });
+        Ok(Self { conn, win, gc, depth, lsb, scale, size, atoms, esc_keycode, has_shape, buf: Vec::new(), wake_fd })
     }
 
     fn scale(&self) -> f64 {
@@ -273,16 +283,33 @@ impl Backend for X11 {
                 left.as_micros().div_ceil(1000).min(i32::MAX as u128) as libc::c_int
             }
         };
-        let mut fds = [libc::pollfd { fd: self.conn.stream().as_raw_fd(), events: libc::POLLIN, revents: 0 }];
-        // SAFETY: fds is a valid array of one pollfd for the duration of the call.
-        let rc = unsafe { libc::poll(fds.as_mut_ptr(), 1, timeout_ms) };
+        let mut fds = [
+            libc::pollfd { fd: self.conn.stream().as_raw_fd(), events: libc::POLLIN, revents: 0 },
+            libc::pollfd { fd: self.wake_fd.as_raw_fd(), events: libc::POLLIN, revents: 0 },
+        ];
+        // SAFETY: fds is a valid array of two pollfds for the duration of the call.
+        let rc = unsafe { libc::poll(fds.as_mut_ptr(), 2, timeout_ms) };
         if rc < 0 {
             let err = std::io::Error::last_os_error();
             if err.kind() != std::io::ErrorKind::Interrupted {
                 return Err(format!("poll: {err}"));
             }
         }
+        if fds[1].revents & libc::POLLIN != 0 {
+            let mut counter = [0u8; 8];
+            // SAFETY: reading 8 bytes from our non-blocking eventfd into a local buffer.
+            unsafe { libc::read(self.wake_fd.as_raw_fd(), counter.as_mut_ptr().cast(), 8) };
+        }
         self.drain(out)
+    }
+
+    fn waker(&self) -> Waker {
+        let fd = self.wake_fd.clone();
+        Waker::new(move || {
+            let one = 1u64.to_ne_bytes();
+            // SAFETY: writing 8 bytes to an eventfd we keep alive via the Arc.
+            unsafe { libc::write(fd.as_raw_fd(), one.as_ptr().cast(), 8) };
+        })
     }
 }
 

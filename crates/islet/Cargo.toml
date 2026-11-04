@@ -10,7 +10,8 @@ publish = false
 [dependencies]
 islet-core = { path = "../islet-core" }
 islet-render = { path = "../islet-render" }
-tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }
+zune-jpeg = "0.4"
 
 [dev-dependencies]
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }
@@ -34,7 +35,7 @@ windows = { version = "0.62", features = [
 libc = "0.2"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSDate", "NSGeometry", "NSRunLoop", "NSString", "NSThread", "NSObjCRuntime"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "objc2-core-foundation", "objc2-quartz-core","NSApplication", "NSColor", "NSEvent", "NSGraphics", "NSPanel", "NSResponder", "NSRunningApplication", "NSScreen", "NSTrackingArea", "NSView", "NSWindow"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "objc2-core-foundation", "objc2-quartz-core","NSApplication", "NSColor", "NSEvent", "NSGraphics", "NSGraphicsContext", "NSPanel", "NSResponder", "NSRunningApplication", "NSScreen", "NSTrackingArea", "NSView", "NSWindow"] }
 objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "objc2-core-foundation", "CALayer", "CATransaction"] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes", "CFData"] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGColorSpace", "CGDataProvider", "CGImage"] }

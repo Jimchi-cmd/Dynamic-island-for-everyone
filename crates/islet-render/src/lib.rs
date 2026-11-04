@@ -3,6 +3,7 @@
 //! put those pixels on screen. Rendering is deterministic, so the visual
 //! tests compare against golden images on every OS.
 
+pub mod elements;
 pub mod metaball;
 pub mod squircle;
 pub mod text;
@@ -36,11 +37,20 @@ impl PillFrame {
     }
 }
 
-/// A clip mask of the pill's outline, so content is never drawn outside it.
+/// A clip mask of the island's outline (pill, bubble and neck), so content
+/// is never drawn outside it.
 pub fn clip_mask(frame: &PillFrame, width: u32, height: u32, scale: f32) -> Option<Mask> {
-    let path = frame.shape.path()?;
+    let ts = Transform::from_scale(scale, scale);
     let mut mask = Mask::new(width, height)?;
-    mask.fill_path(&path, FillRule::Winding, true, Transform::from_scale(scale, scale));
+    mask.fill_path(&frame.shape.path()?, FillRule::Winding, true, ts);
+    if let Some(b) = frame.bubble {
+        if let Some(circle) = PathBuilder::from_circle(b.x, b.y, b.r) {
+            mask.fill_path(&circle, FillRule::Winding, true, ts);
+        }
+        if let Some(neck) = metaball::neck(frame.pill_end(), b) {
+            mask.fill_path(&neck, FillRule::Winding, true, ts);
+        }
+    }
     Some(mask)
 }
 

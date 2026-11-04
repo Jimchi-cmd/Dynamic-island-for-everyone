@@ -8,7 +8,7 @@
 //!   windows, not in the taskbar or Alt-Tab, never steals focus;
 //! - the loop sleeps in `MsgWaitForMultipleObjectsEx`: zero wakeups idle.
 
-use super::{Backend, Button, Event, Key, Result, WindowSpec};
+use super::{Backend, Button, Event, Key, Result, Waker, WindowSpec};
 use islet_core::geometry::{top_center, Rect};
 use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
@@ -32,6 +32,8 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 // avoid pulling in two more feature modules for one constant each.
 const WM_MOUSELEAVE: u32 = 0x02A3;
 const INFINITE: u32 = u32::MAX;
+/// Posted by `Waker` from other threads; only its arrival matters.
+const WM_ISLET_WAKE: u32 = WM_APP + 1;
 
 thread_local! {
     static QUEUE: RefCell<Vec<Event>> = const { RefCell::new(Vec::new()) };
@@ -216,6 +218,15 @@ impl Backend for Win32 {
         Ok(())
     }
 
+    fn waker(&self) -> Waker {
+        // HWND is not Send; the handle value is, and PostMessageW is thread-safe.
+        let hwnd = self.hwnd.0 as isize;
+        Waker::new(move || {
+            // SAFETY: posting a message to our own window from any thread.
+            let _ = unsafe { PostMessageW(Some(HWND(hwnd as *mut c_void)), WM_ISLET_WAKE, WPARAM(0), LPARAM(0)) };
+        })
+    }
+
     fn wait(&mut self, deadline: Option<Instant>, out: &mut Vec<Event>) -> Result<()> {
         let timeout = match deadline {
             None => INFINITE,
@@ -303,6 +314,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         WM_KEYDOWN if wp.0 == VK_ESCAPE.0 as usize => handled(Event::Key(Key::Escape)),
         WM_DPICHANGED | WM_DISPLAYCHANGE => handled(Event::ScaleChanged(s)),
         WM_CLOSE => handled(Event::Quit),
+        WM_ISLET_WAKE => LRESULT(0),
         // SAFETY: default handling for everything else.
         _ => unsafe { DefWindowProcW(hwnd, msg, wp, lp) },
     }

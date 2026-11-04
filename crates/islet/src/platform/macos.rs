@@ -10,15 +10,15 @@
 //! Click-through outside the pill (toggling `ignoresMouseEvents` from a
 //! global mouse monitor) and notch handling arrive in Phase 1.
 
-use super::{Backend, Button, Event, Key, Result, WindowSpec};
+use super::{Backend, Button, Event, Key, Result, Waker, WindowSpec};
 use islet_core::geometry::Rect;
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::{define_class, msg_send, AnyThread, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSColor, NSEvent, NSEventMask, NSPanel,
-    NSResponder, NSScreen, NSStatusWindowLevel, NSTrackingArea, NSTrackingAreaOptions, NSView,
-    NSWindowCollectionBehavior, NSWindowStyleMask,
+    NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSColor, NSEvent, NSEventMask,
+    NSEventModifierFlags, NSEventType, NSPanel, NSResponder, NSScreen, NSStatusWindowLevel, NSTrackingArea,
+    NSTrackingAreaOptions, NSView, NSWindowCollectionBehavior, NSWindowStyleMask,
 };
 use objc2_core_foundation::{CFData, CFRetained};
 use objc2_core_graphics::{
@@ -258,6 +258,35 @@ impl Backend for Mac {
         }
         CATransaction::commit();
         Ok(())
+    }
+
+    fn waker(&self) -> Waker {
+        // NSApp lives for the whole process; keep its address, not a Retained
+        // (which is main-thread-only), and post from any thread.
+        let app = Retained::as_ptr(&self.app) as usize;
+        Waker::new(move || {
+            let Some(event) =
+                NSEvent::otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2(
+                    NSEventType::ApplicationDefined,
+                    NSPoint::new(0.0, 0.0),
+                    NSEventModifierFlags::empty(),
+                    0.0,
+                    0,
+                    None,
+                    0,
+                    0,
+                    0,
+                )
+            else {
+                return;
+            };
+            // SAFETY: `postEvent:atStart:` is documented as callable from
+            // secondary threads; the application object outlives the process loop.
+            unsafe {
+                let app = app as *const NSApplication;
+                let _: () = msg_send![app, postEvent: &*event, atStart: false];
+            }
+        })
     }
 
     fn set_input_region(&mut self, _rect: Rect) -> Result<()> {
