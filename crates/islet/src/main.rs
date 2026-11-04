@@ -2,7 +2,10 @@
 //!
 //! Environment:
 //! - `ISLET_PERF_DEMO=1`: expand/collapse every 1.2 s (perf harness)
+//! - `ISLET_DEMO=tour`: walk through every presentation (visual review)
 //! - `ISLET_REDUCE_MOTION=1`: snap instead of animating
+//!
+//! Right-click the island to quit (until the context menu exists).
 
 // Hide the console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -10,7 +13,7 @@
 mod app;
 mod platform;
 
-use app::{App, FRAME, WINDOW};
+use app::{App, Demo, FRAME, WINDOW};
 use platform::{Backend, Event, Native, WindowSpec};
 use std::io::Write;
 use std::time::{Duration, Instant};
@@ -26,7 +29,13 @@ fn main() {
 fn run() -> platform::Result<()> {
     let started = Instant::now();
     let env_on = |k: &str| std::env::var_os(k).is_some_and(|v| v != "0");
-    let mut app = App::new(env_on("ISLET_PERF_DEMO"), env_on("ISLET_REDUCE_MOTION"));
+    let demo = match std::env::var("ISLET_DEMO").as_deref() {
+        Ok("tour") => Demo::Tour,
+        Ok("toggle") => Demo::Toggle,
+        _ if env_on("ISLET_PERF_DEMO") => Demo::Toggle,
+        _ => Demo::None,
+    };
+    let mut app = App::new(demo, env_on("ISLET_REDUCE_MOTION"));
 
     let mut win = Native::create(WindowSpec { width: WINDOW.0, height: WINDOW.1 })?;
     let new_pixmap = |win: &Native| {
@@ -70,6 +79,9 @@ fn run() -> platform::Result<()> {
                 _ => {}
             }
             needs_frame |= app.handle(e, t);
+        }
+        if app.wants_quit() {
+            return Ok(());
         }
         needs_frame |= app.tick(t);
 

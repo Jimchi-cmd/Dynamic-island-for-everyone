@@ -12,6 +12,9 @@ islet-core = { path = "../islet-core" }
 islet-render = { path = "../islet-render" }
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
 
+[dev-dependencies]
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = { version = "0.13", features = ["shape", "randr"] }
 libc = "0.2"

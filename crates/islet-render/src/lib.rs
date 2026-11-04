@@ -6,15 +6,33 @@
 pub mod metaball;
 pub mod squircle;
 
+pub use metaball::Circle;
 pub use squircle::Squircle;
-use tiny_skia::{Color, FillRule, Paint, Pixmap, Stroke, Transform};
+use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Stroke, Transform};
 
-/// Everything needed to draw one frame of the pill (logical px).
+/// Everything needed to draw one frame of the island (logical px).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PillFrame {
     pub shape: Squircle,
+    /// The detached circle of the Minimal presentation. While it is close to
+    /// the pill, a metaball neck joins the two.
+    pub bubble: Option<Circle>,
     /// Opacity of the 1 px inner highlight (0 = none).
     pub highlight: f32,
+}
+
+impl PillFrame {
+    pub fn pill(shape: Squircle) -> Self {
+        Self { shape, bubble: None, highlight: 0.0 }
+    }
+
+    /// The round end of the pill that the bubble buds from: the top-right
+    /// corner's circle (for a capsule, its whole right end).
+    pub fn pill_end(&self) -> Circle {
+        let s = self.shape;
+        let r = s.effective_radius();
+        Circle { x: s.x + s.w - r, y: s.y + r, r }
+    }
 }
 
 /// Draw `frame` at `scale` into `pixmap`, clearing it first.
@@ -26,6 +44,15 @@ pub fn draw(pixmap: &mut Pixmap, frame: &PillFrame, scale: f32) {
     paint.set_color_rgba8(0, 0, 0, 255);
     paint.anti_alias = true;
     pixmap.fill_path(&path, &paint, FillRule::Winding, ts, None);
+
+    if let Some(b) = frame.bubble {
+        if let Some(circle) = PathBuilder::from_circle(b.x, b.y, b.r) {
+            pixmap.fill_path(&circle, &paint, FillRule::Winding, ts, None);
+        }
+        if let Some(neck) = metaball::neck(frame.pill_end(), b) {
+            pixmap.fill_path(&neck, &paint, FillRule::Winding, ts, None);
+        }
+    }
 
     if frame.highlight > 0.0 {
         // A hairline just inside the edge so the pill reads on dark wallpapers.

@@ -1,137 +1,309 @@
-//! Portable island logic: state, springs, input → state, frame building.
-//! Phase-0 spike scope: idle ↔ expanded. Phase 1 replaces this with the full
-//! state machine from docs/design-spec.md.
+//! Portable island logic: pointer input → presentation state machine →
+//! springs → frame. No OS calls in here, so all of it is unit-tested.
 
 use crate::platform::{Button, Event, Key};
 use islet_core::geometry::Rect;
+use islet_core::island::{
+    spring_for, target_size, Island, Presentation, Signal, AUTO_COLLAPSE_SECS, LONG_PRESS_SECS, MINIMAL_CIRCLE,
+    MINIMAL_GAP,
+};
 use islet_core::spring::{Animated, Spring};
-use islet_render::{PillFrame, Squircle};
+use islet_render::{Circle, PillFrame, Squircle};
 use std::time::Duration;
 
-/// Logical window size (contains the largest state).
-pub const WINDOW: (f64, f64) = (400.0, 220.0);
+/// Logical window size: the largest state plus spring overshoot (design spec §2).
+pub const WINDOW: (f64, f64) = (420.0, 260.0);
 /// Gap between the screen's top edge and the pill.
 pub const TOP_GAP: f64 = 0.0;
-
-const IDLE: (f64, f64, f64) = (126.0, 37.0, 18.5);
-const EXPANDED: (f64, f64, f64) = (372.0, 160.0, 44.0);
 const SMOOTHING: f32 = 0.6;
 
-const EXPAND: Spring = Spring::new(0.5, 0.75);
-const COLLAPSE: Spring = Spring::new(0.45, 0.9);
-
 pub const FRAME: Duration = Duration::from_micros(16_667);
-const DEMO_PERIOD: f64 = 1.2;
 
+/// Distance from the pill's round end to the centre of the detached circle
+/// in Minimal: half the circle, the gap, and the other half.
+const BUBBLE_OFFSET: f64 = MINIMAL_CIRCLE / 2.0 + MINIMAL_GAP + MINIMAL_CIRCLE / 2.0;
+/// Merging back is quick and bounce-free.
+const BUBBLE_MERGE: Spring = Spring::new(0.32, 1.0);
+/// Above this pill height the bubble is fully merged.
+const BUBBLE_MAX_H: f64 = 60.0;
+
+/// Scripted demos, selected with `ISLET_DEMO` (or the legacy
+/// `ISLET_PERF_DEMO`), used by the perf harness and for visual review.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum State {
-    Idle,
-    Expanded,
+pub enum Demo {
+    None,
+    /// Expand/collapse every 1.2 s (perf harness).
+    Toggle,
+    /// Walk through every presentation every 1.6 s.
+    Tour,
+}
+
+impl Demo {
+    fn period(self) -> f64 {
+        match self {
+            Demo::Tour => 1.6,
+            _ => 1.2,
+        }
+    }
+
+    fn signals(self) -> &'static [Signal] {
+        match self {
+            Demo::None => &[],
+            Demo::Toggle => &[Signal::Click],
+            Demo::Tour => &[
+                Signal::LiveActivities(1), // Compact
+                Signal::LiveActivities(2), // Minimal: the bubble splits off
+                Signal::Click,             // Expanded
+                Signal::LongPress,         // Large
+                Signal::Escape,            // back to Minimal
+                Signal::LiveActivities(1), // the bubble merges back
+                Signal::LiveActivities(0), // Idle
+                Signal::PointerEnter,      // Peek
+                Signal::PointerLeave,
+            ],
+        }
+    }
+}
+
+struct Press {
+    at: f64,
+    long_fired: bool,
 }
 
 pub struct App {
-    state: State,
+    island: Island,
     w: Animated,
     h: Animated,
     r: Animated,
-    demo_next: Option<f64>,
+    /// Bubble centre relative to the pill's round end: 0 = merged.
+    bubble: Animated,
+    hovered: bool,
+    press: Option<Press>,
+    /// When the pointer left an open island (auto-collapse timer).
+    left_open_at: Option<f64>,
+    demo: Demo,
+    demo_step: usize,
+    demo_next: f64,
     reduce_motion: bool,
-    /// Input region while animating: the pill where the animation started
-    /// united with where it will end (computed once per state change).
+    /// Input region while animating: start and end of the transition.
     anim_region: Rect,
+    quit: bool,
 }
 
 impl App {
-    pub fn new(demo: bool, reduce_motion: bool) -> Self {
-        let s = EXPAND;
-        Self {
-            state: State::Idle,
-            w: Animated::new(IDLE.0, s),
-            h: Animated::new(IDLE.1, s),
-            r: Animated::new(IDLE.2, s),
-            demo_next: demo.then_some(DEMO_PERIOD),
+    pub fn new(demo: Demo, reduce_motion: bool) -> Self {
+        let (w, h, r) = target_size(Presentation::Idle, None);
+        let s = Spring::new(0.5, 0.8);
+        let mut app = Self {
+            island: Island::new(),
+            w: Animated::new(w, s),
+            h: Animated::new(h, s),
+            r: Animated::new(r, s),
+            bubble: Animated::new(0.0, s),
+            hovered: false,
+            press: None,
+            left_open_at: None,
+            demo,
+            demo_step: 0,
+            demo_next: demo.period(),
             reduce_motion,
-            anim_region: Rect::new((WINDOW.0 - IDLE.0) / 2.0, TOP_GAP, IDLE.0, IDLE.1),
-        }
-    }
-
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn state(&self) -> State {
-        self.state
-    }
-
-    pub fn set_state(&mut self, next: State, t: f64) {
-        if next == self.state {
-            return;
-        }
-        self.state = next;
-        let from = self.pill_rect(t);
-        let (dims, spring) = match next {
-            State::Idle => (IDLE, COLLAPSE),
-            State::Expanded => (EXPANDED, EXPAND),
+            anim_region: Rect::new(0.0, 0.0, 0.0, 0.0),
+            quit: false,
         };
-        for (a, v) in [(&mut self.w, dims.0), (&mut self.h, dims.1), (&mut self.r, dims.2)] {
+        app.anim_region = app.target_bounds();
+        app
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))] // used by tests; activities will use it in phase 2
+    pub fn presentation(&self) -> Presentation {
+        self.island.presentation()
+    }
+
+    pub fn wants_quit(&self) -> bool {
+        self.quit
+    }
+
+    /// Feed a signal to the state machine and retarget the springs.
+    fn signal(&mut self, s: Signal, t: f64) -> bool {
+        let from = self.island.presentation();
+        let Some(to) = self.island.apply(s) else { return false };
+        let (w, h, r) = target_size(to, None);
+        let spring = spring_for(from, to);
+        let start = self.bounds(t);
+        for (a, v) in [(&mut self.w, w), (&mut self.h, h), (&mut self.r, r)] {
             if self.reduce_motion {
                 a.snap(v);
             } else {
                 a.set_target(v, t, spring);
             }
         }
-        self.anim_region = from.union(&self.target_rect());
+        // The bubble buds off with the bouncy split spring but is absorbed
+        // quickly, before the pill has grown much (as on iOS).
+        let (bubble, bubble_spring) =
+            if to == Presentation::Minimal { (BUBBLE_OFFSET, spring) } else { (0.0, BUBBLE_MERGE) };
+        if self.reduce_motion {
+            self.bubble.snap(bubble);
+        } else if self.bubble.target() != bubble {
+            self.bubble.set_target(bubble, t, bubble_spring);
+        }
+        self.anim_region = start.union(&self.target_bounds());
+        if !to.is_open() {
+            self.left_open_at = None;
+        }
+        true
     }
 
-    fn target_rect(&self) -> Rect {
-        Rect::new((WINDOW.0 - self.w.target()) / 2.0, TOP_GAP, self.w.target(), self.h.target())
+    fn pointer_at(&mut self, x: f64, y: f64, t: f64) -> bool {
+        let inside = self.hit(x, y, t);
+        if inside == self.hovered {
+            return false;
+        }
+        self.hovered = inside;
+        if inside {
+            self.left_open_at = None;
+            self.signal(Signal::PointerEnter, t)
+        } else {
+            if self.island.presentation().is_open() {
+                self.left_open_at = Some(t);
+            }
+            self.press = None;
+            self.signal(Signal::PointerLeave, t)
+        }
     }
 
     /// Returns true when the event changed what is on screen.
     pub fn handle(&mut self, e: Event, t: f64) -> bool {
         match e {
-            Event::PointerDown { x, y, button: Button::Primary } if self.pill_rect(t).contains(x, y) => {
-                let next = if self.state == State::Idle { State::Expanded } else { State::Idle };
-                self.set_state(next, t);
-                true
+            Event::PointerMove { x, y } => self.pointer_at(x, y, t),
+            Event::PointerLeave => self.pointer_at(f64::NAN, f64::NAN, t),
+            Event::PointerDown { x, y, button: Button::Primary } if self.hit(x, y, t) => {
+                self.press = Some(Press { at: t, long_fired: false });
+                false
             }
-            Event::Key(Key::Escape) => {
-                self.set_state(State::Idle, t);
-                true
+            Event::PointerUp { button: Button::Primary, .. } => match self.press.take() {
+                Some(p) if !p.long_fired => self.signal(Signal::Click, t),
+                _ => false,
+            },
+            // Until the context menu exists: right-click the island to quit.
+            Event::PointerDown { x, y, button: Button::Secondary } if self.hit(x, y, t) => {
+                self.quit = true;
+                false
             }
+            Event::Key(Key::Escape) => self.signal(Signal::Escape, t),
             Event::Redraw | Event::ScaleChanged(_) => true,
             _ => false,
         }
     }
 
-    /// Advance timers (perf demo). Returns true if the state changed.
+    /// Advance timers. Returns true if anything changed.
     pub fn tick(&mut self, t: f64) -> bool {
-        match self.demo_next {
-            Some(next) if t >= next => {
-                self.demo_next = Some(next + DEMO_PERIOD);
-                let s = if self.state == State::Idle { State::Expanded } else { State::Idle };
-                self.set_state(s, t);
-                true
+        let mut changed = false;
+        if let Some(p) = &mut self.press {
+            if !p.long_fired && t - p.at >= LONG_PRESS_SECS {
+                p.long_fired = true;
+                changed |= self.signal(Signal::LongPress, t);
             }
-            _ => false,
         }
+        if let Some(left) = self.left_open_at {
+            if t - left >= AUTO_COLLAPSE_SECS {
+                self.left_open_at = None;
+                changed |= self.signal(Signal::AutoCollapse, t);
+            }
+        }
+        let signals = self.demo.signals();
+        if !signals.is_empty() && t >= self.demo_next {
+            self.demo_next += self.demo.period();
+            let s = signals[self.demo_step % signals.len()];
+            self.demo_step += 1;
+            changed |= self.signal(s, t);
+        }
+        changed
     }
 
     pub fn animating(&self, t: f64) -> bool {
-        !(self.w.is_settled(t) && self.h.is_settled(t) && self.r.is_settled(t))
+        !(self.w.is_settled(t) && self.h.is_settled(t) && self.r.is_settled(t) && self.bubble.is_settled(t))
     }
 
     /// Seconds from `t` until the next timer, if any.
     pub fn next_timer(&self, t: f64) -> Option<f64> {
-        self.demo_next.map(|n| (n - t).max(0.0))
+        let mut next: Option<f64> = None;
+        let mut at = |deadline: f64| next = Some(next.map_or(deadline, |n: f64| n.min(deadline)));
+        if let Some(p) = &self.press {
+            if !p.long_fired {
+                at(p.at + LONG_PRESS_SECS);
+            }
+        }
+        if let Some(left) = self.left_open_at {
+            at(left + AUTO_COLLAPSE_SECS);
+        }
+        if self.demo != Demo::None {
+            at(self.demo_next);
+        }
+        next.map(|n| (n - t).max(0.0))
+    }
+
+    fn pill_at(&self, w: f64, h: f64) -> Rect {
+        Rect::new((WINDOW.0 - w) / 2.0, TOP_GAP, w, h)
     }
 
     pub fn pill_rect(&self, t: f64) -> Rect {
-        let (w, h) = (self.w.value(t).max(0.0), self.h.value(t).max(0.0));
-        Rect::new((WINDOW.0 - w) / 2.0, TOP_GAP, w, h)
+        self.pill_at(self.w.value(t).max(0.0), self.h.value(t).max(0.0))
+    }
+
+    /// The detached circle, while it is (or is becoming) visible.
+    fn bubble_circle(&self, t: f64) -> Option<Circle> {
+        let p = self.pill_rect(t);
+        // The circle only separates while the pill is capsule-height: it is
+        // pulled in as the pill grows into a card and buds off only once a
+        // card has shrunk back, so it never pokes out of a big corner.
+        let c = ((BUBBLE_MAX_H - p.h) / (BUBBLE_MAX_H - MINIMAL_CIRCLE)).clamp(0.0, 1.0);
+        let off = self.bubble.value(t) * c * c * (3.0 - 2.0 * c);
+        if off.abs() < 0.25 {
+            return None; // merged: hidden inside the pill
+        }
+        // Anchored on the centre of the top-right corner's circle, so a merged
+        // bubble is always fully inside the outline.
+        let corner = self.r.value(t).max(0.0).min(p.w / 2.0).min(p.h / 2.0);
+        let r = MINIMAL_CIRCLE / 2.0;
+        Some(Circle { x: (p.right() - corner + off) as f32, y: (p.y + corner.max(r)) as f32, r: r as f32 })
+    }
+
+    /// Pill plus bubble.
+    fn bounds(&self, t: f64) -> Rect {
+        let pill = self.pill_rect(t);
+        match self.bubble_circle(t) {
+            Some(c) => pill.union(&circle_rect(c)),
+            None => pill,
+        }
+    }
+
+    fn target_bounds(&self) -> Rect {
+        let pill = self.pill_at(self.w.target(), self.h.target());
+        if self.bubble.target() > 0.0 {
+            let r = MINIMAL_CIRCLE / 2.0;
+            let cx = pill.right() - r + self.bubble.target();
+            pill.union(&Rect::new(cx - r, pill.y, 2.0 * r, 2.0 * r))
+        } else {
+            pill
+        }
+    }
+
+    /// Is (x, y) on the island (pill or bubble)?
+    fn hit(&self, x: f64, y: f64, t: f64) -> bool {
+        if !(x.is_finite() && y.is_finite()) {
+            return false;
+        }
+        let in_bubble = self.bubble_circle(t).is_some_and(|c| {
+            let (dx, dy) = (x - c.x as f64, y - c.y as f64);
+            dx * dx + dy * dy <= (c.r as f64) * (c.r as f64)
+        });
+        self.pill_rect(t).contains(x, y) || in_bubble
     }
 
     /// Where pointer input should be accepted. While animating it covers both
     /// ends of the animation, so it changes twice per transition, not per frame.
     pub fn input_region(&self, t: f64) -> Rect {
-        let r = if self.animating(t) { self.anim_region } else { self.target_rect() };
+        let r = if self.animating(t) { self.anim_region } else { self.target_bounds() };
         r.inflate(1.0)
     }
 
@@ -146,82 +318,185 @@ impl App {
                 radius: self.r.value(t).max(0.0) as f32,
                 smoothing: SMOOTHING,
             },
+            bubble: self.bubble_circle(t),
             highlight: 0.0,
         }
     }
 }
 
+fn circle_rect(c: Circle) -> Rect {
+    let (x, y, r) = (c.x as f64, c.y as f64, c.r as f64);
+    Rect::new(x - r, y - r, 2.0 * r, 2.0 * r)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use Presentation::*;
+
+    fn centre(app: &App, t: f64) -> (f64, f64) {
+        let r = app.pill_rect(t);
+        (r.x + r.w / 2.0, r.y + r.h / 2.0)
+    }
+
+    fn click(app: &mut App, t: f64) {
+        let (x, y) = centre(app, t);
+        app.handle(Event::PointerDown { x, y, button: Button::Primary }, t);
+        app.handle(Event::PointerUp { x, y, button: Button::Primary }, t + 0.05);
+    }
 
     #[test]
-    fn click_on_pill_expands_and_settles() {
-        let mut app = App::new(false, false);
-        let r = app.pill_rect(0.0);
-        assert!(app.handle(Event::PointerDown { x: r.x + 5.0, y: r.y + 5.0, button: Button::Primary }, 0.0));
-        assert_eq!(app.state(), State::Expanded);
+    fn hover_peeks_and_leaving_restores_idle() {
+        let mut app = App::new(Demo::None, false);
+        let (x, y) = centre(&app, 0.0);
+        assert!(app.handle(Event::PointerMove { x, y }, 0.0));
+        assert_eq!(app.presentation(), Peek);
+        assert!(app.handle(Event::PointerLeave, 1.0));
+        assert_eq!(app.presentation(), Idle);
+    }
+
+    #[test]
+    fn click_expands_and_click_again_collapses() {
+        let mut app = App::new(Demo::None, false);
+        click(&mut app, 0.0);
+        assert_eq!(app.presentation(), Expanded);
         assert!(app.animating(0.1));
         assert!(!app.animating(5.0));
-        assert!((app.pill_rect(5.0).w - EXPANDED.0).abs() < 0.01);
+        assert!((app.pill_rect(5.0).w - 372.0).abs() < 0.01);
+        click(&mut app, 5.0);
+        assert_ne!(app.presentation(), Expanded);
     }
 
     #[test]
-    fn click_outside_pill_is_ignored() {
-        let mut app = App::new(false, false);
-        assert!(!app.handle(Event::PointerDown { x: 1.0, y: 200.0, button: Button::Primary }, 0.0));
-        assert_eq!(app.state(), State::Idle);
+    fn holding_opens_large_without_a_click_on_release() {
+        let mut app = App::new(Demo::None, false);
+        let (x, y) = centre(&app, 0.0);
+        app.handle(Event::PointerMove { x, y }, 0.0);
+        app.handle(Event::PointerDown { x, y, button: Button::Primary }, 0.0);
+        assert!((app.next_timer(0.0).unwrap() - LONG_PRESS_SECS).abs() < 1e-9);
+        assert!(app.tick(LONG_PRESS_SECS));
+        assert_eq!(app.presentation(), Large);
+        app.handle(Event::PointerUp { x, y, button: Button::Primary }, 0.6);
+        assert_eq!(app.presentation(), Large, "release after a long press is not a click");
     }
 
     #[test]
-    fn escape_collapses() {
-        let mut app = App::new(false, false);
-        app.set_state(State::Expanded, 0.0);
+    fn open_island_auto_collapses_after_pointer_leaves() {
+        let mut app = App::new(Demo::None, false);
+        let (x, y) = centre(&app, 0.0);
+        app.handle(Event::PointerMove { x, y }, 0.0);
+        click(&mut app, 0.0);
+        app.handle(Event::PointerMove { x: 1.0, y: 250.0 }, 3.0);
+        assert!(!app.tick(5.0));
+        assert!(app.tick(3.0 + AUTO_COLLAPSE_SECS));
+        assert_eq!(app.presentation(), Idle);
+    }
+
+    #[test]
+    fn escape_collapses_and_right_click_quits() {
+        let mut app = App::new(Demo::None, false);
+        click(&mut app, 0.0);
         app.handle(Event::Key(Key::Escape), 1.0);
-        assert_eq!(app.state(), State::Idle);
+        assert_eq!(app.presentation(), Idle);
+        let (x, y) = centre(&app, 6.0);
+        app.handle(Event::PointerDown { x, y, button: Button::Secondary }, 6.0);
+        assert!(app.wants_quit());
     }
 
     #[test]
-    fn reduced_motion_snaps() {
-        let mut app = App::new(false, true);
-        app.set_state(State::Expanded, 0.0);
-        assert!(!app.animating(0.0));
-        assert_eq!(app.pill_rect(0.0).w, EXPANDED.0);
+    fn clicks_outside_the_island_are_ignored() {
+        let mut app = App::new(Demo::None, false);
+        app.handle(Event::PointerDown { x: 1.0, y: 250.0, button: Button::Primary }, 0.0);
+        app.handle(Event::PointerUp { x: 1.0, y: 250.0, button: Button::Primary }, 0.1);
+        assert_eq!(app.presentation(), Idle);
     }
 
     #[test]
-    fn idle_without_demo_has_no_timers() {
-        let app = App::new(false, false);
+    fn second_activity_splits_off_a_bubble_that_merges_back() {
+        let mut app = App::new(Demo::None, false);
+        app.signal(Signal::LiveActivities(2), 0.0);
+        assert_eq!(app.presentation(), Minimal);
+        let b = app.frame(5.0).bubble.expect("bubble visible in Minimal");
+        let pill = app.pill_rect(5.0);
+        let gap = (b.x - b.r) as f64 - pill.right();
+        assert!((gap - MINIMAL_GAP).abs() < 0.01, "gap {gap}");
+        app.signal(Signal::LiveActivities(1), 5.0);
+        assert!(app.frame(5.05).bubble.is_some(), "still merging");
+        assert!(app.frame(10.0).bubble.is_none(), "merged");
+    }
+
+    #[test]
+    fn idle_without_demo_has_no_timers_or_animation() {
+        let app = App::new(Demo::None, false);
         assert!(!app.animating(0.0));
         assert_eq!(app.next_timer(0.0), None);
     }
 
     #[test]
-    fn demo_toggles_periodically() {
-        let mut app = App::new(true, false);
-        assert!(!app.tick(1.0));
-        assert!(app.tick(DEMO_PERIOD));
-        assert_eq!(app.state(), State::Expanded);
-        assert!(app.tick(DEMO_PERIOD * 2.0));
-        assert_eq!(app.state(), State::Idle);
+    fn reduced_motion_snaps() {
+        let mut app = App::new(Demo::None, true);
+        click(&mut app, 0.0);
+        assert!(!app.animating(0.05));
+        assert_eq!(app.pill_rect(0.05).w, 372.0);
+    }
+
+    #[test]
+    fn demos_drive_the_state_machine() {
+        let mut toggle = App::new(Demo::Toggle, false);
+        assert!(toggle.tick(1.2));
+        assert_eq!(toggle.presentation(), Expanded);
+        let mut tour = App::new(Demo::Tour, false);
+        let mut seen = std::collections::HashSet::new();
+        for i in 1..=10 {
+            tour.tick(i as f64 * 1.6);
+            seen.insert(tour.presentation());
+        }
+        for p in [Compact, Minimal, Expanded, Large, Idle, Peek] {
+            assert!(seen.contains(&p), "tour never showed {p:?}");
+        }
     }
 
     #[test]
     fn input_region_covers_both_ends_and_is_stable_while_animating() {
-        let mut app = App::new(false, false);
-        app.set_state(State::Expanded, 0.0);
-        let region = app.input_region(0.01);
-        assert!(region.w >= EXPANDED.0 && region.h >= EXPANDED.1);
+        let mut app = App::new(Demo::None, false);
+        click(&mut app, 0.0);
+        let t = 0.06;
+        let region = app.input_region(t);
+        assert!(region.w >= 372.0 && region.h >= 160.0);
         assert_eq!(region, app.input_region(0.2));
-        app.set_state(State::Idle, 5.0);
-        assert!(app.input_region(5.01).w >= EXPANDED.0, "still covers the start of the collapse");
-        assert!(app.input_region(10.0).w < EXPANDED.0, "shrinks once settled");
+        assert!(app.input_region(10.0).w < 380.0);
+    }
+
+    /// Renders frames from the demo tour into one PNG for visual review:
+    /// `ISLET_CONTACT_SHEET=/path/out.png cargo test -p islet contact_sheet`
+    #[test]
+    fn contact_sheet() {
+        let Some(out) = std::env::var_os("ISLET_CONTACT_SHEET") else { return };
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let mut app = App::new(Demo::Tour, false);
+        let (cols, scale) = (6usize, 1.0f32);
+        // Sample 0.1 s apart through two tour steps around each transition.
+        let times: Vec<f64> = (0..48).map(|i| 1.55 + (i / 6) as f64 * 1.6 + (i % 6) as f64 * 0.07).collect();
+        let rows = times.len().div_ceil(cols);
+        let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
+        let mut sheet = Pixmap::new(cw * cols as u32, ch * rows as u32).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        let mut cell = Pixmap::new(cw, ch).unwrap();
+        for (i, &t) in times.iter().enumerate() {
+            app.tick(t);
+            islet_render::draw(&mut cell, &app.frame(t), scale);
+            let (x, y) = ((i % cols) as i32 * cw as i32, (i / cols) as i32 * ch as i32);
+            sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+        }
+        sheet.save_png(out).unwrap();
     }
 
     #[test]
-    fn every_state_fits_the_window() {
-        for (w, h, _) in [IDLE, EXPANDED] {
-            assert!(w <= WINDOW.0 && h + TOP_GAP <= WINDOW.1);
+    fn every_state_fits_the_window_with_overshoot() {
+        for p in [Idle, Peek, Compact, Minimal, Expanded, Large] {
+            let (w, h, _) = target_size(p, None);
+            let extra = if p == Minimal { MINIMAL_GAP + MINIMAL_CIRCLE } else { 0.0 };
+            assert!((w + extra) * 1.03 <= WINDOW.0 && h * 1.03 + TOP_GAP <= WINDOW.1, "{p:?}");
         }
     }
 }
