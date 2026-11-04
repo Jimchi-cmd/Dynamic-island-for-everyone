@@ -2,12 +2,14 @@
 //! springs → frame. No OS calls in here, so all of it is unit-tested.
 
 use crate::platform::{Button, Event, Key};
+use islet_core::clock::{format_date, format_time, secs_to_next_minute, LocalTime};
 use islet_core::geometry::Rect;
 use islet_core::island::{
     spring_for, target_size, Island, Presentation, Signal, AUTO_COLLAPSE_SECS, LONG_PRESS_SECS, MINIMAL_CIRCLE,
     MINIMAL_GAP,
 };
 use islet_core::spring::{Animated, Spring};
+use islet_render::text::{Align, TextEngine, TextItem, TextStyle};
 use islet_render::{Circle, PillFrame, Squircle};
 use std::time::Duration;
 
@@ -26,6 +28,9 @@ const BUBBLE_OFFSET: f64 = MINIMAL_CIRCLE / 2.0 + MINIMAL_GAP + MINIMAL_CIRCLE /
 const BUBBLE_MERGE: Spring = Spring::new(0.32, 1.0);
 /// Above this pill height the bubble is fully merged.
 const BUBBLE_MAX_H: f64 = 60.0;
+/// Content starts to appear above this pill height and is fully shown at the next.
+const CONTENT_FROM_H: f64 = 90.0;
+const CONTENT_FULL_H: f64 = 150.0;
 
 /// Scripted demos, selected with `ISLET_DEMO` (or the legacy
 /// `ISLET_PERF_DEMO`), used by the perf harness and for visual review.
@@ -88,6 +93,9 @@ pub struct App {
     /// Input region while animating: start and end of the transition.
     anim_region: Rect,
     quit: bool,
+    /// Latest wall-clock time (the clock activity), and 12/24-hour style.
+    clock: Option<LocalTime>,
+    h24: bool,
 }
 
 impl App {
@@ -109,6 +117,8 @@ impl App {
             reduce_motion,
             anim_region: Rect::new(0.0, 0.0, 0.0, 0.0),
             quit: false,
+            clock: None,
+            h24: true,
         };
         app.anim_region = app.target_bounds();
         app
@@ -121,6 +131,50 @@ impl App {
 
     pub fn wants_quit(&self) -> bool {
         self.quit
+    }
+
+    pub fn set_clock_style(&mut self, h24: bool) {
+        self.h24 = h24;
+    }
+
+    /// Store the current wall-clock time. Returns true when the displayed
+    /// minute changed while the clock is on screen (a redraw is needed).
+    pub fn set_time(&mut self, now: LocalTime, t: f64) -> bool {
+        let changed = self.clock.is_none_or(|c| (c.hour, c.minute, c.day) != (now.hour, now.minute, now.day));
+        self.clock = Some(now);
+        changed && self.content_visible(t)
+    }
+
+    /// Content fades and rises in as the pill grows past compact height,
+    /// and out as it shrinks, so it never spills outside a closing island.
+    pub fn content_opacity(&self, t: f64) -> f32 {
+        let c = ((self.h.value(t) - CONTENT_FROM_H) / (CONTENT_FULL_H - CONTENT_FROM_H)).clamp(0.0, 1.0);
+        (c * c * (3.0 - 2.0 * c)) as f32
+    }
+
+    fn content_visible(&self, t: f64) -> bool {
+        self.content_opacity(t) > 0.0 || self.island.presentation().is_open()
+    }
+
+    /// The text on the island this frame. With no live activities yet, an
+    /// open island shows the clock.
+    pub fn text_items(&self, t: f64, engine: &mut TextEngine) -> Vec<TextItem> {
+        let o = self.content_opacity(t);
+        let Some(now) = self.clock.filter(|_| o > 0.0) else { return Vec::new() };
+        let p = self.pill_rect(t);
+        let rise = (1.0 - o) * 8.0; // content settles upward into place
+        let (left, top) = (p.x as f32 + 26.0, p.y as f32 + rise);
+        let (time, suffix) = format_time(&now, self.h24);
+        let time_style = TextStyle { size: 52.0, weight: 600, opacity: o, tabular: true, ..TextStyle::default() };
+        let mut items = vec![TextItem { text: time.clone(), style: time_style, x: left, baseline: top + 74.0 }];
+        if let Some(suffix) = suffix {
+            let x = left + engine.measure(&time, &time_style) + 6.0;
+            let style = TextStyle { size: 20.0, ..time_style };
+            items.push(TextItem { text: suffix.to_string(), style, x, baseline: top + 74.0 });
+        }
+        let date_style = TextStyle { size: 15.0, opacity: o * 0.6, align: Align::Left, ..TextStyle::default() };
+        items.push(TextItem { text: format_date(&now), style: date_style, x: left + 2.0, baseline: top + 102.0 });
+        items
     }
 
     /// Feed a signal to the state machine and retarget the springs.
@@ -238,6 +292,10 @@ impl App {
         }
         if self.demo != Demo::None {
             at(self.demo_next);
+        }
+        // The clock wakes the island once a minute, and only while it is shown.
+        if let Some(now) = self.clock.filter(|_| self.content_visible(t)) {
+            at(t + secs_to_next_minute(&now));
         }
         next.map(|n| (n - t).max(0.0))
     }
@@ -467,6 +525,50 @@ mod tests {
         assert!(app.input_region(10.0).w < 380.0);
     }
 
+    const NOW: LocalTime = LocalTime { year: 2026, month: 11, day: 4, weekday: 3, hour: 14, minute: 5, second: 42 };
+
+    #[test]
+    fn idle_island_shows_no_clock_and_never_wakes_for_it() {
+        let mut app = App::new(Demo::None, false);
+        assert!(!app.set_time(NOW, 0.0), "nothing to redraw while idle");
+        let mut engine = TextEngine::new();
+        assert!(app.text_items(0.0, &mut engine).is_empty());
+        assert_eq!(app.next_timer(0.0), None, "zero wakeups when idle");
+    }
+
+    #[test]
+    fn open_island_shows_the_clock_and_ticks_each_minute() {
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        click(&mut app, 0.0);
+        let mut engine = TextEngine::new();
+        let items = app.text_items(5.0, &mut engine);
+        let texts: Vec<&str> = items.iter().map(|i| i.text.as_str()).collect();
+        assert_eq!(texts, ["14:05", "Wednesday, 4 November"]);
+        assert!((items[0].style.opacity - 1.0).abs() < 1e-6);
+        assert!((app.next_timer(5.0).unwrap() - 18.0).abs() < 1e-9, "wakes at the next minute");
+        let later = LocalTime { minute: 6, second: 0, ..NOW };
+        assert!(app.set_time(later, 23.0), "a new minute redraws");
+        assert!(!app.set_time(LocalTime { second: 1, ..later }, 24.0), "seconds alone don't");
+
+        app.set_clock_style(false);
+        let texts: Vec<String> = app.text_items(25.0, &mut engine).into_iter().map(|i| i.text).collect();
+        assert_eq!(&texts[..2], ["2:06", "PM"]);
+    }
+
+    #[test]
+    fn content_fades_out_before_the_pill_is_small() {
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        click(&mut app, 0.0);
+        click(&mut app, 5.0);
+        // The first moment the text is fully gone…
+        let gone = (0..400).map(|i| 5.0 + i as f64 * 0.005).find(|&t| app.content_opacity(t) == 0.0).unwrap();
+        // …the pill is still clearly taller than a compact pill (37 px).
+        let h = app.pill_rect(gone).h;
+        assert!(h > 55.0, "content was still visible until the pill was {h} px tall");
+    }
+
     /// Renders frames from the demo tour into one PNG for visual review:
     /// `ISLET_CONTACT_SHEET=/path/out.png cargo test -p islet contact_sheet`
     #[test]
@@ -474,6 +576,8 @@ mod tests {
         let Some(out) = std::env::var_os("ISLET_CONTACT_SHEET") else { return };
         use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
         let mut app = App::new(Demo::Tour, false);
+        app.set_time(NOW, 0.0);
+        let mut engine = TextEngine::new();
         let (cols, scale) = (6usize, 1.0f32);
         // Sample 0.1 s apart through two tour steps around each transition.
         let times: Vec<f64> = (0..48).map(|i| 1.55 + (i / 6) as f64 * 1.6 + (i % 6) as f64 * 0.07).collect();
@@ -484,7 +588,12 @@ mod tests {
         let mut cell = Pixmap::new(cw, ch).unwrap();
         for (i, &t) in times.iter().enumerate() {
             app.tick(t);
-            islet_render::draw(&mut cell, &app.frame(t), scale);
+            let frame = app.frame(t);
+            islet_render::draw(&mut cell, &frame, scale);
+            let clip = islet_render::clip_mask(&frame, cell.width(), cell.height(), scale);
+            for item in app.text_items(t, &mut engine) {
+                engine.draw(&mut cell, &item, scale, clip.as_ref());
+            }
             let (x, y) = ((i % cols) as i32 * cw as i32, (i / cols) as i32 * ch as i32);
             sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
         }

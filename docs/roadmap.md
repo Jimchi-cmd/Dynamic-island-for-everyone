@@ -5,7 +5,7 @@ Each phase ships with tests and green CI on Windows, macOS and Linux before the 
 | Phase | Scope | Status |
 |---|---|---|
 | **0** | Scaffold, perf harness, CI matrix, stack decision (native island) | ✅ done |
-| **1** | Island shell: full state machine, squircle morph, metaball split, input (hover, click, hold, scroll, Esc), notch wrap on Macs, Wayland layer-shell, macOS click-through, text rendering (Inter / San Francisco), clock activity, AccessKit, golden-image tests | in progress |
+| **1** | Island shell: full state machine, squircle morph, metaball split, input (hover, click, hold, scroll, Esc), notch wrap on Macs, Wayland layer-shell, macOS click-through, text rendering (Inter / San Francisco), clock activity, AccessKit, golden-image tests | in progress: ✅ state machine, morph, metaball split, hover/click/hold/Esc/auto-collapse, text (Inter; San Francisco on macOS), clock · ⬜ scroll to switch, notch, Wayland layer-shell, macOS click-through, AccessKit, golden images |
 | **2** | Activity framework and the **music controller** (Windows SMTC, Linux MPRIS, macOS media adapter): art, title, progress and scrubbing, controls, waveform. **Device battery**: connect pop-ups for headphones, mice, keyboards and controllers, low-battery alerts, laptop charging | next |
 | **3** | Navigation ETA (Google Routes, bring your own key) and Google Maps / Waze hand-off; optional Spotify Web API | |
 | **4** | Release pipeline and v0.1.0: installers for every OS, auto-update, Settings app, first-run permissions screen | |

@@ -5,10 +5,11 @@
 
 pub mod metaball;
 pub mod squircle;
+pub mod text;
 
 pub use metaball::Circle;
 pub use squircle::Squircle;
-use tiny_skia::{Color, FillRule, Paint, PathBuilder, Pixmap, Stroke, Transform};
+use tiny_skia::{Color, FillRule, Mask, Paint, PathBuilder, Pixmap, Stroke, Transform};
 
 /// Everything needed to draw one frame of the island (logical px).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -33,6 +34,14 @@ impl PillFrame {
         let r = s.effective_radius();
         Circle { x: s.x + s.w - r, y: s.y + r, r }
     }
+}
+
+/// A clip mask of the pill's outline, so content is never drawn outside it.
+pub fn clip_mask(frame: &PillFrame, width: u32, height: u32, scale: f32) -> Option<Mask> {
+    let path = frame.shape.path()?;
+    let mut mask = Mask::new(width, height)?;
+    mask.fill_path(&path, FillRule::Winding, true, Transform::from_scale(scale, scale));
+    Some(mask)
 }
 
 /// Draw `frame` at `scale` into `pixmap`, clearing it first.

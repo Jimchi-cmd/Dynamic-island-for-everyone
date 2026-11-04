@@ -8,7 +8,9 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+cosmic-text = { version = "0.19", default-features = false, features = ["std", "swash"] }
 islet-core = { path = "../islet-core" }
+sys-locale = "0.3"
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
 
 [dev-dependencies]

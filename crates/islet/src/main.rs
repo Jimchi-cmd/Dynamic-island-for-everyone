@@ -11,9 +11,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod clock;
 mod platform;
 
 use app::{App, Demo, FRAME, WINDOW};
+use islet_render::text::TextEngine;
 use platform::{Backend, Event, Native, WindowSpec};
 use std::io::Write;
 use std::time::{Duration, Instant};
@@ -36,6 +38,9 @@ fn run() -> platform::Result<()> {
         _ => Demo::None,
     };
     let mut app = App::new(demo, env_on("ISLET_REDUCE_MOTION"));
+    app.set_clock_style(clock::prefers_24h());
+    // Fonts load on first use, so an island that is never opened never pays for them.
+    let mut text: Option<TextEngine> = None;
 
     let mut win = Native::create(WindowSpec { width: WINDOW.0, height: WINDOW.1 })?;
     let new_pixmap = |win: &Native| {
@@ -83,6 +88,7 @@ fn run() -> platform::Result<()> {
         if app.wants_quit() {
             return Ok(());
         }
+        needs_frame |= app.set_time(clock::now(), t);
         needs_frame |= app.tick(t);
 
         let new_region = app.input_region(t);
@@ -93,7 +99,17 @@ fn run() -> platform::Result<()> {
 
         let frame_due = Instant::now() >= last_frame + FRAME;
         if (needs_frame || app.animating(t)) && frame_due {
-            islet_render::draw(&mut pixmap, &app.frame(t), win.scale() as f32);
+            let scale = win.scale() as f32;
+            let frame = app.frame(t);
+            islet_render::draw(&mut pixmap, &frame, scale);
+            if app.content_opacity(t) > 0.0 {
+                let engine = text.get_or_insert_with(TextEngine::new);
+                let items = app.text_items(t, engine);
+                let clip = islet_render::clip_mask(&frame, pixmap.width(), pixmap.height(), scale);
+                for item in &items {
+                    engine.draw(&mut pixmap, item, scale, clip.as_ref());
+                }
+            }
             win.present(&pixmap)?;
             last_frame = Instant::now();
             // One extra frame after settling draws the exact final shape.
