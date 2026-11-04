@@ -2,4 +2,5 @@
 //! so everything is unit-testable on any machine.
 
 pub mod geometry;
+pub mod island;
 pub mod spring;
