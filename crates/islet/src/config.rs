@@ -1,0 +1,61 @@
+//! Where Islet keeps its files, and the saved trip.
+//! Linux: `$XDG_CONFIG_HOME/islet` (or `~/.config/islet`); macOS:
+//! `~/Library/Application Support/Islet`; Windows: `%APPDATA%\Islet`.
+
+use islet_core::nav::Trip;
+use std::path::PathBuf;
+
+pub fn dir() -> Option<PathBuf> {
+    if let Some(d) = std::env::var_os("ISLET_CONFIG_DIR") {
+        return Some(PathBuf::from(d));
+    }
+    #[cfg(target_os = "windows")]
+    let base = std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("Islet"));
+    #[cfg(target_os = "macos")]
+    let base = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/Islet"));
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+        .map(|c| c.join("islet"));
+    base
+}
+
+fn file(name: &str) -> Option<PathBuf> {
+    let d = dir()?;
+    std::fs::create_dir_all(&d).ok()?;
+    Some(d.join(name))
+}
+
+pub fn control_file() -> Option<PathBuf> {
+    file("control.json")
+}
+
+/// The active trip survives restarts until it is stopped.
+pub fn load_trip() -> Option<Trip> {
+    serde_json::from_slice(&std::fs::read(file("trip.json")?).ok()?).ok()
+}
+
+pub fn save_trip(trip: Option<&Trip>) {
+    let Some(path) = file("trip.json") else { return };
+    let _ = match trip {
+        Some(t) => serde_json::to_vec_pretty(t).map_err(std::io::Error::other).and_then(|b| std::fs::write(&path, b)),
+        None => std::fs::remove_file(&path),
+    };
+}
+
+/// Write a file only the current user can read (the control token).
+pub fn write_private(path: &PathBuf, contents: &str) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        use std::os::unix::fs::PermissionsExt;
+        let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path)?;
+        // An older file may have been created with looser permissions.
+        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        f.write_all(contents.as_bytes())
+    }
+    #[cfg(not(unix))]
+    std::fs::write(path, contents)
+}

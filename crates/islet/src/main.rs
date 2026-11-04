@@ -7,25 +7,46 @@
 //! - `ISLET_REDUCE_MOTION=1`: snap instead of animating
 //!
 //! Right-click the island to quit (until the context menu exists).
+//! `islet --help` lists the commands (navigation, API key).
 
 // Hide the console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod cli;
 mod clock;
+mod config;
 mod content;
+mod control;
 mod platform;
 mod providers;
+mod secrets;
 
 use app::{App, Demo, FRAME, WINDOW};
+use content::NavControl;
+use control::Control;
 use islet_core::activity::Report;
+use islet_core::nav;
 use islet_render::text::TextEngine;
 use platform::{Backend, Event, Native, WindowSpec};
+use providers::navigation::{self, NavMsg};
 use std::io::Write;
 use std::time::{Duration, Instant};
 use tiny_skia::Pixmap;
 
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(result) = cli::run(&args) {
+        attach_console();
+        match result {
+            Ok(msg) => println!("{msg}"),
+            Err(e) => {
+                eprintln!("islet: {e}");
+                std::process::exit(2);
+            }
+        }
+        return;
+    }
     if let Err(e) = run() {
         eprintln!("islet: {e}");
         std::process::exit(1);
@@ -67,6 +88,9 @@ fn run() -> platform::Result<()> {
     let now = || epoch.elapsed().as_secs_f64();
 
     let providers = providers::Providers::start(win.waker());
+    let (control_tx, control_rx) = std::sync::mpsc::channel::<Control>();
+    control::serve(control_tx, win.waker());
+    let mut nav_card_open = false;
 
     let mut needs_frame = true;
     let mut first_frame = true;
@@ -111,6 +135,27 @@ fn run() -> platform::Result<()> {
         for cmd in app.take_commands() {
             providers.command(cmd);
         }
+        // `islet nav start/stop` from the command line.
+        while let Ok(c) = control_rx.try_recv() {
+            providers.nav(match c {
+                Control::NavStart(trip) => NavMsg::Start(trip),
+                Control::NavStop => NavMsg::Stop,
+            });
+        }
+        for action in app.take_nav_actions() {
+            let trip = app.nav_trip().cloned();
+            match (action, trip) {
+                (NavControl::GoogleMaps, Some(trip)) => navigation::open_url(&nav::google_maps_url(&trip)),
+                (NavControl::Waze, Some(trip)) => navigation::open_url(&nav::waze_url(&trip)),
+                (NavControl::Stop, _) => providers.nav(NavMsg::Stop),
+                _ => {}
+            }
+        }
+        let open = app.nav_card_open(t);
+        if open != nav_card_open {
+            nav_card_open = open;
+            providers.nav(NavMsg::CardOpen(open));
+        }
         if app.wants_quit() {
             return Ok(());
         }
@@ -144,5 +189,15 @@ fn run() -> platform::Result<()> {
                 let _ = std::io::stdout().flush();
             }
         }
+    }
+}
+
+/// Windows release builds have no console; let CLI output reach the
+/// terminal that started us.
+fn attach_console() {
+    #[cfg(windows)]
+    unsafe {
+        use windows::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+        let _ = AttachConsole(ATTACH_PARENT_PROCESS);
     }
 }

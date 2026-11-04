@@ -97,6 +97,14 @@ pub struct BatteryDevice {
     pub parts: Vec<(Part, u8)>,
 }
 
+/// An active trip and its latest route summary (or why there isn't one).
+#[derive(Debug, Clone, PartialEq)]
+pub struct NavInfo {
+    pub trip: crate::nav::Trip,
+    pub route: Option<crate::nav::RouteInfo>,
+    pub error: Option<String>,
+}
+
 /// Commands the island sends to the current media session.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MediaCommand {
@@ -119,6 +127,8 @@ pub enum Report {
     DeviceGone(String),
     /// The laptop's own battery: charger plugged/unplugged or level changed.
     Laptop(BatteryDevice),
+    /// The active trip (None when navigation stops).
+    Navigation(Option<NavInfo>),
 }
 
 /// Why a battery peek is showing.
@@ -132,6 +142,7 @@ pub enum PeekReason {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Live {
     Battery { device: BatteryDevice, reason: PeekReason },
+    Navigation(NavInfo),
     Media(MediaInfo),
 }
 
@@ -148,6 +159,7 @@ pub const LOW_LEVELS: [u8; 2] = [20, 10];
 
 #[derive(Debug, Default)]
 pub struct Activities {
+    nav: Option<NavInfo>,
     media: Option<MediaInfo>,
     paused_since: Option<f64>,
     devices: HashMap<String, BatteryDevice>,
@@ -174,6 +186,10 @@ impl Activities {
 
     pub fn laptop(&self) -> Option<&BatteryDevice> {
         self.laptop.as_ref()
+    }
+
+    pub fn nav(&self) -> Option<&NavInfo> {
+        self.nav.as_ref()
     }
 
     fn peek(&mut self, device: BatteryDevice, reason: PeekReason, t: f64) {
@@ -233,6 +249,10 @@ impl Activities {
                 }
                 true
             }
+            Report::Navigation(n) => {
+                self.nav = n;
+                true
+            }
             Report::Laptop(d) => {
                 let charger_changed = self.laptop.as_ref().is_some_and(|old| old.charging != d.charging);
                 let crossed = self.laptop.as_ref().is_some_and(|old| {
@@ -249,13 +269,17 @@ impl Activities {
         }
     }
 
-    /// Live activities in priority order (a battery peek first, then media).
+    /// Live activities in priority order: a battery peek, then navigation,
+    /// then media.
     pub fn live(&self, t: f64) -> Vec<Live> {
         let mut out = Vec::new();
         if let Some((d, reason, until)) = &self.peek {
             if t < *until {
                 out.push(Live::Battery { device: d.clone(), reason: *reason });
             }
+        }
+        if let Some(n) = &self.nav {
+            out.push(Live::Navigation(n.clone()));
         }
         if let Some(m) = &self.media {
             let lingering = self.paused_since.is_some_and(|p| t - p < MEDIA_LINGER);

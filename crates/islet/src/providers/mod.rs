@@ -19,6 +19,7 @@ mod macos_battery;
 mod macos_media;
 #[cfg(target_os = "macos")]
 pub mod macos_mediaremote;
+pub mod navigation;
 #[cfg(target_os = "windows")]
 mod windows_battery;
 #[cfg(target_os = "windows")]
@@ -98,12 +99,19 @@ fn describe(r: &Report) -> String {
         Report::DeviceChanged(d) => format!("changed {:?} {}%", d.name, d.percent),
         Report::DeviceGone(id) => format!("gone {id}"),
         Report::Laptop(d) => format!("laptop {}% charging={}", d.percent, d.charging),
+        Report::Navigation(Some(n)) => format!(
+            "navigation to {:?}: {}",
+            n.trip.destination,
+            n.route.as_ref().map_or_else(|| n.error.clone().unwrap_or_default(), |r| format!("{:.0} s", r.duration))
+        ),
+        Report::Navigation(None) => "navigation stopped".into(),
     }
 }
 
 pub struct Providers {
     pub reports: Receiver<(Report, Instant)>,
     media: Option<Sender<MediaCommand>>,
+    nav: Sender<navigation::NavMsg>,
 }
 
 impl Providers {
@@ -112,11 +120,16 @@ impl Providers {
     pub fn start(waker: Waker) -> Self {
         let (tx, reports) = channel();
         let sink = Sink { tx, waker };
+        let nav = navigation::start(sink.clone());
         if std::env::var("ISLET_DEMO").as_deref() == Ok("media") {
-            return Self { reports, media: Some(demo::start(sink)) };
+            return Self { reports, media: Some(demo::start(sink)), nav };
         }
         let media = platform_start(sink);
-        Self { reports, media }
+        Self { reports, media, nav }
+    }
+
+    pub fn nav(&self, msg: navigation::NavMsg) {
+        let _ = self.nav.send(msg);
     }
 
     pub fn command(&self, cmd: MediaCommand) {

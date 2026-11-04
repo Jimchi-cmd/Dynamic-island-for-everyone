@@ -27,6 +27,8 @@ pub enum Icon {
     Laptop,
     Bluetooth,
     Bolt,
+    Navigation,
+    Close,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -245,6 +247,16 @@ impl IconPainter<'_> {
                 }
                 self.stroke(pb.finish(), 1.9);
             }
+            Icon::Navigation => {
+                // A direction arrow pointing up and to the right.
+                let p = Self::poly(&[(20.0, 4.0), (12.5, 20.5), (10.8, 13.2), (3.5, 11.5)]);
+                self.fill(p.clone());
+                self.stroke(p, 1.6);
+            }
+            Icon::Close => {
+                self.line((6.5, 6.5), (17.5, 17.5), 2.2);
+                self.line((17.5, 6.5), (6.5, 17.5), 2.2);
+            }
             Icon::Bolt => {
                 let p = Self::poly(&[(13.5, 2.0), (5.0, 13.5), (11.0, 13.5), (10.0, 22.0), (19.0, 10.0), (13.0, 10.0)]);
                 self.fill(p);
@@ -333,7 +345,9 @@ mod tests {
         p.pixels().iter().filter(|c| c.alpha() > 0).count()
     }
 
-    const ALL: [Icon; 16] = [
+    const ALL: [Icon; 18] = [
+        Icon::Navigation,
+        Icon::Close,
         Icon::Play,
         Icon::Pause,
         Icon::Next,

@@ -56,4 +56,6 @@ Wayland compositors with `wlr-layer-shell` (KDE Plasma, sway, Hyprland and other
 
 - `islet`: the island, always running, under 60 MB.
 - `islet-settings`: the Tauri webview app, started from the island's menu or the app launcher, and it exits when closed. It edits `settings.json`; the island watches that file and applies changes without a restart.
-- Secrets (API keys, OAuth tokens) live only in the OS keychain.
+- Secrets (API keys, OAuth tokens) live only in the OS keychain (`crates/islet/src/secrets.rs`: the `keyring` crate's native stores on macOS and Windows, `secret-tool` on Linux, which avoids pulling an async D-Bus stack with background wakeups into the island).
+- Command-line commands (`islet nav …`) reach the running island over a local control channel (`control.rs`): TCP on 127.0.0.1 only, a random port, and a random token in `control.json`, which only the user can read. Each request is one line, and a request without the token is refused.
+- Providers are threads that block on OS events or channels and post `Report`s to the loop through the backend's waker. The navigation provider (`providers/navigation.rs`) sleeps in `recv_timeout` until its next refresh and has no deadline at all when no trip is active, so idle wakeups stay at zero.

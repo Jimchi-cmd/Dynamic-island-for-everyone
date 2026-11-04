@@ -5,4 +5,5 @@ pub mod activity;
 pub mod clock;
 pub mod geometry;
 pub mod island;
+pub mod nav;
 pub mod spring;

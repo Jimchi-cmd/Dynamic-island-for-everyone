@@ -2,9 +2,9 @@
 //! state machine → springs → frame and content. No OS calls in here, so all
 //! of it is unit-tested.
 
-use crate::content::{self, Control};
+use crate::content::{self, Control, NavControl};
 use crate::platform::{Button, Event, Key};
-use islet_core::activity::{Activities, Live, MediaCommand, MediaInfo, Report};
+use islet_core::activity::{Activities, Live, MediaCommand, MediaInfo, NavInfo, Report};
 use islet_core::clock::{secs_to_next_minute, LocalTime};
 use islet_core::geometry::Rect;
 use islet_core::island::{
@@ -98,6 +98,7 @@ struct Press {
 
 /// What an open island shows.
 enum OpenContent<'a> {
+    Nav(&'a NavInfo),
     Media(&'a MediaInfo),
     Battery,
     Clock,
@@ -115,6 +116,9 @@ pub struct App {
     press: Option<Press>,
     /// A media control being pressed, and the scrub position while dragging.
     control: Option<Control>,
+    /// A navigation-card button being pressed, and pressed buttons to act on.
+    nav_control: Option<NavControl>,
+    nav_actions: Vec<NavControl>,
     scrub: Option<f64>,
     commands: Vec<MediaCommand>,
     /// When the pointer left an open island (auto-collapse timer).
@@ -159,6 +163,8 @@ impl App {
             hovered: false,
             press: None,
             control: None,
+            nav_control: None,
+            nav_actions: Vec::new(),
             scrub: None,
             commands: Vec::new(),
             left_open_at: None,
@@ -216,6 +222,31 @@ impl App {
         }
     }
 
+    /// Navigation buttons pressed since the last call (open Google Maps,
+    /// open Waze, stop).
+    pub fn take_nav_actions(&mut self) -> Vec<NavControl> {
+        std::mem::take(&mut self.nav_actions)
+    }
+
+    /// Whether the navigation card is open (it refreshes more often then).
+    pub fn nav_card_open(&self, t: f64) -> bool {
+        self.island.presentation().is_open() && matches!(self.open_content(&self.live(t)), OpenContent::Nav(_))
+    }
+
+    /// The navigation button under (x, y) on an open navigation card.
+    fn nav_control_at(&self, x: f64, y: f64, t: f64) -> Option<NavControl> {
+        if !self.nav_card_open(t) || self.animating(t) {
+            return None;
+        }
+        let cr = self.content_rect(self.pill_rect(t));
+        content::nav_controls(cr).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, c)| c)
+    }
+
+    /// The active trip, if any.
+    pub fn nav_trip(&self) -> Option<&islet_core::nav::Trip> {
+        self.activities.nav().map(|n| &n.trip)
+    }
+
     /// Commands for the media session, collected since the last call.
     pub fn take_commands(&mut self) -> Vec<MediaCommand> {
         std::mem::take(&mut self.commands)
@@ -267,6 +298,8 @@ impl App {
     fn open_content(&self, live: &[Live]) -> OpenContent<'_> {
         if matches!(live.first(), Some(Live::Battery { .. })) {
             OpenContent::Battery
+        } else if let (Some(Live::Navigation(_)) | None, Some(n)) = (live.first(), self.activities.nav()) {
+            OpenContent::Nav(n)
         } else if let Some(m) = self.activities.media() {
             OpenContent::Media(m)
         } else {
@@ -316,6 +349,7 @@ impl App {
         if eo > 0.0 {
             match self.open_content(&live) {
                 OpenContent::Media(m) => out.extend(content::expanded_media(cr, m, t, eo, self.scrub, engine)),
+                OpenContent::Nav(n) => out.extend(content::expanded_nav(cr, n, self.clock.as_ref(), eo, engine)),
                 OpenContent::Battery => out.extend(content::expanded_battery(
                     cr,
                     &self.activities.devices(),
@@ -362,7 +396,7 @@ impl App {
             Presentation::Compact => (live.first().map_or(w, content::compact_width), h, r),
             Presentation::Expanded => {
                 let h = match self.open_content(&live) {
-                    OpenContent::Media(_) => MEDIA_H,
+                    OpenContent::Media(_) | OpenContent::Nav(_) => MEDIA_H,
                     OpenContent::Clock => CLOCK_H,
                     OpenContent::Battery => {
                         let rows = self.activities.devices().len() + usize::from(self.activities.laptop().is_some());
@@ -484,6 +518,10 @@ impl App {
             Event::PointerMove { x, y } => self.pointer_at(x, y, t),
             Event::PointerLeave => self.pointer_at(f64::NAN, f64::NAN, t),
             Event::PointerDown { x, y, button: Button::Primary } if self.hit(x, y, t) => {
+                if let Some(c) = self.nav_control_at(x, y, t) {
+                    self.nav_control = Some(c);
+                    return true;
+                }
                 match self.control_at(x, y, t) {
                     Some(c) => {
                         self.control = Some(c);
@@ -499,6 +537,12 @@ impl App {
                 }
             }
             Event::PointerUp { x, y, button: Button::Primary } => {
+                if let Some(c) = self.nav_control.take() {
+                    if self.nav_control_at(x, y, t) == Some(c) {
+                        self.nav_actions.push(c);
+                    }
+                    return true;
+                }
                 if let Some(c) = self.control.take() {
                     let scrub = self.scrub.take();
                     let media = self.activities.media();
@@ -915,6 +959,33 @@ mod tests {
     }
 
     #[test]
+    fn navigation_takes_priority_and_its_buttons_act() {
+        use islet_core::nav::{RouteInfo, TravelMode, Trip};
+        let mut app = App::new(Demo::None, false);
+        let trip = Trip {
+            label: "Work".into(),
+            destination: "Kampala Road".into(),
+            origin: "Ntinda".into(),
+            mode: TravelMode::Drive,
+        };
+        let route =
+            RouteInfo { duration: 900.0, free_flow: 900.0, distance_m: 5000.0, first_step: None, maneuver: None };
+        app.report(Report::Media(Some(song(true))), 0.0);
+        app.report(Report::Navigation(Some(NavInfo { trip, route: Some(route), error: None })), 0.0);
+        assert_eq!(app.presentation(), Minimal, "navigation and music together");
+        click(&mut app, 1.0);
+        assert!(app.nav_card_open(5.0), "the open card is navigation, not music");
+        let (waze, _) = content::nav_controls(app.content_rect(app.pill_rect(5.0)))[1];
+        let (x, y) = (waze.x + waze.w / 2.0, waze.y + waze.h / 2.0);
+        app.handle(Event::PointerDown { x, y, button: Button::Primary }, 5.0);
+        app.handle(Event::PointerUp { x, y, button: Button::Primary }, 5.1);
+        assert_eq!(app.take_nav_actions(), [NavControl::Waze]);
+        assert_eq!(app.presentation(), Expanded, "a button press doesn't collapse the card");
+        app.report(Report::Navigation(None), 6.0);
+        assert!(!app.nav_card_open(6.0));
+    }
+
+    #[test]
     fn idle_island_shows_no_clock_and_never_wakes_for_it() {
         let mut app = App::new(Demo::None, false);
         assert!(!app.set_time(NOW, 0.0), "nothing to redraw while idle");
@@ -1093,8 +1164,35 @@ mod tests {
                 }),
             ),
             (12.6, Box::new(|a: &mut App, t| click(a, t))),
+            (14.4, Box::new(|a: &mut App, t| click(a, t))),
+            (
+                15.0,
+                Box::new(|a: &mut App, t| {
+                    use islet_core::nav::{RouteInfo, TravelMode, Trip};
+                    a.report(
+                        Report::Navigation(Some(NavInfo {
+                            trip: Trip {
+                                label: "Work".into(),
+                                destination: "Plot 5, Kampala Road".into(),
+                                origin: "Ntinda".into(),
+                                mode: TravelMode::Drive,
+                            },
+                            route: Some(RouteInfo {
+                                duration: 1530.0,
+                                free_flow: 1200.0,
+                                distance_m: 12345.0,
+                                first_step: Some("Turn left onto Kampala Rd".into()),
+                                maneuver: Some("TURN_LEFT".into()),
+                            }),
+                            error: None,
+                        })),
+                        t,
+                    );
+                }),
+            ),
+            (16.5, Box::new(|a: &mut App, t| click(a, t))),
         ];
-        let times: Vec<f64> = (0..48).map(|i| i as f64 * 0.3).collect();
+        let times: Vec<f64> = (0..60).map(|i| i as f64 * 0.3).collect();
         let cols = 6usize;
         let rows = times.len().div_ceil(cols);
         let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);

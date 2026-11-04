@@ -1,9 +1,10 @@
 //! What is drawn inside the island for each activity and presentation
 //! (docs/design-spec.md §3). Pure layout: rects in, display list out.
 
-use islet_core::activity::{BatteryDevice, DeviceKind, Live, MediaInfo, Part};
+use islet_core::activity::{BatteryDevice, DeviceKind, Live, MediaInfo, NavInfo, Part};
 use islet_core::clock::{format_date, format_time, LocalTime};
 use islet_core::geometry::Rect;
+use islet_core::nav;
 use islet_render::elements::{Element, Icon};
 use islet_render::text::{Align, TextEngine, TextItem, TextStyle};
 use islet_render::Circle;
@@ -12,6 +13,16 @@ pub const WHITE: [u8; 3] = [255, 255, 255];
 pub const AMBER: [u8; 3] = [255, 176, 32];
 pub const RED: [u8; 3] = [255, 69, 58];
 pub const GREEN: [u8; 3] = [48, 209, 88];
+
+/// Buttons of the expanded navigation card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NavControl {
+    GoogleMaps,
+    Waze,
+    Stop,
+}
+
+pub const GREEN_NAV: [u8; 3] = [52, 199, 89];
 
 /// Interactive areas of the expanded media card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +38,7 @@ pub const COMPACT_BATTERY_W: f64 = 300.0;
 
 pub fn compact_width(live: &Live) -> f64 {
     match live {
-        Live::Media(_) => COMPACT_MEDIA_W,
+        Live::Media(_) | Live::Navigation(_) => COMPACT_MEDIA_W,
         Live::Battery { .. } => COMPACT_BATTERY_W,
     }
 }
@@ -110,6 +121,19 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
             v.extend(waveform(right - 31.0, cy, 4, t, m.playing, tint, o));
             v
         }
+        Live::Navigation(n) => {
+            vec![
+                Element::Icon {
+                    icon: Icon::Navigation,
+                    x: x + 9.0,
+                    y: cy - 10.0,
+                    size: 20.0,
+                    color: GREEN_NAV,
+                    opacity: o,
+                },
+                nav_eta(n, right - 13.0, cy, o),
+            ]
+        }
         Live::Battery { device: d, .. } => {
             let color = level_color(d.percent, d.charging);
             let name_style = TextStyle { size: 13.0, opacity: o * 0.7, ..TextStyle::default() };
@@ -150,6 +174,17 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
     }
 }
 
+/// The ETA at the trailing edge of the pill ("26 min", "…" while loading, "!" on error).
+fn nav_eta(n: &NavInfo, right: f32, cy: f32, o: f32) -> Element {
+    let (label, color) = match &n.route {
+        Some(r) => (nav::format_minutes(r.duration), WHITE),
+        None if n.error.is_some() => ("!".to_string(), AMBER),
+        None => ("…".to_string(), WHITE),
+    };
+    let style = TextStyle { size: 14.0, weight: 600, opacity: o, tabular: true, color, align: Align::Right };
+    text(label, style, right, cy + 5.0)
+}
+
 /// Minimal: the primary activity's leading view in the pill and the
 /// secondary activity in the detached circle.
 pub fn minimal(
@@ -167,6 +202,9 @@ pub fn minimal(
         let tint = m.art.as_ref().map_or(WHITE, |a| brighten(a.dominant));
         v.extend(waveform(pill.right() as f32 - 31.0, cy, 4, t, m.playing, tint, o));
     }
+    if let Live::Navigation(n) = primary {
+        v.push(nav_eta(n, pill.right() as f32 - 13.0, cy, o));
+    }
     if let (Some(b), Some(s)) = (bubble, secondary) {
         match s {
             Live::Battery { device: d, .. } => v.push(Element::Ring {
@@ -176,6 +214,14 @@ pub fn minimal(
                 width: 2.6,
                 fraction: d.percent as f32 / 100.0,
                 color: level_color(d.percent, d.charging),
+                opacity: o,
+            }),
+            Live::Navigation(_) => v.push(Element::Icon {
+                icon: Icon::Navigation,
+                x: b.x - 10.0,
+                y: b.y - 10.0,
+                size: 20.0,
+                color: GREEN_NAV,
                 opacity: o,
             }),
             Live::Media(m) => v.push(Element::Art {
@@ -193,6 +239,16 @@ pub fn minimal(
 
 fn leading(live: &Live, x: f32, cy: f32, o: f32) -> Vec<Element> {
     match live {
+        Live::Navigation(_) => {
+            vec![Element::Icon {
+                icon: Icon::Navigation,
+                x: x + 3.0,
+                y: cy - 10.0,
+                size: 20.0,
+                color: GREEN_NAV,
+                opacity: o,
+            }]
+        }
         Live::Media(m) => {
             vec![Element::Art { x, y: cy - 12.5, size: 25.0, radius: 7.0, image: m.art.clone(), opacity: o }]
         }
@@ -304,6 +360,92 @@ pub fn expanded_media(
         color: WHITE,
         opacity: dim(m.caps.next),
     });
+    v
+}
+
+/// Buttons along the bottom of the navigation card.
+pub fn nav_controls(pill: Rect) -> [(Rect, NavControl); 3] {
+    let y = pill.y + 118.0;
+    let (x, w) = (pill.x + PAD, pill.w - 2.0 * PAD);
+    let gap = 8.0;
+    let stop_w = 44.0;
+    let half = (w - stop_w - 2.0 * gap) / 2.0;
+    [
+        (Rect::new(x, y, half, 30.0), NavControl::GoogleMaps),
+        (Rect::new(x + half + gap, y, half, 30.0), NavControl::Waze),
+        (Rect::new(x + w - stop_w, y, stop_w, 30.0), NavControl::Stop),
+    ]
+}
+
+/// The expanded navigation card: destination, ETA, arrival, distance,
+/// traffic, the first instruction, and hand-off buttons.
+pub fn expanded_nav(pill: Rect, n: &NavInfo, now: Option<&LocalTime>, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
+    let pad = PAD as f32;
+    let mut v = vec![Element::Icon {
+        icon: Icon::Navigation,
+        x: x + pad,
+        y: y + 22.0,
+        size: 24.0,
+        color: GREEN_NAV,
+        opacity: o,
+    }];
+    let title_style = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
+    let eta_style =
+        TextStyle { size: 22.0, weight: 600, opacity: o, tabular: true, align: Align::Right, ..TextStyle::default() };
+    let small = TextStyle { size: 13.0, opacity: o * 0.6, ..TextStyle::default() };
+    let eta = n.route.as_ref().map(|r| nav::format_minutes(r.duration)).unwrap_or_else(|| "…".into());
+    let eta_w = engine.measure(&eta, &eta_style);
+    v.push(text(
+        engine.ellipsize(n.trip.title(), &title_style, w - 2.0 * pad - 36.0 - eta_w - 12.0),
+        title_style,
+        x + pad + 34.0,
+        y + 40.0,
+    ));
+    v.push(text(eta, eta_style, x + w - pad, y + 42.0));
+    match (&n.route, &n.error) {
+        (Some(r), _) => {
+            let mut line = nav::format_distance(r.distance_m);
+            if let Some(now) = now {
+                line = format!("Arrive {} · {line}", nav::arrival(now.hour, now.minute, r.duration));
+            }
+            v.push(text(line, small, x + pad + 34.0, y + 62.0));
+            if r.delay() >= 60.0 {
+                let style = TextStyle { color: AMBER, opacity: o, align: Align::Right, ..small };
+                v.push(text(format!("+{} traffic", nav::format_minutes(r.delay())), style, x + w - pad, y + 62.0));
+            }
+            // Routes data shown without a Google map must credit Google Maps.
+            let credit = TextStyle { size: 11.0, opacity: o * 0.5, align: Align::Right, ..small };
+            v.push(text("Google Maps", credit, x + w - pad, y + 92.0));
+            if let Some(step) = &r.first_step {
+                let style = TextStyle { opacity: o * 0.8, ..small };
+                let line = engine.ellipsize(&format!("Start: {step}"), &style, w - 2.0 * pad - 84.0);
+                v.push(text(line, style, x + pad, y + 92.0));
+            }
+        }
+        (None, Some(err)) => {
+            let style = TextStyle { color: AMBER, opacity: o, ..small };
+            v.push(text(engine.ellipsize(err, &style, w - 2.0 * pad - 34.0), style, x + pad + 34.0, y + 62.0));
+        }
+        (None, None) => v.push(text("Getting the route…", small, x + pad + 34.0, y + 62.0)),
+    }
+    let label = TextStyle { size: 13.0, weight: 600, opacity: o, align: Align::Center, ..TextStyle::default() };
+    for (r, c) in nav_controls(pill) {
+        let (bx, by, bw) = (r.x as f32, r.y as f32, r.w as f32);
+        v.push(Element::Bar { x: bx, y: by, w: bw, h: 30.0, color: WHITE, opacity: o * 0.14 });
+        match c {
+            NavControl::GoogleMaps => v.push(text("Google Maps", label, bx + bw / 2.0, by + 19.5)),
+            NavControl::Waze => v.push(text("Waze", label, bx + bw / 2.0, by + 19.5)),
+            NavControl::Stop => v.push(Element::Icon {
+                icon: Icon::Close,
+                x: bx + bw / 2.0 - 9.0,
+                y: by + 6.0,
+                size: 18.0,
+                color: WHITE,
+                opacity: o,
+            }),
+        }
+    }
     v
 }
 
@@ -483,6 +625,41 @@ mod tests {
         assert!(texts(&list).contains(&"L 18%  R 40%".to_string()));
         assert_eq!(battery_list_height(1), 84.0);
         assert!(battery_list_height(5) > 160.0);
+    }
+
+    #[test]
+    fn navigation_card_shows_eta_traffic_and_hand_off_buttons() {
+        use islet_core::nav::{RouteInfo, TravelMode, Trip};
+        let mut engine = TextEngine::new();
+        let n = NavInfo {
+            trip: Trip {
+                label: "Work".into(),
+                destination: "Kampala Road".into(),
+                origin: "Ntinda".into(),
+                mode: TravelMode::Drive,
+            },
+            route: Some(RouteInfo {
+                duration: 1530.0,
+                free_flow: 1200.0,
+                distance_m: 12345.0,
+                first_step: Some("Turn left".into()),
+                maneuver: None,
+            }),
+            error: None,
+        };
+        let now = LocalTime { year: 2026, month: 11, day: 4, weekday: 3, hour: 8, minute: 30, second: 0 };
+        let pill = Rect::new(24.0, 0.0, 372.0, 160.0);
+        let t = texts(&expanded_nav(pill, &n, Some(&now), 1.0, &mut engine));
+        for want in
+            ["Work", "26 min", "Arrive 08:56 · 12.3 km", "+6 min traffic", "Start: Turn left", "Google Maps", "Waze"]
+        {
+            assert!(t.contains(&want.to_string()), "missing {want:?} in {t:?}");
+        }
+        for (r, _) in nav_controls(pill) {
+            assert!(r.right() <= pill.right() && r.bottom() <= pill.bottom(), "{r:?}");
+        }
+        let live = Live::Navigation(n);
+        assert_eq!(texts(&compact(Rect::new(92.0, 0.0, 236.0, 37.0), &live, 0.0, 1.0, &mut engine)), ["26 min"]);
     }
 
     #[test]
