@@ -1,0 +1,118 @@
+# Islet design spec
+
+Goal: someone glancing at the top of the screen should think "that's the Dynamic Island, on my laptop". Fidelity comes from three things, in this order: **the motion**, **the shape**, **restraint in content**.
+
+All numbers are in **logical px** (1 px = 1 iOS point). They are approximations of the publicly visible iOS behaviour (Apple's Live Activities guidelines, and frame-by-frame observation of screen recordings), tuned by eye. They are not taken from Apple assets or code. Each is a named constant in `islet-core`, so tuning one is a one-line change.
+
+## 1. Rules
+
+- **Pure black** `#000` fill. No border and no shadow in any collapsed state.
+- **Continuous corners.** Corners are squircles with smoothing 0.6 (`islet-render::Squircle`), never plain circular arcs. Capsules keep a perfectly round tip and ease in along the long edge.
+- **System font only** (`system-ui`: Segoe UI Variable on Windows, the OS UI font on macOS, the fontconfig default on Linux). Never bundle or imitate San Francisco.
+- **Icons:** Lucide (ISC licence) or original artwork. No SF Symbols and no Apple glyphs, sounds or images.
+- **Animate only transforms and opacity, conceptually.** The renderer re-rasterises the shape every frame, but layout never changes during an animation: every animated property is a spring value.
+
+## 2. Placement
+
+| Setting | Value |
+|---|---|
+| Horizontal | centred on the chosen display |
+| Top gap | **0 px** by default (flush, as if emerging from the bezel); "Floating" option: 8 px |
+| Overlay window | 420 × 260, sized to contain the largest state plus spring overshoot |
+| Notched MacBook | the idle island *is* the notch: width = notch width, height = menu-bar height, top corners square. Compact and expanded states grow out of it sideways and downwards with the same black, so the notch appears to expand |
+| Fullscreen apps and games | hidden (the next notification only peeks) |
+
+## 3. States and sizes
+
+| State | Size (w × h) | Corner radius | Content |
+|---|---|---|---|
+| **Idle** | 126 × 37 | 18.5 (capsule) | nothing |
+| **Hover peek** (desktop only) | 136 × 39 | capsule | nothing; says "I'm interactive" |
+| **Compact** | 236 × 37 | capsule | leading: 25 × 25 artwork/icon (radius 7) at 6 px inset; trailing: indicator (waveform, timer, ETA) at 10 px inset |
+| **Minimal** (2 activities) | pill 162 × 37 + detached circle Ø 37, 8 px gap | capsule / circle | pill: primary activity's leading view; circle: secondary activity's icon |
+| **Expanded** | 372 × 160 (shorter when the content needs less, min 84) | 44 | the activity's expanded view, 18 px padding |
+| **Large** | 384 × 230 | 48 | full controls (scrubbing, volume, queue) |
+
+Spring overshoot is at most 3 % of a change, so Large peaks at about 391 × 236, inside the 420 × 260 window.
+
+### Content inside the pill
+
+| Element | Spec |
+|---|---|
+| Title | 15 px, semibold, white, one line; marquee after 1.5 s if truncated (Compact: 13 px) |
+| Subtitle | 13 px, regular, white at 60 % |
+| Album art | squircle radius 10 (Expanded) / 7 (Compact); on High tier, the art's dominant colour tints the waveform and progress bar |
+| Waveform | 4 bars (Compact) / 6 bars (Expanded), 3 px wide, 2.5 px gap, height 4–15 px, rounded caps; follows playback; static on Low tier |
+| Progress bar | 4 px tall, fully rounded, track white at 20 %, fill white (or dominant colour); 8 px tall while scrubbing |
+| Buttons | 32 × 32 hit areas (44 × 44 in Large); Lucide icons at 20 px, white |
+| Time labels | 11 px, tabular figures, white at 60 % |
+
+## 4. Motion
+
+Springs use the iOS parameterisation (`response` = period in seconds, `damping` = damping ratio). They are solved analytically, so they are frame-rate independent and an interrupted animation keeps its velocity (`islet-core::spring`).
+
+| Transition | Response | Damping | Notes |
+|---|---|---|---|
+| Expand (idle/compact → expanded/large) | 0.50 s | 0.76 | visible overshoot, about 3 % |
+| Collapse (→ idle/compact) | 0.42 s | 0.88 | almost no bounce |
+| Compact appear/disappear | 0.45 s | 0.80 | width grows from the centre |
+| Minimal split/merge | 0.55 s | 0.72 | the circle buds off with a metaball neck that stretches and snaps |
+| Hover peek | 0.30 s | 0.80 | |
+| Press | 0.20 s | 1.00 | the whole pill scales to 0.97 while held |
+
+**Shape morph.** Width, height, radius and position are separate springs on the same curve, so the outline morphs continuously and never cross-fades. The radius is clamped to `min(w, h) / 2`, so expanded corners flow into capsule ends with no discontinuity.
+
+**Content choreography.**
+- *In:* starts 60 ms after the shape. Opacity goes 0 → 1, scale 0.92 → 1, and on High tier a blur of 6 px → 0. Spring: response 0.35, damping 1.0.
+- *Out:* finishes within 120 ms of the start of a collapse, so content never spills outside the shrinking shape. Content is also clipped to the current shape every frame.
+
+**Metaball split (Minimal).** The secondary circle starts inside the pill's right end. Its centre moves outward on the split spring. While the gap is small, a neck joins the two shapes: two cubic curves tangent to both outlines, with their width tapering as the distance grows (`islet-render`, Phase 1). The neck snaps when the gap passes 1.2 × the circle radius. Merging is the same in reverse.
+
+**Tiers.**
+
+| | Low | Balanced | High |
+|---|---|---|---|
+| Frame rate while animating | 30 fps | 60 fps | 60 fps |
+| Springs | same curves (sampled at 30 fps) | same | same |
+| Content blur-in | no (opacity and scale only) | no | yes |
+| Metaball neck | no (the circle slides out) | yes | yes |
+| Waveform | static bars | animated, 30 fps | animated, 60 fps, dominant colour |
+| Album-art colour | cached only | cached | computed per track, cached |
+
+**Reduced motion** (OS setting or in-app option): every transition becomes a 150 ms opacity cross-fade between the start and end layouts, with no overshoot, no scale and no blur.
+
+## 5. States and input
+
+```
+            hover              click / tap               hold ≥ 450 ms
+   Idle ───────────▶ Peek ────────────────▶ Expanded ───────────────────▶ Large
+    ▲  ◀─────────── (leave)        ▲            │  ▲                         │
+    │                              │            │  └──── click / Esc ────────┘
+    │  activity starts             │            │
+    ├────────────────▶ Compact ────┘ click      │ Esc / click outside / 5 s idle
+    │  last ends    ◀──            ◀────────────┘   (back to Compact if an activity is live)
+    │
+    └── second activity starts ──▶ Minimal (pill + circle) ── click pill / circle ──▶ Expanded (that activity)
+```
+
+| Input | Effect |
+|---|---|
+| Hover | peek (Idle) or slight grow (Compact) |
+| Click | expand the current activity; click again or press Esc to collapse |
+| Click-and-hold (≥ 450 ms) | Large |
+| Scroll or two-finger swipe over the pill | switch to the next or previous activity |
+| Click outside | collapse |
+| Auto-collapse | 5 s after the pointer leaves an expanded island (never while scrubbing) |
+| Global hotkeys (configurable) | toggle expand; hide/show the island |
+| Keyboard | when focused (via the hotkey): Tab between controls, Space/Enter to activate, arrows to scrub or change volume, Esc to collapse |
+
+## 6. Accessibility
+
+- An AccessKit tree exposes the island as a group named after the current activity ("Now playing: Song, Artist"), with each control as a labelled button or slider.
+- Labels and announcements are localised strings (`t("media.play")`).
+- High-contrast mode adds a 1 px white outline at 70 % so the pill stays visible against dark wallpapers.
+- Every animation honours reduced motion. Nothing flashes more than 3 times per second.
+
+## 7. Light and dark wallpapers
+
+The pill is opaque black, so it always reads on light wallpapers. On dark wallpapers it blends in like iPhone hardware, which is intended. Users who want it visible can turn on *Subtle outline* (1 px inner highlight, white at 8 %), which is off by default.
