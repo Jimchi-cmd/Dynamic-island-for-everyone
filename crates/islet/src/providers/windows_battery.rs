@@ -11,7 +11,7 @@
 //!
 //! Event-driven; nothing is polled.
 
-use super::{debug_log, Sink};
+use super::{debug_log, kind_from_name, Sink};
 use islet_core::activity::{BatteryDevice, DeviceKind, Report};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -28,27 +28,6 @@ const BATTERY_KEY: &str = "{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2";
 const CONTAINER_KEY: &str = "System.Devices.ContainerId";
 /// GUID_DEVCLASS_BLUETOOTH
 const BLUETOOTH_CLASS: &str = "System.Devices.ClassGuid:=\"{e0cbf06c-cd8b-4647-bb8a-263b43f0f974}\"";
-
-/// Best-effort device kind from its name.
-pub fn kind_from_name(name: &str) -> DeviceKind {
-    let n = name.to_ascii_lowercase();
-    let has = |words: &[&str]| words.iter().any(|w| n.contains(w));
-    if has(&["mouse", "mx master", "mx anywhere"]) {
-        DeviceKind::Mouse
-    } else if has(&["keyboard", "keys"]) {
-        DeviceKind::Keyboard
-    } else if has(&["controller", "gamepad", "xbox", "dualsense", "dualshock", "joy-con"]) {
-        DeviceKind::Gamepad
-    } else if has(&["buds", "airpods", "earbuds", "tws", "earphone", "pods"]) {
-        DeviceKind::Earbuds
-    } else if has(&["speaker", "soundbar", "boom", "flip", "charge"]) {
-        DeviceKind::Speaker
-    } else if has(&["phone", "iphone", "galaxy s", "pixel"]) {
-        DeviceKind::Phone
-    } else {
-        DeviceKind::Headphones
-    }
-}
 
 /// "WH-1000XM4 Hands-Free AG" → "WH-1000XM4".
 pub fn clean_name(name: &str) -> String {

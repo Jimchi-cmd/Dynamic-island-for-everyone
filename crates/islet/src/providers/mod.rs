@@ -13,6 +13,10 @@ mod linux_battery;
 mod linux_media;
 #[cfg(all(test, target_os = "linux"))]
 mod linux_tests;
+#[cfg(target_os = "macos")]
+mod macos_battery;
+#[cfg(target_os = "macos")]
+mod macos_media;
 #[cfg(target_os = "windows")]
 mod windows_battery;
 #[cfg(target_os = "windows")]
@@ -22,6 +26,32 @@ use crate::platform::Waker;
 use islet_core::activity::{MediaCommand, Report};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Instant;
+
+/// Best-effort device kind from a product name (Windows and macOS report
+/// names, not device classes, for most Bluetooth peripherals).
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+pub fn kind_from_name(name: &str) -> islet_core::activity::DeviceKind {
+    use islet_core::activity::DeviceKind;
+    let n = name.to_ascii_lowercase();
+    let has = |words: &[&str]| words.iter().any(|w| n.contains(w));
+    if has(&["mouse", "mx master", "mx anywhere"]) {
+        DeviceKind::Mouse
+    } else if has(&["keyboard", "keys"]) {
+        DeviceKind::Keyboard
+    } else if has(&["controller", "gamepad", "xbox", "dualsense", "dualshock", "joy-con"]) {
+        DeviceKind::Gamepad
+    } else if has(&["trackpad", "touchpad", "pencil", "pen"]) {
+        DeviceKind::Other
+    } else if has(&["buds", "airpods", "earbuds", "tws", "earphone", "pods"]) {
+        DeviceKind::Earbuds
+    } else if has(&["speaker", "soundbar", "boom", "flip", "charge"]) {
+        DeviceKind::Speaker
+    } else if has(&["phone", "iphone", "galaxy s", "pixel"]) {
+        DeviceKind::Phone
+    } else {
+        DeviceKind::Headphones
+    }
+}
 
 /// With `ISLET_DEBUG=1`, provider diagnostics go to stderr and to
 /// `islet-debug.log` in the temp directory (GUI builds have no console).
@@ -198,6 +228,7 @@ fn platform_start(sink: Sink) -> Option<Sender<MediaCommand>> {
 }
 
 #[cfg(target_os = "macos")]
-fn platform_start(_sink: Sink) -> Option<Sender<MediaCommand>> {
-    None
+fn platform_start(sink: Sink) -> Option<Sender<MediaCommand>> {
+    macos_battery::start(sink.clone());
+    macos_media::start(sink)
 }
