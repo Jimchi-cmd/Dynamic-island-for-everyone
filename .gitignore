@@ -7,9 +7,10 @@ src-tauri/gen/
 Thumbs.db
 .vscode/
 .idea/
-perf.json
-perf.md
-size.md
+# islet-perf output (repo root only; docs/perf.md is real documentation)
+/perf*.json
+/perf*.md
+/size.md
 # Never commit secrets or signing material
 .env
 .env.*
