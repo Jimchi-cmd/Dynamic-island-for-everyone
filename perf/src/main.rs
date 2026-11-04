@@ -79,7 +79,10 @@ fn app_tree(sys: &System, root: Pid, baseline: &HashSet<Pid>) -> Vec<Pid> {
         }
         let webkit_xpc = cfg!(target_os = "macos")
             && !baseline.contains(pid)
-            && p.name().to_string_lossy().contains("com.apple.WebKit");
+            && p.name().to_string_lossy().contains("com.apple.WebKit")
+            // Launched by launchd on behalf of some app: count it only if
+            // macOS says our app is the responsible process (when known).
+            && mem::responsible_pid(pid.as_u32()).is_none_or(|r| r == root.as_u32());
         if is_desc || webkit_xpc {
             out.push(*pid);
         }

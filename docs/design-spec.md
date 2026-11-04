@@ -8,7 +8,11 @@ All numbers are in **logical px** (1 px = 1 iOS point). They are approximations 
 
 - **Pure black** `#000` fill. No border and no shadow in any collapsed state.
 - **Continuous corners.** Corners are squircles with smoothing 0.6 (`islet-render::Squircle`), never plain circular arcs. Capsules keep a perfectly round tip and ease in along the long edge.
-- **System font only** (`system-ui`: Segoe UI Variable on Windows, the OS UI font on macOS, the fontconfig default on Linux). Never bundle or imitate San Francisco.
+- **Typography.** The island on iPhone uses Apple's San Francisco. Its licence allows it only on Apple platforms and forbids redistribution, so:
+  - **macOS:** the OS system font, which *is* San Francisco. It is loaded from the system at runtime and never copied into the app.
+  - **Windows and Linux:** **Inter** (SIL Open Font License 1.1) is bundled. It is an independent interface typeface with a very similar feel, and its tabular figures suit timers and percentages. It is subset to Latin, Greek and Cyrillic (about 300 KB), and other scripts fall back to the OS fonts. Its licence ships in `THIRD_PARTY_LICENSES`.
+  - Settings → Appearance can switch to the OS font (Segoe UI Variable or the fontconfig default).
+  - San Francisco is never bundled, and no other font is presented as it.
 - **Icons:** Lucide (ISC licence) or original artwork. No SF Symbols and no Apple glyphs, sounds or images.
 - **Animate only transforms and opacity, conceptually.** The renderer re-rasterises the shape every frame, but layout never changes during an animation: every animated property is a spring value.
 
@@ -46,6 +50,19 @@ Spring overshoot is at most 3 % of a change, so Large peaks at about 391 × 236,
 | Progress bar | 4 px tall, fully rounded, track white at 20 %, fill white (or dominant colour); 8 px tall while scrubbing |
 | Buttons | 32 × 32 hit areas (44 × 44 in Large); Lucide icons at 20 px, white |
 | Time labels | 11 px, tabular figures, white at 60 % |
+
+### Device connected / battery (system activity)
+
+The iPhone's "AirPods connected" moment, for any device that reports a battery level to the OS: headphones, earbuds, mice, keyboards, game controllers, and the laptop itself.
+
+| Trigger | Presentation | Duration |
+|---|---|---|
+| Device connects | Compact-wide pill (300 × 37): device icon (Lucide `headphones`, `mouse`, `keyboard`, `gamepad-2`, `bluetooth`) on the left; battery ring (Ø 22, 3 px stroke) and `87%` on the right | 3.5 s, then back to the previous state |
+| Battery drops to 20 % or 10 % | same, with the ring and text in amber (20 %) or red (10 %) | 5 s |
+| Charger plugged in or unplugged (laptop) | same, with the laptop's own battery and a bolt icon when charging | 3 s |
+| Hover / click during the peek | Expanded card listing every connected device, with left/right/case levels when the device reports them | until dismissed |
+
+Ring colour: white above 20 %, amber at or below 20 %, red at or below 10 %, green while charging. The percentage uses tabular figures, so the text doesn't jiggle as it changes. Events are rate-limited so a flaky Bluetooth connection can't make the island bounce repeatedly: one peek per device per 30 s.
 
 ## 4. Motion
 

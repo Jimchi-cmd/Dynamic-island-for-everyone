@@ -6,6 +6,8 @@ A Dynamic Island-style overlay for macOS, Windows and Linux. Music controls, nav
 
 The island is a tiny native program with no web browser inside. On Linux it currently idles at **under 2 MB of RAM and 0 % CPU**, so it runs fine on 4 GB laptops.
 
+- Roadmap: [`docs/roadmap.md`](docs/roadmap.md)
+- Design spec (look and motion): [`docs/design-spec.md`](docs/design-spec.md)
 - Architecture: [`docs/architecture.md`](docs/architecture.md)
 - Performance budgets and measurements: [`docs/perf.md`](docs/perf.md)
 

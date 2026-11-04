@@ -3,6 +3,7 @@
 //! put those pixels on screen. Rendering is deterministic, so the visual
 //! tests compare against golden images on every OS.
 
+pub mod metaball;
 pub mod squircle;
 
 pub use squircle::Squircle;

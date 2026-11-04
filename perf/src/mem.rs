@@ -65,6 +65,30 @@ fn precise(_pid: u32) -> Option<u64> {
     None
 }
 
+/// The process macOS holds responsible for `pid` (an XPC service's client
+/// app). Looked up at runtime because the libsystem symbol is not in the
+/// public headers; `None` if it is unavailable.
+#[cfg(target_os = "macos")]
+pub fn responsible_pid(pid: u32) -> Option<u32> {
+    type Fn = unsafe extern "C" fn(libc::pid_t) -> libc::pid_t;
+    // SAFETY: dlsym with a NUL-terminated name; the symbol, if present, has
+    // the signature `pid_t responsibility_get_pid_responsible_for_pid(pid_t)`.
+    unsafe {
+        let sym = libc::dlsym(libc::RTLD_DEFAULT, c"responsibility_get_pid_responsible_for_pid".as_ptr());
+        if sym.is_null() {
+            return None;
+        }
+        let f: Fn = std::mem::transmute::<*mut libc::c_void, Fn>(sym);
+        let r = f(pid as libc::pid_t);
+        (r > 0).then_some(r as u32)
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn responsible_pid(_pid: u32) -> Option<u32> {
+    None
+}
+
 /// Context switches across all threads of `pid` (Linux only). Used as a
 /// proxy for wakeups.
 #[cfg(target_os = "linux")]
