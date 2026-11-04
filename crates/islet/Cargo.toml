@@ -22,7 +22,15 @@ libc = "0.2"
 zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
+windows-collections = "0.3"
 windows = { version = "0.62", features = [
+  "Devices_Enumeration",
+  "Devices_Power",
+  "Foundation",
+  "Media_Control",
+  "Storage_Streams",
+  "System_Power",
+  "Win32_System_WinRT",
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
   "Win32_System_LibraryLoader",

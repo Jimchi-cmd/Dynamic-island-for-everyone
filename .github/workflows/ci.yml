@@ -47,7 +47,9 @@ jobs:
           - os: windows-latest
             bundles: msi,nsis
             exe: .exe
-          - os: macos-latest
+          # Apple-silicon runners are capacity-limited and jobs often go
+          # unscheduled; the Intel image is reliably available.
+          - os: macos-15-intel
             bundles: app,dmg
             exe: ""
     runs-on: ${{ matrix.os }}

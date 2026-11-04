@@ -1827,6 +1827,7 @@ dependencies = [
  "objc2-quartz-core",
  "tiny-skia",
  "windows",
+ "windows-collections",
  "x11rb",
  "zbus",
  "zune-jpeg",

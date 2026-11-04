@@ -13,11 +13,31 @@ mod linux_battery;
 mod linux_media;
 #[cfg(all(test, target_os = "linux"))]
 mod linux_tests;
+#[cfg(target_os = "windows")]
+mod windows_battery;
+#[cfg(target_os = "windows")]
+mod windows_media;
 
 use crate::platform::Waker;
 use islet_core::activity::{MediaCommand, Report};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Instant;
+
+/// With `ISLET_DEBUG=1`, provider diagnostics go to stderr and to
+/// `islet-debug.log` in the temp directory (GUI builds have no console).
+pub fn debug_log(msg: &str) {
+    use std::io::Write;
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if !*ON.get_or_init(|| std::env::var_os("ISLET_DEBUG").is_some_and(|v| v != "0")) {
+        return;
+    }
+    eprintln!("islet: {msg}");
+    let path = std::env::temp_dir().join("islet-debug.log");
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        let _ = writeln!(f, "{secs} {msg}");
+    }
+}
 
 /// Where providers send reports. Cloneable across threads.
 #[derive(Clone)]
@@ -29,9 +49,23 @@ pub struct Sink {
 impl Sink {
     /// Send a report, stamped now (media positions are relative to this).
     pub fn send(&self, report: Report) {
+        debug_log(&format!("report: {}", describe(&report)));
         if self.tx.send((report, Instant::now())).is_ok() {
             self.waker.wake();
         }
+    }
+}
+
+fn describe(r: &Report) -> String {
+    match r {
+        Report::Media(Some(m)) => {
+            format!("media {:?} by {:?} ({}) playing={}", m.title, m.artist, m.app_name, m.playing)
+        }
+        Report::Media(None) => "media none".into(),
+        Report::DeviceConnected(d) => format!("connected {:?} {:?} {}%", d.name, d.kind, d.percent),
+        Report::DeviceChanged(d) => format!("changed {:?} {}%", d.name, d.percent),
+        Report::DeviceGone(id) => format!("gone {id}"),
+        Report::Laptop(d) => format!("laptop {}% charging={}", d.percent, d.charging),
     }
 }
 
@@ -158,8 +192,9 @@ fn platform_start(sink: Sink) -> Option<Sender<MediaCommand>> {
 }
 
 #[cfg(target_os = "windows")]
-fn platform_start(_sink: Sink) -> Option<Sender<MediaCommand>> {
-    None
+fn platform_start(sink: Sink) -> Option<Sender<MediaCommand>> {
+    windows_battery::start(sink.clone());
+    windows_media::start(sink)
 }
 
 #[cfg(target_os = "macos")]
