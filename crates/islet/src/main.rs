@@ -119,6 +119,7 @@ fn run() -> platform::Result<()> {
     control::serve(control_tx, win.waker());
     trace("control channel open");
     let mut nav_card_open = false;
+    let mut sysmon_on = false;
     // Demos and perf runs leave the user's alarms alone.
     let scripted = demo != Demo::None || std::env::var_os("ISLET_DEMO").is_some();
     if !scripted {
@@ -249,6 +250,10 @@ fn run() -> platform::Result<()> {
             if !scripted {
                 config::save_shelf(&items);
             }
+        }
+        if app.sysmon_wanted() != sysmon_on {
+            sysmon_on = !sysmon_on;
+            providers.sysmon(sysmon_on);
         }
         for cmd in app.take_conn_commands() {
             providers.conn(cmd);

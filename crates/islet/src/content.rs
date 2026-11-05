@@ -37,6 +37,8 @@ pub enum Panel {
     Wifi,
     Bluetooth,
     Shelf,
+    /// CPU, memory and disk (sampled only while open).
+    System,
 }
 
 /// What a tap on the clock card or a list lands on.
@@ -1102,10 +1104,16 @@ pub fn clock_chips(pill: Rect, shelf: bool) -> Vec<(Rect, Panel)> {
     let y = pill.y + 122.0;
     let panels: &[Panel] =
         if shelf { &[Panel::Wifi, Panel::Bluetooth, Panel::Shelf] } else { &[Panel::Wifi, Panel::Bluetooth] };
+    // Labelled chips share the row; the system monitor is a round icon at the end.
     let n = panels.len() as f64;
-    let cw = (w - 10.0 * (n - 1.0)) / n;
-    panels.iter().enumerate().map(|(i, p)| (Rect::new(x + i as f64 * (cw + 10.0), y, cw, 32.0), *p)).collect()
+    let cw = (w - SYSTEM_CHIP - 10.0 * n) / n;
+    let mut v: Vec<(Rect, Panel)> =
+        panels.iter().enumerate().map(|(i, p)| (Rect::new(x + i as f64 * (cw + 10.0), y, cw, 32.0), *p)).collect();
+    v.push((Rect::new(x + w - SYSTEM_CHIP, y, SYSTEM_CHIP, 32.0), Panel::System));
+    v
 }
+
+const SYSTEM_CHIP: f64 = 32.0;
 
 pub fn clock_chip_elements(
     pill: Rect,
@@ -1130,6 +1138,18 @@ pub fn clock_chip_elements(
                 c.connected_device().is_some(),
             ),
             Panel::Shelf => (Icon::Folder, format!("Shelf · {shelf}"), false),
+            Panel::System => {
+                v.push(Element::Bar { x, y, w, h, color: WHITE, opacity: o * 0.14 });
+                v.push(Element::Icon {
+                    icon: Icon::Gauge,
+                    x: x + w / 2.0 - 9.0,
+                    y: y + h / 2.0 - 9.0,
+                    size: 18.0,
+                    color: WHITE,
+                    opacity: o,
+                });
+                continue;
+            }
         };
         let bg = if on { BLUE } else { WHITE };
         v.push(Element::Bar { x, y, w, h, color: bg, opacity: o * if on { 0.9 } else { 0.14 } });
@@ -1321,6 +1341,52 @@ pub fn expanded_shelf(
     }
     if let Some((line, button)) = shelf_footer(items.len(), dragging) {
         v.extend(list_footer_elements(pill, items.len(), &line, button, o, engine));
+    }
+    v
+}
+
+/// Height of the system monitor panel.
+pub const SYSTEM_H: f64 = LIST_TOP + 3.0 * METER_H + 14.0;
+const METER_H: f64 = 46.0;
+
+/// CPU, memory and disk meters (dashes until the first reading).
+pub fn expanded_system(
+    pill: Rect,
+    stats: Option<&islet_core::sysmon::Stats>,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
+    use islet_core::sysmon::format_bytes_of;
+    let mut v = list_header_elements(pill, Icon::Gauge, "System", None, o, engine);
+    let label = TextStyle { size: 14.0, weight: 600, opacity: o, ..TextStyle::default() };
+    let value = TextStyle { size: 14.0, opacity: o * 0.7, ..TextStyle::default() };
+    let rows: [(&str, Option<(f32, String)>); 3] = match stats {
+        Some(s) => [
+            ("CPU", Some((s.cpu, format!("{}%", (s.cpu * 100.0).round() as i32)))),
+            ("Memory", (s.mem_total > 0).then(|| (s.mem_fraction(), format_bytes_of(s.mem_used, s.mem_total)))),
+            ("Disk", (s.disk_total > 0).then(|| (s.disk_fraction(), format_bytes_of(s.disk_used, s.disk_total)))),
+        ],
+        None => [("CPU", None), ("Memory", None), ("Disk", None)],
+    };
+    let (x, w) = ((pill.x + PAD) as f32, (pill.w - 2.0 * PAD) as f32);
+    for (i, (name, reading)) in rows.into_iter().enumerate() {
+        let top = (pill.y + LIST_TOP) as f32 + i as f32 * METER_H as f32;
+        v.push(text(name, label, x, top + 16.0));
+        let (frac, shown) = reading.unwrap_or((0.0, "–".into()));
+        let vw = engine.measure(&shown, &value);
+        v.push(text(shown, value, x + w - vw, top + 16.0));
+        // Amber past 75 %, red past 90 %.
+        let color = if frac > 0.9 {
+            RED
+        } else if frac > 0.75 {
+            AMBER
+        } else {
+            GREEN
+        };
+        v.push(Element::Bar { x, y: top + 25.0, w, h: 6.0, color: WHITE, opacity: o * 0.16 });
+        if frac > 0.0 {
+            v.push(Element::Bar { x, y: top + 25.0, w: (w * frac).max(6.0), h: 6.0, color, opacity: o });
+        }
     }
     v
 }

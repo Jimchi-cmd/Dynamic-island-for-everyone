@@ -50,6 +50,8 @@ pub enum Icon {
     Message,
     File,
     Folder,
+    /// A dial with a needle (the system monitor).
+    Gauge,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -341,6 +343,15 @@ impl IconPainter<'_> {
                 self.line((9.0, 13.0), (16.0, 13.0), 1.6);
                 self.line((9.0, 16.5), (16.0, 16.5), 1.6);
             }
+            Icon::Gauge => {
+                // A three-quarter dial open at the bottom, needle up-right.
+                let mut pb = PathBuilder::new();
+                arc(&mut pb, 12.0, 13.0, 8.5, 0.75 * std::f32::consts::PI, 1.5 * std::f32::consts::PI, true);
+                self.stroke(pb.finish(), 2.0);
+                self.line((12.0, 13.0), (16.2, 8.6), 2.0);
+                let hub = self.circle(12.0, 13.0, 1.9);
+                self.fill(hub);
+            }
             Icon::Folder => {
                 let tab = Self::poly(&[(3.0, 6.5), (9.5, 6.5), (11.5, 8.5), (21.0, 8.5), (21.0, 19.0), (3.0, 19.0)]);
                 self.fill(tab);
@@ -571,7 +582,8 @@ mod tests {
         p.pixels().iter().filter(|c| c.alpha() > 0).count()
     }
 
-    const ALL: [Icon; 39] = [
+    const ALL: [Icon; 40] = [
+        Icon::Gauge,
         Icon::File,
         Icon::Folder,
         Icon::Message,

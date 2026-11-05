@@ -201,6 +201,8 @@ pub enum Report {
     CustomEnded(String),
     /// Which apps are using the camera and the microphone right now.
     Privacy(Privacy),
+    /// A system monitor reading (None when the monitor stops).
+    System(Option<crate::sysmon::Stats>),
 }
 
 /// Whether the camera and the microphone are in use, and by which apps
@@ -290,6 +292,7 @@ pub struct Activities {
     remote: Option<MediaInfo>,
     custom: Vec<Custom>,
     privacy: Privacy,
+    system: Option<crate::sysmon::Stats>,
     note_until: f64,
     nav: Option<NavInfo>,
     media: Option<MediaInfo>,
@@ -343,6 +346,10 @@ impl Activities {
 
     pub fn calendar(&self) -> &[crate::calendar::CalEvent] {
         &self.calendar
+    }
+
+    pub fn system(&self) -> Option<&crate::sysmon::Stats> {
+        self.system.as_ref()
     }
 
     pub fn privacy(&self) -> &Privacy {
@@ -444,6 +451,10 @@ impl Activities {
             }
             Report::Weather(w) => {
                 self.weather = w;
+                true
+            }
+            Report::System(s) => {
+                self.system = s;
                 true
             }
             Report::Privacy(p) => {

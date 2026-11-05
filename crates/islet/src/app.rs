@@ -532,6 +532,11 @@ impl App {
     }
 
     /// Wi-Fi / Bluetooth requests for the connectivity worker.
+    /// Whether the system monitor panel is on screen (sample only then).
+    pub fn sysmon_wanted(&self) -> bool {
+        self.panel == Some(Panel::System) && self.island.presentation().is_open()
+    }
+
     pub fn take_conn_commands(&mut self) -> Vec<ConnCommand> {
         std::mem::take(&mut self.conn_commands)
     }
@@ -606,6 +611,7 @@ impl App {
                     Panel::Wifi => (c.wifi.networks.len(), content::wifi_footer(c)),
                     Panel::Bluetooth => (c.bt.devices.len(), content::bt_footer(c)),
                     Panel::Shelf => (self.shelf.len(), None),
+                    Panel::System => (0, None),
                 };
                 if content::list_header(cr).contains(x, y) {
                     return Some(ConnHit::Back);
@@ -633,7 +639,7 @@ impl App {
                 match p {
                     Panel::Wifi => self.conn_commands.push(ConnCommand::ScanWifi),
                     Panel::Bluetooth => self.conn_commands.push(ConnCommand::ListBluetooth),
-                    Panel::Shelf => {}
+                    Panel::Shelf | Panel::System => {}
                 }
             }
             ConnHit::Remove(i) => {
@@ -665,7 +671,7 @@ impl App {
                         self.ui_actions.push(UiAction::Path(item.path.clone()));
                     }
                 }
-                None => {}
+                Some(Panel::System) | None => {}
             },
             ConnHit::Footer => match (self.panel, &c.failure) {
                 (Some(Panel::Wifi), Some((_, Some(ssid)))) => {
@@ -781,6 +787,7 @@ impl App {
                                 )
                             }
                             Panel::Shelf => format!("Shelf, {} items", self.shelf.len()),
+                            Panel::System => "System monitor".into(),
                         };
                         buttons.push((name, r));
                     }
@@ -813,6 +820,7 @@ impl App {
                             .map(|d| format!("{}, {}", d.name, if d.connected { "connected" } else { "not connected" }))
                             .collect(),
                         Panel::Shelf => self.shelf.iter().map(|i| format!("Open {}", i.name())).collect(),
+                        Panel::System => Vec::new(),
                     };
                     for (name, r) in names.into_iter().zip(content::list_rows(cr, usize::MAX)) {
                         buttons.push((name, r));
@@ -1052,6 +1060,9 @@ impl App {
                 OpenContent::Panel(Panel::Bluetooth) => {
                     out.extend(content::expanded_bluetooth(cr, self.activities.connectivity(), eo, engine))
                 }
+                OpenContent::Panel(Panel::System) => {
+                    out.extend(content::expanded_system(cr, self.activities.system(), eo, engine))
+                }
                 OpenContent::Panel(Panel::Shelf) => {
                     out.extend(content::expanded_shelf(cr, &self.shelf, self.dragging, eo, engine))
                 }
@@ -1139,6 +1150,7 @@ impl App {
                             Panel::Bluetooth => {
                                 content::list_height(c.bt.devices.len(), content::bt_footer(c).is_some())
                             }
+                            Panel::System => content::SYSTEM_H,
                             Panel::Shelf => content::list_height(
                                 self.shelf.len(),
                                 content::shelf_footer(self.shelf.len(), self.dragging).is_some(),
@@ -2339,6 +2351,109 @@ mod tests {
             islet_render::draw(&mut cell, &frame, 1.0);
             let clip = islet_render::clip_mask(&frame, cw, WINDOW.1 as u32, 1.0);
             let els = a.elements(t, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            sheet.draw_pixmap(
+                i as i32 * cw as i32,
+                0,
+                cell.as_ref(),
+                &PixmapPaint::default(),
+                Transform::identity(),
+                None,
+            );
+        }
+        sheet.save_png(out).unwrap();
+    }
+
+    fn open_system_panel(app: &mut App, t: f64) {
+        app.set_time(NOW, t);
+        click(app, t);
+        let cr = app.content_rect(app.pill_rect(t + 4.0));
+        let (r, _) = content::clock_chips(cr, false).into_iter().find(|(_, p)| *p == Panel::System).unwrap();
+        let (x, y) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
+        app.handle(Event::PointerMove { x, y }, t + 4.0);
+        app.handle(Event::PointerDown { x, y, button: Button::Primary }, t + 4.0);
+        app.handle(Event::PointerUp { x, y, button: Button::Primary }, t + 4.05);
+    }
+
+    #[test]
+    fn system_monitor_samples_only_while_open() {
+        let mut app = App::new(Demo::None, false);
+        assert!(!app.sysmon_wanted());
+        open_system_panel(&mut app, 0.0);
+        assert!(app.sysmon_wanted());
+        assert!((app.pill_rect(9.0).h - content::SYSTEM_H).abs() < 0.5);
+        let gb = 1 << 30;
+        let stats = islet_core::sysmon::Stats {
+            cpu: 0.23,
+            mem_used: 5 * gb,
+            mem_total: 16 * gb,
+            disk_used: 400 * gb,
+            disk_total: 512 * gb,
+        };
+        assert!(app.report(Report::System(Some(stats)), 9.0));
+        let mut engine = TextEngine::new();
+        let texts: Vec<String> = app
+            .elements(9.0, &mut engine)
+            .into_iter()
+            .filter_map(|e| match e {
+                Element::Text(t) => Some(t.text),
+                _ => None,
+            })
+            .collect();
+        assert!(texts.iter().any(|t| t == "23%") && texts.iter().any(|t| t == "5.0 of 16 GB"), "{texts:?}");
+        // Back to the clock card stops sampling; so does closing the island.
+        let cr = app.content_rect(app.pill_rect(9.0));
+        let back = content::list_header(cr);
+        let (x, y) = (back.x + 20.0, back.y + 20.0);
+        app.handle(Event::PointerDown { x, y, button: Button::Primary }, 9.0);
+        app.handle(Event::PointerUp { x, y, button: Button::Primary }, 9.05);
+        assert!(!app.sysmon_wanted());
+        app.handle(Event::Key(Key::Escape), 10.0);
+        open_system_panel(&mut app, 20.0);
+        assert!(app.sysmon_wanted());
+        app.handle(Event::Key(Key::Escape), 30.0);
+        assert!(!app.sysmon_wanted());
+    }
+
+    /// System monitor and camera/microphone dots for visual review:
+    /// `ISLET_SYSTEM_SHEET=/path/out.png cargo test -p islet system_sheet`
+    #[test]
+    fn system_sheet() {
+        let Some(out) = std::env::var_os("ISLET_SYSTEM_SHEET") else { return };
+        use islet_core::activity::{Custom, Privacy};
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let mut engine = TextEngine::new();
+        let gb = 1 << 30;
+        let mut clock = App::new(Demo::None, false);
+        clock.set_time(NOW, 0.0);
+        click(&mut clock, 0.0);
+        let mut system = App::new(Demo::None, false);
+        open_system_panel(&mut system, 0.0);
+        let stats = islet_core::sysmon::Stats {
+            cpu: 0.37,
+            mem_used: 13 * gb,
+            mem_total: 16 * gb,
+            disk_used: 470 * gb,
+            disk_total: 512 * gb,
+        };
+        system.report(Report::System(Some(stats)), 0.0);
+        let mut idle = App::new(Demo::None, false);
+        idle.report(Report::Privacy(Privacy { camera: None, mic: Some(vec![]) }), 0.0);
+        let mut compact = App::new(Demo::None, false);
+        compact.report(Report::Privacy(Privacy { camera: Some(vec![]), mic: None }), 0.0);
+        let job =
+            Custom { id: "b".into(), title: "Build".into(), subtitle: String::new(), progress: Some(0.6), color: None };
+        compact.report(Report::Custom(job), 0.0);
+        let apps = [(clock, 4.0), (system, 9.0), (idle, 4.0), (compact, 4.0)];
+        let (cw, ch) = (WINDOW.0 as u32, 240u32);
+        let mut sheet = Pixmap::new(cw * apps.len() as u32, ch).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        for (i, (a, t)) in apps.iter().enumerate() {
+            let mut cell = Pixmap::new(cw, WINDOW.1 as u32).unwrap();
+            let frame = a.frame(*t);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, WINDOW.1 as u32, 1.0);
+            let els = a.elements(*t, &mut engine);
             islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
             sheet.draw_pixmap(
                 i as i32 * cw as i32,

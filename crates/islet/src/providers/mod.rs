@@ -39,6 +39,7 @@ mod macos_privacy;
 mod macos_volume;
 pub mod navigation;
 pub mod spotify;
+mod sysmon;
 pub mod weather;
 #[cfg(target_os = "windows")]
 mod windows_battery;
@@ -163,6 +164,7 @@ fn describe(r: &Report) -> String {
         Report::Custom(c) => format!("activity {:?}: {:?}", c.id, c.progress),
         Report::CustomEnded(id) => format!("activity {id:?} ended"),
         Report::RemoteMedia(m) => format!("remote media: {:?}", m.as_ref().map(|m| &m.app_name)),
+        Report::System(s) => format!("system: {s:?}"),
         Report::Privacy(p) => format!("privacy: camera {:?}, mic {:?}", p.camera, p.mic),
         Report::UpNext(u) => format!("up next: {:?}", u.as_ref().map(|(e, _)| &e.summary)),
     }
@@ -176,6 +178,7 @@ pub struct Providers {
     weather: Sender<Option<islet_core::prefs::Place>>,
     calendar: Sender<bool>,
     spotify: Sender<spotify::SpotifyMsg>,
+    sysmon: Sender<bool>,
     sink: Sink,
     #[cfg(target_os = "linux")]
     notifications: linux_notifications::Notifications,
@@ -192,6 +195,7 @@ impl Providers {
         let weather = weather::start(sink.clone());
         let calendar = calendar::start(sink.clone());
         let spotify = spotify::start(sink.clone());
+        let sysmon = sysmon::start(sink.clone());
         let media = if std::env::var("ISLET_DEMO").as_deref() == Ok("media") {
             Some(demo::start(sink.clone()))
         } else {
@@ -205,6 +209,7 @@ impl Providers {
             weather,
             calendar,
             spotify,
+            sysmon,
             sink,
             #[cfg(target_os = "linux")]
             notifications: linux_notifications::Notifications::default(),
@@ -236,6 +241,11 @@ impl Providers {
 
     pub fn nav(&self, msg: navigation::NavMsg) {
         let _ = self.nav.send(msg);
+    }
+
+    /// Start or stop the system monitor (it runs only while its panel is open).
+    pub fn sysmon(&self, on: bool) {
+        let _ = self.sysmon.send(on);
     }
 
     pub fn spotify(&self, on: bool) {

@@ -13,6 +13,7 @@ pub mod paths;
 pub mod prefs;
 pub mod shelf;
 pub mod spring;
+pub mod sysmon;
 pub mod timer;
 pub mod version;
 pub mod weather;
