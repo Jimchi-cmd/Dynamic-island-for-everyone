@@ -8,6 +8,7 @@ pub mod clipboard;
 pub mod clock;
 pub mod connectivity;
 pub mod geometry;
+pub mod hotkey;
 pub mod island;
 pub mod nav;
 pub mod paths;

@@ -129,6 +129,7 @@ fn run() -> platform::Result<()> {
     }
     win.watch_caps_lock(app.prefs().caps_lock_hud);
     trace("caps lock watched");
+    apply_hotkey(&mut win, &app.prefs().hotkey);
     providers.weather(app.prefs().weather.clone());
     providers.calendar(app.prefs().calendar);
     providers.notifications(app.prefs().notifications);
@@ -222,6 +223,7 @@ fn run() -> platform::Result<()> {
                 Control::PrefsChanged if !scripted => {
                     app.set_prefs(config::load_prefs());
                     win.watch_caps_lock(app.prefs().caps_lock_hud);
+                    apply_hotkey(&mut win, &app.prefs().hotkey);
                     providers.weather(app.prefs().weather.clone());
                     providers.calendar(app.prefs().calendar);
                     providers.notifications(app.prefs().notifications);
@@ -233,6 +235,7 @@ fn run() -> platform::Result<()> {
                 Control::ShelfChanged if !scripted => app.set_shelf(config::load_shelf()),
                 Control::ShelfChanged => {}
                 Control::Activity(c) => needs_frame |= app.report(Report::Custom(c), t),
+                Control::Toggle => needs_frame |= app.toggle(t),
                 Control::ActivityEnd(id) => needs_frame |= app.report(Report::CustomEnded(id), t),
             }
         }
@@ -388,5 +391,23 @@ fn open_path(path: &str) {
     let r = std::process::Command::new("xdg-open").arg(path).spawn();
     if let Err(e) = r {
         providers::debug_log(&format!("could not open a shelf item: {e}"));
+    }
+}
+
+/// Register the global shortcut from the preferences ("" removes it).
+fn apply_hotkey(win: &mut Native, spec: &str) {
+    let hotkey = match spec.trim() {
+        "" => None,
+        s => match islet_core::hotkey::Hotkey::parse(s) {
+            Ok(h) => Some(h),
+            Err(e) => {
+                providers::debug_log(&format!("shortcut: {e}"));
+                return;
+            }
+        },
+    };
+    if let Err(e) = win.set_hotkey(hotkey) {
+        eprintln!("islet: shortcut: {e}");
+        providers::debug_log(&format!("shortcut: {e}"));
     }
 }

@@ -395,6 +395,15 @@ impl App {
         self.end_ringing(t)
     }
 
+    /// The global shortcut / `islet toggle`: open the island, or close it.
+    pub fn toggle(&mut self, t: f64) -> bool {
+        if self.island.presentation().is_open() {
+            self.signal(Signal::Escape, t)
+        } else {
+            self.signal(Signal::Click, t)
+        }
+    }
+
     fn end_ringing(&mut self, t: f64) -> bool {
         self.alarm_out.push(AlarmOut::Sound(false));
         let changed = self.report(Report::Alarm(None), t);
@@ -1442,6 +1451,7 @@ impl App {
                 false
             }
             Event::Key(Key::Escape) => self.signal(Signal::Escape, t),
+            Event::Hotkey => self.toggle(t),
             Event::CapsLock(on) => self.report(Report::Hud(Hud::CapsLock(on)), t),
             Event::DragOver { x, y } => self.drag_over(x, y, t),
             Event::A11yPress(button) => self.a11y_press(button, t),
@@ -1761,6 +1771,15 @@ mod tests {
         app.report(Report::Privacy(Privacy { camera: None, mic: Some(vec![]) }), 16.0);
         assert_eq!(dot(&app.elements(20.0, &mut engine)), None);
         assert_eq!(dot(&app.elements(15.0, &mut engine)), None);
+    }
+
+    #[test]
+    fn shortcut_opens_and_closes() {
+        let mut app = App::new(Demo::None, false);
+        assert!(app.handle(Event::Hotkey, 0.0));
+        assert_eq!(app.presentation(), Expanded);
+        app.handle(Event::Hotkey, 5.0);
+        assert_eq!(app.presentation(), Idle);
     }
 
     #[test]

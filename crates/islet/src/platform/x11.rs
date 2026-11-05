@@ -79,6 +79,23 @@ pub struct X11 {
     buf: Vec<u8>,
     /// eventfd that other threads write to wake `poll`.
     wake_fd: Arc<OwnedFd>,
+    root: Window,
+    /// The grabbed global shortcut: key code and modifiers.
+    hotkey: Option<(Keycode, u16)>,
+}
+
+/// Lock-type modifiers (Caps, Num, Scroll) the shortcut must work under.
+const LOCK_MODS: [u16; 4] = [0, 2, 16, 18];
+/// Shift, Control, Alt (Mod1) and Super (Mod4): what the shortcut checks.
+const SHORTCUT_MODS: u16 = 1 | 4 | 8 | 64;
+
+fn hotkey_keysym(key: islet_core::hotkey::Key) -> u32 {
+    use islet_core::hotkey::Key;
+    match key {
+        Key::Char(c) => c.to_ascii_lowercase() as u32,
+        Key::Space => 0x20,
+        Key::F(n) => 0xffbe + u32::from(n) - 1,
+    }
 }
 
 fn xe<E: std::fmt::Display>(e: E) -> String {
@@ -253,7 +270,42 @@ impl Backend for X11 {
             dnd: std::cell::Cell::new(None),
             buf: Vec::new(),
             wake_fd,
+            root: screen.root,
+            hotkey: None,
         })
+    }
+
+    fn set_hotkey(&mut self, hotkey: Option<islet_core::hotkey::Hotkey>) -> Result<()> {
+        if let Some((code, mods)) = self.hotkey.take() {
+            for lock in LOCK_MODS {
+                let _ = self.conn.ungrab_key(code, self.root, ModMask::from(mods | lock));
+            }
+        }
+        let Some(hk) = hotkey else { return self.conn.flush().map_err(xe) };
+        let code = find_keycode(&self.conn, hotkey_keysym(hk.key)).ok_or("that key isn't on this keyboard")?;
+        let mods = (if hk.shift { 1 } else { 0 })
+            | (if hk.ctrl { 4 } else { 0 })
+            | (if hk.alt { 8 } else { 0 })
+            | (if hk.logo { 64 } else { 0 });
+        for lock in LOCK_MODS {
+            let grab = self.conn.grab_key(
+                false,
+                self.root,
+                ModMask::from(mods | lock),
+                code,
+                GrabMode::ASYNC,
+                GrabMode::ASYNC,
+            );
+            if grab.map_err(xe)?.check().is_err() {
+                for lock in LOCK_MODS {
+                    let _ = self.conn.ungrab_key(code, self.root, ModMask::from(mods | lock));
+                }
+                let _ = self.conn.flush();
+                return Err(format!("{} is already used by another app", hk.label()));
+            }
+        }
+        self.hotkey = Some((code, mods));
+        self.conn.flush().map_err(xe)
     }
 
     fn screen_origin(&self) -> (f64, f64) {
@@ -417,6 +469,14 @@ impl X11 {
             XEvent::ButtonRelease(e) => {
                 Event::PointerUp { x: e.event_x as f64 / s, y: e.event_y as f64 / s, button: button(e.detail)? }
             }
+            XEvent::KeyPress(e)
+                if e.event == self.root
+                    && self.hotkey.is_some_and(|(code, mods)| {
+                        e.detail == code && (u16::from(e.state) & SHORTCUT_MODS) == mods
+                    }) =>
+            {
+                Event::Hotkey
+            }
             XEvent::KeyPress(e) if Some(e.detail) == self.esc_keycode => Event::Key(Key::Escape),
             XEvent::XkbStateNotify(e) => {
                 let on = e.locked_mods.contains(ModMask::LOCK);
@@ -512,6 +572,54 @@ mod tests {
     /// Plays an XDND drag source against the island's window: Enter,
     /// Position, Drop, then serves the file list. Needs an X server
     /// (`DISPLAY`), so it skips without one.
+    /// Grabs Ctrl+Alt+I and presses it through XTEST (which, like a real
+    /// keyboard, goes through key grabs). Needs an X server.
+    #[test]
+    fn global_shortcut_reaches_the_island() {
+        use super::super::{Backend, Event, WindowSpec};
+        use super::*;
+        use std::time::{Duration, Instant};
+        use x11rb::protocol::xtest::ConnectionExt as _;
+        if std::env::var_os("DISPLAY").is_none() {
+            eprintln!("skipping: no X display");
+            return;
+        }
+        let Ok(mut island) = X11::create(WindowSpec { width: 420.0, height: 260.0 }) else {
+            eprintln!("skipping: can't open the X display");
+            return;
+        };
+        island.set_hotkey(Some(islet_core::hotkey::Hotkey::parse("Ctrl+Alt+I").unwrap())).unwrap();
+        let (kb, _) = x11rb::connect(None).unwrap();
+        let code = |sym: u32| find_keycode(&kb, sym).unwrap();
+        let (ctrl, alt, i) = (code(0xffe3), code(0xffe9), code(u32::from(b'i')));
+        let press = |key: u8, down: bool| {
+            let kind = if down { 2 } else { 3 }; // KeyPress / KeyRelease
+            kb.xtest_fake_input(kind, key, x11rb::CURRENT_TIME, x11rb::NONE, 0, 0, 0).unwrap();
+        };
+        let pump = |island: &mut X11| {
+            let mut out = Vec::new();
+            let until = Instant::now() + Duration::from_millis(400);
+            while Instant::now() < until {
+                island.wait(Some(Instant::now() + Duration::from_millis(20)), &mut out).unwrap();
+            }
+            out
+        };
+        let chord = |island: &mut X11, keys: &[u8]| {
+            for &k in keys {
+                press(k, true);
+            }
+            for &k in keys.iter().rev() {
+                press(k, false);
+            }
+            kb.flush().unwrap();
+            pump(island)
+        };
+        assert!(chord(&mut island, &[ctrl, alt, i]).contains(&Event::Hotkey));
+        assert!(!chord(&mut island, &[ctrl, i]).contains(&Event::Hotkey), "only the exact combination");
+        island.set_hotkey(None).unwrap();
+        assert!(!chord(&mut island, &[ctrl, alt, i]).contains(&Event::Hotkey), "removed");
+    }
+
     #[test]
     fn xdnd_drop_reaches_the_island() {
         use super::super::{Backend, Event, WindowSpec};

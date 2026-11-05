@@ -61,8 +61,11 @@ Usage:
                                            the browser; register the redirect URI first)
   islet spotify logout|on|off
   islet media hide|show <app>              hide (or show again) one app's Now Playing
+  islet toggle                             open the island, or close it
+  islet hotkey [<keys>|off]                the shortcut for that, e.g. Ctrl+Alt+I
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
-                                           notifications, calendar, fahrenheit, web-artwork
+                                           notifications, calendar, fahrenheit, web-artwork,
+                                           spotify, privacy-dots, clipboard
   islet prefs [--json]                     the island's settings
   islet autostart on|off                   start Islet when you log in (or stop doing so)
   islet status [--json]                    is Islet running, and how it is set up
@@ -149,6 +152,13 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["prefs"] => Ok(prefs_text(false)),
         ["prefs", "--json"] => Ok(prefs_text(true)),
         ["quit"] => control::send(&Control::Quit).map(|()| "Closed.".into()),
+        ["toggle"] => control::send(&Control::Toggle).map(|()| String::new()),
+        ["hotkey"] => {
+            let h = config::load_prefs().hotkey;
+            Ok(if h.is_empty() { "No shortcut.".into() } else { h })
+        }
+        ["hotkey", "off"] => set_hotkey(""),
+        ["hotkey", combo] => set_hotkey(combo),
         _ => Err(format!("unknown command\n\n{USAGE}")),
     })
 }
@@ -449,6 +459,15 @@ fn media_exclude(hide: bool, app: &str) -> Result<String, String> {
 
 fn prefs_changed() {
     let _ = control::send(&Control::PrefsChanged);
+}
+
+fn set_hotkey(combo: &str) -> Result<String, String> {
+    let label = if combo.is_empty() { String::new() } else { islet_core::hotkey::Hotkey::parse(combo)?.label() };
+    let mut p = config::load_prefs();
+    p.hotkey = label.clone();
+    config::save_prefs(&p)?;
+    prefs_changed();
+    Ok(if label.is_empty() { "Shortcut removed.".into() } else { format!("{label} opens and closes the island.") })
 }
 
 fn set_switch(key: &str, value: &str) -> Result<String, String> {

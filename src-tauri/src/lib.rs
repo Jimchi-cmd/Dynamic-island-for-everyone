@@ -37,6 +37,8 @@ pub fn allowed(args: &[String]) -> bool {
             lat.parse::<f64>().is_ok() && lon.parse::<f64>().is_ok() && !name.starts_with('-')
         }
         ["set", key, "on" | "off"] => islet_core::prefs::SWITCHES.contains(key),
+        ["hotkey", "off"] | ["wifi" | "bt", "on" | "off"] => true,
+        ["hotkey", combo] => islet_core::hotkey::Hotkey::parse(combo).is_ok(),
         ["timer", "start", dur, rest @ ..] => {
             !dur.starts_with('-') && rest.chunks(2).all(|kv| matches!(kv, ["--label", v] if !v.starts_with('-')))
         }
@@ -318,6 +320,8 @@ mod tests {
         assert!(allowed(&args(&["status", "--json"])));
         assert!(allowed(&args(&["key", "routes"])));
         assert!(allowed(&args(&["nav", "start", "Kampala Road", "--from", "Ntinda", "--mode", "drive"])));
+        assert!(allowed(&args(&["hotkey", "Ctrl+Alt+I"])) && allowed(&args(&["hotkey", "off"])));
+        assert!(!allowed(&args(&["hotkey", "Shift+A"])), "not a valid shortcut");
         assert!(!allowed(&args(&["nav", "start", "--from", "Ntinda"])), "needs a destination");
         assert!(!allowed(&args(&["nav", "start", "X", "--from"])), "option without a value");
         assert!(!allowed(&args(&["nav", "start", "X", "--evil", "y"])));

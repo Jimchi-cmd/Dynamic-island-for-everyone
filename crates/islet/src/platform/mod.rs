@@ -80,6 +80,8 @@ pub enum Event {
     Drop(Vec<String>),
     /// A screen reader pressed the island (None) or one of its buttons.
     A11yPress(Option<usize>),
+    /// The global shortcut was pressed (open or close the island).
+    Hotkey,
     /// The OS lost our pixels (expose); present the last frame again.
     Redraw,
     ScaleChanged(f64),
@@ -146,6 +148,15 @@ pub trait Backend: Sized {
     /// The window's top-left corner on screen, in physical px.
     fn screen_origin(&self) -> (f64, f64) {
         (0.0, 0.0)
+    }
+
+    /// Register the global shortcut (None removes it). Fails when the OS
+    /// or another app already uses that combination.
+    fn set_hotkey(&mut self, hotkey: Option<islet_core::hotkey::Hotkey>) -> Result<()> {
+        match hotkey {
+            None => Ok(()),
+            Some(_) => Err("global shortcuts aren't available here".into()),
+        }
     }
 
     /// The native window handle (HWND on Windows), for accessibility.

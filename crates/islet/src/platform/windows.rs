@@ -328,6 +328,33 @@ impl Backend for Win32 {
         self.scale
     }
 
+    fn set_hotkey(&mut self, hotkey: Option<islet_core::hotkey::Hotkey>) -> Result<()> {
+        use islet_core::hotkey::Key as K;
+        use windows::Win32::UI::Input::KeyboardAndMouse::{
+            RegisterHotKey, UnregisterHotKey, HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, MOD_WIN,
+        };
+        const ID: i32 = 1;
+        // SAFETY: our own window; unregistering an unused id is harmless.
+        unsafe {
+            let _ = UnregisterHotKey(Some(self.hwnd), ID);
+        }
+        let Some(hk) = hotkey else { return Ok(()) };
+        let mut mods = MOD_NOREPEAT;
+        for (on, m) in [(hk.alt, MOD_ALT), (hk.ctrl, MOD_CONTROL), (hk.shift, MOD_SHIFT), (hk.logo, MOD_WIN)] {
+            if on {
+                mods |= m;
+            }
+        }
+        let vk = match hk.key {
+            K::Char(c) => c as u32, // 'A'–'Z' and '0'–'9' are their own key codes
+            K::Space => 0x20,
+            K::F(n) => 0x70 + u32::from(n) - 1,
+        };
+        // SAFETY: registering for our own window.
+        unsafe { RegisterHotKey(Some(self.hwnd), ID, HOT_KEY_MODIFIERS(mods.0), vk) }
+            .map_err(|_| format!("{} is already used by another app", hk.label()))
+    }
+
     fn size_px(&self) -> (u32, u32) {
         self.size
     }
@@ -503,6 +530,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         WM_DPICHANGED | WM_DISPLAYCHANGE => handled(Event::ScaleChanged(s)),
         WM_CLOSE => handled(Event::Quit),
         WM_ISLET_WAKE => LRESULT(0),
+        WM_HOTKEY => handled(Event::Hotkey),
         // SAFETY: default handling for everything else.
         _ => unsafe { DefWindowProcW(hwnd, msg, wp, lp) },
     }

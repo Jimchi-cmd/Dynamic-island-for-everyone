@@ -219,6 +219,7 @@ export interface IslandPrefs {
   spotify: boolean;
   privacyDots: boolean;
   clipboard: boolean;
+  hotkey: string;
 }
 
 /** Each switch's name for `islet set <name> on|off`. */

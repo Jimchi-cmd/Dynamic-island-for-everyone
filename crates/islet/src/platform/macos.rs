@@ -468,6 +468,10 @@ impl Backend for Mac {
         self.notch
     }
 
+    fn set_hotkey(&mut self, hotkey: Option<islet_core::hotkey::Hotkey>) -> Result<()> {
+        carbon::set(hotkey)
+    }
+
     fn wait(&mut self, deadline: Option<Instant>, out: &mut Vec<Event>) -> Result<()> {
         let until = match deadline {
             None => NSDate::distantFuture(),
@@ -490,5 +494,125 @@ impl Backend for Mac {
 impl Drop for Mac {
     fn drop(&mut self) {
         self.panel.close();
+    }
+}
+
+/// The global shortcut through Carbon's hot-key API: it needs no
+/// Accessibility permission (unlike watching all key presses) and is
+/// delivered on the main run loop.
+mod carbon {
+    use super::push;
+    use crate::platform::{Event, Result};
+    use islet_core::hotkey::{Hotkey, Key};
+    use std::ffi::c_void;
+
+    #[repr(C)]
+    struct EventTypeSpec {
+        class: u32,
+        kind: u32,
+    }
+
+    #[repr(C)]
+    struct EventHotKeyId {
+        signature: u32,
+        id: u32,
+    }
+
+    type Handler = unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void) -> i32;
+
+    #[link(name = "Carbon", kind = "framework")]
+    extern "C" {
+        fn GetApplicationEventTarget() -> *mut c_void;
+        fn InstallEventHandler(
+            target: *mut c_void,
+            handler: Handler,
+            count: u32,
+            types: *const EventTypeSpec,
+            user_data: *mut c_void,
+            out: *mut *mut c_void,
+        ) -> i32;
+        fn RegisterEventHotKey(
+            key_code: u32,
+            modifiers: u32,
+            id: EventHotKeyId,
+            target: *mut c_void,
+            options: u32,
+            out: *mut *mut c_void,
+        ) -> i32;
+        fn UnregisterEventHotKey(hot_key: *mut c_void) -> i32;
+    }
+
+    const KEYBOARD: u32 = u32::from_be_bytes(*b"keyb");
+    const HOT_KEY_PRESSED: u32 = 5;
+    const CMD: u32 = 1 << 8;
+    const SHIFT: u32 = 1 << 9;
+    const OPTION: u32 = 1 << 11;
+    const CONTROL: u32 = 1 << 12;
+
+    thread_local! {
+        static STATE: std::cell::Cell<(bool, *mut c_void)> = const { std::cell::Cell::new((false, std::ptr::null_mut())) };
+    }
+
+    unsafe extern "C" fn pressed(_call: *mut c_void, _event: *mut c_void, _data: *mut c_void) -> i32 {
+        push(Event::Hotkey);
+        0
+    }
+
+    /// macOS virtual key codes (US layout positions).
+    fn key_code(key: Key) -> Option<u32> {
+        const LETTERS: [u32; 26] = [
+            0x00, 0x0B, 0x08, 0x02, 0x0E, 0x03, 0x05, 0x04, 0x22, 0x26, 0x28, 0x25, 0x2E, 0x2D, 0x1F, 0x23, 0x0C, 0x0F,
+            0x01, 0x11, 0x20, 0x09, 0x0D, 0x07, 0x10, 0x06,
+        ];
+        const DIGITS: [u32; 10] = [0x1D, 0x12, 0x13, 0x14, 0x15, 0x17, 0x16, 0x1A, 0x1C, 0x19];
+        const FKEYS: [u32; 12] = [0x7A, 0x78, 0x63, 0x76, 0x60, 0x61, 0x62, 0x64, 0x65, 0x6D, 0x67, 0x6F];
+        match key {
+            Key::Char(c @ 'A'..='Z') => Some(LETTERS[(c as u8 - b'A') as usize]),
+            Key::Char(c @ '0'..='9') => Some(DIGITS[(c as u8 - b'0') as usize]),
+            Key::Char(_) => None,
+            Key::Space => Some(0x31),
+            Key::F(n) => FKEYS.get(usize::from(n).wrapping_sub(1)).copied(),
+        }
+    }
+
+    pub fn set(hotkey: Option<Hotkey>) -> Result<()> {
+        let (installed, current) = STATE.with(|s| s.get());
+        // SAFETY: Carbon calls on the main thread with valid arguments.
+        unsafe {
+            if !current.is_null() {
+                UnregisterEventHotKey(current);
+            }
+            STATE.with(|s| s.set((installed, std::ptr::null_mut())));
+            let Some(hk) = hotkey else { return Ok(()) };
+            let code = key_code(hk.key).ok_or("that key can't be a shortcut")?;
+            if !installed {
+                let spec = EventTypeSpec { class: KEYBOARD, kind: HOT_KEY_PRESSED };
+                let r = InstallEventHandler(
+                    GetApplicationEventTarget(),
+                    pressed,
+                    1,
+                    &spec,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                );
+                if r != 0 {
+                    return Err(format!("couldn't install the shortcut handler ({r})"));
+                }
+            }
+            let mut mods = 0;
+            for (on, m) in [(hk.logo, CMD), (hk.shift, SHIFT), (hk.alt, OPTION), (hk.ctrl, CONTROL)] {
+                if on {
+                    mods |= m;
+                }
+            }
+            let mut out = std::ptr::null_mut();
+            let id = EventHotKeyId { signature: u32::from_be_bytes(*b"islt"), id: 1 };
+            let r = RegisterEventHotKey(code, mods, id, GetApplicationEventTarget(), 0, &mut out);
+            STATE.with(|s| s.set((true, if r == 0 { out } else { std::ptr::null_mut() })));
+            if r != 0 {
+                return Err(format!("{} is already used by another app", hk.label()));
+            }
+        }
+        Ok(())
     }
 }

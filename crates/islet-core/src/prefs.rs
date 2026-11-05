@@ -36,6 +36,9 @@ pub struct IslandPrefs {
     pub privacy_dots: bool,
     /// Keep the last few copied texts (in memory only).
     pub clipboard: bool,
+    /// The global shortcut that opens and closes the island ("" = none),
+    /// e.g. "Ctrl+Alt+I".
+    pub hotkey: String,
 }
 
 impl Default for IslandPrefs {
@@ -53,6 +56,7 @@ impl Default for IslandPrefs {
             spotify: false,
             privacy_dots: true,
             clipboard: false,
+            hotkey: String::new(),
         }
     }
 }

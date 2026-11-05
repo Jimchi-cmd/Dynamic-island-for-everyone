@@ -32,6 +32,9 @@ pub enum Control {
     ActivityEnd(String),
     /// Is an island running? Answered by the control thread itself.
     Ping,
+    /// Open the island, or close it if open (`islet toggle`, for desktop
+    /// shortcuts on Wayland).
+    Toggle,
 }
 
 fn token() -> String {
@@ -98,6 +101,7 @@ fn handle(stream: &TcpStream, token: &str) -> Result<Control, String> {
         (Some("activity-end"), Some(id)) => Ok(Control::ActivityEnd(id.to_string())),
         (Some("timer"), Some(json)) => serde_json::from_str(json).map(Control::Timer).map_err(|e| e.to_string()),
         (Some("ping"), _) => Ok(Control::Ping),
+        (Some("toggle"), _) => Ok(Control::Toggle),
         _ => Err("unknown command".into()),
     }
 }
@@ -132,6 +136,7 @@ pub fn send(cmd: &Control) -> Result<(), String> {
         Control::ActivityEnd(id) => format!("{token}\tactivity-end\t{id}"),
         Control::Timer(cmd) => format!("{token}\ttimer\t{}", serde_json::to_string(cmd).map_err(|e| e.to_string())?),
         Control::Ping => format!("{token}\tping"),
+        Control::Toggle => format!("{token}\ttoggle"),
     };
     writeln!(stream, "{line}").map_err(|e| e.to_string())?;
     let mut reply = String::new();

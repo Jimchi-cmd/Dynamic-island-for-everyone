@@ -130,6 +130,38 @@
     }
   }
 
+  // Global shortcut: press the keys in the field to record them.
+  let hotkeyDraft = $state('');
+
+  function captureHotkey(e: KeyboardEvent) {
+    if (e.key === 'Tab') return;
+    e.preventDefault();
+    if (['Control', 'Alt', 'Shift', 'Meta', 'OS'].includes(e.key)) return;
+    let key = '';
+    if (/^Key[A-Z]$/.test(e.code)) key = e.code.slice(3);
+    else if (/^Digit[0-9]$/.test(e.code)) key = e.code.slice(5);
+    else if (e.code === 'Space') key = 'Space';
+    else if (/^F([1-9]|1[0-2])$/.test(e.code)) key = e.code;
+    if (!key) return;
+    const parts = [];
+    if (e.ctrlKey) parts.push('Ctrl');
+    if (e.altKey) parts.push('Alt');
+    if (e.shiftKey) parts.push('Shift');
+    if (e.metaKey) parts.push('Super');
+    parts.push(key);
+    hotkeyDraft = parts.join('+');
+  }
+
+  async function saveHotkey(combo: string) {
+    try {
+      await api.islet(['hotkey', combo || 'off']);
+      hotkeyDraft = '';
+      await loadIslandPrefs();
+    } catch (e) {
+      problem = api.message(e);
+    }
+  }
+
   // Now Playing
   let hideApp = $state('');
 
@@ -558,6 +590,32 @@
             <input placeholder="App name, e.g. Firefox" bind:value={hideApp} aria-label="App to hide" />
             <button type="submit" disabled={!hideApp.trim()}>Hide</button>
           </form>
+        </div>
+        <div class="card">
+          <h2>Shortcut</h2>
+          <p class="muted small">
+            A key combination that opens the island, or closes it. Current:
+            <strong>{islandPrefs?.hotkey || 'none'}</strong>
+          </p>
+          <form class="join" onsubmit={(e) => { e.preventDefault(); void saveHotkey(hotkeyDraft); }}>
+            <input
+              placeholder="Click here, then press e.g. Ctrl+Alt+I"
+              value={hotkeyDraft}
+              onkeydown={captureHotkey}
+              readonly
+              aria-label="Press the shortcut keys"
+            />
+            <button type="submit" disabled={!hotkeyDraft}>Save</button>
+            {#if islandPrefs?.hotkey}
+              <button type="button" onclick={() => saveHotkey('')}>Remove</button>
+            {/if}
+          </form>
+          {#if info?.os === 'linux'}
+            <p class="muted small">
+              On native Wayland (KDE Plasma, sway, Hyprland) only the desktop can watch keys: add a shortcut in its
+              keyboard settings that runs <code>islet toggle</code>.
+            </p>
+          {/if}
         </div>
         <div class="card">
           <h2>Privacy</h2>
