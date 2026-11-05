@@ -19,11 +19,12 @@
     type Trip,
   } from './lib/settings';
 
-  type Page = 'general' | 'connections' | 'alarms' | 'navigation' | 'updates' | 'about';
+  type Page = 'general' | 'connections' | 'alarms' | 'timer' | 'navigation' | 'updates' | 'about';
   const PAGES: { id: Page; label: string }[] = [
     { id: 'general', label: 'General' },
     { id: 'connections', label: 'Wi-Fi & Bluetooth' },
     { id: 'alarms', label: 'Alarms' },
+    { id: 'timer', label: 'Timer & focus' },
     { id: 'navigation', label: 'Navigation' },
     { id: 'updates', label: 'Updates' },
     { id: 'about', label: 'About' },
@@ -104,6 +105,28 @@
   $effect(() => {
     if (page === 'connections' && !wifi) void loadConnections(true);
   });
+
+  // Timer & focus
+  let timerMinutes = $state(10);
+  let timerLabel = $state('');
+  let focusWork = $state(25);
+  let focusBreak = $state(5);
+  let focusRounds = $state(4);
+  let timerNote = $state('');
+
+  async function timerCmd(args: string[]) {
+    try {
+      timerNote = await api.islet(args);
+    } catch (e) {
+      timerNote = api.message(e);
+    }
+  }
+
+  function startTimer(minutes: number) {
+    const args = ['timer', 'start', `${minutes}m`];
+    if (timerLabel.trim() && !timerLabel.trim().startsWith('-')) args.push('--label', timerLabel.trim());
+    void timerCmd(args);
+  }
 
   // Alarms
   let alarmTime = $state('07:00');
@@ -409,6 +432,62 @@
           {/each}
         </div>
         {#if connNote}<p class="small" role="status">{connNote}</p>{/if}
+      {:else if page === 'timer'}
+        <h1>Timer &amp; focus</h1>
+        <p class="muted">Timers count down on the island. When one ends, the island opens and chimes until you stop it.</p>
+        <div class="card">
+          <h2>Timer</h2>
+          <div class="actions left">
+            {#each [1, 5, 10, 15, 25, 60] as m (m)}
+              <button onclick={() => startTimer(m)}>{m < 60 ? `${m} min` : '1 hour'}</button>
+            {/each}
+          </div>
+          <div class="two">
+            <div>
+              <label for="tmin">Minutes</label>
+              <input id="tmin" type="number" min="1" max="1440" bind:value={timerMinutes} />
+            </div>
+            <div>
+              <label for="tlabel">Name (optional)</label>
+              <input id="tlabel" bind:value={timerLabel} placeholder="Tea" />
+            </div>
+          </div>
+          <div class="actions">
+            <button class="primary" disabled={!(timerMinutes > 0)} onclick={() => startTimer(timerMinutes)}>Start</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Focus session</h2>
+          <p class="muted small">Work and break in turns. A chime and a quick look at the island mark each change.</p>
+          <div class="three">
+            <div>
+              <label for="fwork">Work (min)</label>
+              <input id="fwork" type="number" min="1" max="240" bind:value={focusWork} />
+            </div>
+            <div>
+              <label for="fbreak">Break (min)</label>
+              <input id="fbreak" type="number" min="1" max="60" bind:value={focusBreak} />
+            </div>
+            <div>
+              <label for="frounds">Rounds</label>
+              <input id="frounds" type="number" min="1" max="12" bind:value={focusRounds} />
+            </div>
+          </div>
+          <div class="actions">
+            <button
+              class="primary"
+              onclick={() =>
+                timerCmd(['focus', '--work', `${focusWork}m`, '--break', `${focusBreak}m`, '--rounds', String(focusRounds)])}
+              >Start focus</button
+            >
+          </div>
+        </div>
+        <div class="actions left">
+          <button onclick={() => timerCmd(['timer', 'pause'])}>Pause</button>
+          <button onclick={() => timerCmd(['timer', 'resume'])}>Resume</button>
+          <button onclick={() => timerCmd(['timer', 'stop'])}>Stop</button>
+        </div>
+        {#if timerNote}<p class="small" role="status">{timerNote}</p>{/if}
       {:else if page === 'alarms'}
         <h1>Alarms</h1>
         <p class="muted">
@@ -618,6 +697,11 @@
   .two {
     display: grid;
     grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .three {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
     gap: 12px;
   }
   .actions {

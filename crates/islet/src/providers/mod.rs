@@ -115,6 +115,7 @@ fn describe(r: &Report) -> String {
         Report::Alarm(Some(a)) => format!("alarm ringing: {:?} at {:02}:{:02}", a.title(), a.hour, a.minute),
         Report::Alarm(None) => "alarm stopped".into(),
         Report::Connectivity(u) => format!("connectivity: {u:?}"),
+        Report::Timer(t) => format!("timer: {:?}", t.as_ref().map(|t| t.title())),
     }
 }
 

@@ -7,6 +7,7 @@ use islet_core::clock::{format_date, format_time, LocalTime};
 use islet_core::connectivity::{self, BtState, Connectivity, WifiState};
 use islet_core::geometry::Rect;
 use islet_core::nav;
+use islet_core::timer::{self, Phase, Timer};
 use islet_render::elements::{Element, Icon};
 use islet_render::text::{Align, TextEngine, TextItem, TextStyle};
 use islet_render::Circle;
@@ -53,6 +54,49 @@ pub const ROW_H: f64 = 36.0;
 pub const MAX_ROWS: usize = 5;
 const LIST_TOP: f64 = 52.0;
 
+/// Buttons of the timer card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimerControl {
+    PauseResume,
+    Stop,
+}
+
+/// The ringing card shown when a timer finishes uses this alarm id.
+pub const TIMER_ALARM_ID: u32 = 0;
+
+fn timer_color(tm: &Timer) -> [u8; 3] {
+    if tm.phase == Phase::Break {
+        GREEN
+    } else {
+        ORANGE
+    }
+}
+
+/// A countdown ring: the remaining share of the phase.
+fn timer_ring(tm: &Timer, cx: f32, cy: f32, r: f32, t: f64, o: f32) -> Element {
+    Element::Ring {
+        cx,
+        cy,
+        r,
+        width: 2.6,
+        fraction: 1.0 - tm.progress(t),
+        color: timer_color(tm),
+        opacity: o * if tm.running() { 1.0 } else { 0.6 },
+    }
+}
+
+fn countdown(tm: &Timer, right: f32, cy: f32, size: f32, t: f64, o: f32) -> Element {
+    let style = TextStyle {
+        size,
+        weight: 600,
+        opacity: o * if tm.running() { 1.0 } else { 0.6 },
+        tabular: true,
+        color: timer_color(tm),
+        align: Align::Right,
+    };
+    text(timer::format_countdown(tm.remaining(t)), style, right, cy + size * 0.36)
+}
+
 /// Buttons of the ringing-alarm card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AlarmControl {
@@ -96,7 +140,7 @@ pub const COMPACT_BATTERY_W: f64 = 300.0;
 
 pub fn compact_width(live: &Live) -> f64 {
     match live {
-        Live::Media(_) | Live::Navigation(_) | Live::Alarm(_) => COMPACT_MEDIA_W,
+        Live::Media(_) | Live::Navigation(_) | Live::Alarm(_) | Live::Timer(_) => COMPACT_MEDIA_W,
         Live::Battery { .. } => COMPACT_BATTERY_W,
     }
 }
@@ -166,6 +210,7 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
     let (x, right) = (pill.x as f32, pill.right() as f32);
     let cy = (pill.y + pill.h / 2.0) as f32;
     match live {
+        Live::Timer(tm) => vec![timer_ring(tm, x + 20.0, cy, 8.5, t, o), countdown(tm, right - 14.0, cy, 15.0, t, o)],
         Live::Alarm(a) => {
             // The alarm's name on the left, the swinging bell on the right.
             let style = TextStyle { size: 14.0, weight: 600, opacity: o, color: ORANGE, ..TextStyle::default() };
@@ -273,6 +318,9 @@ pub fn minimal(
     if let Live::Alarm(_) = primary {
         v.push(bell(pill.right() as f32 - 22.0, cy, 20.0, t, o));
     }
+    if let Live::Timer(tm) = primary {
+        v.push(countdown(tm, pill.right() as f32 - 13.0, cy, 14.0, t, o));
+    }
     if let (Some(b), Some(s)) = (bubble, secondary) {
         match s {
             Live::Battery { device: d, .. } => v.push(Element::Ring {
@@ -285,6 +333,7 @@ pub fn minimal(
                 opacity: o,
             }),
             Live::Alarm(_) => v.push(bell(b.x, b.y, 20.0, t, o)),
+            Live::Timer(tm) => v.push(timer_ring(tm, b.x, b.y, b.r - 7.5, t, o)),
             Live::Navigation(_) => v.push(Element::Icon {
                 icon: Icon::Navigation,
                 x: b.x - 10.0,
@@ -308,6 +357,15 @@ pub fn minimal(
 
 fn leading(live: &Live, x: f32, cy: f32, o: f32, h24: bool) -> Vec<Element> {
     match live {
+        Live::Timer(tm) => vec![Element::Ring {
+            cx: x + 12.0,
+            cy,
+            r: 8.5,
+            width: 2.6,
+            fraction: 1.0,
+            color: timer_color(tm),
+            opacity: o,
+        }],
         Live::Alarm(a) => {
             let style =
                 TextStyle { size: 14.0, weight: 600, opacity: o, color: ORANGE, tabular: true, ..TextStyle::default() };
@@ -438,6 +496,38 @@ pub fn expanded_media(
 }
 
 /// Buttons along the bottom of the navigation card.
+/// Height of the timer card.
+pub const TIMER_H: f64 = 132.0;
+
+pub fn timer_controls(pill: Rect) -> [(Rect, TimerControl); 2] {
+    let [(a, _), (b, _)] = alarm_controls(pill);
+    [(a, TimerControl::PauseResume), (b, TimerControl::Stop)]
+}
+
+/// The timer card: phase, a big countdown, Pause/Resume and Stop.
+pub fn expanded_timer(pill: Rect, tm: &Timer, t: f64, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
+    let pad = PAD as f32;
+    let mut v = vec![timer_ring(tm, x + pad + 13.0, y + 38.0, 12.0, t, o)];
+    let title_style = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
+    v.push(text(engine.ellipsize(&tm.title(), &title_style, w * 0.45), title_style, x + pad + 38.0, y + 34.0));
+    let small = TextStyle { size: 13.0, opacity: o * 0.6, ..TextStyle::default() };
+    let sub = if tm.running() { "Running" } else { "Paused" };
+    v.push(text(sub, small, x + pad + 38.0, y + 53.0));
+    v.push(countdown(tm, x + w - pad, y + 38.0, 34.0, t, o));
+    let label = TextStyle { size: 14.0, weight: 600, opacity: o, align: Align::Center, ..TextStyle::default() };
+    for (r, c) in timer_controls(pill) {
+        let (bx, by, bw, bh) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
+        let (fill, alpha, word, color) = match c {
+            TimerControl::PauseResume => (WHITE, 0.16, if tm.running() { "Pause" } else { "Resume" }, WHITE),
+            TimerControl::Stop => (timer_color(tm), 1.0, "Stop", [0, 0, 0]),
+        };
+        v.push(Element::Bar { x: bx, y: by, w: bw, h: bh, color: fill, opacity: o * alpha });
+        v.push(text(word, TextStyle { color, ..label }, bx + bw / 2.0, by + 22.0));
+    }
+    v
+}
+
 /// Height of the ringing-alarm card.
 pub const ALARM_H: f64 = 132.0;
 
@@ -464,12 +554,14 @@ pub fn expanded_alarm(pill: Rect, a: &Alarm, h24: bool, t: f64, o: f32, engine: 
     let title = engine.ellipsize(a.title(), &title_style, w - 2.0 * pad - 40.0 - time_w - 12.0);
     v.push(text(title, title_style, x + pad + 38.0, y + 34.0));
     let small = TextStyle { size: 13.0, opacity: o * 0.6, ..TextStyle::default() };
-    v.push(text(alarm::describe_days(a.days), small, x + pad + 38.0, y + 53.0));
+    let sub = if a.id == TIMER_ALARM_ID { "Timer".to_string() } else { alarm::describe_days(a.days) };
+    v.push(text(sub, small, x + pad + 38.0, y + 53.0));
     v.push(text(time, time_style, x + w - pad, y + 46.0));
     let label = TextStyle { size: 14.0, weight: 600, opacity: o, align: Align::Center, ..TextStyle::default() };
     for (r, c) in alarm_controls(pill) {
         let (bx, by, bw, bh) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
         let (fill, alpha, word, color) = match c {
+            AlarmControl::Snooze if a.id == TIMER_ALARM_ID => (WHITE, 0.16, "Repeat", WHITE),
             AlarmControl::Snooze => (WHITE, 0.16, "Snooze", WHITE),
             AlarmControl::Stop => (ORANGE, 1.0, "Stop", [0, 0, 0]),
         };

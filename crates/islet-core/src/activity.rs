@@ -133,6 +133,8 @@ pub enum Report {
     Alarm(Option<crate::alarm::Alarm>),
     /// Wi-Fi / Bluetooth lists and connection progress.
     Connectivity(crate::connectivity::ConnUpdate),
+    /// The running (or paused) timer, or None.
+    Timer(Option<crate::timer::Timer>),
 }
 
 /// Why a battery peek is showing.
@@ -151,6 +153,7 @@ pub enum Live {
         device: BatteryDevice,
         reason: PeekReason,
     },
+    Timer(crate::timer::Timer),
     Navigation(NavInfo),
     Media(MediaInfo),
 }
@@ -170,6 +173,7 @@ pub const LOW_LEVELS: [u8; 2] = [20, 10];
 pub struct Activities {
     alarm: Option<crate::alarm::Alarm>,
     conn: crate::connectivity::Connectivity,
+    timer: Option<crate::timer::Timer>,
     nav: Option<NavInfo>,
     media: Option<MediaInfo>,
     paused_since: Option<f64>,
@@ -201,6 +205,10 @@ impl Activities {
 
     pub fn connectivity(&self) -> &crate::connectivity::Connectivity {
         &self.conn
+    }
+
+    pub fn timer(&self) -> Option<&crate::timer::Timer> {
+        self.timer.as_ref()
     }
 
     pub fn alarm(&self) -> Option<&crate::alarm::Alarm> {
@@ -280,6 +288,10 @@ impl Activities {
                 self.conn.apply(u);
                 true
             }
+            Report::Timer(t) => {
+                self.timer = t;
+                true
+            }
             Report::Laptop(d) => {
                 let charger_changed = self.laptop.as_ref().is_some_and(|old| old.charging != d.charging);
                 let crossed = self.laptop.as_ref().is_some_and(|old| {
@@ -297,7 +309,7 @@ impl Activities {
     }
 
     /// Live activities in priority order: a ringing alarm, a battery peek,
-    /// navigation, then media.
+    /// a timer, navigation, then media.
     pub fn live(&self, t: f64) -> Vec<Live> {
         let mut out = Vec::new();
         if let Some(a) = &self.alarm {
@@ -307,6 +319,9 @@ impl Activities {
             if t < *until {
                 out.push(Live::Battery { device: d.clone(), reason: *reason });
             }
+        }
+        if let Some(tm) = &self.timer {
+            out.push(Live::Timer(tm.clone()));
         }
         if let Some(n) = &self.nav {
             out.push(Live::Navigation(n.clone()));

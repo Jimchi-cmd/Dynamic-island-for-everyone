@@ -2,7 +2,7 @@
 //! state machine → springs → frame and content. No OS calls in here, so all
 //! of it is unit-tested.
 
-use crate::content::{self, AlarmControl, ConnHit, Control, NavControl, Panel};
+use crate::content::{self, AlarmControl, ConnHit, Control, NavControl, Panel, TimerControl, TIMER_ALARM_ID};
 use crate::platform::{Button, Event, Key};
 use islet_core::activity::{Activities, Live, MediaCommand, MediaInfo, NavInfo, Report};
 use islet_core::alarm::{Alarm, AlarmClock, AlarmEvent};
@@ -14,6 +14,7 @@ use islet_core::island::{
     MINIMAL_GAP,
 };
 use islet_core::spring::{Animated, Spring};
+use islet_core::timer::{Timer, TimerCommand, TimerEvent};
 use islet_render::elements::Element;
 use islet_render::text::TextEngine;
 use islet_render::{Circle, PillFrame, Squircle};
@@ -103,6 +104,8 @@ struct Press {
 pub enum AlarmOut {
     /// Start (true) or stop (false) the alarm sound.
     Sound(bool),
+    /// Play the chime once (a focus phase changed).
+    Chime,
     /// A one-time alarm rang: save it as turned off.
     Disable(u32),
 }
@@ -123,6 +126,7 @@ const BLUETOOTH_SETTINGS: &str = "ms-settings:bluetooth";
 enum OpenContent<'a> {
     Alarm(&'a Alarm),
     Panel(Panel),
+    Timer(&'a Timer),
     Nav(&'a NavInfo),
     Media(&'a MediaInfo),
     Battery,
@@ -148,6 +152,15 @@ pub struct App {
     alarms: AlarmClock,
     alarm_control: Option<AlarmControl>,
     alarm_out: Vec<AlarmOut>,
+    /// Open the island briefly on the next tick (a focus phase changed).
+    pending_peek: bool,
+    /// The timer (authoritative copy), how it was started (for Repeat),
+    /// whether its finish is ringing, a pressed button, and the second shown.
+    timer: Option<Timer>,
+    timer_last: Option<TimerCommand>,
+    timer_ringing: bool,
+    timer_control: Option<TimerControl>,
+    timer_sec: i64,
     /// The open Wi-Fi or Bluetooth list, a pressed entry, and requests.
     panel: Option<Panel>,
     conn_hit: Option<ConnHit>,
@@ -202,6 +215,12 @@ impl App {
             alarms: AlarmClock::new(),
             alarm_control: None,
             alarm_out: Vec::new(),
+            pending_peek: false,
+            timer: None,
+            timer_last: None,
+            timer_ringing: false,
+            timer_control: None,
+            timer_sec: -1,
             panel: None,
             conn_hit: None,
             conn_commands: Vec::new(),
@@ -300,14 +319,26 @@ impl App {
 
     /// Stop the ringing alarm (Stop button, or `islet alarm stop`).
     pub fn stop_alarm(&mut self, t: f64) -> bool {
+        if self.timer_ringing {
+            self.timer_ringing = false;
+            return self.end_ringing(t);
+        }
         if !self.alarms.stop() {
             return false;
         }
         self.end_ringing(t)
     }
 
-    /// Ring again in 9 minutes.
+    /// Ring again in 9 minutes (a finished timer starts over instead).
     pub fn snooze_alarm(&mut self, t: f64) -> bool {
+        if self.timer_ringing {
+            self.timer_ringing = false;
+            let changed = self.end_ringing(t);
+            if let Some(cmd) = self.timer_last.clone() {
+                self.timer_command(cmd, t);
+            }
+            return changed;
+        }
         let Some(now) = self.clock else { return false };
         if !self.alarms.snooze(&now) {
             return false;
@@ -345,6 +376,104 @@ impl App {
             }
         }
         changed
+    }
+
+    /// Start, pause, resume or stop the timer.
+    pub fn timer_command(&mut self, cmd: TimerCommand, t: f64) -> bool {
+        match &cmd {
+            TimerCommand::Start { secs, label } => {
+                self.timer = Some(Timer::plain(*secs, label, t));
+                self.timer_last = Some(cmd.clone());
+            }
+            TimerCommand::Focus { work, brk, rounds } => {
+                self.timer = Some(Timer::focus(*work, *brk, *rounds, t));
+                self.timer_last = Some(cmd.clone());
+            }
+            TimerCommand::Pause => {
+                if let Some(tm) = &mut self.timer {
+                    tm.pause(t);
+                }
+            }
+            TimerCommand::Resume => {
+                if let Some(tm) = &mut self.timer {
+                    tm.resume(t);
+                }
+            }
+            TimerCommand::Stop => {
+                self.timer = None;
+                if self.timer_ringing {
+                    self.timer_ringing = false;
+                    self.end_ringing(t);
+                }
+            }
+        }
+        self.timer_sec = -1;
+        self.report(Report::Timer(self.timer.clone()), t)
+    }
+
+    /// The app clock fell `delta` seconds behind the wall clock (sleep):
+    /// timers keep wall-clock time.
+    pub fn clock_jumped(&mut self, delta: f64, t: f64) {
+        if let Some(tm) = &mut self.timer {
+            tm.shift(delta);
+            self.report(Report::Timer(self.timer.clone()), t);
+        }
+    }
+
+    fn timer_tick(&mut self, t: f64) -> bool {
+        let Some(tm) = &mut self.timer else { return false };
+        let mut changed = false;
+        while let Some(e) = tm.advance(t) {
+            changed = true;
+            match e {
+                TimerEvent::BreakStarted | TimerEvent::WorkStarted(_) => {
+                    self.alarm_out.push(AlarmOut::Chime);
+                    // Show the new phase for a moment.
+                    if !self.island.presentation().is_open() && self.activities.alarm().is_none() {
+                        self.pending_peek = true;
+                    }
+                }
+                TimerEvent::Done => break,
+            }
+        }
+        if tm.running() || tm.remaining(t) > 0.0 {
+            let sec = tm.remaining(t).ceil() as i64;
+            changed |= sec != self.timer_sec;
+            self.timer_sec = sec;
+            let snapshot = self.timer.clone();
+            if changed {
+                self.activities.report(Report::Timer(snapshot), t);
+            }
+            return changed;
+        }
+        // Finished: ring like an alarm, with Repeat and Stop.
+        let label = tm.label.clone();
+        let focus = tm.focus;
+        self.timer = None;
+        self.activities.report(Report::Timer(None), t);
+        let (hour, minute) = self.clock.map_or((0, 0), |c| (c.hour, c.minute));
+        let title = if focus { "Focus session done".to_string() } else { format!("{label} done") };
+        let ring = Alarm { id: TIMER_ALARM_ID, hour, minute, label: title, days: 0, enabled: true };
+        self.timer_ringing = true;
+        self.alarm_out.push(AlarmOut::Sound(true));
+        self.report(Report::Alarm(Some(ring)), t);
+        if !self.island.presentation().is_open() {
+            self.rotation = 0;
+            self.signal(Signal::Click, t);
+        }
+        true
+    }
+
+    /// The Pause/Stop button under (x, y) on an open timer card.
+    fn timer_control_at(&self, x: f64, y: f64, t: f64) -> Option<TimerControl> {
+        if !self.island.presentation().is_open() || self.animating(t) {
+            return None;
+        }
+        if !matches!(self.open_content(&self.live(t)), OpenContent::Timer(_)) {
+            return None;
+        }
+        let cr = self.content_rect(self.pill_rect(t));
+        content::timer_controls(cr).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, c)| c)
     }
 
     /// The Snooze/Stop button under (x, y) on an open alarm card.
@@ -495,6 +624,8 @@ impl App {
             OpenContent::Alarm(a)
         } else if let Some(p) = self.panel {
             OpenContent::Panel(p)
+        } else if let (Some(Live::Timer(_)), Some(tm)) = (live.first(), self.activities.timer()) {
+            OpenContent::Timer(tm)
         } else if matches!(live.first(), Some(Live::Battery { .. })) {
             OpenContent::Battery
         } else if let (Some(Live::Navigation(_)) | None, Some(n)) = (live.first(), self.activities.nav()) {
@@ -548,6 +679,7 @@ impl App {
         if eo > 0.0 {
             match self.open_content(&live) {
                 OpenContent::Alarm(a) => out.extend(content::expanded_alarm(cr, a, self.h24, t, eo, engine)),
+                OpenContent::Timer(tm) => out.extend(content::expanded_timer(cr, tm, t, eo, engine)),
                 OpenContent::Panel(Panel::Wifi) => {
                     out.extend(content::expanded_wifi(cr, self.activities.connectivity(), eo, engine))
                 }
@@ -604,6 +736,7 @@ impl App {
             Presentation::Expanded => {
                 let h = match self.open_content(&live) {
                     OpenContent::Alarm(_) => content::ALARM_H,
+                    OpenContent::Timer(_) => content::TIMER_H,
                     OpenContent::Panel(p) => {
                         let c = self.activities.connectivity();
                         match p {
@@ -741,6 +874,10 @@ impl App {
             Event::PointerMove { x, y } => self.pointer_at(x, y, t),
             Event::PointerLeave => self.pointer_at(f64::NAN, f64::NAN, t),
             Event::PointerDown { x, y, button: Button::Primary } if self.hit(x, y, t) => {
+                if let Some(c) = self.timer_control_at(x, y, t) {
+                    self.timer_control = Some(c);
+                    return true;
+                }
                 if let Some(h) = self.conn_hit_at(x, y, t) {
                     self.conn_hit = Some(h);
                     return true;
@@ -768,6 +905,18 @@ impl App {
                 }
             }
             Event::PointerUp { x, y, button: Button::Primary } => {
+                if let Some(c) = self.timer_control.take() {
+                    if self.timer_control_at(x, y, t) != Some(c) {
+                        return true;
+                    }
+                    let running = self.timer.as_ref().is_some_and(|tm| tm.running());
+                    let cmd = match c {
+                        TimerControl::PauseResume if running => TimerCommand::Pause,
+                        TimerControl::PauseResume => TimerCommand::Resume,
+                        TimerControl::Stop => TimerCommand::Stop,
+                    };
+                    return self.timer_command(cmd, t);
+                }
                 if let Some(h) = self.conn_hit.take() {
                     return if self.conn_hit_at(x, y, t) == Some(h) { self.conn_act(h, t) } else { true };
                 }
@@ -818,7 +967,13 @@ impl App {
 
     /// Advance timers. Returns true if anything changed.
     pub fn tick(&mut self, t: f64) -> bool {
-        let mut changed = self.sync_live(t);
+        let mut changed = self.timer_tick(t);
+        changed |= self.sync_live(t);
+        if std::mem::take(&mut self.pending_peek) && !self.island.presentation().is_open() {
+            // A focus phase changed: open briefly, then close by itself.
+            changed |= self.signal(Signal::Click, t);
+            self.left_open_at = Some(t);
+        }
         if let Some(p) = &mut self.press {
             if !p.long_fired && t - p.at >= LONG_PRESS_SECS {
                 p.long_fired = true;
@@ -883,6 +1038,11 @@ impl App {
         // The clock wakes the island once a minute, and only while it is shown.
         if let Some(now) = self.clock.filter(|_| self.clock_shown(t)) {
             at(t + secs_to_next_minute(&now));
+        }
+        // A running timer redraws as each second passes (and ends on time).
+        if let Some(tm) = self.timer.as_ref().filter(|tm| tm.running()) {
+            let rem = tm.remaining(t);
+            at(t + (rem - rem.ceil() + 1.0).min(rem).max(0.01));
         }
         // Alarms are checked each minute, only while one is set.
         if let Some(secs) = self.clock.and_then(|now| self.alarms.next_check(&now)) {
@@ -1373,6 +1533,49 @@ mod tests {
     }
 
     #[test]
+    fn timer_counts_down_rings_and_repeats() {
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        app.timer_command(TimerCommand::Start { secs: 90.0, label: "Tea".into() }, 0.0);
+        app.tick(0.0);
+        assert_eq!(app.presentation(), Compact);
+        assert!(texts(&app, 5.0, &mut engine).iter().any(|s| s == "1:25"), "{:?}", texts(&app, 5.0, &mut engine));
+        let wake = app.next_timer(5.2).unwrap();
+        assert!(wake > 0.0 && wake <= 1.0, "wakes for the next second: {wake}");
+
+        // Paused: no wakeups for it.
+        app.timer_command(TimerCommand::Pause, 10.0);
+        assert!(app.next_timer(12.0).is_none_or(|w| w > 5.0));
+        app.timer_command(TimerCommand::Resume, 20.0);
+
+        // It finishes (80 s left after the pause) and rings with Repeat.
+        app.tick(100.0);
+        assert_eq!(app.take_alarm_out(), [AlarmOut::Sound(true)]);
+        assert_eq!(app.presentation(), Expanded);
+        assert!(texts(&app, 104.0, &mut engine).iter().any(|s| s == "Repeat"));
+        let (repeat, _) = content::alarm_controls(app.content_rect(app.pill_rect(104.0)))[0];
+        press(&mut app, repeat, 104.0);
+        assert_eq!(app.take_alarm_out(), [AlarmOut::Sound(false)]);
+        assert!(app.timer.as_ref().is_some_and(|tm| tm.remaining(105.0) > 88.0), "Repeat starts it again");
+    }
+
+    #[test]
+    fn focus_phases_chime_and_peek() {
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        app.timer_command(TimerCommand::Focus { work: 60.0, brk: 30.0, rounds: 2 }, 0.0);
+        app.tick(0.0);
+        app.tick(60.5);
+        assert_eq!(app.take_alarm_out(), [AlarmOut::Chime]);
+        assert_eq!(app.presentation(), Expanded, "the break is announced");
+        let mut engine = TextEngine::new();
+        assert!(texts(&app, 64.0, &mut engine).iter().any(|s| s == "Break"));
+        app.tick(64.0 + AUTO_COLLAPSE_SECS);
+        assert_eq!(app.presentation(), Compact, "and the island closes again");
+    }
+
+    #[test]
     fn idle_island_shows_no_clock_and_never_wakes_for_it() {
         let mut app = App::new(Demo::None, false);
         assert!(!app.set_time(NOW, 0.0), "nothing to redraw while idle");
@@ -1485,6 +1688,49 @@ mod tests {
             let extra = if p == Minimal { MINIMAL_GAP + MINIMAL_CIRCLE } else { 0.0 };
             assert!((w + extra) * 1.03 <= WINDOW.0 && h * 1.03 + TOP_GAP <= WINDOW.1, "{p:?}");
         }
+    }
+
+    /// Timer screens for visual review:
+    /// `ISLET_TIMER_SHEET=/path/out.png cargo test -p islet timer_sheet`
+    #[test]
+    fn timer_sheet() {
+        let Some(out) = std::env::var_os("ISLET_TIMER_SHEET") else { return };
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let mut engine = TextEngine::new();
+        let start = |cmd: TimerCommand, music: bool, open: bool| {
+            let mut a = App::new(Demo::None, false);
+            a.set_time(NOW, 0.0);
+            if music {
+                a.report(Report::Media(Some(song(true))), 0.0);
+            }
+            a.timer_command(cmd, 0.0);
+            a.tick(0.0);
+            if open {
+                click(&mut a, 0.1);
+            }
+            a
+        };
+        let tea = || TimerCommand::Start { secs: 600.0, label: "Tea".into() };
+        let focus = || TimerCommand::Focus { work: 1500.0, brk: 300.0, rounds: 4 };
+        let mut paused = start(focus(), false, false);
+        paused.timer_command(TimerCommand::Pause, 0.2);
+        click(&mut paused, 0.3);
+        let apps = [start(tea(), false, false), start(tea(), true, false), start(focus(), false, true), paused];
+        let (cw, ch) = (WINDOW.0 as u32, 170u32);
+        let mut sheet = Pixmap::new(cw * 2, ch * 2).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        for (i, a) in apps.iter().enumerate() {
+            let t = 250.0;
+            let mut cell = Pixmap::new(cw, WINDOW.1 as u32).unwrap();
+            let frame = a.frame(t);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, WINDOW.1 as u32, 1.0);
+            let els = a.elements(t, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            let (x, y) = ((i % 2) as i32 * cw as i32, (i / 2) as i32 * ch as i32);
+            sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+        }
+        sheet.save_png(out).unwrap();
     }
 
     /// Wi-Fi and Bluetooth screens for visual review:

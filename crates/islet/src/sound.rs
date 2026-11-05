@@ -59,6 +59,37 @@ fn chime_file() -> Option<PathBuf> {
     Some(path)
 }
 
+/// Play the chime once in the background (a focus phase changed).
+pub fn chime_once() {
+    let Some(path) = chime_file() else { return };
+    #[cfg(windows)]
+    {
+        use windows::core::HSTRING;
+        use windows::Win32::Media::Audio::{PlaySoundW, SND_ASYNC, SND_FILENAME, SND_NODEFAULT};
+        // SAFETY: a valid path; PlaySound copies what it needs.
+        unsafe {
+            let _ = PlaySoundW(&HSTRING::from(path.as_os_str()), None, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        #[cfg(target_os = "macos")]
+        let players: &[&[&str]] = &[&["afplay"]];
+        #[cfg(not(target_os = "macos"))]
+        let players: &[&[&str]] = &[&["pw-play"], &["paplay"], &["aplay", "-q"]];
+        if let Some(cmd) = players.iter().find(|p| which(p[0])) {
+            let _ = std::process::Command::new(cmd[0])
+                .args(&cmd[1..])
+                .arg(&path)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .map(|mut c| std::thread::spawn(move || c.wait()));
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct AlarmSound {
     stop: Option<Arc<AtomicBool>>,

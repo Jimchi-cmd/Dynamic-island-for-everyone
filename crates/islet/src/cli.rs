@@ -12,6 +12,7 @@ use crate::{autostart, config, control, net, secrets};
 use control::Control;
 use islet_core::alarm::{self, Alarm};
 use islet_core::nav::{TravelMode, Trip};
+use islet_core::timer::{self, TimerCommand};
 
 pub const USAGE: &str = "\
 Usage:
@@ -29,6 +30,11 @@ Usage:
   islet alarm list [--json]                your alarms
   islet alarm remove|on|off <id>           delete, turn on or turn off an alarm
   islet alarm stop|snooze                  answer a ringing alarm
+  islet timer start <duration> [--label <name>]
+                                           a countdown on the island: 25m, 1h30m, 90s, 1:30
+  islet timer pause|resume|stop
+  islet focus [--work 25m] [--break 5m] [--rounds 4]
+                                           a focus session: work and breaks, with a chime
   islet wifi list [--scan] [--json]        nearby Wi-Fi networks
   islet wifi connect <name> [--password-stdin]
                                            join a network (the password is read from stdin)
@@ -73,6 +79,11 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["bt", verb @ ("connect" | "disconnect"), id] => conn::backend()
             .bt_set(id, *verb == "connect")
             .map(|()| format!("{}ed.", if *verb == "connect" { "Connect" } else { "Disconnect" })),
+        ["timer", "start", rest @ ..] => parse_timer(rest).and_then(send_timer),
+        ["timer", "pause"] => send_timer(TimerCommand::Pause),
+        ["timer", "resume"] => send_timer(TimerCommand::Resume),
+        ["timer", "stop"] => send_timer(TimerCommand::Stop),
+        ["focus", rest @ ..] => parse_focus(rest).and_then(send_timer),
         ["quit"] => control::send(&Control::Quit).map(|()| "Closed.".into()),
         _ => Err(format!("unknown command\n\n{USAGE}")),
     })
@@ -209,6 +220,57 @@ fn alarm_edit(verb: &str, id: &str) -> Result<String, String> {
     config::save_alarms(&alarms)?;
     alarms_changed();
     Ok(msg)
+}
+
+fn duration(s: &str) -> Result<f64, String> {
+    timer::parse_duration(s).ok_or_else(|| format!("{s:?} isn't a duration (try 25m, 1h30m, 90s or 1:30)"))
+}
+
+pub fn parse_timer(args: &[&str]) -> Result<TimerCommand, String> {
+    let (mut secs, mut label) = (None, String::new());
+    let mut it = args.iter();
+    while let Some(&arg) = it.next() {
+        match arg {
+            "--label" => label = it.next().ok_or("--label needs a value")?.to_string(),
+            o if o.starts_with("--") => return Err(format!("unknown option {o}")),
+            d => secs = Some(duration(d)?),
+        }
+    }
+    Ok(TimerCommand::Start { secs: secs.ok_or("how long? islet timer start 25m")?, label })
+}
+
+pub fn parse_focus(args: &[&str]) -> Result<TimerCommand, String> {
+    let (mut work, mut brk, mut rounds) = (25.0 * 60.0, 5.0 * 60.0, 4u32);
+    let mut it = args.iter();
+    while let Some(&arg) = it.next() {
+        let mut value = |name: &str| it.next().copied().ok_or_else(|| format!("{name} needs a value"));
+        match arg {
+            "--work" => work = duration(value("--work")?)?,
+            "--break" => brk = duration(value("--break")?)?,
+            "--rounds" => {
+                rounds =
+                    value("--rounds")?.parse().ok().filter(|r| (1..=12).contains(r)).ok_or("--rounds takes 1 to 12")?
+            }
+            o => return Err(format!("unknown option {o}")),
+        }
+    }
+    Ok(TimerCommand::Focus { work, brk, rounds })
+}
+
+fn send_timer(cmd: TimerCommand) -> Result<String, String> {
+    let msg = match &cmd {
+        TimerCommand::Start { secs, .. } => format!("Timer set for {}.", timer::format_countdown(*secs)),
+        TimerCommand::Focus { work, brk, rounds } => format!(
+            "Focus: {} rounds of {} with {} breaks.",
+            rounds,
+            timer::format_countdown(*work),
+            timer::format_countdown(*brk)
+        ),
+        TimerCommand::Pause => "Paused.".into(),
+        TimerCommand::Resume => "Resumed.".into(),
+        TimerCommand::Stop => "Stopped.".into(),
+    };
+    control::send(&Control::Timer(cmd)).map(|()| msg)
 }
 
 fn wifi_list(scan: bool, json: bool) -> String {
@@ -358,6 +420,20 @@ mod tests {
         assert_eq!(parse_alarm(&["21:00"], 1).unwrap().days, 0, "once by default");
         assert!(parse_alarm(&["soon"], 1).is_err());
         assert!(parse_alarm(&["7:00", "--days", "funday"], 1).is_err());
+    }
+
+    #[test]
+    fn parses_timer_and_focus_arguments() {
+        assert_eq!(
+            parse_timer(&["10m", "--label", "Tea"]).unwrap(),
+            TimerCommand::Start { secs: 600.0, label: "Tea".into() }
+        );
+        assert!(parse_timer(&["--label", "x"]).is_err());
+        assert_eq!(
+            parse_focus(&["--work", "50m", "--rounds", "2"]).unwrap(),
+            TimerCommand::Focus { work: 3000.0, brk: 300.0, rounds: 2 }
+        );
+        assert!(parse_focus(&["--rounds", "99"]).is_err());
     }
 
     #[test]

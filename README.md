@@ -14,6 +14,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 - **The island itself:** iPhone-style continuous corners and spring motion. Hover to peek, click to expand, press and hold for more, scroll to switch between activities. Two activities split into a pill and a bubble joined by a liquid neck. On a notched MacBook it wraps the notch.
 - **Now Playing** from any app: artwork, a live waveform, progress you can drag, and play/pause/skip.
 - **Battery pop-ups** when headphones, earbuds, mice, keyboards or controllers connect, plus low-battery and charger alerts.
+- **Timer and focus sessions:** a countdown ring on the island, or Pomodoro rounds of work and breaks.
 - **Alarms:** one-time or repeating. When one rings, the island opens with a swinging bell and a chime until you snooze or stop it.
 - **Wi-Fi and Bluetooth:** open the island, tap Wi-Fi or Bluetooth on the clock card, and pick a network or a device.
 - **Navigation ETA** with live traffic, arrival time and the first turn, then one tap hands off to Google Maps or Waze. Uses your own free-tier Google key ([setup](docs/navigation.md)).
@@ -44,6 +45,8 @@ Islet isn't code-signed yet, so Windows SmartScreen and macOS Gatekeeper will wa
 
 ```bash
 islet alarm add 6:30am --days weekdays --label "Wake up"
+islet timer start 10m --label Tea
+islet focus --work 25m --break 5m --rounds 4
 islet wifi list
 islet bt list
 islet key routes                                    # paste your Google Routes key (stored in the keychain)

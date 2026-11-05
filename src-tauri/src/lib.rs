@@ -26,6 +26,13 @@ pub fn allowed(args: &[String]) -> bool {
         ["wifi", "list", "--json"] | ["wifi", "list", "--scan", "--json"] | ["bt", "list", "--json"] => true,
         ["wifi", "connect", ssid] | ["wifi", "connect", ssid, "--password-stdin"] => !ssid.starts_with('-'),
         ["bt", "connect" | "disconnect", id] => !id.starts_with('-'),
+        ["timer", "pause" | "resume" | "stop"] => true,
+        ["timer", "start", dur, rest @ ..] => {
+            !dur.starts_with('-') && rest.chunks(2).all(|kv| matches!(kv, ["--label", v] if !v.starts_with('-')))
+        }
+        ["focus", rest @ ..] => {
+            rest.chunks(2).all(|kv| matches!(kv, ["--work" | "--break" | "--rounds", v] if !v.starts_with('-')))
+        }
         ["alarm", "remove" | "on" | "off", id] => id.parse::<u32>().is_ok(),
         ["alarm", "add", time, rest @ ..] => {
             !time.starts_with('-')

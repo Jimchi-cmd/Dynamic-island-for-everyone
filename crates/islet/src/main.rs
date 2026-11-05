@@ -103,6 +103,13 @@ fn run() -> platform::Result<()> {
     app.set_notch(notch, 0.0);
     trace("notch checked");
     let epoch = Instant::now();
+    // Wall clock minus app clock: it jumps ahead when the computer sleeps
+    // (the monotonic clock pauses), and timers should keep wall-clock time.
+    let skew_now = || {
+        let wall = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64());
+        wall - epoch.elapsed().as_secs_f64()
+    };
+    let mut skew = skew_now();
     let now = || epoch.elapsed().as_secs_f64();
 
     let providers = providers::Providers::start(win.waker());
@@ -139,6 +146,12 @@ fn run() -> platform::Result<()> {
         win.wait(deadline, &mut events)?;
 
         let t = now();
+        let s = skew_now();
+        if s - skew > 2.0 {
+            app.clock_jumped(s - skew, t);
+            needs_frame = true;
+        }
+        skew = s;
         for e in events.drain(..) {
             match e {
                 Event::Quit => return Ok(()),
@@ -171,6 +184,7 @@ fn run() -> platform::Result<()> {
                 Control::AlarmsChanged => {}
                 Control::AlarmStop => needs_frame |= app.stop_alarm(t),
                 Control::AlarmSnooze => needs_frame |= app.snooze_alarm(t),
+                Control::Timer(cmd) => needs_frame |= app.timer_command(cmd, t),
             }
         }
         for action in app.take_nav_actions() {
@@ -203,6 +217,7 @@ fn run() -> platform::Result<()> {
         for out in app.take_alarm_out() {
             match out {
                 AlarmOut::Sound(on) => alarm_sound.set(on),
+                AlarmOut::Chime => sound::chime_once(),
                 AlarmOut::Disable(id) if !scripted => {
                     let mut alarms = config::load_alarms();
                     if let Some(a) = alarms.iter_mut().find(|a| a.id == id) {
