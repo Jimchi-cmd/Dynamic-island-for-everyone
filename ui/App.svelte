@@ -3,6 +3,7 @@
   import * as api from './lib/bridge';
   import type { Info, Prefs, UpdateInfo } from './lib/bridge';
   import {
+    ACCENTS,
     alarmAddArgs,
     DAY_LETTERS,
     describeDays,
@@ -150,6 +151,15 @@
     if (e.metaKey) parts.push('Super');
     parts.push(key);
     hotkeyDraft = parts.join('+');
+  }
+
+  async function setLook(what: 'accent' | 'size' | 'offset', value: string) {
+    try {
+      await api.islet(['look', what, value]);
+      await loadIslandPrefs();
+    } catch (e) {
+      problem = api.message(e);
+    }
   }
 
   async function saveHotkey(combo: string) {
@@ -592,6 +602,53 @@
           </form>
         </div>
         <div class="card">
+          <h2>Look</h2>
+          <p class="muted small">Accent colour for buttons and switches on the island.</p>
+          <div class="swatches" role="radiogroup" aria-label="Accent colour">
+            {#each Object.entries(ACCENTS) as [name, hex] (name)}
+              <button
+                class="swatch"
+                class:chosen={(islandPrefs?.accent ?? 'blue') === name}
+                style="background: {hex}"
+                role="radio"
+                aria-checked={(islandPrefs?.accent ?? 'blue') === name}
+                aria-label={name}
+                title={name}
+                disabled={!islandPrefs}
+                onclick={() => setLook('accent', name)}
+              ></button>
+            {/each}
+          </div>
+          <div class="net">
+            <span class="name">Size</span>
+            <select
+              aria-label="Island size"
+              value={islandPrefs?.size ?? 'medium'}
+              disabled={!islandPrefs}
+              onchange={(e) => setLook('size', e.currentTarget.value)}
+            >
+              <option value="small">Small</option>
+              <option value="medium">Medium</option>
+              <option value="large">Large</option>
+            </select>
+          </div>
+          <div class="net">
+            <span class="name">Gap above the island</span>
+            <input
+              type="range"
+              min="0"
+              max="40"
+              step="2"
+              aria-label="Gap above the island, in pixels"
+              value={islandPrefs?.offset ?? 0}
+              disabled={!islandPrefs}
+              onchange={(e) => setLook('offset', e.currentTarget.value)}
+            />
+            <span class="muted small">{islandPrefs?.offset ?? 0} px</span>
+          </div>
+          <p class="muted small">Islet restarts itself to apply a new size or gap. Notched Macs always hang the island from the notch.</p>
+        </div>
+        <div class="card">
           <h2>Shortcut</h2>
           <p class="muted small">
             A key combination that opens the island, or closes it. Current:
@@ -1031,6 +1088,24 @@
 {/if}
 
 <style>
+  .swatches {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 6px 0 12px;
+  }
+  .swatch {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    padding: 0;
+    cursor: pointer;
+  }
+  .swatch.chosen {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
   .layout {
     display: grid;
     grid-template-columns: 180px 1fr;

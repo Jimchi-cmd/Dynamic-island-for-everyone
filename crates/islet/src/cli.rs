@@ -62,6 +62,9 @@ Usage:
   islet spotify logout|on|off
   islet media hide|show <app>              hide (or show again) one app's Now Playing
   islet toggle                             open the island, or close it
+  islet look accent <colour>               blue, purple, pink, red, orange, green, teal
+  islet look size small|medium|large       the island's size
+  islet look offset <px>                   gap above the island, 0–40
   islet hotkey [<keys>|off]                the shortcut for that, e.g. Ctrl+Alt+I
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
                                            notifications, calendar, fahrenheit, web-artwork,
@@ -158,6 +161,31 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
             Ok(if h.is_empty() { "No shortcut.".into() } else { h })
         }
         ["hotkey", "off"] => set_hotkey(""),
+        ["look", "accent", name] => set_look(|p| {
+            let (n, _) = islet_core::prefs::ACCENTS
+                .iter()
+                .find(|(n, _)| n.eq_ignore_ascii_case(name))
+                .ok_or_else(|| format!("accent is one of: {}", accent_names()))?;
+            p.accent = (*n).into();
+            Ok(format!("Accent: {n}."))
+        }),
+        ["look", "size", name] => set_look(|p| {
+            let (n, _) = islet_core::prefs::SIZES
+                .iter()
+                .find(|(n, _)| n.eq_ignore_ascii_case(name))
+                .ok_or("size is small, medium or large")?;
+            p.size = (*n).into();
+            Ok(format!("Size: {n}."))
+        }),
+        ["look", "offset", px] => set_look(|p| {
+            let v: u32 = px
+                .parse()
+                .ok()
+                .filter(|v| *v <= islet_core::prefs::MAX_OFFSET)
+                .ok_or_else(|| format!("offset is 0–{} px", islet_core::prefs::MAX_OFFSET))?;
+            p.offset = v;
+            Ok(format!("Offset: {v} px."))
+        }),
         ["hotkey", combo] => set_hotkey(combo),
         _ => Err(format!("unknown command\n\n{USAGE}")),
     })
@@ -459,6 +487,18 @@ fn media_exclude(hide: bool, app: &str) -> Result<String, String> {
 
 fn prefs_changed() {
     let _ = control::send(&Control::PrefsChanged);
+}
+
+fn accent_names() -> String {
+    islet_core::prefs::ACCENTS.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", ")
+}
+
+fn set_look(f: impl FnOnce(&mut islet_core::prefs::IslandPrefs) -> Result<String, String>) -> Result<String, String> {
+    let mut p = config::load_prefs();
+    let msg = f(&mut p)?;
+    config::save_prefs(&p)?;
+    prefs_changed();
+    Ok(msg)
 }
 
 fn set_hotkey(combo: &str) -> Result<String, String> {

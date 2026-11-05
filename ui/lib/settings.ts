@@ -220,7 +220,20 @@ export interface IslandPrefs {
   privacyDots: boolean;
   clipboard: boolean;
   hotkey: string;
+  accent: string;
+  size: string;
+  offset: number;
 }
+
+export const ACCENTS: Record<string, string> = {
+  blue: '#0a84ff',
+  purple: '#a064ff',
+  pink: '#ff468c',
+  red: '#ff453a',
+  orange: '#ff961e',
+  green: '#28c864',
+  teal: '#28bec8',
+};
 
 /** Each switch's name for `islet set <name> on|off`. */
 export const SWITCH_NAMES: Record<string, string> = {

@@ -59,6 +59,13 @@ fn main() {
 
 fn run() -> platform::Result<()> {
     let started = Instant::now();
+    // Relaunched by an island that is resizing itself: let it close first.
+    if std::env::var_os("ISLET_RELAUNCH").is_some() {
+        let until = Instant::now() + std::time::Duration::from_secs(3);
+        while control::send(&Control::Ping).is_ok() && Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
     // One island per user: a second launch (login item + Settings) just exits.
     if control::send(&Control::Ping).is_ok() {
         println!("Islet is already running.");
@@ -89,7 +96,16 @@ fn run() -> platform::Result<()> {
     // Fonts load on first use, so an island that is never opened never pays for them.
     let mut text: Option<TextEngine> = None;
 
-    let mut win = Native::create(WindowSpec { width: WINDOW.0, height: WINDOW.1 })?;
+    // Size and position (Settings → Look) apply at start: the window is made
+    // for them. `k` scales everything; the offset moves the island down.
+    let layout_prefs = if demo == Demo::None && std::env::var_os("ISLET_DEMO").is_none() {
+        config::load_prefs()
+    } else {
+        Default::default()
+    };
+    let k = layout_prefs.size_factor();
+    let top = layout_prefs.top_offset();
+    let mut win = Native::create(WindowSpec { width: WINDOW.0 * k, height: (WINDOW.1 + top) * k })?;
     trace("window created");
     let new_pixmap = |win: &Native| {
         let (w, h) = win.size_px();
@@ -101,7 +117,9 @@ fn run() -> platform::Result<()> {
         .ok()
         .and_then(|v| v.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))))
         .or(win.notch());
-    app.set_notch(notch, 0.0);
+    // A notched Mac's island hangs from the notch: no offset there.
+    app.set_top(if notch.is_some() { 0.0 } else { top });
+    app.set_notch(notch.map(|(w, h)| (w / k, h / k)), 0.0);
     trace("notch checked");
     let epoch = Instant::now();
     // Wall clock minus app clock: it jumps ahead when the computer sleeps
@@ -150,7 +168,7 @@ fn run() -> platform::Result<()> {
     let mut first_frame = true;
     let mut last_frame = epoch;
     let mut region = app.input_region(0.0);
-    win.set_input_region(region)?;
+    win.set_input_region(scale_rect(region, k))?;
     let mut events = Vec::new();
 
     loop {
@@ -195,7 +213,7 @@ fn run() -> platform::Result<()> {
                 needs_frame |= app.drop_files(dropped.collect(), t);
                 continue;
             }
-            needs_frame |= app.handle(e, t);
+            needs_frame |= app.handle(unscale(e, k), t);
         }
         // Reports from the media and battery providers.
         while let Ok((mut report, sampled)) = providers.reports.try_recv() {
@@ -222,6 +240,15 @@ fn run() -> platform::Result<()> {
                 Control::Timer(cmd) => needs_frame |= app.timer_command(cmd, t),
                 Control::PrefsChanged if !scripted => {
                     app.set_prefs(config::load_prefs());
+                    // A new size or gap needs a new window: start afresh.
+                    let p = app.prefs();
+                    if (p.size_factor() - k).abs() > 1e-9 || (p.top_offset() - top).abs() > 1e-9 {
+                        if let Ok(exe) = std::env::current_exe() {
+                            if std::process::Command::new(exe).env("ISLET_RELAUNCH", "1").spawn().is_ok() {
+                                return Ok(());
+                            }
+                        }
+                    }
                     win.watch_caps_lock(app.prefs().caps_lock_hud);
                     apply_hotkey(&mut win, &app.prefs().hotkey);
                     providers.weather(app.prefs().weather.clone());
@@ -307,19 +334,19 @@ fn run() -> platform::Result<()> {
             a11y_pending = false;
             let described = app.accessibility(t);
             win.set_a11y_label(&described.label);
-            access.update(&described, win.screen_origin(), win.scale());
+            access.update(&described, win.screen_origin(), win.scale() * k);
         }
 
         let new_region = app.input_region(t);
         if new_region != region {
             region = new_region;
-            win.set_input_region(region)?;
+            win.set_input_region(scale_rect(region, k))?;
         }
 
         let interval = if needs_frame { Some(FRAME) } else { app.frame_interval(t) };
         if let Some(iv) = interval.filter(|iv| Instant::now() >= last_frame + *iv) {
             let _ = iv;
-            let scale = win.scale() as f32;
+            let scale = (win.scale() * k) as f32;
             let frame = app.frame(t);
             islet_render::draw(&mut pixmap, &frame, scale);
             if app.has_content(t) {
@@ -409,5 +436,21 @@ fn apply_hotkey(win: &mut Native, spec: &str) {
     if let Err(e) = win.set_hotkey(hotkey) {
         eprintln!("islet: shortcut: {e}");
         providers::debug_log(&format!("shortcut: {e}"));
+    }
+}
+
+/// Island px → window px at size factor `k`.
+fn scale_rect(r: islet_core::geometry::Rect, k: f64) -> islet_core::geometry::Rect {
+    islet_core::geometry::Rect::new(r.x * k, r.y * k, r.w * k, r.h * k)
+}
+
+/// Window px → island px for pointer and drag positions.
+fn unscale(e: Event, k: f64) -> Event {
+    match e {
+        Event::PointerMove { x, y } => Event::PointerMove { x: x / k, y: y / k },
+        Event::PointerDown { x, y, button } => Event::PointerDown { x: x / k, y: y / k, button },
+        Event::PointerUp { x, y, button } => Event::PointerUp { x: x / k, y: y / k, button },
+        Event::DragOver { x, y } => Event::DragOver { x: x / k, y: y / k },
+        e => e,
     }
 }

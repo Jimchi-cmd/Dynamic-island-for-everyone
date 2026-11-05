@@ -192,6 +192,8 @@ pub struct App {
     clip: islet_core::clipboard::History,
     /// Entries to put back on the clipboard (for main to hand over).
     clip_out: Vec<String>,
+    /// Gap above the island (Settings → Look), in island px.
+    top: f64,
     /// The notifications card was opened from a notification: it stays
     /// until the island closes, even after the peek ends.
     notes_open: bool,
@@ -266,6 +268,7 @@ impl App {
             shelf_dirty: false,
             clip: Default::default(),
             clip_out: Vec::new(),
+            top: TOP_GAP,
             notes_open: false,
             prefs: IslandPrefs::default(),
             wall: 0.0,
@@ -945,7 +948,13 @@ impl App {
             .collect()
     }
 
+    /// Move the island down from the top edge (the window grows to match).
+    pub fn set_top(&mut self, top: f64) {
+        self.top = top;
+    }
+
     pub fn set_prefs(&mut self, prefs: IslandPrefs) {
+        content::set_accent(prefs.accent_rgb());
         self.prefs = prefs;
         if !self.prefs.clipboard {
             // Turning history off forgets it.
@@ -1571,7 +1580,7 @@ impl App {
     }
 
     fn pill_at(&self, w: f64, h: f64) -> Rect {
-        Rect::new((WINDOW.0 - w) / 2.0, TOP_GAP, w, h)
+        Rect::new((WINDOW.0 - w) / 2.0, self.top, w, h)
     }
 
     pub fn pill_rect(&self, t: f64) -> Rect {

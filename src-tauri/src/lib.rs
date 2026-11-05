@@ -39,6 +39,9 @@ pub fn allowed(args: &[String]) -> bool {
         ["set", key, "on" | "off"] => islet_core::prefs::SWITCHES.contains(key),
         ["hotkey", "off"] | ["wifi" | "bt", "on" | "off"] => true,
         ["hotkey", combo] => islet_core::hotkey::Hotkey::parse(combo).is_ok(),
+        ["look", "accent", name] => islet_core::prefs::ACCENTS.iter().any(|(n, _)| n == name),
+        ["look", "size", name] => islet_core::prefs::SIZES.iter().any(|(n, _)| n == name),
+        ["look", "offset", px] => px.parse::<u32>().is_ok_and(|v| v <= islet_core::prefs::MAX_OFFSET),
         ["timer", "start", dur, rest @ ..] => {
             !dur.starts_with('-') && rest.chunks(2).all(|kv| matches!(kv, ["--label", v] if !v.starts_with('-')))
         }

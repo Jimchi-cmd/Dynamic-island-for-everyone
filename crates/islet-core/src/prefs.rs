@@ -39,7 +39,28 @@ pub struct IslandPrefs {
     /// The global shortcut that opens and closes the island ("" = none),
     /// e.g. "Ctrl+Alt+I".
     pub hotkey: String,
+    /// Accent colour for buttons and highlights (see `ACCENTS`).
+    pub accent: String,
+    /// Island size: "small", "medium" or "large" (applies on restart).
+    pub size: String,
+    /// Gap between the top of the screen and the island, in px (0–40;
+    /// applies on restart; ignored on notched Macs, where it hangs from the notch).
+    pub offset: u32,
 }
+
+/// Accent colours: name and RGB.
+pub const ACCENTS: [(&str, [u8; 3]); 7] = [
+    ("blue", [10, 132, 255]),
+    ("purple", [160, 100, 255]),
+    ("pink", [255, 70, 140]),
+    ("red", [255, 69, 58]),
+    ("orange", [255, 150, 30]),
+    ("green", [40, 200, 100]),
+    ("teal", [40, 190, 200]),
+];
+
+pub const SIZES: [(&str, f64); 3] = [("small", 0.88), ("medium", 1.0), ("large", 1.15)];
+pub const MAX_OFFSET: u32 = 40;
 
 impl Default for IslandPrefs {
     fn default() -> Self {
@@ -57,6 +78,9 @@ impl Default for IslandPrefs {
             privacy_dots: true,
             clipboard: false,
             hotkey: String::new(),
+            accent: "blue".into(),
+            size: "medium".into(),
+            offset: 0,
         }
     }
 }
@@ -105,6 +129,21 @@ impl IslandPrefs {
     }
 }
 
+impl IslandPrefs {
+    pub fn accent_rgb(&self) -> [u8; 3] {
+        ACCENTS.iter().find(|(n, _)| n.eq_ignore_ascii_case(&self.accent)).map_or(ACCENTS[0].1, |(_, c)| *c)
+    }
+
+    /// How much bigger (or smaller) than normal the island is drawn.
+    pub fn size_factor(&self) -> f64 {
+        SIZES.iter().find(|(n, _)| n.eq_ignore_ascii_case(&self.size)).map_or(1.0, |(_, k)| *k)
+    }
+
+    pub fn top_offset(&self) -> f64 {
+        f64::from(self.offset.min(MAX_OFFSET))
+    }
+}
+
 pub fn parse_on_off(v: &str) -> Option<bool> {
     match v.to_ascii_lowercase().as_str() {
         "on" | "true" | "yes" | "1" => Some(true),
@@ -116,6 +155,21 @@ pub fn parse_on_off(v: &str) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn look_and_layout() {
+        let mut p = IslandPrefs::default();
+        assert_eq!((p.accent_rgb(), p.size_factor(), p.top_offset()), ([10, 132, 255], 1.0, 0.0));
+        p.accent = "Green".into();
+        p.size = "large".into();
+        p.offset = 500;
+        assert_eq!((p.accent_rgb(), p.size_factor(), p.top_offset()), ([40, 200, 100], 1.15, 40.0));
+        p.accent = "plaid".into();
+        assert_eq!(p.accent_rgb(), [10, 132, 255], "unknown names fall back to blue");
+        // Older island.json files without these keys still load.
+        let old: IslandPrefs = serde_json::from_str(r#"{"volumeHud":false}"#).unwrap();
+        assert_eq!((old.accent.as_str(), old.size.as_str(), old.offset), ("blue", "medium", 0));
+    }
 
     #[test]
     fn private_by_default_and_tolerant_of_old_files() {

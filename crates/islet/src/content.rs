@@ -28,8 +28,24 @@ pub enum NavControl {
 pub const GREEN_NAV: [u8; 3] = [52, 199, 89];
 pub const ORANGE: [u8; 3] = [255, 159, 10];
 /// Control-centre blue for "on" buttons, and a lighter one for text on black.
-pub const BLUE: [u8; 3] = [10, 132, 255];
-pub const BLUE_TEXT: [u8; 3] = [64, 156, 255];
+/// The accent colour (Settings → Look), packed 0xRRGGBB.
+static ACCENT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x0A84FF);
+
+pub fn set_accent(rgb: [u8; 3]) {
+    let packed = u32::from_be_bytes([0, rgb[0], rgb[1], rgb[2]]);
+    ACCENT.store(packed, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Buttons and switches that are on.
+pub fn accent() -> [u8; 3] {
+    let [_, r, g, b] = ACCENT.load(std::sync::atomic::Ordering::Relaxed).to_be_bytes();
+    [r, g, b]
+}
+
+/// The accent for text on black: a fifth of the way to white, for contrast.
+pub fn accent_text() -> [u8; 3] {
+    accent().map(|c| c + (255 - c) / 5)
+}
 
 /// The Wi-Fi and Bluetooth lists that open from the clock card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,7 +209,7 @@ pub fn expanded_agenda(pill: Rect, rows: &[AgendaRow], o: f32, engine: &mut Text
 }
 
 pub fn custom_color(c: &Custom) -> [u8; 3] {
-    c.color.unwrap_or(BLUE_TEXT)
+    c.color.unwrap_or(accent_text())
 }
 
 /// "40%", or the subtitle when there's no known amount.
@@ -1163,7 +1179,7 @@ pub fn clock_chip_elements(
                 continue;
             }
         };
-        let bg = if on { BLUE } else { WHITE };
+        let bg = if on { accent() } else { WHITE };
         v.push(Element::Bar { x, y, w, h, color: bg, opacity: o * if on { 0.9 } else { 0.14 } });
         v.push(Element::Icon { icon, x: x + 10.0, y: y + h / 2.0 - 9.0, size: 18.0, color: WHITE, opacity: o });
         let label = engine.ellipsize(&label, &style, w - 44.0);
@@ -1205,7 +1221,7 @@ fn list_footer_elements(
     let (x, y, w, h) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
     let mut v = Vec::new();
     if button {
-        v.push(Element::Bar { x, y, w, h, color: BLUE, opacity: o * 0.9 });
+        v.push(Element::Bar { x, y, w, h, color: accent(), opacity: o * 0.9 });
         let style = TextStyle { size: 13.0, weight: 600, opacity: o, align: Align::Center, ..TextStyle::default() };
         v.push(text(engine.ellipsize(line, &style, w - 20.0), style, x + w / 2.0, y + 19.5));
     } else {
@@ -1302,7 +1318,7 @@ pub fn expanded_wifi(pill: Rect, c: &Connectivity, o: f32, engine: &mut TextEngi
         let name = engine.ellipsize(&n.ssid, &name_style, rw - 100.0);
         v.push(text(
             name,
-            TextStyle { color: if n.active { BLUE_TEXT } else { WHITE }, ..name_style },
+            TextStyle { color: if n.active { accent_text() } else { WHITE }, ..name_style },
             x + 40.0,
             cy + 5.0,
         ));
@@ -1312,7 +1328,7 @@ pub fn expanded_wifi(pill: Rect, c: &Connectivity, o: f32, engine: &mut TextEngi
                 x: x + rw - 30.0,
                 y: cy - 9.0,
                 size: 18.0,
-                color: BLUE_TEXT,
+                color: accent_text(),
                 opacity: o,
             });
         } else if n.secure && !n.known {
@@ -1494,7 +1510,7 @@ pub fn expanded_bluetooth(pill: Rect, c: &Connectivity, o: f32, engine: &mut Tex
         let name = engine.ellipsize(&d.name, &name_style, rw - 140.0);
         v.push(text(name, name_style, x + 40.0, cy + 5.0));
         let (label, color, alpha) =
-            if d.connected { ("Connected", BLUE_TEXT, 1.0) } else { ("Not connected", WHITE, 0.6) };
+            if d.connected { ("Connected", accent_text(), 1.0) } else { ("Not connected", WHITE, 0.6) };
         v.push(text(label, TextStyle { color, opacity: o * alpha, ..state_style }, x + rw - 10.0, cy + 4.5));
     }
     if b.devices.is_empty() {
