@@ -46,6 +46,7 @@ pub enum Icon {
     Snow,
     Storm,
     Fog,
+    Calendar,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -329,6 +330,16 @@ impl IconPainter<'_> {
                     self.line((12.0 + 6.8 * c, 12.0 + 6.8 * s), (12.0 + 9.3 * c, 12.0 + 9.3 * s), 2.0);
                 }
             }
+            Icon::Calendar => {
+                self.stroke(rounded_rect(4.0, 5.5, 16.0, 15.0, 3.0), 1.8);
+                self.fill(rounded_rect(4.0, 5.5, 16.0, 4.5, 2.0));
+                self.line((8.5, 3.5), (8.5, 7.0), 1.8);
+                self.line((15.5, 3.5), (15.5, 7.0), 1.8);
+                for (x, y) in [(8.5, 13.5), (12.0, 13.5), (15.5, 13.5), (8.5, 17.0), (12.0, 17.0)] {
+                    let dot = self.circle(x, y, 1.1);
+                    self.fill(dot);
+                }
+            }
             Icon::Moon => {
                 // A crescent: the big disc minus where a second disc covers it.
                 let (c1, r1, c2, r2) = ((11.0f32, 12.5f32), 8.0f32, (15.5f32, 9.0f32), 6.8f32);
@@ -537,7 +548,8 @@ mod tests {
         p.pixels().iter().filter(|c| c.alpha() > 0).count()
     }
 
-    const ALL: [Icon; 35] = [
+    const ALL: [Icon; 36] = [
+        Icon::Calendar,
         Icon::Moon,
         Icon::Cloud,
         Icon::PartlyCloudy,

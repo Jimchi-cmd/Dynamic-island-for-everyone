@@ -44,6 +44,10 @@ Usage:
   islet weather set <city>                 show weather for a place (Open-Meteo, no key)
   islet weather search <city> [--json]     find places by name
   islet weather off                        stop fetching weather
+  islet calendar [--json]                  your next events (from the calendar link)
+  islet calendar set                       read a private iCal (ICS) link from stdin into the
+                                           OS keychain and turn calendar on
+  islet calendar on|off|clear              show events or not; clear removes the link
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
                                            notifications, calendar, fahrenheit
   islet prefs [--json]                     the island's settings
@@ -96,6 +100,14 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["weather", "search", rest @ ..] => weather_search(rest),
         ["weather", "set", "--lat", lat, "--lon", lon, "--name", name] => weather_set_exact(lat, lon, name),
         ["weather", "set", rest @ ..] if !rest.is_empty() => weather_set_search(rest),
+        ["calendar"] => calendar_list(false),
+        ["calendar", "--json"] => calendar_list(true),
+        ["calendar", "set"] => calendar_set(),
+        ["calendar", "on"] => set_switch("calendar", "on"),
+        ["calendar", "off"] => set_switch("calendar", "off"),
+        ["calendar", "clear"] => secrets::clear_calendar_url()
+            .and_then(|()| set_switch("calendar", "off"))
+            .map(|_| "Calendar link removed.".into()),
         ["set", key, value] => set_switch(key, value),
         ["prefs"] => Ok(prefs_text(false)),
         ["prefs", "--json"] => Ok(prefs_text(true)),
@@ -293,6 +305,50 @@ fn weather_search(args: &[&str]) -> Result<String, String> {
     } else {
         places.iter().map(|p| format!("{}  ({:.3}, {:.3})", p.name, p.lat, p.lon)).collect::<Vec<_>>().join("\n")
     })
+}
+
+fn calendar_set() -> Result<String, String> {
+    use std::io::IsTerminal;
+    if std::io::stdin().is_terminal() {
+        eprintln!("Paste your calendar's private iCal (ICS) link and press Enter:");
+    }
+    let mut link = String::new();
+    std::io::stdin().read_line(&mut link).map_err(|e| e.to_string())?;
+    let link = link.trim();
+    if !(link.starts_with("https://") || link.starts_with("webcal://")) {
+        return Err("that doesn't look like a calendar link (it should start with https:// or webcal://)".into());
+    }
+    secrets::set_calendar_url(link)?;
+    set_switch("calendar", "on")?;
+    Ok("Saved to the OS keychain; calendar is on.".into())
+}
+
+fn calendar_list(json: bool) -> Result<String, String> {
+    let events = providers::calendar::fetch()?;
+    let off = crate::clock::utc_offset();
+    if json {
+        let list: Vec<_> = events
+            .iter()
+            .map(|e| serde_json::json!({ "summary": e.summary, "start": e.start, "end": e.end, "allDay": e.all_day, "location": e.location }))
+            .collect();
+        return Ok(serde_json::to_string(&list).unwrap_or_default());
+    }
+    if events.is_empty() {
+        return Ok("No events in the next week.".into());
+    }
+    Ok(events
+        .iter()
+        .take(15)
+        .map(|e| {
+            let days = (e.start + off).div_euclid(86_400);
+            let (y, m, d) = islet_core::calendar::civil_from_days(days);
+            let secs = (e.start + off).rem_euclid(86_400);
+            let when =
+                if e.all_day { "all day".to_string() } else { format!("{:02}:{:02}", secs / 3600, secs / 60 % 60) };
+            format!("{y}-{m:02}-{d:02} {when:>7}  {}", e.summary)
+        })
+        .collect::<Vec<_>>()
+        .join("\n"))
 }
 
 fn prefs_changed() {

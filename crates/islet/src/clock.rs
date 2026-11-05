@@ -52,3 +52,17 @@ pub fn prefers_24h() -> bool {
         }
     }
 }
+
+/// Seconds since the Unix epoch, now.
+pub fn epoch() -> f64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
+}
+
+/// This computer's UTC offset now, in seconds (time zone and DST included):
+/// the local wall clock minus UTC, rounded to the quarter hour.
+pub fn utc_offset() -> i64 {
+    let local = now();
+    let wall = islet_core::alarm::minute_key(&local) * 60 + i64::from(local.second);
+    let diff = wall - epoch() as i64;
+    (diff as f64 / 900.0).round() as i64 * 900
+}

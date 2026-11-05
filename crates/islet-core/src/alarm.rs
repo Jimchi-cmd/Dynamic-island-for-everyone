@@ -58,7 +58,7 @@ impl Alarm {
 }
 
 /// Days since 1970-01-01 for a civil date (proleptic Gregorian).
-fn days_from_civil(y: i32, m: u8, d: u8) -> i64 {
+pub fn days_from_civil(y: i32, m: u8, d: u8) -> i64 {
     let y = i64::from(y) - i64::from(m <= 2);
     let era = y.div_euclid(400);
     let yoe = y - era * 400;

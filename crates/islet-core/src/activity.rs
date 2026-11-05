@@ -155,6 +155,10 @@ pub enum Report {
     Hud(Hud),
     /// Current weather (None when weather is turned off).
     Weather(Option<crate::weather::Weather>),
+    /// Upcoming calendar events (None when calendar is turned off).
+    Calendar(Option<Vec<crate::calendar::CalEvent>>),
+    /// The event to show as "up next", and when it starts on the app clock.
+    UpNext(Option<(crate::calendar::CalEvent, f64)>),
 }
 
 /// Why a battery peek is showing.
@@ -176,6 +180,11 @@ pub enum Live {
         reason: PeekReason,
     },
     Timer(crate::timer::Timer),
+    /// A calendar event starting soon (`starts_at` on the app clock).
+    Event {
+        event: crate::calendar::CalEvent,
+        starts_at: f64,
+    },
     Navigation(NavInfo),
     Media(MediaInfo),
 }
@@ -198,6 +207,8 @@ pub struct Activities {
     timer: Option<crate::timer::Timer>,
     hud: Option<(Hud, f64)>,
     weather: Option<crate::weather::Weather>,
+    calendar: Vec<crate::calendar::CalEvent>,
+    up_next: Option<(crate::calendar::CalEvent, f64)>,
     nav: Option<NavInfo>,
     media: Option<MediaInfo>,
     paused_since: Option<f64>,
@@ -229,6 +240,10 @@ impl Activities {
 
     pub fn connectivity(&self) -> &crate::connectivity::Connectivity {
         &self.conn
+    }
+
+    pub fn calendar(&self) -> &[crate::calendar::CalEvent] {
+        &self.calendar
     }
 
     pub fn weather(&self) -> Option<&crate::weather::Weather> {
@@ -328,6 +343,15 @@ impl Activities {
                 self.weather = w;
                 true
             }
+            Report::Calendar(c) => {
+                self.calendar = c.unwrap_or_default();
+                true
+            }
+            Report::UpNext(u) => {
+                let changed = self.up_next.as_ref().map(|(e, _)| e) != u.as_ref().map(|(e, _)| e);
+                self.up_next = u;
+                changed
+            }
             Report::Laptop(d) => {
                 let charger_changed = self.laptop.as_ref().is_some_and(|old| old.charging != d.charging);
                 let crossed = self.laptop.as_ref().is_some_and(|old| {
@@ -363,6 +387,9 @@ impl Activities {
         }
         if let Some(tm) = &self.timer {
             out.push(Live::Timer(tm.clone()));
+        }
+        if let Some((event, starts_at)) = &self.up_next {
+            out.push(Live::Event { event: event.clone(), starts_at: *starts_at });
         }
         if let Some(n) = &self.nav {
             out.push(Live::Navigation(n.clone()));

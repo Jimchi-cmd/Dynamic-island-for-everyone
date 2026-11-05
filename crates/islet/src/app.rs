@@ -125,6 +125,7 @@ const BLUETOOTH_SETTINGS: &str = "ms-settings:bluetooth";
 
 /// What an open island shows.
 enum OpenContent<'a> {
+    Agenda,
     Alarm(&'a Alarm),
     Panel(Panel),
     Timer(&'a Timer),
@@ -164,6 +165,9 @@ pub struct App {
     timer_sec: i64,
     /// island.json: which pop-ups are on, weather, calendar…
     prefs: IslandPrefs,
+    /// Unix time and UTC offset at the last `set_wall` (for calendar events).
+    wall: f64,
+    utc_offset: i64,
     /// The open Wi-Fi or Bluetooth list, a pressed entry, and requests.
     panel: Option<Panel>,
     conn_hit: Option<ConnHit>,
@@ -225,6 +229,8 @@ impl App {
             timer_control: None,
             timer_sec: -1,
             prefs: IslandPrefs::default(),
+            wall: 0.0,
+            utc_offset: 0,
             panel: None,
             conn_hit: None,
             conn_commands: Vec::new(),
@@ -579,6 +585,46 @@ impl App {
         std::mem::take(&mut self.commands)
     }
 
+    /// The wall clock (Unix seconds) and UTC offset, for calendar events.
+    /// Returns true when "up next" changed.
+    pub fn set_wall(&mut self, epoch: f64, utc_offset: i64, t: f64) -> bool {
+        self.wall = epoch;
+        self.utc_offset = utc_offset;
+        self.update_up_next(t)
+    }
+
+    fn update_up_next(&mut self, t: f64) -> bool {
+        let now = self.wall as i64;
+        let next = islet_core::calendar::up_next(self.activities.calendar(), now)
+            .map(|e| (e.clone(), t + (e.start as f64 - self.wall)));
+        self.report(Report::UpNext(next), t)
+    }
+
+    /// The next few events for the agenda card.
+    fn agenda(&self) -> Vec<content::AgendaRow> {
+        let now = self.wall as i64;
+        self.activities
+            .calendar()
+            .iter()
+            .filter(|e| e.end > now && e.start < now + 24 * 3600)
+            .take(content::AGENDA_ROWS)
+            .map(|e| {
+                let local = (e.start + self.utc_offset).rem_euclid(86_400);
+                let time = if e.all_day {
+                    "All day".to_string()
+                } else {
+                    islet_core::alarm::format_hm((local / 3600) as u8, (local / 60 % 60) as u8, self.h24)
+                };
+                content::AgendaRow {
+                    time,
+                    title: e.summary.clone(),
+                    location: e.location.clone(),
+                    now: !e.all_day && e.start <= now,
+                }
+            })
+            .collect()
+    }
+
     pub fn set_prefs(&mut self, prefs: IslandPrefs) {
         self.prefs = prefs;
     }
@@ -589,6 +635,10 @@ impl App {
 
     /// Apply a provider report. Returns true if a redraw is needed.
     pub fn report(&mut self, r: Report, t: f64) -> bool {
+        if let Report::Calendar(_) = &r {
+            let changed = self.activities.report(r, t);
+            return self.update_up_next(t) || self.sync_live(t) || changed;
+        }
         if let Report::Hud(h) = &r {
             let on = match h {
                 Hud::Volume { .. } => self.prefs.volume_hud,
@@ -651,6 +701,8 @@ impl App {
             OpenContent::Alarm(a)
         } else if let Some(p) = self.panel {
             OpenContent::Panel(p)
+        } else if let Some(Live::Event { .. }) = live.first() {
+            OpenContent::Agenda
         } else if let (Some(Live::Timer(_)), Some(tm)) = (live.first(), self.activities.timer()) {
             OpenContent::Timer(tm)
         } else if matches!(live.first(), Some(Live::Battery { .. })) {
@@ -707,6 +759,7 @@ impl App {
             match self.open_content(&live) {
                 OpenContent::Alarm(a) => out.extend(content::expanded_alarm(cr, a, self.h24, t, eo, engine)),
                 OpenContent::Timer(tm) => out.extend(content::expanded_timer(cr, tm, t, eo, engine)),
+                OpenContent::Agenda => out.extend(content::expanded_agenda(cr, &self.agenda(), eo, engine)),
                 OpenContent::Panel(Panel::Wifi) => {
                     out.extend(content::expanded_wifi(cr, self.activities.connectivity(), eo, engine))
                 }
@@ -767,6 +820,7 @@ impl App {
                 let h = match self.open_content(&live) {
                     OpenContent::Alarm(_) => content::ALARM_H,
                     OpenContent::Timer(_) => content::TIMER_H,
+                    OpenContent::Agenda => content::agenda_height(self.agenda().len()),
                     OpenContent::Panel(p) => {
                         let c = self.activities.connectivity();
                         match p {
@@ -1074,6 +1128,21 @@ impl App {
         if let Some(tm) = self.timer.as_ref().filter(|tm| tm.running()) {
             let rem = tm.remaining(t);
             at(t + (rem - rem.ceil() + 1.0).min(rem).max(0.01));
+        }
+        // Calendar: wake exactly when "up next" appears or goes, and each
+        // minute while it shows (its "in 8 min" label).
+        if !self.activities.calendar().is_empty() {
+            if let Some(change) = islet_core::calendar::next_change(self.activities.calendar(), self.wall as i64) {
+                at(t + (change as f64 - self.wall).max(0.0));
+            }
+            if let Some(Live::Event { starts_at, .. }) =
+                self.activities.live(t).iter().find(|l| matches!(l, Live::Event { .. }))
+            {
+                let rem = starts_at - t;
+                if rem > 0.0 {
+                    at(t + rem.rem_euclid(60.0) + 0.05);
+                }
+            }
         }
         // Alarms are checked each minute, only while one is set.
         if let Some(secs) = self.clock.and_then(|now| self.alarms.next_check(&now)) {
@@ -1637,6 +1706,45 @@ mod tests {
         assert!(sun);
     }
 
+    fn standup(start: i64) -> islet_core::calendar::CalEvent {
+        islet_core::calendar::CalEvent {
+            summary: "Standup".into(),
+            start,
+            end: start + 900,
+            all_day: false,
+            location: Some("Room 4".into()),
+        }
+    }
+
+    #[test]
+    fn calendar_shows_up_next_and_the_agenda() {
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        let wall0 = 1_800_000_000.0; // the wall clock when t = 0
+        app.set_wall(wall0, 3 * 3600, 0.0);
+        app.report(Report::Calendar(Some(vec![standup(1_800_001_200), standup(1_800_009_000)])), 0.0);
+        app.tick(0.0);
+        assert_eq!(app.presentation(), Idle, "20 minutes away: nothing yet");
+        let wake = app.next_timer(0.0).unwrap();
+        assert!((wake - 600.0).abs() < 1e-6, "wakes exactly 10 minutes before: {wake}");
+
+        app.set_wall(wall0 + 610.0, 3 * 3600, 610.0);
+        app.tick(610.0);
+        assert_eq!(app.presentation(), Compact);
+        let shown = texts(&app, 614.0, &mut engine);
+        assert!(shown.iter().any(|s| s == "Standup") && shown.iter().any(|s| s == "in 10 min"), "{shown:?}");
+
+        click(&mut app, 620.0);
+        let card = texts(&app, 625.0, &mut engine);
+        assert!(card.iter().any(|s| s == "Up next") && card.iter().any(|s| s == "Room 4"), "{card:?}");
+
+        // Five minutes after it starts, it's gone.
+        app.handle(Event::Key(Key::Escape), 630.0);
+        app.set_wall(wall0 + 1200.0 + 301.0, 3 * 3600, 1501.0);
+        app.tick(1501.0);
+        assert_eq!(app.presentation(), Idle);
+    }
+
     #[test]
     fn idle_island_shows_no_clock_and_never_wakes_for_it() {
         let mut app = App::new(Demo::None, false);
@@ -1750,6 +1858,54 @@ mod tests {
             let extra = if p == Minimal { MINIMAL_GAP + MINIMAL_CIRCLE } else { 0.0 };
             assert!((w + extra) * 1.03 <= WINDOW.0 && h * 1.03 + TOP_GAP <= WINDOW.1, "{p:?}");
         }
+    }
+
+    /// Calendar views for visual review:
+    /// `ISLET_CAL_SHEET=/path/out.png cargo test -p islet calendar_sheet`
+    #[test]
+    fn calendar_sheet() {
+        let Some(out) = std::env::var_os("ISLET_CAL_SHEET") else { return };
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let mut engine = TextEngine::new();
+        let make = |open: bool| {
+            let mut a = App::new(Demo::None, false);
+            let wall0 = 1_800_000_000.0;
+            a.set_wall(wall0, 3 * 3600, 0.0);
+            let mut lunch = standup(1_800_005_400);
+            lunch.summary = "Lunch with Amina".into();
+            lunch.location = None;
+            let mut review = standup(1_800_012_600);
+            review.summary = "Design review: island motion".into();
+            review.location = Some("Google Meet".into());
+            a.report(Report::Calendar(Some(vec![standup(1_800_000_480), lunch, review])), 0.0);
+            a.tick(0.0);
+            if open {
+                click(&mut a, 0.1);
+            }
+            a
+        };
+        let apps = [make(false), make(true)];
+        let (cw, ch) = (WINDOW.0 as u32, 230u32);
+        let mut sheet = Pixmap::new(cw * 2, ch).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        for (i, a) in apps.iter().enumerate() {
+            let t = 5.0;
+            let mut cell = Pixmap::new(cw, WINDOW.1 as u32).unwrap();
+            let frame = a.frame(t);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, WINDOW.1 as u32, 1.0);
+            let els = a.elements(t, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            sheet.draw_pixmap(
+                i as i32 * cw as i32,
+                0,
+                cell.as_ref(),
+                &PixmapPaint::default(),
+                Transform::identity(),
+                None,
+            );
+        }
+        sheet.save_png(out).unwrap();
     }
 
     /// The clock card with weather, for visual review:

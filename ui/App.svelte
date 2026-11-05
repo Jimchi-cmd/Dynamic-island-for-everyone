@@ -164,6 +164,29 @@
     }
   }
 
+  // Calendar
+  let calLink = $state('');
+  let calNote = $state('');
+
+  async function saveCalendar() {
+    try {
+      calNote = await api.islet(['calendar', 'set'], calLink.trim());
+      calLink = '';
+      await loadIslandPrefs();
+    } catch (e) {
+      calNote = api.message(e);
+    }
+  }
+
+  async function calendarCmd(verb: 'on' | 'off' | 'clear') {
+    try {
+      calNote = await api.islet(['calendar', verb]);
+      await loadIslandPrefs();
+    } catch (e) {
+      calNote = api.message(e);
+    }
+  }
+
   // Timer & focus
   let timerMinutes = $state(10);
   let timerLabel = $state('');
@@ -503,6 +526,38 @@
           {/each}
           {#if weatherNote}<p class="small" role="status">{weatherNote}</p>{/if}
           <p class="muted small">Weather data by <button class="link" onclick={() => api.openLink('https://open-meteo.com/')}>Open-Meteo.com</button> (CC BY 4.0).</p>
+        </div>
+        <div class="card">
+          <h2>Calendar</h2>
+          <p class="muted small">
+            Ten minutes before an event, the island shows what's next. Islet reads your calendar's private iCal link
+            every 15 minutes while this is on. The link is kept in your keychain.
+          </p>
+          {#if islandPrefs}
+            <div class="net">
+              <span class="name">Show upcoming events</span>
+              <input
+                type="checkbox"
+                class="switch"
+                aria-label="Show upcoming events"
+                checked={islandPrefs.calendar}
+                onchange={(e) => calendarCmd(e.currentTarget.checked ? 'on' : 'off')}
+              />
+            </div>
+          {/if}
+          <form class="join" onsubmit={(e) => { e.preventDefault(); if (calLink.trim()) void saveCalendar(); }}>
+            <input type="password" autocomplete="off" placeholder="https://… or webcal://… (.ics)" bind:value={calLink} aria-label="Calendar link" />
+            <button class="primary" type="submit" disabled={!calLink.trim()}>Save link</button>
+          </form>
+          <details class="small muted">
+            <summary>Where do I find the link?</summary>
+            <p><strong>Google Calendar:</strong> Settings → your calendar → Integrate calendar → "Secret address in iCal format".</p>
+            <p><strong>Outlook:</strong> Settings → Calendar → Shared calendars → Publish a calendar → copy the ICS link.</p>
+            <p><strong>iCloud:</strong> Calendar → share icon next to a calendar → Public Calendar → copy the link.</p>
+            <p>Anyone with the link can read the calendar, so keep it private.</p>
+          </details>
+          <div class="actions left"><button class="link" onclick={() => calendarCmd('clear')}>Remove saved link</button></div>
+          {#if calNote}<p class="small" role="status">{calNote}</p>{/if}
         </div>
         <p class="muted small">Right-click the island to close it. Click it to open, and press and hold for more.</p>
       {:else if page === 'connections'}

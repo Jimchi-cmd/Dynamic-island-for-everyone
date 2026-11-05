@@ -99,6 +99,54 @@ fn hud_trailing(h: &Hud, right: f32, cy: f32, bar_w: f32, o: f32) -> Vec<Element
     }
 }
 
+/// "in 8 min" / "now", from app-clock times.
+fn relative_label(starts_at: f64, t: f64) -> String {
+    islet_core::calendar::relative(starts_at.ceil() as i64, t.floor() as i64)
+}
+
+/// A row of the agenda card: start time, title, place.
+pub struct AgendaRow {
+    pub time: String,
+    pub title: String,
+    pub location: Option<String>,
+    pub now: bool,
+}
+
+pub const AGENDA_ROWS: usize = 4;
+
+pub fn agenda_height(rows: usize) -> f64 {
+    48.0 + rows.clamp(1, AGENDA_ROWS) as f64 * 40.0 + 6.0
+}
+
+/// The agenda card: the next few events.
+pub fn expanded_agenda(pill: Rect, rows: &[AgendaRow], o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
+    let pad = PAD as f32;
+    let title_style = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
+    let mut v = vec![
+        Element::Icon { icon: Icon::Calendar, x: x + pad, y: y + 18.0, size: 20.0, color: RED, opacity: o },
+        text("Up next", title_style, x + pad + 28.0, y + 33.0),
+    ];
+    let time_style = TextStyle { size: 14.0, weight: 600, opacity: o, tabular: true, ..TextStyle::default() };
+    let name_style = TextStyle { size: 14.5, weight: 600, opacity: o, ..TextStyle::default() };
+    let small = TextStyle { size: 12.0, opacity: o * 0.6, ..TextStyle::default() };
+    for (i, r) in rows.iter().take(AGENDA_ROWS).enumerate() {
+        let ry = y + 48.0 + i as f32 * 40.0;
+        let color = if r.now { RED } else { WHITE };
+        v.push(text(r.time.clone(), TextStyle { color, ..time_style }, x + pad, ry + 18.0));
+        let name = engine.ellipsize(&r.title, &name_style, w - 2.0 * pad - 78.0);
+        v.push(text(name, name_style, x + pad + 78.0, ry + 18.0));
+        if let Some(loc) = &r.location {
+            v.push(text(engine.ellipsize(loc, &small, w - 2.0 * pad - 78.0), small, x + pad + 78.0, ry + 34.0));
+        }
+    }
+    if rows.is_empty() {
+        let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
+        v.push(text("Nothing else today", style, x + pad, y + 70.0));
+    }
+    v
+}
+
 /// Buttons of the timer card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimerControl {
@@ -185,7 +233,9 @@ pub const COMPACT_BATTERY_W: f64 = 300.0;
 
 pub fn compact_width(live: &Live) -> f64 {
     match live {
-        Live::Media(_) | Live::Navigation(_) | Live::Alarm(_) | Live::Timer(_) | Live::Hud(_) => COMPACT_MEDIA_W,
+        Live::Media(_) | Live::Navigation(_) | Live::Alarm(_) | Live::Timer(_) | Live::Hud(_) | Live::Event { .. } => {
+            COMPACT_MEDIA_W
+        }
         Live::Battery { .. } => COMPACT_BATTERY_W,
     }
 }
@@ -256,6 +306,24 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
     let cy = (pill.y + pill.h / 2.0) as f32;
     match live {
         Live::Timer(tm) => vec![timer_ring(tm, x + 20.0, cy, 8.5, t, o), countdown(tm, right - 14.0, cy, 15.0, t, o)],
+        Live::Event { event, starts_at } => {
+            let when = TextStyle {
+                size: 13.0,
+                weight: 600,
+                opacity: o,
+                color: RED,
+                align: Align::Right,
+                ..TextStyle::default()
+            };
+            let label = relative_label(*starts_at, t);
+            let title = TextStyle { size: 13.5, weight: 600, opacity: o, ..TextStyle::default() };
+            let room = (right - x) - 50.0 - engine.measure(&label, &when) - 18.0;
+            vec![
+                Element::Icon { icon: Icon::Calendar, x: x + 10.0, y: cy - 10.0, size: 20.0, color: RED, opacity: o },
+                text(engine.ellipsize(&event.summary, &title, room), title, x + 38.0, cy + 4.5),
+                text(label, when, right - 14.0, cy + 4.5),
+            ]
+        }
         Live::Hud(h) => {
             let mut v = vec![Element::Icon {
                 icon: hud_icon(h),
@@ -385,6 +453,11 @@ pub fn minimal(
     if let Live::Hud(h) = primary {
         v.extend(hud_trailing(h, pill.right() as f32 - 14.0, cy, 56.0, o));
     }
+    if let Live::Event { starts_at, .. } = primary {
+        let when =
+            TextStyle { size: 13.0, weight: 600, opacity: o, color: RED, align: Align::Right, ..TextStyle::default() };
+        v.push(text(relative_label(*starts_at, t), when, pill.right() as f32 - 13.0, cy + 4.5));
+    }
     if let (Some(b), Some(s)) = (bubble, secondary) {
         match s {
             Live::Battery { device: d, .. } => v.push(Element::Ring {
@@ -398,6 +471,14 @@ pub fn minimal(
             }),
             Live::Alarm(_) => v.push(bell(b.x, b.y, 20.0, t, o)),
             Live::Timer(tm) => v.push(timer_ring(tm, b.x, b.y, b.r - 7.5, t, o)),
+            Live::Event { .. } => v.push(Element::Icon {
+                icon: Icon::Calendar,
+                x: b.x - 9.0,
+                y: b.y - 9.0,
+                size: 18.0,
+                color: RED,
+                opacity: o,
+            }),
             Live::Hud(h) => v.push(Element::Icon {
                 icon: hud_icon(h),
                 x: b.x - 9.0,
@@ -429,6 +510,9 @@ pub fn minimal(
 
 fn leading(live: &Live, x: f32, cy: f32, o: f32, h24: bool) -> Vec<Element> {
     match live {
+        Live::Event { .. } => {
+            vec![Element::Icon { icon: Icon::Calendar, x: x + 3.0, y: cy - 10.0, size: 20.0, color: RED, opacity: o }]
+        }
         Live::Hud(h) => {
             vec![Element::Icon { icon: hud_icon(h), x: x + 3.0, y: cy - 10.0, size: 20.0, color: WHITE, opacity: o }]
         }

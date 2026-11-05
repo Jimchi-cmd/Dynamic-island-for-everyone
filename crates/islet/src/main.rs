@@ -124,6 +124,7 @@ fn run() -> platform::Result<()> {
     }
     win.watch_caps_lock(app.prefs().caps_lock_hud);
     providers.weather(app.prefs().weather.clone());
+    providers.calendar(app.prefs().calendar);
     let mut alarm_sound = sound::AlarmSound::default();
     trace("providers started");
 
@@ -192,7 +193,9 @@ fn run() -> platform::Result<()> {
                     app.set_prefs(config::load_prefs());
                     win.watch_caps_lock(app.prefs().caps_lock_hud);
                     providers.weather(app.prefs().weather.clone());
+                    providers.calendar(app.prefs().calendar);
                     providers.weather(app.prefs().weather.clone());
+                    providers.calendar(app.prefs().calendar);
                 }
                 Control::PrefsChanged => {}
             }
@@ -224,6 +227,7 @@ fn run() -> platform::Result<()> {
             return Ok(());
         }
         needs_frame |= app.set_time(clock::now(), t);
+        needs_frame |= app.set_wall(clock::epoch(), clock::utc_offset(), t);
         for out in app.take_alarm_out() {
             match out {
                 AlarmOut::Sound(on) => alarm_sound.set(on),

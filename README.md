@@ -16,6 +16,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 - **Battery pop-ups** when headphones, earbuds, mice, keyboards or controllers connect, plus low-battery and charger alerts.
 - **Volume, brightness and caps-lock pop-ups**, like the iPhone's.
 - **Weather** on the clock card, from Open-Meteo (no account or key).
+- **Calendar:** what's next, ten minutes before it starts, and today's agenda (Google, Outlook or iCloud via their private iCal link).
 - **Timer and focus sessions:** a countdown ring on the island, or Pomodoro rounds of work and breaks.
 - **Alarms:** one-time or repeating. When one rings, the island opens with a swinging bell and a chime until you snooze or stop it.
 - **Wi-Fi and Bluetooth:** open the island, tap Wi-Fi or Bluetooth on the clock card, and pick a network or a device.
@@ -37,7 +38,7 @@ Islet isn't code-signed yet, so Windows SmartScreen and macOS Gatekeeper will wa
 ## Privacy
 
 - No accounts, no analytics, no telemetry.
-- Islet uses the network only for features you turn on: weather (Open-Meteo, hourly, only the place you chose), the navigation ETA (straight to Google, with your key) and update checks (off by default).
+- Islet uses the network only for features you turn on: your calendar link (every 15 minutes), weather (Open-Meteo, hourly, only the place you chose), the navigation ETA (straight to Google, with your key) and update checks (off by default).
 - Your Google key is kept in the OS keychain, never in a file. Route results are never stored.
 - Wi-Fi and Bluetooth lists load only when you open them.
 

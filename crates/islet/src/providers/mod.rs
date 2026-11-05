@@ -4,6 +4,7 @@
 //! waker. Commands for the media session travel the other way.
 
 pub mod art;
+pub mod calendar;
 pub mod connectivity;
 #[cfg(target_os = "linux")]
 mod dbus_util;
@@ -129,6 +130,8 @@ fn describe(r: &Report) -> String {
         Report::Timer(t) => format!("timer: {:?}", t.as_ref().map(|t| t.title())),
         Report::Hud(h) => format!("hud: {h:?}"),
         Report::Weather(w) => format!("weather: {w:?}"),
+        Report::Calendar(c) => format!("calendar: {} events", c.as_ref().map_or(0, |c| c.len())),
+        Report::UpNext(u) => format!("up next: {:?}", u.as_ref().map(|(e, _)| &e.summary)),
     }
 }
 
@@ -138,6 +141,7 @@ pub struct Providers {
     nav: Sender<navigation::NavMsg>,
     conn: Sender<islet_core::connectivity::ConnCommand>,
     weather: Sender<Option<islet_core::prefs::Place>>,
+    calendar: Sender<bool>,
 }
 
 impl Providers {
@@ -149,11 +153,17 @@ impl Providers {
         let nav = navigation::start(sink.clone());
         let conn = connectivity::start(sink.clone());
         let weather = weather::start(sink.clone());
+        let calendar = calendar::start(sink.clone());
         if std::env::var("ISLET_DEMO").as_deref() == Ok("media") {
-            return Self { reports, media: Some(demo::start(sink)), nav, conn, weather };
+            return Self { reports, media: Some(demo::start(sink)), nav, conn, weather, calendar };
         }
         let media = platform_start(sink);
-        Self { reports, media, nav, conn, weather }
+        Self { reports, media, nav, conn, weather, calendar }
+    }
+
+    /// Turn calendar on (and refresh now) or off.
+    pub fn calendar(&self, on: bool) {
+        let _ = self.calendar.send(on);
     }
 
     /// Follow this place's weather (None turns weather off).
