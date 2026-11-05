@@ -23,13 +23,14 @@ EXT="$HOME/.local/share/gnome-shell/extensions/$UUID"
 mkdir -p "$EXT"
 (cd "$EXT" && unzip -q "$ZIP")
 # gnome-shell wants logind on the system bus; a private bus stands in.
-DBUS_SYSTEM_BUS_ADDRESS=$(dbus-daemon --session --print-address --fork)
+# (Its output goes nowhere, so nothing it leaves running holds ours open.)
+read -r DBUS_SYSTEM_BUS_ADDRESS SYSBUS_PID < <(dbus-daemon --session --fork --print-address=1 --print-pid=1 </dev/null 2>/dev/null | paste -sd' ')
 export DBUS_SYSTEM_BUS_ADDRESS
 gsettings set org.gnome.shell disable-user-extensions false
 gsettings set org.gnome.shell enabled-extensions "['$UUID']"
-gnome-shell --headless --wayland --virtual-monitor 1280x800 --unsafe-mode >"$HOME/shell.log" 2>&1 &
+gnome-shell --headless --wayland --virtual-monitor 1280x800 --unsafe-mode </dev/null >"$HOME/shell.log" 2>&1 &
 SHELL_PID=$!
-trap 'kill $SHELL_PID 2>/dev/null || true' EXIT
+trap 'kill $SHELL_PID $SYSBUS_PID 2>/dev/null || true' EXIT
 
 call() { gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell --method "$@"; }
 for _ in $(seq 60); do call org.gnome.Shell.Extensions.GetExtensionInfo "$UUID" >/dev/null 2>&1 && break; sleep 0.5; done

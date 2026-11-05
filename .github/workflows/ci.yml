@@ -181,7 +181,12 @@ jobs:
         run: |
           sudo apt-get install -y --no-install-recommends gnome-shell gir1.2-adw-1
           bash scripts/gnome-extension.sh dist-gnome
-          bash scripts/test-gnome-extension.sh
+          # Log to a file: helpers GNOME Shell starts may outlive the test,
+          # and they mustn't keep this step's output open.
+          rc=0
+          timeout 300 bash scripts/test-gnome-extension.sh > gnome-test.log 2>&1 || rc=$?
+          grep -E "^(GNOME Shell|ok:|FAIL)" gnome-test.log || true
+          [ $rc -eq 0 ] || { tail -50 gnome-test.log; exit $rc; }
 
       - name: Installer and binary sizes
         shell: bash
