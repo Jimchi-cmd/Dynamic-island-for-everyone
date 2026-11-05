@@ -89,18 +89,20 @@ jobs:
         shell: bash
         run: target/release/islet --mediaremote-probe | tee -a "$GITHUB_STEP_SUMMARY"
       # Informational: where startup time goes (first launch, then a warm one).
-      - name: Startup trace (macOS)
-        if: runner.os == 'macOS'
+      - name: Startup trace (macOS, Windows)
+        if: runner.os != 'Linux'
         continue-on-error: true
         shell: bash
         run: |
           for run in cold warm; do
             echo "--- $run"
-            ISLET_TRACE_STARTUP=1 target/release/islet > /dev/null &
+            ISLET_TRACE_STARTUP=1 target/release/islet${{ matrix.exe }} > trace-out.txt 2> trace-err.txt &
             pid=$!
-            sleep 4
-            target/release/islet quit || kill $pid
-            wait $pid || true
+            sleep 6
+            target/release/islet${{ matrix.exe }} quit || kill $pid || true
+            sleep 1
+            kill $pid 2>/dev/null || true
+            cat trace-err.txt trace-out.txt
           done
       # Linux runners have no display: GUI processes run under Xvfb.
       - name: Define run_gui helper

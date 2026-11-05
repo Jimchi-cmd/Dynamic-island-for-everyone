@@ -114,8 +114,10 @@ fn run() -> platform::Result<()> {
     let now = || epoch.elapsed().as_secs_f64();
 
     let mut providers = providers::Providers::start(win.waker());
+    trace("providers started");
     let (control_tx, control_rx) = std::sync::mpsc::channel::<Control>();
     control::serve(control_tx, win.waker());
+    trace("control channel open");
     let mut nav_card_open = false;
     // Demos and perf runs leave the user's alarms alone.
     let scripted = demo != Demo::None || std::env::var_os("ISLET_DEMO").is_some();
@@ -125,6 +127,7 @@ fn run() -> platform::Result<()> {
         app.set_shelf(config::load_shelf());
     }
     win.watch_caps_lock(app.prefs().caps_lock_hud);
+    trace("caps lock watched");
     providers.weather(app.prefs().weather.clone());
     providers.calendar(app.prefs().calendar);
     providers.notifications(app.prefs().notifications);
@@ -132,7 +135,11 @@ fn run() -> platform::Result<()> {
     providers.spotify(app.prefs().spotify && !scripted);
     let mut alarm_sound = sound::AlarmSound::default();
     let mut access = a11y::Bridge::new(win.native_handle(), win.waker());
-    trace("providers started");
+    trace("screen-reader bridge ready");
+    // Describe the island to screen readers once things settle (not on
+    // every animation frame), and read the UTC offset once a minute.
+    let mut a11y_pending = true;
+    let mut utc = (u8::MAX, 0i64);
 
     let mut needs_frame = true;
     let mut first_frame = true;
@@ -154,6 +161,9 @@ fn run() -> platform::Result<()> {
 
         events.clear();
         win.wait(deadline, &mut events)?;
+        if first_frame {
+            trace("first wait returned");
+        }
 
         let t = now();
         let s = skew_now();
@@ -255,7 +265,11 @@ fn run() -> platform::Result<()> {
             return Ok(());
         }
         needs_frame |= app.set_time(clock::now(), t);
-        needs_frame |= app.set_wall(clock::epoch(), clock::utc_offset(), t);
+        let minute = clock::now().minute;
+        if minute != utc.0 {
+            utc = (minute, clock::utc_offset());
+        }
+        needs_frame |= app.set_wall(clock::epoch(), utc.1, t);
         for out in app.take_alarm_out() {
             match out {
                 AlarmOut::Sound(on) => alarm_sound.set(on),
@@ -274,7 +288,9 @@ fn run() -> platform::Result<()> {
         for press in access.take_presses() {
             needs_frame |= app.a11y_press(press, t);
         }
-        if access.active() {
+        a11y_pending |= needs_frame;
+        if a11y_pending && access.active() && !app.animating(t) {
+            a11y_pending = false;
             let described = app.accessibility(t);
             win.set_a11y_label(&described.label);
             access.update(&described, win.screen_origin(), win.scale());

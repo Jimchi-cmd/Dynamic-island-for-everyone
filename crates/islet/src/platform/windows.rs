@@ -302,9 +302,16 @@ impl Backend for Win32 {
             me.configure()?;
             // Accept dropped files for the shelf (OLE needs a single-threaded
             // apartment on this thread).
+            let trace = std::env::var_os("ISLET_TRACE_STARTUP").is_some();
+            if trace {
+                eprintln!("ISLET_TRACE window configured; registering the drop target");
+            }
             if windows::Win32::System::Ole::OleInitialize(None).is_ok() {
                 let target: windows::Win32::System::Ole::IDropTarget = DropTarget { hwnd: hwnd.0 as isize }.into();
                 let _ = windows::Win32::System::Ole::RegisterDragDrop(hwnd, &target);
+            }
+            if trace {
+                eprintln!("ISLET_TRACE drop target done");
             }
             let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
             Ok(me)
