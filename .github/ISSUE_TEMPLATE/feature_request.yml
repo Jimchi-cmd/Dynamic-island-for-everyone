@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest something new for the island.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: Describe the idea and when you'd use it. If it's an iPhone feature, say which one.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why does it matter to you?
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: I searched existing issues and the roadmap (docs/roadmap.md).
+          required: true

@@ -97,6 +97,29 @@ jobs:
         env:
           ISLET_UPDATER_PUBKEY: ${{ vars.ISLET_UPDATER_PUBKEY }}
 
+      - name: macOS signing and notarization (only when configured)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          S_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          S_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          S_APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          S_APPLE_ID: ${{ secrets.APPLE_ID }}
+          S_APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          S_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "$S_APPLE_CERTIFICATE" ]; then
+            echo "::warning::Not signing for macOS: no APPLE_CERTIFICATE secret (docs/signing.md)."
+            exit 0
+          fi
+          # Exported only when set: the bundler treats an empty value as a certificate.
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            val=$(printenv "S_$v" || true)
+            [ -n "$val" ] || continue
+            delim="EOF_${RANDOM}${RANDOM}"
+            { echo "$v<<$delim"; echo "$val"; echo "$delim"; } >> "$GITHUB_ENV"
+          done
+
       - name: Build the island (Linux, Windows)
         if: matrix.name != 'macos'
         run: cargo build --release -p islet -p islet-perf

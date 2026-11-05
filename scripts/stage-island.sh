@@ -12,6 +12,11 @@ exe=""
 [[ "$triple" == *windows* ]] && exe=".exe"
 out="src-tauri/binaries/islet-$triple$exe"
 if [[ "$triple" == universal-apple-darwin ]]; then
+  # Tauri builds each architecture separately (needing a sidecar per arch),
+  # then bundles the universal one.
+  for arch in aarch64 x86_64; do
+    cp "target/$arch-apple-darwin/release/islet" "src-tauri/binaries/islet-$arch-apple-darwin"
+  done
   lipo -create -output "$out" target/{aarch64,x86_64}-apple-darwin/release/islet
   lipo -create -output src-tauri/binaries/libislet_mediaremote.dylib \
     target/{aarch64,x86_64}-apple-darwin/release/libislet_mediaremote.dylib
