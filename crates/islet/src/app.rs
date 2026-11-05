@@ -111,6 +111,16 @@ pub enum AlarmOut {
     Disable(u32),
 }
 
+/// What a screen reader is told: the island as a whole, and the buttons
+/// on it right now (logical px, window coordinates).
+#[derive(Debug, Clone, PartialEq)]
+pub struct A11y {
+    pub label: String,
+    pub expanded: bool,
+    pub bounds: Rect,
+    pub buttons: Vec<(String, Rect)>,
+}
+
 /// Things the main loop opens for the island.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiAction {
@@ -663,6 +673,152 @@ impl App {
         true
     }
 
+    /// The island described for screen readers.
+    pub fn accessibility(&self, t: f64) -> A11y {
+        use islet_core::activity::Hud;
+        let live = self.live(t);
+        let pct = |v: f32| (v * 100.0).round() as i32;
+        let label = match live.first() {
+            None => match self.clock {
+                Some(now) if self.island.presentation().is_open() => {
+                    let (time, suffix) = islet_core::clock::format_time(&now, self.h24);
+                    format!("Islet. {time}{}", suffix.map_or(String::new(), |s| format!(" {s}")))
+                }
+                _ => "Islet".to_string(),
+            },
+            Some(Live::Alarm(a)) => format!("Alarm ringing: {}", a.title()),
+            Some(Live::Hud(Hud::Volume { muted: true, .. })) => "Volume muted".to_string(),
+            Some(Live::Hud(Hud::Volume { level, .. })) => format!("Volume {}%", pct(*level)),
+            Some(Live::Hud(Hud::Brightness(b))) => format!("Brightness {}%", pct(*b)),
+            Some(Live::Hud(Hud::CapsLock(on))) => format!("Caps Lock {}", if *on { "on" } else { "off" }),
+            Some(Live::Note(n)) => format!("Notification from {}: {}", n.app, n.summary),
+            Some(Live::Battery { device: d, .. }) => {
+                format!("{} {}%{}", d.name, d.percent, if d.charging { ", charging" } else { "" })
+            }
+            Some(Live::Timer(tm)) => format!(
+                "{}, {} left{}",
+                tm.title(),
+                islet_core::timer::format_countdown(tm.remaining(t)),
+                if tm.running() { "" } else { ", paused" }
+            ),
+            Some(Live::Event { event, starts_at }) => {
+                format!("{} {}", event.summary, islet_core::calendar::relative(starts_at.ceil() as i64, t as i64))
+            }
+            Some(Live::Navigation(n)) => match &n.route {
+                Some(r) => format!("Navigation to {}: {}", n.trip.title(), islet_core::nav::format_minutes(r.duration)),
+                None => format!("Navigation to {}", n.trip.title()),
+            },
+            Some(Live::Media(m)) => format!(
+                "{}: {}{}{}",
+                if m.playing { "Now playing" } else { "Paused" },
+                m.title,
+                if m.artist.is_empty() { String::new() } else { format!(" by {}", m.artist) },
+                if m.app_name.is_empty() { String::new() } else { format!(", in {}", m.app_name) }
+            ),
+        };
+        let open = self.island.presentation().is_open();
+        let mut buttons = Vec::new();
+        if open && !self.animating(t) {
+            let cr = self.content_rect(self.pill_rect(t));
+            let c = self.activities.connectivity();
+            match self.open_content(&live) {
+                OpenContent::Media(m) => {
+                    for (r, ctl) in content::media_controls(cr) {
+                        let name = match ctl {
+                            Control::Previous => "Previous",
+                            Control::PlayPause if m.playing => "Pause",
+                            Control::PlayPause => "Play",
+                            Control::Next => "Next",
+                            Control::Scrub => continue,
+                        };
+                        buttons.push((name.to_string(), r));
+                    }
+                }
+                OpenContent::Alarm(a) => {
+                    let [(snooze, _), (stop, _)] = content::alarm_controls(cr);
+                    buttons.push((if a.id == TIMER_ALARM_ID { "Repeat" } else { "Snooze" }.into(), snooze));
+                    buttons.push(("Stop".into(), stop));
+                }
+                OpenContent::Timer(tm) => {
+                    let [(pause, _), (stop, _)] = content::timer_controls(cr);
+                    buttons.push((if tm.running() { "Pause" } else { "Resume" }.into(), pause));
+                    buttons.push(("Stop timer".into(), stop));
+                }
+                OpenContent::Nav(_) => {
+                    for (r, ctl) in content::nav_controls(cr) {
+                        let name = match ctl {
+                            NavControl::GoogleMaps => "Open in Google Maps",
+                            NavControl::Waze => "Open in Waze",
+                            NavControl::Stop => "Stop navigation",
+                        };
+                        buttons.push((name.into(), r));
+                    }
+                }
+                OpenContent::Clock => {
+                    for (r, p) in content::clock_chips(cr, !self.shelf.is_empty()) {
+                        let name = match p {
+                            Panel::Wifi => {
+                                format!("Wi-Fi{}", c.wifi.current.as_ref().map_or(String::new(), |n| format!(", {n}")))
+                            }
+                            Panel::Bluetooth => {
+                                format!(
+                                    "Bluetooth{}",
+                                    c.connected_device().map_or(String::new(), |d| format!(", {}", d.name))
+                                )
+                            }
+                            Panel::Shelf => format!("Shelf, {} items", self.shelf.len()),
+                        };
+                        buttons.push((name, r));
+                    }
+                }
+                OpenContent::Panel(p) => {
+                    buttons.push(("Back".into(), content::list_header(cr)));
+                    let names: Vec<String> = match p {
+                        Panel::Wifi => c
+                            .wifi
+                            .networks
+                            .iter()
+                            .map(|n| {
+                                format!(
+                                    "{}{}",
+                                    n.ssid,
+                                    if n.active {
+                                        ", connected"
+                                    } else if n.secure && !n.known {
+                                        ", needs a password"
+                                    } else {
+                                        ""
+                                    }
+                                )
+                            })
+                            .collect(),
+                        Panel::Bluetooth => c
+                            .bt
+                            .devices
+                            .iter()
+                            .map(|d| format!("{}, {}", d.name, if d.connected { "connected" } else { "not connected" }))
+                            .collect(),
+                        Panel::Shelf => self.shelf.iter().map(|i| format!("Open {}", i.name())).collect(),
+                    };
+                    for (name, r) in names.into_iter().zip(content::list_rows(cr, usize::MAX)) {
+                        buttons.push((name, r));
+                    }
+                }
+                _ => {}
+            }
+        }
+        A11y { label, expanded: open, bounds: self.bounds(t), buttons }
+    }
+
+    /// A screen reader pressed the island (None) or one of its buttons.
+    pub fn a11y_press(&mut self, button: Option<usize>, t: f64) -> bool {
+        let Some(i) = button else { return self.signal(Signal::Click, t) };
+        let Some((_, r)) = self.accessibility(t).buttons.get(i).cloned() else { return false };
+        let (x, y) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
+        self.handle(Event::PointerDown { x, y, button: Button::Primary }, t);
+        self.handle(Event::PointerUp { x, y, button: Button::Primary }, t)
+    }
+
     /// Where media commands go: the shown session's source.
     pub fn media_source(&self) -> String {
         self.activities.media().map(|m| m.source.clone()).unwrap_or_default()
@@ -1158,6 +1314,7 @@ impl App {
             Event::Key(Key::Escape) => self.signal(Signal::Escape, t),
             Event::CapsLock(on) => self.report(Report::Hud(Hud::CapsLock(on)), t),
             Event::DragOver { x, y } => self.drag_over(x, y, t),
+            Event::A11yPress(button) => self.a11y_press(button, t),
             Event::DragLeave => self.drag_over(f64::NAN, f64::NAN, t),
             Event::Scroll { dx, dy } if self.hovered => self.scroll(dx, dy, t),
             Event::Redraw | Event::ScaleChanged(_) => true,
@@ -1920,6 +2077,22 @@ mod tests {
         app.report(Report::Media(Some(song(true))), 0.0);
         app.tick(0.0);
         assert_eq!(app.presentation(), Idle, "{:?}", song(true).app_name);
+    }
+
+    #[test]
+    fn screen_readers_hear_what_shows_and_can_press_buttons() {
+        let mut app = App::new(Demo::None, false);
+        app.report(Report::Media(Some(song(true))), 0.0);
+        app.tick(0.0);
+        let a = app.accessibility(1.0);
+        assert!(a.label.starts_with("Now playing: "), "{}", a.label);
+        assert!(!a.expanded && a.buttons.is_empty());
+        assert!(app.a11y_press(None, 1.0), "pressing the island opens it");
+        let a = app.accessibility(5.0);
+        let names: Vec<&str> = a.buttons.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, ["Previous", "Pause", "Next"]);
+        app.a11y_press(Some(1), 5.0);
+        assert_eq!(app.take_commands(), [MediaCommand::PlayPause]);
     }
 
     #[test]

@@ -360,6 +360,10 @@ impl Backend for Win32 {
         Ok(())
     }
 
+    fn native_handle(&self) -> isize {
+        self.hwnd.0 as isize
+    }
+
     fn watch_caps_lock(&mut self, on: bool) {
         use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CAPITAL};
         match (on, self.caps_thread.take()) {

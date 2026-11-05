@@ -24,7 +24,7 @@ use objc2_core_foundation::{CFData, CFRetained};
 use objc2_core_graphics::{
     kCGColorSpaceSRGB, CGBitmapInfo, CGColorRenderingIntent, CGColorSpace, CGDataProvider, CGImage, CGImageAlphaInfo,
 };
-use objc2_foundation::{NSArray, NSDate, NSDefaultRunLoopMode, NSObject, NSPoint, NSRect, NSSize, NSURL};
+use objc2_foundation::{NSArray, NSDate, NSDefaultRunLoopMode, NSObject, NSPoint, NSRect, NSSize, NSString, NSURL};
 use objc2_quartz_core::CATransaction;
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
@@ -33,6 +33,7 @@ use tiny_skia::Pixmap;
 thread_local! {
     static QUEUE: RefCell<Vec<Event>> = const { RefCell::new(Vec::new()) };
     static CAPS: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+    static A11Y_LABEL: RefCell<String> = RefCell::new("Islet".to_string());
     /// The input region (logical px, top-left origin) and the panel, for
     /// click-through: the panel ignores the mouse except over the island.
     static REGION: Cell<(f64, f64, f64, f64)> = const { Cell::new((0.0, 0.0, 0.0, 0.0)) };
@@ -147,6 +148,29 @@ define_class!(
             if event.keyCode() == KEY_ESCAPE {
                 push(Event::Key(Key::Escape));
             }
+        }
+
+        // VoiceOver: the island is one element that reads what it shows and
+        // can be pressed (open or close).
+        #[unsafe(method(isAccessibilityElement))]
+        fn is_accessibility_element(&self) -> bool {
+            true
+        }
+
+        #[unsafe(method_id(accessibilityRole))]
+        fn accessibility_role(&self) -> Option<Retained<NSString>> {
+            Some(NSString::from_str("AXButton"))
+        }
+
+        #[unsafe(method_id(accessibilityLabel))]
+        fn accessibility_label(&self) -> Option<Retained<NSString>> {
+            Some(NSString::from_str(&A11Y_LABEL.with(|l| l.borrow().clone())))
+        }
+
+        #[unsafe(method(accessibilityPerformPress))]
+        fn accessibility_perform_press(&self) -> bool {
+            push(Event::A11yPress(None));
+            true
         }
 
         // File drops for the shelf.
@@ -338,6 +362,14 @@ impl Backend for Mac {
 
     fn scale(&self) -> f64 {
         self.scale
+    }
+
+    fn set_a11y_label(&mut self, label: &str) {
+        A11Y_LABEL.with(|l| {
+            if *l.borrow() != label {
+                *l.borrow_mut() = label.to_string();
+            }
+        });
     }
 
     fn size_px(&self) -> (u32, u32) {

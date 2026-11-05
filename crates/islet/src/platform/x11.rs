@@ -256,6 +256,10 @@ impl Backend for X11 {
         })
     }
 
+    fn screen_origin(&self) -> (f64, f64) {
+        (self.pos.0 as f64, self.pos.1 as f64)
+    }
+
     fn scale(&self) -> f64 {
         self.scale
     }

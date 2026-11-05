@@ -26,6 +26,8 @@ The first public release.
 - **Volume, brightness and caps-lock pop-ups** on the island (each can be switched off).
 - **Timer and focus sessions:** a countdown ring on the island, Pomodoro work/break rounds with a chime at each change, and Repeat when it ends.
 
+- **Screen readers:** the island describes itself and exposes its controls to Orca, Narrator/NVDA and VoiceOver.
+
 ### Apps and tools
 - Islet Settings: a first-run welcome with permissions, start at login, Wi-Fi & Bluetooth, alarms, navigation key and trip, updates (opt-in checks) and about.
 - `islet` command line: `nav`, `key`, `alarm`, `wifi`, `bt`, `autostart`, `status`, `update check`, `quit`.

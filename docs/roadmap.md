@@ -5,7 +5,7 @@ Each phase ships with tests and green CI on Windows, macOS and Linux before the 
 | Phase | Scope | Status |
 |---|---|---|
 | **0** | Scaffold, perf harness, CI matrix, stack decision (native island) | ✅ done |
-| **1** | Island shell: full state machine, squircle morph, metaball split, input (hover, click, hold, scroll, Esc), notch wrap on Macs, Wayland layer-shell, macOS click-through, text rendering (Inter / San Francisco), clock activity, AccessKit, golden-image tests | in progress: ✅ state machine, morph, metaball split, hover/click/hold/Esc/auto-collapse, scroll to switch, text (Inter; San Francisco on macOS), clock, notch wrapping and click-through on macOS (needs testing on a Mac), golden-image tests · ⬜ native Wayland layer-shell (runs via XWayland today), AccessKit screen-reader support |
+| **1** | Island shell: full state machine, squircle morph, metaball split, input (hover, click, hold, scroll, Esc), notch wrap on Macs, Wayland layer-shell, macOS click-through, text rendering (Inter / San Francisco), clock activity, AccessKit, golden-image tests | in progress: ✅ state machine, morph, metaball split, hover/click/hold/Esc/auto-collapse, scroll to switch, text (Inter; San Francisco on macOS), clock, notch wrapping and click-through on macOS (needs testing on a Mac), golden-image tests ; screen-reader support (AccessKit on Linux/Windows, native VoiceOver on macOS) · ⬜ native Wayland layer-shell (runs via XWayland today) |
 | **2** | Activity framework and the **music controller** (Windows SMTC, Linux MPRIS, macOS media adapter): art, title, progress and scrubbing, controls, waveform. **Device battery**: connect pop-ups for headphones, mice, keyboards and controllers, low-battery alerts, laptop charging | in progress: ✅ views (compact, two-at-once, player card, device list), activity logic, Linux MPRIS + UPower (tested end to end), Windows SMTC + Bluetooth battery + laptop (compiles; needs testing on a PC), macOS every app with album art via the MediaRemote helper, falling back to Spotify/Music, + IOKit battery (compiles; needs testing on a Mac) · ✅ settings, hiding chosen apps' Now Playing · ✗ AirPods per-earbud levels (no public API on any OS; see below) |
 | **3** | Navigation ETA (Google Routes, bring your own key) and Google Maps / Waze hand-off; optional Spotify Web API | in progress: ✅ live ETA with traffic, arrival time, distance and first instruction from the Routes API (key in the OS keychain, adaptive refresh, no caching, Google attribution), Google Maps / Waze hand-off buttons, `islet nav` / `islet key` commands. See [navigation.md](navigation.md) · ✅ destination entry in Settings, optional Spotify Web API (Spotify Connect playback from other devices, bring your own client ID, PKCE) · ⬜ Places autocomplete |
 | **3b** | **Alarms**: one-time or repeating alarms; when one rings, the island opens with a swinging bell (the bell stays at the right of the pill when collapsed) and an original chime plays until Snooze (9 min) or Stop | ✅ done: alarm logic (catches up after sleep, never rings hours late), island views, chime synthesised by Islet and played with the OS player, `islet alarm` commands, Alarms page in Settings |
@@ -80,3 +80,13 @@ All of them are event-driven: nothing polls, and each pop-up can be switched off
 ## AirPods per-earbud levels
 
 Islet shows the battery levels the OS reports. Windows, macOS and Linux report one level per Bluetooth device through their public APIs. Left, right and case levels for AirPods are only available by decoding Apple's undocumented Bluetooth advertisements, which this project doesn't do (no reverse-engineering of private formats). Islet will show them if an OS starts reporting them.
+
+## Screen readers
+
+The island is one element that describes what it shows ("Now playing: … by …", "Alarm ringing: Wake up", "Caps Lock on") and can be pressed to open or close. While it's open, each control on it is a button: player controls, Snooze/Stop, Pause/Stop, Google Maps/Waze, the clock card's Wi-Fi/Bluetooth/Shelf buttons and every list row.
+
+| | |
+|---|---|
+| Linux | AccessKit over AT-SPI (Orca), started only while the desktop reports a screen reader (`org.a11y.Status`), so an idle island keeps zero wakeups |
+| Windows | AccessKit over UI Automation (Narrator, NVDA, JAWS); inactive until a screen reader asks |
+| macOS | The island view answers VoiceOver directly (label, button role, press) |

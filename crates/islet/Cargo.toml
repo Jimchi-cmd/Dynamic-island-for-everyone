@@ -8,6 +8,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+accesskit = "0.25"
 getrandom = "0.3"
 islet-core = { path = "../islet-core" }
 islet-render = { path = "../islet-render" }
@@ -32,11 +33,13 @@ default-features = false
 features = ["rustls", "platform-verifier"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
+accesskit_unix = "0.24"
 x11rb = { version = "0.13", features = ["shape", "randr", "xkb"] }
 libc = "0.2"
 zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
+accesskit_windows = "0.35"
 keyring = { version = "3", default-features = false, features = ["windows-native"] }
 windows-collections = "0.3"
 # The #[implement] macro (COM callbacks) refers to windows_core directly.

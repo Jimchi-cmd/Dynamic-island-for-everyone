@@ -74,6 +74,8 @@ pub enum Event {
     DragLeave,
     /// Files were dropped on the window.
     Drop(Vec<String>),
+    /// A screen reader pressed the island (None) or one of its buttons.
+    A11yPress(Option<usize>),
     /// The OS lost our pixels (expose); present the last frame again.
     Redraw,
     ScaleChanged(f64),
@@ -131,6 +133,19 @@ pub trait Backend: Sized {
     /// it, installed only while the caps-lock pop-up is on). Elsewhere the
     /// lock state comes with the window system's own events.
     fn watch_caps_lock(&mut self, _on: bool) {}
+
+    /// The window's top-left corner on screen, in physical px.
+    fn screen_origin(&self) -> (f64, f64) {
+        (0.0, 0.0)
+    }
+
+    /// The native window handle (HWND on Windows), for accessibility.
+    fn native_handle(&self) -> isize {
+        0
+    }
+
+    /// What VoiceOver reads for the island (macOS handles it in the view).
+    fn set_a11y_label(&mut self, _label: &str) {}
 
     /// The display's camera notch (width, height in logical px), if the
     /// island sits on one (notched MacBooks).

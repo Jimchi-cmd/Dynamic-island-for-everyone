@@ -12,6 +12,7 @@
 // Hide the console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod a11y;
 mod app;
 mod autostart;
 mod cli;
@@ -130,6 +131,7 @@ fn run() -> platform::Result<()> {
     providers::WEB_ARTWORK.store(app.prefs().web_artwork, std::sync::atomic::Ordering::Relaxed);
     providers.spotify(app.prefs().spotify && !scripted);
     let mut alarm_sound = sound::AlarmSound::default();
+    let mut access = a11y::Bridge::new(win.native_handle(), win.waker());
     trace("providers started");
 
     let mut needs_frame = true;
@@ -269,6 +271,14 @@ fn run() -> platform::Result<()> {
             }
         }
         needs_frame |= app.tick(t);
+        for press in access.take_presses() {
+            needs_frame |= app.a11y_press(press, t);
+        }
+        if access.active() {
+            let described = app.accessibility(t);
+            win.set_a11y_label(&described.label);
+            access.update(&described, win.screen_origin(), win.scale());
+        }
 
         let new_region = app.input_region(t);
         if new_region != region {
