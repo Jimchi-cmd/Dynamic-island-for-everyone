@@ -5,6 +5,7 @@
 # session and a private stand-in system bus).
 set -euo pipefail
 cd "$(dirname "$0")/.."
+gnome-shell --version 2>/dev/null || true
 if [[ "${1:-}" != --inside ]]; then
   ROOT=$(mktemp -d)
   mkdir -p "$ROOT/home/bin" "$ROOT/run"

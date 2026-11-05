@@ -65,7 +65,7 @@ macOS will ask once for **Bluetooth** (battery levels and connecting devices), a
 - Wi-Fi uses NetworkManager and Bluetooth uses BlueZ, which most desktops already run.
 - On GNOME with Wayland, Islet runs through XWayland. It works without anything else, but GNOME hides global keys and the Caps Lock state from XWayland apps. The **GNOME Shell extension** fills that in (see below).
 
-### GNOME Shell extension (GNOME 45–49)
+### GNOME Shell extension (GNOME 45–50)
 
 `islet@jimchi-cmd.github.io.shell-extension.zip` adds, on GNOME:
 
