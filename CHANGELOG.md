@@ -28,6 +28,8 @@ The first public release.
 
 - **Screen readers:** the island describes itself and exposes its controls to Orca, Narrator/NVDA and VoiceOver.
 
+- **Camera and microphone dots:** a green dot (camera) or orange dot (microphone) at the right end of the closed island while any app uses them, with the app's name for screen readers (Linux and Windows name the app; macOS doesn't say which).
+
 - **Live activities for scripts and apps:** `islet activity start|update|end` shows your own activity (a build, a download, a delivery) with a progress ring and bar.
 
 ### Apps and tools
