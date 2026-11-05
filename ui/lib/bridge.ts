@@ -31,6 +31,8 @@ export const getPrefs = () => invoke<Prefs>('get_prefs');
 export const setPrefs = (prefs: Prefs) => invoke<void>('set_prefs', { prefs });
 export const checkUpdate = () => invoke<UpdateInfo>('check_update');
 export const installUpdate = () => invoke<void>('install_update');
+export const initialPage = () => invoke<string | null>('initial_page');
+export const openBluetoothSettings = () => invoke<void>('open_bluetooth_settings');
 
 /** Errors from Rust arrive as strings. */
 export const message = (e: unknown) => (typeof e === 'string' ? e : e instanceof Error ? e.message : String(e));

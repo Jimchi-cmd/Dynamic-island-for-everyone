@@ -4,6 +4,7 @@
 use islet_core::activity::{BatteryDevice, DeviceKind, Live, MediaInfo, NavInfo, Part};
 use islet_core::alarm::{self, Alarm};
 use islet_core::clock::{format_date, format_time, LocalTime};
+use islet_core::connectivity::{self, BtState, Connectivity, WifiState};
 use islet_core::geometry::Rect;
 use islet_core::nav;
 use islet_render::elements::{Element, Icon};
@@ -25,6 +26,32 @@ pub enum NavControl {
 
 pub const GREEN_NAV: [u8; 3] = [52, 199, 89];
 pub const ORANGE: [u8; 3] = [255, 159, 10];
+/// Control-centre blue for "on" buttons, and a lighter one for text on black.
+pub const BLUE: [u8; 3] = [10, 132, 255];
+pub const BLUE_TEXT: [u8; 3] = [64, 156, 255];
+
+/// The Wi-Fi and Bluetooth lists that open from the clock card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Panel {
+    Wifi,
+    Bluetooth,
+}
+
+/// What a tap on the clock card or a list lands on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnHit {
+    /// A button on the clock card.
+    Open(Panel),
+    /// The list header: back to the clock.
+    Back,
+    Row(usize),
+    /// The footer button ("Enter the password in Settings").
+    Footer,
+}
+
+pub const ROW_H: f64 = 36.0;
+pub const MAX_ROWS: usize = 5;
+const LIST_TOP: f64 = 52.0;
 
 /// Buttons of the ringing-alarm card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -619,6 +646,216 @@ pub fn expanded_clock(pill: Rect, now: &LocalTime, h24: bool, o: f32, engine: &m
     }
     let date_style = TextStyle { size: 15.0, opacity: o * 0.6, ..TextStyle::default() };
     v.push(text(format_date(now), date_style, left + 2.0, top + 102.0));
+    v
+}
+
+/// The Wi-Fi and Bluetooth buttons along the bottom of the clock card.
+pub fn clock_chips(pill: Rect) -> [(Rect, Panel); 2] {
+    let (x, w) = (pill.x + PAD, pill.w - 2.0 * PAD);
+    let y = pill.y + 122.0;
+    let half = (w - 10.0) / 2.0;
+    [(Rect::new(x, y, half, 32.0), Panel::Wifi), (Rect::new(x + half + 10.0, y, half, 32.0), Panel::Bluetooth)]
+}
+
+pub fn clock_chip_elements(pill: Rect, c: &Connectivity, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let mut v = Vec::new();
+    let style = TextStyle { size: 13.0, weight: 600, opacity: o, ..TextStyle::default() };
+    for (r, panel) in clock_chips(pill) {
+        let (x, y, w, h) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
+        let (icon, label, on) = match panel {
+            Panel::Wifi => (
+                Icon::Wifi(c.wifi.networks.iter().find(|n| n.active).map_or(3, |n| connectivity::bars(n.strength))),
+                c.wifi.current.clone().unwrap_or_else(|| "Wi-Fi".into()),
+                c.wifi.current.is_some(),
+            ),
+            Panel::Bluetooth => (
+                Icon::Bluetooth,
+                c.connected_device().map_or_else(|| "Bluetooth".into(), |d| d.name.clone()),
+                c.connected_device().is_some(),
+            ),
+        };
+        let bg = if on { BLUE } else { WHITE };
+        v.push(Element::Bar { x, y, w, h, color: bg, opacity: o * if on { 0.9 } else { 0.14 } });
+        v.push(Element::Icon { icon, x: x + 10.0, y: y + h / 2.0 - 9.0, size: 18.0, color: WHITE, opacity: o });
+        let label = engine.ellipsize(&label, &style, w - 44.0);
+        v.push(text(label, style, x + 34.0, y + h / 2.0 + 4.5));
+    }
+    v
+}
+
+/// Height of a Wi-Fi or Bluetooth list with `rows` entries.
+pub fn list_height(rows: usize, footer: bool) -> f64 {
+    LIST_TOP + rows.clamp(1, MAX_ROWS) as f64 * ROW_H + if footer { 46.0 } else { 14.0 }
+}
+
+pub fn list_rows(pill: Rect, rows: usize) -> Vec<Rect> {
+    (0..rows.min(MAX_ROWS))
+        .map(|i| Rect::new(pill.x + 10.0, pill.y + LIST_TOP + i as f64 * ROW_H, pill.w - 20.0, ROW_H))
+        .collect()
+}
+
+pub fn list_header(pill: Rect) -> Rect {
+    Rect::new(pill.x, pill.y, pill.w * 0.6, LIST_TOP - 4.0)
+}
+
+pub fn list_footer(pill: Rect, rows: usize) -> Rect {
+    let y = pill.y + LIST_TOP + rows.clamp(1, MAX_ROWS) as f64 * ROW_H + 6.0;
+    Rect::new(pill.x + PAD, y, pill.w - 2.0 * PAD, 30.0)
+}
+
+/// A footer line: a status or note, or a button when it leads to Settings.
+fn list_footer_elements(
+    pill: Rect,
+    rows: usize,
+    line: &str,
+    button: bool,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
+    let r = list_footer(pill, rows);
+    let (x, y, w, h) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
+    let mut v = Vec::new();
+    if button {
+        v.push(Element::Bar { x, y, w, h, color: BLUE, opacity: o * 0.9 });
+        let style = TextStyle { size: 13.0, weight: 600, opacity: o, align: Align::Center, ..TextStyle::default() };
+        v.push(text(engine.ellipsize(line, &style, w - 20.0), style, x + w / 2.0, y + 19.5));
+    } else {
+        let style = TextStyle { size: 12.5, opacity: o * 0.7, ..TextStyle::default() };
+        v.push(text(engine.ellipsize(line, &style, w), style, x, y + 19.0));
+    }
+    v
+}
+
+fn list_header_elements(
+    pill: Rect,
+    icon: Icon,
+    title: &str,
+    status: Option<&str>,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
+    let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
+    let title_style = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
+    let mut v = vec![
+        text("‹", TextStyle { size: 22.0, opacity: o * 0.7, ..title_style }, x + PAD as f32 - 2.0, y + 35.0),
+        Element::Icon { icon, x: x + PAD as f32 + 14.0, y: y + 19.0, size: 20.0, color: WHITE, opacity: o },
+        text(title, title_style, x + PAD as f32 + 40.0, y + 35.0),
+    ];
+    if let Some(s) = status {
+        let style = TextStyle { size: 12.5, opacity: o * 0.6, align: Align::Right, ..TextStyle::default() };
+        v.push(text(engine.ellipsize(s, &style, w * 0.45), style, x + w - PAD as f32, y + 34.0));
+    }
+    v
+}
+
+/// What the Wi-Fi list's footer says, and whether it is a Settings button.
+pub fn wifi_footer(c: &Connectivity) -> Option<(String, bool)> {
+    match (&c.failure, &c.wifi.note) {
+        (Some((_, Some(ssid))), _) => Some((format!("Enter the password for {ssid} in Settings"), true)),
+        (Some((msg, None)), _) => Some((msg.clone(), false)),
+        (None, Some(note)) => Some((note.clone(), false)),
+        _ => None,
+    }
+}
+
+pub fn bt_footer(c: &Connectivity) -> Option<(String, bool)> {
+    match (&c.failure, &c.bt.note) {
+        (Some((msg, _)), _) => Some((msg.clone(), false)),
+        (None, Some(note)) if !c.bt.can_connect && c.bt.available => Some(("Open Bluetooth settings".into(), true)),
+        (None, Some(note)) => Some((note.clone(), false)),
+        _ => None,
+    }
+}
+
+pub fn expanded_wifi(pill: Rect, c: &Connectivity, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let w: &WifiState = &c.wifi;
+    let mut v = list_header_elements(pill, Icon::Wifi(3), "Wi-Fi", c.busy.as_deref(), o, engine);
+    let rows = list_rows(pill, w.networks.len());
+    let name_style = TextStyle { size: 15.0, weight: 600, opacity: o, ..TextStyle::default() };
+    for (r, n) in rows.iter().zip(&w.networks) {
+        let (x, cy, rw) = (r.x as f32, (r.y + r.h / 2.0) as f32, r.w as f32);
+        v.push(Element::Icon {
+            icon: Icon::Wifi(connectivity::bars(n.strength)),
+            x: x + 10.0,
+            y: cy - 10.0,
+            size: 20.0,
+            color: WHITE,
+            opacity: o,
+        });
+        let name = engine.ellipsize(&n.ssid, &name_style, rw - 100.0);
+        v.push(text(
+            name,
+            TextStyle { color: if n.active { BLUE_TEXT } else { WHITE }, ..name_style },
+            x + 40.0,
+            cy + 5.0,
+        ));
+        if n.active {
+            v.push(Element::Icon {
+                icon: Icon::Check,
+                x: x + rw - 30.0,
+                y: cy - 9.0,
+                size: 18.0,
+                color: BLUE_TEXT,
+                opacity: o,
+            });
+        } else if n.secure && !n.known {
+            v.push(Element::Icon {
+                icon: Icon::Lock,
+                x: x + rw - 28.0,
+                y: cy - 8.0,
+                size: 15.0,
+                color: WHITE,
+                opacity: o * 0.5,
+            });
+        }
+    }
+    if w.networks.is_empty() {
+        let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
+        let msg = if c.busy.is_some() {
+            "Looking for networks…"
+        } else if w.available {
+            "No networks found"
+        } else {
+            "Wi-Fi isn't available"
+        };
+        v.push(text(msg, style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
+    }
+    if let Some((line, button)) = wifi_footer(c) {
+        v.extend(list_footer_elements(pill, w.networks.len(), &line, button, o, engine));
+    }
+    v
+}
+
+pub fn expanded_bluetooth(pill: Rect, c: &Connectivity, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let b: &BtState = &c.bt;
+    let mut v = list_header_elements(pill, Icon::Bluetooth, "Bluetooth", c.busy.as_deref(), o, engine);
+    let rows = list_rows(pill, b.devices.len());
+    let name_style = TextStyle { size: 15.0, weight: 600, opacity: o, ..TextStyle::default() };
+    let state_style = TextStyle { size: 12.5, opacity: o * 0.6, align: Align::Right, ..TextStyle::default() };
+    for (r, d) in rows.iter().zip(&b.devices) {
+        let (x, cy, rw) = (r.x as f32, (r.y + r.h / 2.0) as f32, r.w as f32);
+        v.push(Element::Icon {
+            icon: device_icon(d.kind),
+            x: x + 10.0,
+            y: cy - 10.0,
+            size: 20.0,
+            color: WHITE,
+            opacity: o,
+        });
+        let name = engine.ellipsize(&d.name, &name_style, rw - 140.0);
+        v.push(text(name, name_style, x + 40.0, cy + 5.0));
+        let (label, color, alpha) =
+            if d.connected { ("Connected", BLUE_TEXT, 1.0) } else { ("Not connected", WHITE, 0.6) };
+        v.push(text(label, TextStyle { color, opacity: o * alpha, ..state_style }, x + rw - 10.0, cy + 4.5));
+    }
+    if b.devices.is_empty() {
+        let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
+        let msg = if b.available { "No paired devices" } else { "Bluetooth isn't available" };
+        v.push(text(msg, style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
+    }
+    if let Some((line, button)) = bt_footer(c) {
+        v.extend(list_footer_elements(pill, b.devices.len(), &line, button, o, engine));
+    }
     v
 }
 

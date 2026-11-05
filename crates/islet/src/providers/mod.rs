@@ -4,11 +4,14 @@
 //! waker. Commands for the media session travel the other way.
 
 pub mod art;
+pub mod connectivity;
 #[cfg(target_os = "linux")]
 mod dbus_util;
 mod demo;
 #[cfg(target_os = "linux")]
 mod linux_battery;
+#[cfg(target_os = "linux")]
+mod linux_conn;
 #[cfg(target_os = "linux")]
 mod linux_media;
 #[cfg(all(test, target_os = "linux"))]
@@ -16,12 +19,16 @@ mod linux_tests;
 #[cfg(target_os = "macos")]
 mod macos_battery;
 #[cfg(target_os = "macos")]
+mod macos_conn;
+#[cfg(target_os = "macos")]
 mod macos_media;
 #[cfg(target_os = "macos")]
 pub mod macos_mediaremote;
 pub mod navigation;
 #[cfg(target_os = "windows")]
 mod windows_battery;
+#[cfg(target_os = "windows")]
+mod windows_conn;
 #[cfg(target_os = "windows")]
 mod windows_media;
 
@@ -107,6 +114,7 @@ fn describe(r: &Report) -> String {
         Report::Navigation(None) => "navigation stopped".into(),
         Report::Alarm(Some(a)) => format!("alarm ringing: {:?} at {:02}:{:02}", a.title(), a.hour, a.minute),
         Report::Alarm(None) => "alarm stopped".into(),
+        Report::Connectivity(u) => format!("connectivity: {u:?}"),
     }
 }
 
@@ -114,6 +122,7 @@ pub struct Providers {
     pub reports: Receiver<(Report, Instant)>,
     media: Option<Sender<MediaCommand>>,
     nav: Sender<navigation::NavMsg>,
+    conn: Sender<islet_core::connectivity::ConnCommand>,
 }
 
 impl Providers {
@@ -123,11 +132,17 @@ impl Providers {
         let (tx, reports) = channel();
         let sink = Sink { tx, waker };
         let nav = navigation::start(sink.clone());
+        let conn = connectivity::start(sink.clone());
         if std::env::var("ISLET_DEMO").as_deref() == Ok("media") {
-            return Self { reports, media: Some(demo::start(sink)), nav };
+            return Self { reports, media: Some(demo::start(sink)), nav, conn };
         }
         let media = platform_start(sink);
-        Self { reports, media, nav }
+        Self { reports, media, nav, conn }
+    }
+
+    /// A Wi-Fi / Bluetooth request (the worker only runs when asked).
+    pub fn conn(&self, cmd: islet_core::connectivity::ConnCommand) {
+        let _ = self.conn.send(cmd);
     }
 
     pub fn nav(&self, msg: navigation::NavMsg) {

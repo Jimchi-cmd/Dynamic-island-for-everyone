@@ -7,6 +7,7 @@
 //! islet key routes                        read a Google Routes API key from stdin into the OS keychain
 //! ```
 
+use crate::providers::connectivity::{self as conn, ConnectError};
 use crate::{autostart, config, control, net, secrets};
 use control::Control;
 use islet_core::alarm::{self, Alarm};
@@ -28,6 +29,11 @@ Usage:
   islet alarm list [--json]                your alarms
   islet alarm remove|on|off <id>           delete, turn on or turn off an alarm
   islet alarm stop|snooze                  answer a ringing alarm
+  islet wifi list [--scan] [--json]        nearby Wi-Fi networks
+  islet wifi connect <name> [--password-stdin]
+                                           join a network (the password is read from stdin)
+  islet bt list [--json]                   paired Bluetooth devices
+  islet bt connect|disconnect <id>         connect or disconnect one (id from bt list)
   islet autostart on|off                   start Islet when you log in (or stop doing so)
   islet status [--json]                    is Islet running, and how it is set up
   islet quit                               close the running island
@@ -60,6 +66,13 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["alarm", verb @ ("remove" | "on" | "off"), id] => alarm_edit(verb, id),
         ["alarm", "stop"] => control::send(&Control::AlarmStop).map(|()| "Stopped.".into()),
         ["alarm", "snooze"] => control::send(&Control::AlarmSnooze).map(|()| "Snoozed for 9 minutes.".into()),
+        ["wifi", "list", rest @ ..] => Ok(wifi_list(rest.contains(&"--scan"), rest.contains(&"--json"))),
+        ["wifi", "connect", ssid] => wifi_connect(ssid, false),
+        ["wifi", "connect", ssid, "--password-stdin"] => wifi_connect(ssid, true),
+        ["bt", "list", rest @ ..] => Ok(bt_list(rest.contains(&"--json"))),
+        ["bt", verb @ ("connect" | "disconnect"), id] => conn::backend()
+            .bt_set(id, *verb == "connect")
+            .map(|()| format!("{}ed.", if *verb == "connect" { "Connect" } else { "Disconnect" })),
         ["quit"] => control::send(&Control::Quit).map(|()| "Closed.".into()),
         _ => Err(format!("unknown command\n\n{USAGE}")),
     })
@@ -196,6 +209,77 @@ fn alarm_edit(verb: &str, id: &str) -> Result<String, String> {
     config::save_alarms(&alarms)?;
     alarms_changed();
     Ok(msg)
+}
+
+fn wifi_list(scan: bool, json: bool) -> String {
+    let w = conn::backend().wifi(scan);
+    if json {
+        let nets: Vec<_> = w
+            .networks
+            .iter()
+            .map(|n| serde_json::json!({ "ssid": n.ssid, "strength": n.strength, "secure": n.secure, "known": n.known, "active": n.active }))
+            .collect();
+        return serde_json::json!({ "available": w.available, "current": w.current, "networks": nets, "note": w.note })
+            .to_string();
+    }
+    let mut lines: Vec<String> = w
+        .networks
+        .iter()
+        .map(|n| {
+            format!(
+                "{} {:>3}%  {}{}",
+                if n.active { "*" } else { " " },
+                n.strength,
+                n.ssid,
+                if n.secure && !n.known { "  (password)" } else { "" }
+            )
+        })
+        .collect();
+    if let Some(note) = w.note {
+        lines.push(note);
+    }
+    if lines.is_empty() {
+        lines.push("No networks found.".into());
+    }
+    lines.join("\n")
+}
+
+fn wifi_connect(ssid: &str, password_stdin: bool) -> Result<String, String> {
+    let password = if password_stdin {
+        let mut pw = String::new();
+        std::io::stdin().read_line(&mut pw).map_err(|e| e.to_string())?;
+        let pw = pw.trim_end_matches(['\r', '\n']).to_string();
+        (!pw.is_empty()).then_some(pw)
+    } else {
+        None
+    };
+    match conn::backend().wifi_connect(ssid, password.as_deref()) {
+        Ok(()) => Ok(format!("Connected to {ssid}.")),
+        Err(ConnectError::NeedsPassword) => Err(format!("{ssid} needs a password (use --password-stdin)")),
+        Err(ConnectError::Failed(e)) => Err(e),
+    }
+}
+
+fn bt_list(json: bool) -> String {
+    let b = conn::backend().bluetooth();
+    if json {
+        let devs: Vec<_> = b
+            .devices
+            .iter()
+            .map(|d| serde_json::json!({ "id": d.id, "name": d.name, "connected": d.connected }))
+            .collect();
+        return serde_json::json!({ "available": b.available, "powered": b.powered, "canConnect": b.can_connect, "devices": devs, "note": b.note })
+            .to_string();
+    }
+    let mut lines: Vec<String> =
+        b.devices.iter().map(|d| format!("{} {}  ({})", if d.connected { "*" } else { " " }, d.name, d.id)).collect();
+    if let Some(note) = b.note {
+        lines.push(note);
+    }
+    if lines.is_empty() {
+        lines.push("No paired devices.".into());
+    }
+    lines.join("\n")
 }
 
 fn status(json: bool) -> String {

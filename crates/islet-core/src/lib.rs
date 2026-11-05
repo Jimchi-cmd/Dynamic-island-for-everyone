@@ -4,6 +4,7 @@
 pub mod activity;
 pub mod alarm;
 pub mod clock;
+pub mod connectivity;
 pub mod geometry;
 pub mod island;
 pub mod nav;

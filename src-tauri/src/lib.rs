@@ -23,6 +23,9 @@ pub fn allowed(args: &[String]) -> bool {
         ["status", "--json"] | ["autostart", "on" | "off"] | ["nav", "stop"] | ["quit"] => true,
         ["key", "routes"] | ["key", "routes", "--clear"] | ["update", "check", "--json"] => true,
         ["alarm", "list", "--json"] | ["alarm", "stop" | "snooze"] => true,
+        ["wifi", "list", "--json"] | ["wifi", "list", "--scan", "--json"] | ["bt", "list", "--json"] => true,
+        ["wifi", "connect", ssid] | ["wifi", "connect", ssid, "--password-stdin"] => !ssid.starts_with('-'),
+        ["bt", "connect" | "disconnect", id] => !id.starts_with('-'),
         ["alarm", "remove" | "on" | "off", id] => id.parse::<u32>().is_ok(),
         ["alarm", "add", time, rest @ ..] => {
             !time.starts_with('-')
@@ -134,6 +137,24 @@ fn open_link(url: String) -> Result<(), String> {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let r = Command::new("xdg-open").arg(&url).spawn();
     r.map(drop).map_err(|e| e.to_string())
+}
+
+/// `--page wifi:Cafe` from the island: open that page (join Cafe).
+#[tauri::command]
+fn initial_page() -> Option<String> {
+    let args: Vec<String> = std::env::args().collect();
+    args.iter().position(|a| a == "--page").and_then(|i| args.get(i + 1)).cloned()
+}
+
+/// Windows Bluetooth settings (the only non-https link Settings opens).
+#[tauri::command]
+fn open_bluetooth_settings() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        command(&PathBuf::from("explorer")).arg("ms-settings:bluetooth").spawn().map(drop).map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "windows"))]
+    Err("only on Windows".into())
 }
 
 #[derive(Serialize)]
@@ -259,7 +280,9 @@ pub fn run() {
             get_prefs,
             set_prefs,
             check_update,
-            install_update
+            install_update,
+            initial_page,
+            open_bluetooth_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running Islet Settings");
@@ -285,6 +308,8 @@ mod tests {
         assert!(allowed(&args(&["alarm", "add", "07:30", "--label", "Gym", "--days", "weekdays"])));
         assert!(!allowed(&args(&["alarm", "add", "07:30", "--label"])), "option without a value");
         assert!(!allowed(&args(&["alarm", "remove", "all"])));
+        assert!(allowed(&args(&["wifi", "connect", "Cafe", "--password-stdin"])));
+        assert!(!allowed(&args(&["wifi", "connect", "--evil"])));
         assert!(!allowed(&args(&[])), "running the island itself goes through start_island");
     }
 

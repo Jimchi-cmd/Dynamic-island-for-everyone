@@ -2,11 +2,12 @@
 //! state machine → springs → frame and content. No OS calls in here, so all
 //! of it is unit-tested.
 
-use crate::content::{self, AlarmControl, Control, NavControl};
+use crate::content::{self, AlarmControl, ConnHit, Control, NavControl, Panel};
 use crate::platform::{Button, Event, Key};
 use islet_core::activity::{Activities, Live, MediaCommand, MediaInfo, NavInfo, Report};
 use islet_core::alarm::{Alarm, AlarmClock, AlarmEvent};
 use islet_core::clock::{secs_to_next_minute, LocalTime};
+use islet_core::connectivity::{ConnCommand, ConnUpdate};
 use islet_core::geometry::Rect;
 use islet_core::island::{
     spring_for, target_size, Island, Presentation, Signal, AUTO_COLLAPSE_SECS, LONG_PRESS_SECS, MINIMAL_CIRCLE,
@@ -46,7 +47,7 @@ const IDLE_W: f64 = 126.0;
 /// At most one activity switch per this many seconds of scrolling.
 const SWITCH_COOLDOWN: f64 = 0.35;
 /// Height of the expanded clock and media cards.
-const CLOCK_H: f64 = 124.0;
+const CLOCK_H: f64 = 168.0;
 const MEDIA_H: f64 = 160.0;
 
 fn smooth(c: f64) -> f64 {
@@ -106,9 +107,22 @@ pub enum AlarmOut {
     Disable(u32),
 }
 
+/// Things the main loop opens for the island.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UiAction {
+    /// A link or settings URI (Windows Bluetooth settings).
+    OpenUrl(String),
+    /// Islet Settings at a page ("wifi:Home": join Home with a password).
+    OpenSettings(String),
+}
+
+/// Windows has no public API to connect Bluetooth devices: its settings do.
+const BLUETOOTH_SETTINGS: &str = "ms-settings:bluetooth";
+
 /// What an open island shows.
 enum OpenContent<'a> {
     Alarm(&'a Alarm),
+    Panel(Panel),
     Nav(&'a NavInfo),
     Media(&'a MediaInfo),
     Battery,
@@ -134,6 +148,11 @@ pub struct App {
     alarms: AlarmClock,
     alarm_control: Option<AlarmControl>,
     alarm_out: Vec<AlarmOut>,
+    /// The open Wi-Fi or Bluetooth list, a pressed entry, and requests.
+    panel: Option<Panel>,
+    conn_hit: Option<ConnHit>,
+    conn_commands: Vec<ConnCommand>,
+    ui_actions: Vec<UiAction>,
     scrub: Option<f64>,
     commands: Vec<MediaCommand>,
     /// When the pointer left an open island (auto-collapse timer).
@@ -183,6 +202,10 @@ impl App {
             alarms: AlarmClock::new(),
             alarm_control: None,
             alarm_out: Vec::new(),
+            panel: None,
+            conn_hit: None,
+            conn_commands: Vec::new(),
+            ui_actions: Vec::new(),
             scrub: None,
             commands: Vec::new(),
             left_open_at: None,
@@ -336,6 +359,88 @@ impl App {
         content::alarm_controls(cr).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, c)| c)
     }
 
+    /// Wi-Fi / Bluetooth requests for the connectivity worker.
+    pub fn take_conn_commands(&mut self) -> Vec<ConnCommand> {
+        std::mem::take(&mut self.conn_commands)
+    }
+
+    /// Links and Settings pages to open.
+    pub fn take_ui_actions(&mut self) -> Vec<UiAction> {
+        std::mem::take(&mut self.ui_actions)
+    }
+
+    /// The clock-card button or list entry under (x, y).
+    fn conn_hit_at(&self, x: f64, y: f64, t: f64) -> Option<ConnHit> {
+        if !self.island.presentation().is_open() || self.animating(t) {
+            return None;
+        }
+        let cr = self.content_rect(self.pill_rect(t));
+        let c = self.activities.connectivity();
+        match self.open_content(&self.live(t)) {
+            OpenContent::Clock => {
+                content::clock_chips(cr).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, p)| ConnHit::Open(p))
+            }
+            OpenContent::Panel(p) => {
+                let (rows, footer) = match p {
+                    Panel::Wifi => (c.wifi.networks.len(), content::wifi_footer(c)),
+                    Panel::Bluetooth => (c.bt.devices.len(), content::bt_footer(c)),
+                };
+                if content::list_header(cr).contains(x, y) {
+                    return Some(ConnHit::Back);
+                }
+                if let Some(i) = content::list_rows(cr, rows).iter().position(|r| r.contains(x, y)) {
+                    return Some(ConnHit::Row(i));
+                }
+                (footer.is_some_and(|(_, button)| button) && content::list_footer(cr, rows).contains(x, y))
+                    .then_some(ConnHit::Footer)
+            }
+            _ => None,
+        }
+    }
+
+    fn conn_act(&mut self, hit: ConnHit, t: f64) -> bool {
+        let c = self.activities.connectivity().clone();
+        match hit {
+            ConnHit::Open(p) => {
+                self.panel = Some(p);
+                self.activities.report(Report::Connectivity(ConnUpdate::ClearFailure), t);
+                self.conn_commands.push(match p {
+                    Panel::Wifi => ConnCommand::ScanWifi,
+                    Panel::Bluetooth => ConnCommand::ListBluetooth,
+                });
+            }
+            ConnHit::Back => self.panel = None,
+            ConnHit::Row(i) => match self.panel {
+                Some(Panel::Wifi) => {
+                    if let Some(n) = c.wifi.networks.get(i).filter(|n| !n.active) {
+                        self.conn_commands.push(ConnCommand::ConnectWifi { ssid: n.ssid.clone(), password: None });
+                    }
+                }
+                Some(Panel::Bluetooth) => {
+                    if let Some(d) = c.bt.devices.get(i) {
+                        if !c.bt.can_connect {
+                            self.ui_actions.push(UiAction::OpenUrl(BLUETOOTH_SETTINGS.into()));
+                        } else if d.connected {
+                            self.conn_commands.push(ConnCommand::DisconnectBluetooth(d.id.clone()));
+                        } else {
+                            self.conn_commands.push(ConnCommand::ConnectBluetooth(d.id.clone()));
+                        }
+                    }
+                }
+                None => {}
+            },
+            ConnHit::Footer => match (self.panel, &c.failure) {
+                (Some(Panel::Wifi), Some((_, Some(ssid)))) => {
+                    self.ui_actions.push(UiAction::OpenSettings(format!("wifi:{ssid}")))
+                }
+                (Some(Panel::Bluetooth), _) => self.ui_actions.push(UiAction::OpenUrl(BLUETOOTH_SETTINGS.into())),
+                _ => {}
+            },
+        }
+        self.sync_live(t);
+        true
+    }
+
     /// Commands for the media session, collected since the last call.
     pub fn take_commands(&mut self) -> Vec<MediaCommand> {
         std::mem::take(&mut self.commands)
@@ -388,6 +493,8 @@ impl App {
     fn open_content(&self, live: &[Live]) -> OpenContent<'_> {
         if let (Some(Live::Alarm(_)), Some(a)) = (live.first(), self.activities.alarm()) {
             OpenContent::Alarm(a)
+        } else if let Some(p) = self.panel {
+            OpenContent::Panel(p)
         } else if matches!(live.first(), Some(Live::Battery { .. })) {
             OpenContent::Battery
         } else if let (Some(Live::Navigation(_)) | None, Some(n)) = (live.first(), self.activities.nav()) {
@@ -441,6 +548,12 @@ impl App {
         if eo > 0.0 {
             match self.open_content(&live) {
                 OpenContent::Alarm(a) => out.extend(content::expanded_alarm(cr, a, self.h24, t, eo, engine)),
+                OpenContent::Panel(Panel::Wifi) => {
+                    out.extend(content::expanded_wifi(cr, self.activities.connectivity(), eo, engine))
+                }
+                OpenContent::Panel(Panel::Bluetooth) => {
+                    out.extend(content::expanded_bluetooth(cr, self.activities.connectivity(), eo, engine))
+                }
                 OpenContent::Media(m) => out.extend(content::expanded_media(cr, m, t, eo, self.scrub, engine)),
                 OpenContent::Nav(n) => out.extend(content::expanded_nav(cr, n, self.clock.as_ref(), eo, engine)),
                 OpenContent::Battery => out.extend(content::expanded_battery(
@@ -454,6 +567,7 @@ impl App {
                     if let Some(now) = self.clock {
                         out.extend(content::expanded_clock(cr, &now, self.h24, eo, engine));
                     }
+                    out.extend(content::clock_chip_elements(cr, self.activities.connectivity(), eo, engine));
                 }
             }
         }
@@ -490,6 +604,17 @@ impl App {
             Presentation::Expanded => {
                 let h = match self.open_content(&live) {
                     OpenContent::Alarm(_) => content::ALARM_H,
+                    OpenContent::Panel(p) => {
+                        let c = self.activities.connectivity();
+                        match p {
+                            Panel::Wifi => {
+                                content::list_height(c.wifi.networks.len(), content::wifi_footer(c).is_some())
+                            }
+                            Panel::Bluetooth => {
+                                content::list_height(c.bt.devices.len(), content::bt_footer(c).is_some())
+                            }
+                        }
+                    }
                     OpenContent::Media(_) | OpenContent::Nav(_) => MEDIA_H,
                     OpenContent::Clock => CLOCK_H,
                     OpenContent::Battery => {
@@ -544,6 +669,10 @@ impl App {
             self.left_open_at = None;
             self.control = None;
             self.scrub = None;
+            self.panel = None;
+        } else if !from.is_open() && matches!(self.open_content(&self.live(t)), OpenContent::Clock) {
+            // Show the current network and device on the clock card's buttons.
+            self.conn_commands.push(ConnCommand::Status);
         }
         true
     }
@@ -612,6 +741,10 @@ impl App {
             Event::PointerMove { x, y } => self.pointer_at(x, y, t),
             Event::PointerLeave => self.pointer_at(f64::NAN, f64::NAN, t),
             Event::PointerDown { x, y, button: Button::Primary } if self.hit(x, y, t) => {
+                if let Some(h) = self.conn_hit_at(x, y, t) {
+                    self.conn_hit = Some(h);
+                    return true;
+                }
                 if let Some(c) = self.alarm_control_at(x, y, t) {
                     self.alarm_control = Some(c);
                     return true;
@@ -635,6 +768,9 @@ impl App {
                 }
             }
             Event::PointerUp { x, y, button: Button::Primary } => {
+                if let Some(h) = self.conn_hit.take() {
+                    return if self.conn_hit_at(x, y, t) == Some(h) { self.conn_act(h, t) } else { true };
+                }
                 if let Some(c) = self.alarm_control.take() {
                     return match c {
                         _ if self.alarm_control_at(x, y, t) != Some(c) => true, // released elsewhere
@@ -1155,6 +1291,87 @@ mod tests {
         assert_eq!(app.next_timer(610.0), None, "the one-time alarm is done: zero wakeups");
     }
 
+    fn wifi(current: Option<&str>) -> islet_core::connectivity::WifiState {
+        use islet_core::connectivity::{WifiNetwork, WifiState};
+        let net = |ssid: &str, known: bool| WifiNetwork {
+            ssid: ssid.into(),
+            strength: 80,
+            secure: true,
+            known,
+            active: current == Some(ssid),
+        };
+        WifiState {
+            available: true,
+            enabled: true,
+            current: current.map(String::from),
+            networks: vec![net("Home", true), net("Cafe", false)],
+            note: None,
+        }
+    }
+
+    #[test]
+    fn wifi_and_bluetooth_lists_open_from_the_clock_card() {
+        use islet_core::connectivity::{BtDevice, BtState, ConnUpdate};
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        click(&mut app, 0.0);
+        assert_eq!(app.take_conn_commands(), [ConnCommand::Status], "opening the clock asks for the current network");
+        app.report(Report::Connectivity(ConnUpdate::Wifi(wifi(Some("Home")))), 0.5);
+        let mut engine = TextEngine::new();
+        assert!(texts(&app, 5.0, &mut engine).iter().any(|s| s == "Home"), "the Wi-Fi button names the network");
+
+        // Open the Wi-Fi list.
+        let cr = app.content_rect(app.pill_rect(5.0));
+        press(&mut app, content::clock_chips(cr)[0].0, 5.0);
+        assert_eq!(app.take_conn_commands(), [ConnCommand::ScanWifi]);
+        let rows = content::list_rows(app.content_rect(app.pill_rect(9.0)), 2);
+        assert!(texts(&app, 9.0, &mut engine).iter().any(|s| s == "Cafe"));
+
+        // Tap a new secured network: the backend says it needs a password.
+        press(&mut app, rows[1], 9.0);
+        assert_eq!(app.take_conn_commands(), [ConnCommand::ConnectWifi { ssid: "Cafe".into(), password: None }]);
+        app.report(
+            Report::Connectivity(ConnUpdate::Failed {
+                message: "Cafe needs a password".into(),
+                needs_password: Some("Cafe".into()),
+            }),
+            9.5,
+        );
+        let cr = app.content_rect(app.pill_rect(13.0));
+        press(&mut app, content::list_footer(cr, 2), 13.0);
+        assert_eq!(app.take_ui_actions(), [UiAction::OpenSettings("wifi:Cafe".into())]);
+        assert_eq!(app.presentation(), Expanded, "list taps don't close the island");
+
+        // Back to the clock, then Bluetooth on a system that can't connect from apps.
+        press(&mut app, content::list_header(cr), 14.0);
+        app.report(
+            Report::Connectivity(ConnUpdate::Bluetooth(BtState {
+                available: true,
+                powered: true,
+                devices: vec![BtDevice {
+                    id: "b".into(),
+                    name: "Buds".into(),
+                    kind: DeviceKind::Earbuds,
+                    connected: false,
+                }],
+                can_connect: false,
+                note: Some("Windows connects Bluetooth devices in its own settings".into()),
+            })),
+            14.0,
+        );
+        let cr = app.content_rect(app.pill_rect(18.0));
+        press(&mut app, content::clock_chips(cr)[1].0, 18.0);
+        assert_eq!(app.take_conn_commands(), [ConnCommand::ListBluetooth]);
+        let rows = content::list_rows(app.content_rect(app.pill_rect(22.0)), 1);
+        press(&mut app, rows[0], 22.0);
+        assert_eq!(app.take_ui_actions(), [UiAction::OpenUrl("ms-settings:bluetooth".into())]);
+
+        // Closing the island forgets the list.
+        app.handle(Event::Key(Key::Escape), 23.0);
+        click(&mut app, 30.0);
+        assert!(!texts(&app, 35.0, &mut engine).iter().any(|s| s == "Buds"), "back on the clock card");
+    }
+
     #[test]
     fn idle_island_shows_no_clock_and_never_wakes_for_it() {
         let mut app = App::new(Demo::None, false);
@@ -1171,7 +1388,7 @@ mod tests {
         app.set_time(NOW, 0.0);
         click(&mut app, 0.0);
         let mut engine = TextEngine::new();
-        assert_eq!(texts(&app, 5.0, &mut engine), ["14:05", "Wednesday, 4 November"]);
+        assert_eq!(texts(&app, 5.0, &mut engine), ["14:05", "Wednesday, 4 November", "Wi-Fi", "Bluetooth"]);
         assert!((app.next_timer(5.0).unwrap() - 18.0).abs() < 1e-9, "wakes at the next minute");
         let later = LocalTime { minute: 6, second: 0, ..NOW };
         assert!(app.set_time(later, 23.0), "a new minute redraws");
@@ -1268,6 +1485,78 @@ mod tests {
             let extra = if p == Minimal { MINIMAL_GAP + MINIMAL_CIRCLE } else { 0.0 };
             assert!((w + extra) * 1.03 <= WINDOW.0 && h * 1.03 + TOP_GAP <= WINDOW.1, "{p:?}");
         }
+    }
+
+    /// Wi-Fi and Bluetooth screens for visual review:
+    /// `ISLET_CONN_SHEET=/path/out.png cargo test -p islet conn_sheet`
+    #[test]
+    fn conn_sheet() {
+        let Some(out) = std::env::var_os("ISLET_CONN_SHEET") else { return };
+        use islet_core::connectivity::{BtDevice, BtState, ConnUpdate, WifiNetwork};
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let mut engine = TextEngine::new();
+        let mut w = wifi(Some("Home"));
+        w.networks.push(WifiNetwork {
+            ssid: "Library guest".into(),
+            strength: 30,
+            secure: false,
+            known: false,
+            active: false,
+        });
+        w.networks.push(WifiNetwork {
+            ssid: "Neighbour 5G".into(),
+            strength: 50,
+            secure: true,
+            known: false,
+            active: false,
+        });
+        let bt = BtState {
+            available: true,
+            powered: true,
+            devices: vec![
+                BtDevice { id: "1".into(), name: "Galaxy Buds2".into(), kind: DeviceKind::Earbuds, connected: true },
+                BtDevice { id: "2".into(), name: "MX Master 3".into(), kind: DeviceKind::Mouse, connected: false },
+                BtDevice { id: "3".into(), name: "Keychron K2".into(), kind: DeviceKind::Keyboard, connected: false },
+            ],
+            can_connect: true,
+            note: None,
+        };
+        let make = |panel: Option<usize>, fail: bool| {
+            let mut a = App::new(Demo::None, false);
+            a.set_time(NOW, 0.0);
+            a.report(Report::Connectivity(ConnUpdate::Wifi(w.clone())), 0.0);
+            a.report(Report::Connectivity(ConnUpdate::Bluetooth(bt.clone())), 0.0);
+            click(&mut a, 0.0);
+            if let Some(i) = panel {
+                let cr = a.content_rect(a.pill_rect(5.0));
+                press(&mut a, content::clock_chips(cr)[i].0, 5.0);
+                if fail {
+                    a.report(
+                        Report::Connectivity(ConnUpdate::Failed {
+                            message: String::new(),
+                            needs_password: Some("Neighbour 5G".into()),
+                        }),
+                        5.2,
+                    );
+                }
+            }
+            a
+        };
+        let apps = [make(None, false), make(Some(0), false), make(Some(0), true), make(Some(1), false)];
+        let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
+        let mut sheet = Pixmap::new(cw * 2, ch * 2).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        for (i, a) in apps.iter().enumerate() {
+            let mut cell = Pixmap::new(cw, ch).unwrap();
+            let frame = a.frame(12.0);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, ch, 1.0);
+            let els = a.elements(12.0, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            let (x, y) = ((i % 2) as i32 * cw as i32, (i / 2) as i32 * ch as i32);
+            sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+        }
+        sheet.save_png(out).unwrap();
     }
 
     /// Alarm frames for visual review:

@@ -25,7 +25,7 @@ mod providers;
 mod secrets;
 mod sound;
 
-use app::{AlarmOut, App, Demo, FRAME, WINDOW};
+use app::{AlarmOut, App, Demo, UiAction, FRAME, WINDOW};
 use content::NavControl;
 use control::Control;
 use islet_core::activity::Report;
@@ -182,6 +182,15 @@ fn run() -> platform::Result<()> {
                 _ => {}
             }
         }
+        for cmd in app.take_conn_commands() {
+            providers.conn(cmd);
+        }
+        for action in app.take_ui_actions() {
+            match action {
+                UiAction::OpenUrl(url) => navigation::open_url(&url),
+                UiAction::OpenSettings(page) => open_settings(&page),
+            }
+        }
         let open = app.nav_card_open(t);
         if open != nav_card_open {
             nav_card_open = open;
@@ -248,4 +257,21 @@ fn attach_console() {
         use windows::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
         let _ = AttachConsole(ATTACH_PARENT_PROCESS);
     }
+}
+
+/// Open Islet Settings (installed next to the island) at a page.
+fn open_settings(page: &str) {
+    let Some(exe) = std::env::current_exe().ok().and_then(|e| {
+        let p = e.parent()?.join(format!("islet-settings{}", std::env::consts::EXE_SUFFIX));
+        p.exists().then_some(p)
+    }) else {
+        providers::debug_log("Islet Settings is not installed next to the island");
+        return;
+    };
+    let _ = std::process::Command::new(exe)
+        .args(["--page", page])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
 }

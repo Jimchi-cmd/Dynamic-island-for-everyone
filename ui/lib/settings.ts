@@ -158,3 +158,47 @@ export function parseAlarms(json: string): Alarm[] {
   const v = JSON.parse(json);
   return Array.isArray(v) ? v : [];
 }
+
+export interface WifiNetwork {
+  ssid: string;
+  strength: number;
+  secure: boolean;
+  known: boolean;
+  active: boolean;
+}
+
+export interface WifiList {
+  available: boolean;
+  current: string | null;
+  networks: WifiNetwork[];
+  note: string | null;
+}
+
+export interface BtDevice {
+  id: string;
+  name: string;
+  connected: boolean;
+}
+
+export interface BtList {
+  available: boolean;
+  powered: boolean;
+  canConnect: boolean;
+  devices: BtDevice[];
+  note: string | null;
+}
+
+/** `--page wifi:Cafe` → { page: 'connections', ssid: 'Cafe' }. */
+export function parsePage(arg: string | null): { page: string; ssid: string | null } | null {
+  if (!arg) return null;
+  const [page, ...rest] = arg.split(':');
+  const ssid = rest.join(':');
+  if (page === 'wifi' || page === 'bluetooth') return { page: 'connections', ssid: ssid || null };
+  return { page: page ?? '', ssid: null };
+}
+
+/** Signal 0–100 as 1–3 bars, for a text meter. */
+export function signalBars(strength: number): string {
+  const n = strength < 35 ? 1 : strength < 65 ? 2 : 3;
+  return '▂▄▆'.slice(0, n).padEnd(3, '·');
+}

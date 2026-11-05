@@ -341,3 +341,317 @@ fn upower_devices_connect_change_and_leave() {
         .unwrap();
     expect(&rx, "headphones gone", |r| matches!(r, Report::DeviceGone(id) if *id == headset));
 }
+
+// ---------------------------------------------- NetworkManager + BlueZ ---
+
+/// What the fake NetworkManager's networks and connections are doing.
+#[derive(Default)]
+struct NmState {
+    active_ap: String,
+    active_state: u32,
+    last_scan: i64,
+    added: Vec<String>,
+    deleted: bool,
+}
+
+type Shared = Arc<Mutex<NmState>>;
+const NMP: &str = "/org/freedesktop/NetworkManager";
+
+fn opath(s: &str) -> OwnedObjectPath {
+    OwnedObjectPath::try_from(s.to_string()).unwrap()
+}
+
+struct FakeNm(Shared);
+
+#[zbus::interface(name = "org.freedesktop.NetworkManager")]
+impl FakeNm {
+    fn get_devices(&self) -> Vec<OwnedObjectPath> {
+        vec![opath(&format!("{NMP}/Devices/1")), opath(&format!("{NMP}/Devices/2"))]
+    }
+
+    #[zbus(property)]
+    fn wireless_enabled(&self) -> bool {
+        true
+    }
+
+    fn activate_connection(&self, _c: OwnedObjectPath, _d: OwnedObjectPath, ap: OwnedObjectPath) -> OwnedObjectPath {
+        let mut s = self.0.lock().unwrap();
+        s.active_ap = ap.to_string();
+        s.active_state = 2;
+        opath(&format!("{NMP}/ActiveConnection/1"))
+    }
+
+    fn add_and_activate_connection(
+        &self,
+        settings: HashMap<String, HashMap<String, OwnedValue>>,
+        _d: OwnedObjectPath,
+        ap: OwnedObjectPath,
+    ) -> (OwnedObjectPath, OwnedObjectPath) {
+        let mut s = self.0.lock().unwrap();
+        let psk = settings
+            .get("802-11-wireless-security")
+            .and_then(|sec| sec.get("psk"))
+            .and_then(|v| <&str>::try_from(v).ok().map(String::from));
+        s.added.push(psk.clone().unwrap_or_default());
+        // "right" is the right password; open networks need none.
+        let ok = psk.as_deref().is_none_or(|p| p == "right");
+        s.active_state = if ok { 2 } else { 4 };
+        if ok {
+            s.active_ap = ap.to_string();
+        }
+        (opath(&format!("{NMP}/Settings/9")), opath(&format!("{NMP}/ActiveConnection/1")))
+    }
+}
+
+struct FakeNmDevice(u32);
+
+#[zbus::interface(name = "org.freedesktop.NetworkManager.Device")]
+impl FakeNmDevice {
+    #[zbus(property)]
+    fn device_type(&self) -> u32 {
+        self.0
+    }
+}
+
+struct FakeWireless(Shared);
+
+#[zbus::interface(name = "org.freedesktop.NetworkManager.Device.Wireless")]
+impl FakeWireless {
+    #[zbus(property)]
+    fn active_access_point(&self) -> OwnedObjectPath {
+        let ap = self.0.lock().unwrap().active_ap.clone();
+        opath(if ap.is_empty() { "/" } else { &ap })
+    }
+
+    #[zbus(property)]
+    fn last_scan(&self) -> i64 {
+        self.0.lock().unwrap().last_scan
+    }
+
+    fn get_all_access_points(&self) -> Vec<OwnedObjectPath> {
+        (1..=3).map(|i| opath(&format!("{NMP}/AccessPoint/{i}"))).collect()
+    }
+
+    fn request_scan(&self, _options: HashMap<String, OwnedValue>) {
+        self.0.lock().unwrap().last_scan += 1;
+    }
+}
+
+struct FakeAp {
+    ssid: &'static str,
+    strength: u8,
+    secure: bool,
+}
+
+#[zbus::interface(name = "org.freedesktop.NetworkManager.AccessPoint")]
+impl FakeAp {
+    #[zbus(property)]
+    fn ssid(&self) -> Vec<u8> {
+        self.ssid.as_bytes().to_vec()
+    }
+
+    #[zbus(property)]
+    fn strength(&self) -> u8 {
+        self.strength
+    }
+
+    #[zbus(property)]
+    fn flags(&self) -> u32 {
+        u32::from(self.secure)
+    }
+
+    #[zbus(property)]
+    fn wpa_flags(&self) -> u32 {
+        0
+    }
+
+    #[zbus(property)]
+    fn rsn_flags(&self) -> u32 {
+        if self.secure {
+            0x100
+        } else {
+            0
+        }
+    }
+}
+
+struct FakeNmSettings;
+
+#[zbus::interface(name = "org.freedesktop.NetworkManager.Settings")]
+impl FakeNmSettings {
+    fn list_connections(&self) -> Vec<OwnedObjectPath> {
+        vec![opath(&format!("{NMP}/Settings/1"))]
+    }
+}
+
+struct FakeSavedConnection(Shared);
+
+#[zbus::interface(name = "org.freedesktop.NetworkManager.Settings.Connection")]
+impl FakeSavedConnection {
+    fn get_settings(&self) -> HashMap<String, HashMap<String, OwnedValue>> {
+        let mut wireless = HashMap::new();
+        wireless.insert("ssid".to_string(), ov(Value::from(b"Home".to_vec())));
+        HashMap::from([("802-11-wireless".to_string(), wireless)])
+    }
+
+    fn delete(&self) {
+        self.0.lock().unwrap().deleted = true;
+    }
+}
+
+struct FakeActive(Shared);
+
+#[zbus::interface(name = "org.freedesktop.NetworkManager.Connection.Active")]
+impl FakeActive {
+    #[zbus(property)]
+    fn state(&self) -> u32 {
+        self.0.lock().unwrap().active_state
+    }
+}
+
+struct FakeAdapter;
+
+#[zbus::interface(name = "org.bluez.Adapter1")]
+impl FakeAdapter {
+    #[zbus(property)]
+    fn powered(&self) -> bool {
+        true
+    }
+}
+
+struct FakeBtDevice {
+    alias: &'static str,
+    icon: &'static str,
+    paired: bool,
+    connected: bool,
+}
+
+#[zbus::interface(name = "org.bluez.Device1")]
+impl FakeBtDevice {
+    #[zbus(property)]
+    fn alias(&self) -> String {
+        self.alias.into()
+    }
+
+    #[zbus(property)]
+    fn icon(&self) -> String {
+        self.icon.into()
+    }
+
+    #[zbus(property)]
+    fn paired(&self) -> bool {
+        self.paired
+    }
+
+    #[zbus(property)]
+    fn connected(&self) -> bool {
+        self.connected
+    }
+
+    fn connect(&mut self) {
+        self.connected = true;
+    }
+
+    fn disconnect(&mut self) {
+        self.connected = false;
+    }
+}
+
+#[test]
+fn wifi_and_bluetooth_through_networkmanager_and_bluez() {
+    use super::connectivity::{Backend, ConnectError};
+    let bus = bus_or_skip!();
+    let state: Shared = Arc::default();
+    let s = |st: &Shared| FakeSavedConnection(st.clone());
+    let _nm = zbus::blocking::connection::Builder::address(bus.address.as_str())
+        .unwrap()
+        .name("org.freedesktop.NetworkManager")
+        .unwrap()
+        .serve_at(NMP, FakeNm(state.clone()))
+        .unwrap()
+        .serve_at(format!("{NMP}/Devices/1"), FakeNmDevice(1)) // ethernet
+        .unwrap()
+        .serve_at(format!("{NMP}/Devices/2"), FakeNmDevice(2)) // Wi-Fi
+        .unwrap()
+        .serve_at(format!("{NMP}/Devices/2"), FakeWireless(state.clone()))
+        .unwrap()
+        .serve_at(format!("{NMP}/AccessPoint/1"), FakeAp { ssid: "Home", strength: 70, secure: true })
+        .unwrap()
+        .serve_at(format!("{NMP}/AccessPoint/2"), FakeAp { ssid: "Cafe", strength: 90, secure: true })
+        .unwrap()
+        .serve_at(format!("{NMP}/AccessPoint/3"), FakeAp { ssid: "Library", strength: 30, secure: false })
+        .unwrap()
+        .serve_at(format!("{NMP}/Settings"), FakeNmSettings)
+        .unwrap()
+        .serve_at(format!("{NMP}/Settings/1"), s(&state))
+        .unwrap()
+        .serve_at(format!("{NMP}/Settings/9"), s(&state))
+        .unwrap()
+        .serve_at(format!("{NMP}/ActiveConnection/1"), FakeActive(state.clone()))
+        .unwrap()
+        .build()
+        .unwrap();
+    let _bluez = zbus::blocking::connection::Builder::address(bus.address.as_str())
+        .unwrap()
+        .name("org.bluez")
+        .unwrap()
+        .serve_at("/", zbus::fdo::ObjectManager)
+        .unwrap()
+        .serve_at("/org/bluez/hci0", FakeAdapter)
+        .unwrap()
+        .serve_at(
+            "/org/bluez/hci0/dev_AA_BB",
+            FakeBtDevice { alias: "Buds", icon: "audio-headset", paired: true, connected: false },
+        )
+        .unwrap()
+        .serve_at(
+            "/org/bluez/hci0/dev_CC_DD",
+            FakeBtDevice { alias: "Stranger's phone", icon: "phone", paired: false, connected: false },
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let mut b = super::linux_conn::Linux::new(Bus::Address(bus.address.clone()));
+
+    // The list: saved Home first, then by signal; the ethernet device is skipped.
+    let w = b.wifi(true);
+    assert!(w.available && w.enabled && w.current.is_none(), "{w:?}");
+    let names: Vec<_> = w.networks.iter().map(|n| (n.ssid.as_str(), n.known, n.secure)).collect();
+    assert_eq!(names, [("Home", true, true), ("Cafe", false, true), ("Library", false, false)]);
+    assert_eq!(state.lock().unwrap().last_scan, 1, "a scan was requested");
+
+    // A saved network connects without a password.
+    b.wifi_connect("Home", None).unwrap();
+    assert_eq!(b.wifi(false).current.as_deref(), Some("Home"));
+
+    // A new secured network asks for one; a wrong one fails and is cleaned up.
+    assert_eq!(b.wifi_connect("Cafe", None), Err(ConnectError::NeedsPassword));
+    assert!(matches!(b.wifi_connect("Cafe", Some("wrong")), Err(ConnectError::Failed(m)) if m.contains("password")));
+    assert!(state.lock().unwrap().deleted, "the failed profile was deleted");
+    b.wifi_connect("Cafe", Some("right")).unwrap();
+    assert_eq!(b.wifi(false).current.as_deref(), Some("Cafe"));
+    b.wifi_connect("Library", None).unwrap();
+    assert_eq!(state.lock().unwrap().added, ["wrong", "right", ""]);
+
+    // Bluetooth: only paired devices; connect and disconnect.
+    let bt = b.bluetooth();
+    assert!(bt.available && bt.powered && bt.can_connect);
+    assert_eq!(bt.devices.len(), 1);
+    assert_eq!((bt.devices[0].name.as_str(), bt.devices[0].kind), ("Buds", DeviceKind::Earbuds));
+    b.bt_set("/org/bluez/hci0/dev_AA_BB", true).unwrap();
+    assert!(b.bluetooth().devices[0].connected);
+    b.bt_set("/org/bluez/hci0/dev_AA_BB", false).unwrap();
+    assert!(!b.bluetooth().devices[0].connected);
+}
+
+#[test]
+fn missing_services_are_reported_not_fatal() {
+    use super::connectivity::Backend;
+    let bus = bus_or_skip!();
+    let mut b = super::linux_conn::Linux::new(Bus::Address(bus.address.clone()));
+    let w = b.wifi(false);
+    assert!(!w.available && w.note.as_deref() == Some("NetworkManager isn't running"), "{w:?}");
+    let bt = b.bluetooth();
+    assert!(!bt.available && bt.note.is_some());
+}

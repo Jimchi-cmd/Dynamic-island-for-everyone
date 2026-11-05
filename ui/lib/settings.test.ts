@@ -57,3 +57,18 @@ describe('alarms', () => {
     expect(formatAlarmTime({ hour: 18, minute: 0 }, true)).toBe('18:00');
   });
 });
+
+import { parsePage, signalBars } from './settings';
+
+describe('connections', () => {
+  it('reads the page the island asked for', () => {
+    expect(parsePage('wifi:My Cafe:2')).toEqual({ page: 'connections', ssid: 'My Cafe:2' });
+    expect(parsePage('bluetooth')).toEqual({ page: 'connections', ssid: null });
+    expect(parsePage(null)).toBeNull();
+  });
+
+  it('draws signal bars', () => {
+    expect(signalBars(90)).toBe('▂▄▆');
+    expect(signalBars(20)).toBe('▂··');
+  });
+});

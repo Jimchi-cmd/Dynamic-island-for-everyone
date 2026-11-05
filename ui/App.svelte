@@ -10,14 +10,19 @@
     keyLooksValid,
     MODES,
     navStartArgs,
+    parsePage,
     permissionsFor,
+    signalBars,
+    type BtList,
+    type WifiList,
     type Status,
     type Trip,
   } from './lib/settings';
 
-  type Page = 'general' | 'alarms' | 'navigation' | 'updates' | 'about';
+  type Page = 'general' | 'connections' | 'alarms' | 'navigation' | 'updates' | 'about';
   const PAGES: { id: Page; label: string }[] = [
     { id: 'general', label: 'General' },
+    { id: 'connections', label: 'Wi-Fi & Bluetooth' },
     { id: 'alarms', label: 'Alarms' },
     { id: 'navigation', label: 'Navigation' },
     { id: 'updates', label: 'Updates' },
@@ -37,6 +42,68 @@
   let keyNote = $state('');
   let trip: Trip = $state({ label: '', destination: '', origin: '', mode: 'drive' });
   let tripNote = $state('');
+
+  // Wi-Fi & Bluetooth
+  let wifi: WifiList | null = $state(null);
+  let bt: BtList | null = $state(null);
+  let joining: string | null = $state(null);
+  let wifiPassword = $state('');
+  let connNote = $state('');
+  let scanning = $state(false);
+
+  async function loadConnections(scan: boolean) {
+    scanning = scan;
+    try {
+      const [w, b] = await Promise.all([
+        api.islet(scan ? ['wifi', 'list', '--scan', '--json'] : ['wifi', 'list', '--json']),
+        api.islet(['bt', 'list', '--json']),
+      ]);
+      wifi = JSON.parse(w);
+      bt = JSON.parse(b);
+    } catch (e) {
+      connNote = api.message(e);
+    } finally {
+      scanning = false;
+    }
+  }
+
+  async function joinWifi(ssid: string, needsPassword: boolean) {
+    if (needsPassword && joining !== ssid) {
+      joining = ssid;
+      wifiPassword = '';
+      return;
+    }
+    connNote = `Connecting to ${ssid}…`;
+    try {
+      connNote = needsPassword
+        ? await api.islet(['wifi', 'connect', ssid, '--password-stdin'], wifiPassword)
+        : await api.islet(['wifi', 'connect', ssid]);
+      joining = null;
+      wifiPassword = '';
+    } catch (e) {
+      connNote = api.message(e);
+      if (connNote.includes('needs a password')) joining = ssid;
+    }
+    await loadConnections(false);
+  }
+
+  async function toggleBt(id: string, connected: boolean) {
+    if (bt && !bt.canConnect) {
+      await api.openBluetoothSettings().catch((e) => (connNote = api.message(e)));
+      return;
+    }
+    connNote = connected ? 'Disconnecting…' : 'Connecting…';
+    try {
+      connNote = await api.islet(['bt', connected ? 'disconnect' : 'connect', id]);
+    } catch (e) {
+      connNote = api.message(e);
+    }
+    await loadConnections(false);
+  }
+
+  $effect(() => {
+    if (page === 'connections' && !wifi) void loadConnections(true);
+  });
 
   // Alarms
   let alarmTime = $state('07:00');
@@ -200,6 +267,11 @@
       problem = api.message(e);
     }
     await refresh();
+    const wanted = parsePage(await api.initialPage().catch(() => null));
+    if (wanted?.page === 'connections') {
+      page = 'connections';
+      joining = wanted.ssid;
+    }
     if (status?.trip) trip = { ...status.trip };
     // Opening Settings starts the island if it isn't running (after setup).
     if (prefs.welcomed && status && !status.running) await startIsland();
@@ -291,6 +363,52 @@
           />
         </div>
         <p class="muted small">Right-click the island to close it. Click it to open, and press and hold for more.</p>
+      {:else if page === 'connections'}
+        <h1>Wi-Fi &amp; Bluetooth</h1>
+        <p class="muted">The same lists open from the island: click it, then tap Wi-Fi or Bluetooth on the clock card.</p>
+        <div class="card">
+          <div class="row">
+            <h2>Wi-Fi</h2>
+            <button disabled={scanning} onclick={() => loadConnections(true)}>{scanning ? 'Searching…' : 'Refresh'}</button>
+          </div>
+          {#if wifi?.note}<p class="muted small">{wifi.note}</p>{/if}
+          {#each wifi?.networks ?? [] as n (n.ssid)}
+            <div class="net">
+              <span class="bars" aria-hidden="true">{signalBars(n.strength)}</span>
+              <span class="name" class:ok={n.active}>{n.ssid}</span>
+              {#if n.active}
+                <span class="ok small">Connected</span>
+              {:else}
+                <button onclick={() => joinWifi(n.ssid, n.secure && !n.known)}>
+                  {n.secure && !n.known ? 'Join…' : 'Join'}
+                </button>
+              {/if}
+            </div>
+            {#if joining === n.ssid && !n.active}
+              <form class="join" onsubmit={(e) => { e.preventDefault(); void joinWifi(n.ssid, true); }}>
+                <input type="password" autocomplete="off" placeholder="Password for {n.ssid}" bind:value={wifiPassword} />
+                <button class="primary" type="submit" disabled={!wifiPassword}>Join</button>
+              </form>
+            {/if}
+          {:else}
+            <p class="muted">{scanning ? 'Looking for networks…' : 'No networks found.'}</p>
+          {/each}
+        </div>
+        <div class="card">
+          <h2>Bluetooth</h2>
+          {#if bt?.note}<p class="muted small">{bt.note}</p>{/if}
+          {#each bt?.devices ?? [] as d (d.id)}
+            <div class="net">
+              <span class="name" class:ok={d.connected}>{d.name}</span>
+              <button onclick={() => toggleBt(d.id, d.connected)}>
+                {bt?.canConnect ? (d.connected ? 'Disconnect' : 'Connect') : 'Open settings'}
+              </button>
+            </div>
+          {:else}
+            <p class="muted">No paired devices. Pair new ones in your system's Bluetooth settings.</p>
+          {/each}
+        </div>
+        {#if connNote}<p class="small" role="status">{connNote}</p>{/if}
       {:else if page === 'alarms'}
         <h1>Alarms</h1>
         <p class="muted">
@@ -526,6 +644,30 @@
   }
   .steps .on {
     color: var(--accent);
+  }
+  .net {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    border-top: 1px solid var(--line);
+  }
+  .net .name {
+    flex: 1;
+    font-weight: 550;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .bars {
+    font-family: ui-monospace, monospace;
+    color: var(--muted);
+    letter-spacing: -1px;
+  }
+  .join {
+    display: flex;
+    gap: 8px;
+    padding: 4px 0 10px;
   }
   .label {
     display: block;

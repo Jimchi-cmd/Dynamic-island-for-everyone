@@ -131,6 +131,8 @@ pub enum Report {
     Navigation(Option<NavInfo>),
     /// An alarm started ringing (None when it stops or snoozes).
     Alarm(Option<crate::alarm::Alarm>),
+    /// Wi-Fi / Bluetooth lists and connection progress.
+    Connectivity(crate::connectivity::ConnUpdate),
 }
 
 /// Why a battery peek is showing.
@@ -167,6 +169,7 @@ pub const LOW_LEVELS: [u8; 2] = [20, 10];
 #[derive(Debug, Default)]
 pub struct Activities {
     alarm: Option<crate::alarm::Alarm>,
+    conn: crate::connectivity::Connectivity,
     nav: Option<NavInfo>,
     media: Option<MediaInfo>,
     paused_since: Option<f64>,
@@ -194,6 +197,10 @@ impl Activities {
 
     pub fn laptop(&self) -> Option<&BatteryDevice> {
         self.laptop.as_ref()
+    }
+
+    pub fn connectivity(&self) -> &crate::connectivity::Connectivity {
+        &self.conn
     }
 
     pub fn alarm(&self) -> Option<&crate::alarm::Alarm> {
@@ -267,6 +274,10 @@ impl Activities {
             }
             Report::Alarm(a) => {
                 self.alarm = a;
+                true
+            }
+            Report::Connectivity(u) => {
+                self.conn.apply(u);
                 true
             }
             Report::Laptop(d) => {

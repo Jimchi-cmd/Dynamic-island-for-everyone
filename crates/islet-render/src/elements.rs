@@ -31,6 +31,10 @@ pub enum Icon {
     Close,
     /// A bell, tilted by this many degrees (it swings while ringing).
     Bell(i8),
+    /// Wi-Fi with this many lit bars (0..=3; unlit ones are faint).
+    Wifi(u8),
+    Lock,
+    Check,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -259,6 +263,43 @@ impl IconPainter<'_> {
                 self.line((6.5, 6.5), (17.5, 17.5), 2.2);
                 self.line((17.5, 6.5), (6.5, 17.5), 2.2);
             }
+            Icon::Wifi(lit) => {
+                // A dot and three arcs fanning up from it.
+                let full = self.paint.clone();
+                for i in 0..3u8 {
+                    let r = 5.5 + f32::from(i) * 5.0;
+                    let mut pb = PathBuilder::new();
+                    arc(&mut pb, 12.0, 19.0, r, -2.36, 1.57, true);
+                    if i >= lit {
+                        let mut faint = full.clone();
+                        if let tiny_skia::Shader::SolidColor(mut c) = faint.shader {
+                            c.set_alpha(c.alpha() * 0.3);
+                            faint.shader = tiny_skia::Shader::SolidColor(c);
+                        }
+                        self.paint = faint;
+                    }
+                    self.stroke(pb.finish(), 2.4);
+                    self.paint = full.clone();
+                }
+                let dot = self.circle(12.0, 19.0, 1.9);
+                self.fill(dot);
+            }
+            Icon::Lock => {
+                self.fill(rounded_rect(5.5, 10.5, 13.0, 10.0, 2.2));
+                let mut pb = PathBuilder::new();
+                pb.move_to(8.5, 10.8);
+                pb.line_to(8.5, 8.0);
+                pb.cubic_to(8.5, 4.2, 15.5, 4.2, 15.5, 8.0);
+                pb.line_to(15.5, 10.8);
+                self.stroke(pb.finish(), 2.0);
+            }
+            Icon::Check => {
+                let mut pb = PathBuilder::new();
+                pb.move_to(5.0, 12.5);
+                pb.line_to(10.0, 17.5);
+                pb.line_to(19.0, 7.0);
+                self.stroke(pb.finish(), 2.6);
+            }
             Icon::Bell(tilt) => {
                 // Swings about the knob at the top.
                 self.ts = self.ts.pre_concat(Transform::from_rotate_at(f32::from(tilt), 12.0, 3.5));
@@ -366,7 +407,11 @@ mod tests {
         p.pixels().iter().filter(|c| c.alpha() > 0).count()
     }
 
-    const ALL: [Icon; 20] = [
+    const ALL: [Icon; 24] = [
+        Icon::Wifi(0),
+        Icon::Wifi(3),
+        Icon::Lock,
+        Icon::Check,
         Icon::Bell(0),
         Icon::Bell(-14),
         Icon::Navigation,
