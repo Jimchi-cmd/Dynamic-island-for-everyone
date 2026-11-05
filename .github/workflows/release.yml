@@ -1,0 +1,220 @@
+name: Release
+
+# Push a tag such as v0.1.0 to build every installer and open a DRAFT
+# release (publishing it is a manual step; see docs/publishing-checklist.md).
+# Dry runs (same builds, uploaded as workflow artifacts, no release): run it
+# by hand, or push packaging changes to dev.
+on:
+  push:
+    tags: ["v*"]
+    branches: [dev]
+    paths:
+      - .github/workflows/release.yml
+      - scripts/**
+      - src-tauri/tauri*.json
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  LINUX_DEPS: libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04's older glibc makes the Linux packages run on more distros.
+          - name: linux
+            os: ubuntu-22.04
+            bundles: deb,rpm,appimage
+          - name: windows
+            os: windows-latest
+            bundles: msi,nsis
+          # One universal build serves Intel and Apple-silicon Macs.
+          - name: macos
+            os: macos-15-intel
+            bundles: app,dmg
+    runs-on: ${{ matrix.os }}
+    env:
+      # Updates are signed only when the maintainer has set up a key
+      # (docs/signing.md). Without one, the release still builds; Settings
+      # then links to the release page instead of updating in place.
+      HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && vars.ISLET_UPDATER_PUBKEY != '' }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: 22, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.name == 'macos' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with: { key: release }
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
+      - run: npm ci
+
+      - name: Version matches the tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: bash scripts/check-version.sh "$GITHUB_REF_NAME"
+
+      - name: Updater configuration
+        shell: bash
+        run: |
+          configs=()
+          if [ "$HAS_UPDATER_KEY" = "true" ]; then
+            pubkey=$(printf '%s' "$ISLET_UPDATER_PUBKEY" | tr -d '\r\n ')
+            echo "ISLET_UPDATER_PUBKEY=$pubkey" >> "$GITHUB_ENV"
+            cat > "$RUNNER_TEMP/updater.json" <<EOF
+          {
+            "bundle": { "createUpdaterArtifacts": true },
+            "plugins": {
+              "updater": {
+                "pubkey": "$pubkey",
+                "endpoints": ["https://github.com/${{ github.repository }}/releases/latest/download/latest.json"],
+                "requireSignedVersion": true
+              }
+            }
+          }
+          EOF
+            configs+=(--config "$RUNNER_TEMP/updater.json")
+            echo "Signed updates: on"
+          else
+            echo "::warning::No updater signing key configured: this release will not update in place (docs/signing.md)."
+          fi
+          echo "UPDATER_ARGS=${configs[*]}" >> "$GITHUB_ENV"
+        env:
+          ISLET_UPDATER_PUBKEY: ${{ vars.ISLET_UPDATER_PUBKEY }}
+
+      - name: Build the island (Linux, Windows)
+        if: matrix.name != 'macos'
+        run: cargo build --release -p islet -p islet-perf
+      - name: Build the island and MediaRemote helper (macOS universal)
+        if: matrix.name == 'macos'
+        run: |
+          cargo build --release -p islet -p islet-mediaremote --target aarch64-apple-darwin
+          cargo build --release -p islet -p islet-mediaremote --target x86_64-apple-darwin
+          cargo build --release -p islet-perf
+
+      - name: Stage the island for bundling
+        shell: bash
+        run: bash scripts/stage-island.sh ${{ matrix.name == 'macos' && 'universal-apple-darwin' || '' }}
+
+      - name: Stop Spotlight indexing (dmg builds fail when it holds the image)
+        if: runner.os == 'macOS'
+        run: sudo mdutil -a -i off || true
+
+      - name: Build installers
+        shell: bash
+        run: |
+          if [ "${{ matrix.name }}" = macos ]; then
+            args=(--target universal-apple-darwin --config src-tauri/tauri.bundle.macos.json)
+          else
+            args=(--config src-tauri/tauri.bundle.json)
+          fi
+          for attempt in 1 2 3; do
+            npx tauri build --bundles ${{ matrix.bundles }} "${args[@]}" $UPDATER_ARGS && exit 0
+            echo "::warning::bundling failed (attempt $attempt)"
+            sleep 10
+          done
+          exit 1
+
+      - name: Collect release files
+        shell: bash
+        run: |
+          shopt -s nullglob
+          ver=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          mkdir -p out
+          case "${{ matrix.name }}" in
+            linux)
+              cp target/release/bundle/deb/*.deb target/release/bundle/rpm/*.rpm out/
+              cp target/release/bundle/appimage/*.AppImage* out/
+              ;;
+            windows)
+              cp target/release/bundle/msi/*.msi* target/release/bundle/nsis/*-setup.exe* out/
+              # Portable: both programs in a zip, no installer.
+              mkdir -p portable && cp target/release/islet.exe target/release/islet-settings.exe portable/
+              cp LICENSE portable/LICENSE.txt
+              7z a -tzip "out/Islet_${ver}_x64_portable.zip" ./portable/*
+              ;;
+            macos)
+              b=target/universal-apple-darwin/release/bundle
+              cp $b/dmg/*.dmg out/
+              for f in $b/macos/*.app.tar.gz $b/macos/*.app.tar.gz.sig; do
+                cp "$f" "out/$(basename "$f" | sed "s/^Islet\.app/Islet_${ver}_universal.app/")"
+              done
+              ;;
+          esac
+          ls -la out
+
+      - name: Size budget
+        shell: bash
+        run: |
+          shopt -s nullglob
+          target/release/islet-perf size out/*.{deb,rpm,AppImage,msi,exe,dmg,zip} --markdown size.md --enforce
+          cat size.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Signed update bundles were produced
+        if: env.HAS_UPDATER_KEY == 'true'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          sigs=(out/*.sig)
+          [ ${#sigs[@]} -gt 0 ] || { echo "::error::signing is configured but no .sig files were produced"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.name }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Draft release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && vars.ISLET_UPDATER_PUBKEY != '' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: assets
+          merge-multiple: true
+
+      - name: Update manifest (latest.json)
+        if: env.HAS_UPDATER_KEY == 'true'
+        run: |
+          echo "See the release notes: https://github.com/${{ github.repository }}/releases/tag/${GITHUB_REF_NAME}" > notes.txt
+          python3 scripts/make-latest-json.py "$GITHUB_REF_NAME" assets \
+            "https://github.com/${{ github.repository }}/releases/download/${GITHUB_REF_NAME}" notes.txt
+
+      - name: Checksums
+        working-directory: assets
+        run: |
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" assets/* \
+            --repo "${{ github.repository }}" \
+            --draft --verify-tag --generate-notes \
+            --title "Islet ${GITHUB_REF_NAME#v}"
