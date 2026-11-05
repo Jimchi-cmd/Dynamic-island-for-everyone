@@ -46,6 +46,11 @@ const CONTENT_FADE_H: f64 = 60.0;
 /// …and cards are treated as at least this tall for the fade.
 const CONTENT_MIN_FULL_H: f64 = 84.0;
 const IDLE_W: f64 = 126.0;
+/// Extra width a compact pill takes for the camera / microphone dot.
+const PRIVACY_W: f64 = 14.0;
+/// The dot's centre, from the pill's right edge, and its diameter.
+const PRIVACY_INSET: f32 = 14.0;
+const PRIVACY_DOT: f32 = 6.0;
 /// At most one activity switch per this many seconds of scrolling.
 const SWITCH_COOLDOWN: f64 = 0.35;
 /// Height of the expanded clock and media cards.
@@ -721,6 +726,10 @@ impl App {
                 if m.app_name.is_empty() { String::new() } else { format!(", in {}", m.app_name) }
             ),
         };
+        let label = match self.activities.privacy().describe() {
+            Some(p) => format!("{label}. {p}"),
+            None => label,
+        };
         let open = self.island.presentation().is_open();
         let mut buttons = Vec::new();
         if open && !self.animating(t) {
@@ -1003,7 +1012,24 @@ impl App {
     /// Whether anything is drawn inside the island right now (cheap check, so
     /// fonts are only loaded once there is something to show).
     pub fn has_content(&self, t: f64) -> bool {
-        self.expanded_opacity(t) > 0.0 || self.compact_opacity(t, &self.live(t)) > 0.0
+        self.expanded_opacity(t) > 0.0 || self.compact_opacity(t, &self.live(t)) > 0.0 || self.privacy_opacity(t) > 0.0
+    }
+
+    /// The camera / microphone dot shows while the pill is closed (idle or
+    /// compact) and fades as it opens; the two-at-once layout has no room.
+    fn privacy_opacity(&self, t: f64) -> f32 {
+        if !self.activities.privacy().active() || self.island.presentation() == Presentation::Minimal {
+            return 0.0;
+        }
+        smooth((56.0 - self.pill_rect(t).h) / 12.0) as f32
+    }
+
+    /// Green for the camera (it takes precedence), orange for the microphone.
+    fn privacy_dot(&self, p: Rect, o: f32) -> Element {
+        let color = if self.activities.privacy().camera.is_some() { content::GREEN } else { content::ORANGE };
+        let d = PRIVACY_DOT;
+        let (cx, cy) = (p.right() as f32 - PRIVACY_INSET, (p.y + p.h / 2.0) as f32);
+        Element::Bar { x: cx - d / 2.0, y: cy - d / 2.0, w: d, h: d, color, opacity: o }
     }
 
     /// Everything drawn inside the island this frame.
@@ -1072,9 +1098,18 @@ impl App {
                     };
                     out.extend(content::minimal(p, self.bubble_circle(t), pill, bubble, t, co, self.h24));
                 }
-                (_, Some(first)) => out.extend(content::compact(p, first, t, co, engine)),
+                (_, Some(first)) => {
+                    // Leave the right end to the camera / microphone dot.
+                    let room = if self.activities.privacy().active() { PRIVACY_W } else { 0.0 };
+                    let inner = Rect::new(p.x, p.y, (p.w - room).max(1.0), p.h);
+                    out.extend(content::compact(inner, first, t, co, engine))
+                }
                 _ => {}
             }
+        }
+        let po = self.privacy_opacity(t);
+        if po > 0.0 {
+            out.push(self.privacy_dot(p, po));
         }
         out
     }
@@ -1084,7 +1119,10 @@ impl App {
         let (w, h, r) = target_size(p, None);
         let live = self.live(t);
         let dims = match p {
-            Presentation::Compact => (live.first().map_or(w, content::compact_width), h, r),
+            Presentation::Compact => {
+                let room = if self.activities.privacy().active() { PRIVACY_W } else { 0.0 };
+                (live.first().map_or(w, content::compact_width) + room, h, r)
+            }
             Presentation::Expanded => {
                 let h = match self.open_content(&live) {
                     OpenContent::Alarm(_) => content::ALARM_H,
@@ -1596,6 +1634,47 @@ mod tests {
     }
 
     const NOW: LocalTime = LocalTime { year: 2026, month: 11, day: 4, weekday: 3, hour: 14, minute: 5, second: 42 };
+
+    #[test]
+    fn camera_and_microphone_dots() {
+        use islet_core::activity::{Custom, Privacy};
+        let mut engine = TextEngine::new();
+        let dot = |els: &[Element]| {
+            els.iter().find_map(|e| match e {
+                Element::Bar { w, h, color, .. }
+                    if (*w - PRIVACY_DOT).abs() < 0.01 && (*h - PRIVACY_DOT).abs() < 0.01 =>
+                {
+                    Some(*color)
+                }
+                _ => None,
+            })
+        };
+        let mut app = App::new(Demo::None, false);
+        assert!(!app.has_content(0.0));
+        let mic = Privacy { camera: None, mic: Some(vec!["Zoom".into()]) };
+        assert!(app.report(Report::Privacy(mic), 0.0));
+        assert_eq!(app.presentation(), Idle, "a dot never opens the island");
+        assert!(app.has_content(0.0));
+        assert_eq!(dot(&app.elements(0.0, &mut engine)), Some(content::ORANGE));
+        assert!(app.accessibility(0.0).label.ends_with("Microphone in use by Zoom"));
+        // The camera wins the colour; a compact activity makes room for it.
+        let both = Privacy { camera: Some(vec![]), mic: Some(vec!["Zoom".into()]) };
+        app.report(Report::Privacy(both), 1.0);
+        let job =
+            Custom { id: "b".into(), title: "Build".into(), subtitle: String::new(), progress: Some(0.5), color: None };
+        app.report(Report::Custom(job), 1.0);
+        assert_eq!(app.presentation(), Compact);
+        let w = app.pill_rect(5.0).w;
+        assert!((w - (content::COMPACT_BATTERY_W + PRIVACY_W)).abs() < 0.5, "{w}");
+        assert_eq!(dot(&app.elements(5.0, &mut engine)), Some(content::GREEN));
+        // Opening the card hides the dot.
+        click(&mut app, 5.0);
+        assert_eq!(dot(&app.elements(10.0, &mut engine)), None);
+        app.handle(Event::Key(Key::Escape), 10.0);
+        app.report(Report::Privacy(Privacy::default()), 10.0);
+        assert!((app.pill_rect(15.0).w - content::COMPACT_BATTERY_W).abs() < 0.5);
+        assert_eq!(dot(&app.elements(15.0, &mut engine)), None);
+    }
 
     #[test]
     fn hover_peeks_and_leaving_restores_idle() {

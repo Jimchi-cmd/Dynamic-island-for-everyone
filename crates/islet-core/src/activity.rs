@@ -199,6 +199,39 @@ pub enum Report {
     Custom(Custom),
     /// …or ended.
     CustomEnded(String),
+    /// Which apps are using the camera and the microphone right now.
+    Privacy(Privacy),
+}
+
+/// Whether the camera and the microphone are in use, and by which apps
+/// when the OS says (macOS doesn't: its lists stay empty). The island shows
+/// a green dot for the camera and an orange one for the microphone.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Privacy {
+    pub camera: Option<Vec<String>>,
+    pub mic: Option<Vec<String>>,
+}
+
+impl Privacy {
+    pub fn active(&self) -> bool {
+        self.camera.is_some() || self.mic.is_some()
+    }
+
+    /// What a screen reader says, e.g. "Camera in use by Zoom".
+    pub fn describe(&self) -> Option<String> {
+        let part = |what: &str, apps: &Option<Vec<String>>| {
+            apps.as_ref().map(|v| {
+                if v.is_empty() {
+                    format!("{what} in use")
+                } else {
+                    format!("{what} in use by {}", v.join(", "))
+                }
+            })
+        };
+        let parts: Vec<String> =
+            [part("Camera", &self.camera), part("Microphone", &self.mic)].into_iter().flatten().collect();
+        (!parts.is_empty()).then(|| parts.join("; "))
+    }
 }
 
 /// Why a battery peek is showing.
@@ -256,6 +289,7 @@ pub struct Activities {
     notes: std::collections::VecDeque<Note>,
     remote: Option<MediaInfo>,
     custom: Vec<Custom>,
+    privacy: Privacy,
     note_until: f64,
     nav: Option<NavInfo>,
     media: Option<MediaInfo>,
@@ -309,6 +343,10 @@ impl Activities {
 
     pub fn calendar(&self) -> &[crate::calendar::CalEvent] {
         &self.calendar
+    }
+
+    pub fn privacy(&self) -> &Privacy {
+        &self.privacy
     }
 
     pub fn weather(&self) -> Option<&crate::weather::Weather> {
@@ -407,6 +445,11 @@ impl Activities {
             Report::Weather(w) => {
                 self.weather = w;
                 true
+            }
+            Report::Privacy(p) => {
+                let changed = self.privacy != p;
+                self.privacy = p;
+                changed
             }
             Report::Calendar(c) => {
                 self.calendar = c.unwrap_or_default();
@@ -646,5 +689,22 @@ mod tests {
         let live = a.live(2.0);
         assert!(matches!(live[..], [Live::Battery { .. }, Live::Media(_)]));
         assert_eq!(a.next_change(2.0), Some(1.0 + PEEK_CONNECTED));
+    }
+
+    #[test]
+    fn privacy_reports_only_changes() {
+        let mut a = Activities::new();
+        assert!(!a.privacy().active());
+        let p = Privacy { camera: Some(vec!["Zoom".into()]), mic: None };
+        assert!(a.report(Report::Privacy(p.clone()), 0.0));
+        assert!(!a.report(Report::Privacy(p), 1.0));
+        assert_eq!(a.privacy().describe().as_deref(), Some("Camera in use by Zoom"));
+        let both = Privacy { camera: Some(vec!["Zoom".into()]), mic: Some(vec!["Zoom".into(), "OBS".into()]) };
+        assert_eq!(both.describe().as_deref(), Some("Camera in use by Zoom; Microphone in use by Zoom, OBS"));
+        let unknown = Privacy { camera: None, mic: Some(vec![]) };
+        assert_eq!(unknown.describe().as_deref(), Some("Microphone in use"));
+        assert!(a.report(Report::Privacy(Privacy::default()), 2.0));
+        assert_eq!(a.privacy().describe(), None);
+        assert!(a.live(2.0).is_empty(), "the dots never make the island open");
     }
 }

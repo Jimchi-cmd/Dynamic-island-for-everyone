@@ -19,6 +19,8 @@ mod linux_conn;
 mod linux_media;
 #[cfg(target_os = "linux")]
 pub(crate) mod linux_notifications;
+#[cfg(target_os = "linux")]
+mod linux_privacy;
 #[cfg(all(test, target_os = "linux"))]
 mod linux_tests;
 #[cfg(target_os = "linux")]
@@ -32,6 +34,8 @@ mod macos_media;
 #[cfg(target_os = "macos")]
 pub mod macos_mediaremote;
 #[cfg(target_os = "macos")]
+mod macos_privacy;
+#[cfg(target_os = "macos")]
 mod macos_volume;
 pub mod navigation;
 pub mod spotify;
@@ -44,6 +48,8 @@ mod windows_brightness;
 mod windows_conn;
 #[cfg(target_os = "windows")]
 mod windows_media;
+#[cfg(target_os = "windows")]
+mod windows_privacy;
 #[cfg(target_os = "windows")]
 mod windows_volume;
 
@@ -76,6 +82,21 @@ pub fn kind_from_name(name: &str) -> islet_core::activity::DeviceKind {
     } else {
         DeviceKind::Headphones
     }
+}
+
+/// A readable app name from a Windows consent-store key: a packaged app's
+/// family name ("Microsoft.WindowsCamera_8wekyb3d8bbwe" → "WindowsCamera")
+/// or a desktop app's path with `#` for `\` ("C:#Program Files#Zoom#bin#Zoom.exe"
+/// → "Zoom").
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn consent_app_name(key: &str) -> String {
+    if key.contains('#') {
+        let file = key.rsplit('#').next().unwrap_or(key);
+        let stem = file.rsplit_once('.').map_or(file, |(s, _)| s);
+        return stem.to_string();
+    }
+    let family = key.split('_').next().unwrap_or(key);
+    family.rsplit('.').next().filter(|s| !s.is_empty()).unwrap_or(family).to_string()
 }
 
 /// With `ISLET_DEBUG=1`, provider diagnostics go to stderr and to
@@ -142,6 +163,7 @@ fn describe(r: &Report) -> String {
         Report::Custom(c) => format!("activity {:?}: {:?}", c.id, c.progress),
         Report::CustomEnded(id) => format!("activity {id:?} ended"),
         Report::RemoteMedia(m) => format!("remote media: {:?}", m.as_ref().map(|m| &m.app_name)),
+        Report::Privacy(p) => format!("privacy: camera {:?}, mic {:?}", p.camera, p.mic),
         Report::UpNext(u) => format!("up next: {:?}", u.as_ref().map(|(e, _)| &e.summary)),
     }
 }
@@ -332,6 +354,7 @@ fn platform_start(sink: Sink) -> Option<Sender<MediaCommand>> {
     linux_battery::start(sink.clone(), Bus::System);
     linux_volume::start(sink.clone());
     linux_brightness::start(sink.clone(), Bus::Session);
+    linux_privacy::start(sink.clone());
     linux_media::start(sink, Bus::Session)
 }
 
@@ -340,6 +363,7 @@ fn platform_start(sink: Sink) -> Option<Sender<MediaCommand>> {
     windows_battery::start(sink.clone());
     windows_volume::start(sink.clone());
     windows_brightness::start(sink.clone());
+    windows_privacy::start(sink.clone());
     windows_media::start(sink)
 }
 
@@ -347,7 +371,20 @@ fn platform_start(sink: Sink) -> Option<Sender<MediaCommand>> {
 fn platform_start(sink: Sink) -> Option<Sender<MediaCommand>> {
     macos_battery::start(sink.clone());
     macos_volume::start(sink.clone());
+    macos_privacy::start(sink.clone());
     // Every app's Now Playing via the MediaRemote helper; falls back to the
     // Spotify / Apple Music notifications if the helper can't run.
     macos_mediaremote::start(sink)
+}
+
+#[cfg(test)]
+mod name_tests {
+    #[test]
+    fn consent_store_names() {
+        use super::consent_app_name as n;
+        assert_eq!(n("Microsoft.WindowsCamera_8wekyb3d8bbwe"), "WindowsCamera");
+        assert_eq!(n("C:#Program Files#Zoom#bin#Zoom.exe"), "Zoom");
+        assert_eq!(n("C:#Users#me#AppData#Local#Discord#app-1.0#Discord.exe"), "Discord");
+        assert_eq!(n("SomeApp"), "SomeApp");
+    }
 }

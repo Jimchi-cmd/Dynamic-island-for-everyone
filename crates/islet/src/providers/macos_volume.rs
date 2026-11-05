@@ -7,17 +7,18 @@ use std::ffi::c_void;
 use std::sync::Mutex;
 
 #[repr(C)]
-struct Address {
-    selector: u32,
-    scope: u32,
-    element: u32,
+pub(super) struct Address {
+    pub(super) selector: u32,
+    pub(super) scope: u32,
+    pub(super) element: u32,
 }
 
-type Listener = unsafe extern "C" fn(object: u32, count: u32, addresses: *const Address, data: *mut c_void) -> i32;
+pub(super) type Listener =
+    unsafe extern "C" fn(object: u32, count: u32, addresses: *const Address, data: *mut c_void) -> i32;
 
 #[link(name = "CoreAudio", kind = "framework")]
 extern "C" {
-    fn AudioObjectGetPropertyData(
+    pub(super) fn AudioObjectGetPropertyData(
         object: u32,
         address: *const Address,
         qualifier_size: u32,
@@ -25,7 +26,7 @@ extern "C" {
         size: *mut u32,
         data: *mut c_void,
     ) -> i32;
-    fn AudioObjectAddPropertyListener(
+    pub(super) fn AudioObjectAddPropertyListener(
         object: u32,
         address: *const Address,
         listener: Listener,
