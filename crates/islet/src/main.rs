@@ -127,6 +127,7 @@ fn run() -> platform::Result<()> {
     providers.weather(app.prefs().weather.clone());
     providers.calendar(app.prefs().calendar);
     providers.notifications(app.prefs().notifications);
+    providers::WEB_ARTWORK.store(app.prefs().web_artwork, std::sync::atomic::Ordering::Relaxed);
     let mut alarm_sound = sound::AlarmSound::default();
     trace("providers started");
 
@@ -206,6 +207,7 @@ fn run() -> platform::Result<()> {
                     providers.weather(app.prefs().weather.clone());
                     providers.calendar(app.prefs().calendar);
                     providers.notifications(app.prefs().notifications);
+                    providers::WEB_ARTWORK.store(app.prefs().web_artwork, std::sync::atomic::Ordering::Relaxed);
                     providers.weather(app.prefs().weather.clone());
                     providers.calendar(app.prefs().calendar);
                     providers.notifications(app.prefs().notifications);

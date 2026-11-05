@@ -718,6 +718,11 @@ impl App {
 
     /// Apply a provider report. Returns true if a redraw is needed.
     pub fn report(&mut self, r: Report, t: f64) -> bool {
+        // Hidden apps' sessions don't reach the island.
+        let r = match r {
+            Report::Media(Some(m)) if self.prefs.excludes(&m.app_name, &m.source) => Report::Media(None),
+            r => r,
+        };
         if let Report::Calendar(_) = &r {
             let changed = self.activities.report(r, t);
             return self.update_up_next(t) || self.sync_live(t) || changed;
@@ -1899,6 +1904,17 @@ mod tests {
         app.handle(Event::DragOver { x, y }, 20.0);
         app.handle(Event::DragLeave, 21.0);
         assert_eq!(app.presentation(), Idle);
+    }
+
+    #[test]
+    fn hidden_apps_dont_reach_the_island() {
+        let mut app = App::new(Demo::None, false);
+        let mut p = app.prefs().clone();
+        p.media_exclude = vec!["Player".into()];
+        app.set_prefs(p);
+        app.report(Report::Media(Some(song(true))), 0.0);
+        app.tick(0.0);
+        assert_eq!(app.presentation(), Idle, "{:?}", song(true).app_name);
     }
 
     #[test]

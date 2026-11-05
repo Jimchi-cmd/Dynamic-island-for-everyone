@@ -28,6 +28,7 @@ pub fn allowed(args: &[String]) -> bool {
         ["bt", "connect" | "disconnect", id] => !id.starts_with('-'),
         ["timer", "pause" | "resume" | "stop"] => true,
         ["prefs", "--json"] | ["weather", "off"] | ["shelf", "--json"] | ["shelf", "clear"] => true,
+        ["media", "hide" | "show", app] => !app.starts_with('-'),
         ["calendar", "set"] | ["calendar", "on" | "off" | "clear"] | ["calendar", "--json"] => true,
         ["weather", "search", q, "--json"] => !q.starts_with('-'),
         ["weather", "set", "--lat", lat, "--lon", lon, "--name", name] => {

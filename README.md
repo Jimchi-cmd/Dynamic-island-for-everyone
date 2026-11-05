@@ -75,7 +75,7 @@ Right-click the island to quit.
 
 - **Windows:** apps can't connect Bluetooth devices, so Islet lists them and opens Bluetooth settings. Listing Wi-Fi networks needs Location permission on Windows 11.
 - **macOS:** Now Playing for every app uses a small helper that runs through the system's Perl, because Apple restricted the MediaRemote API in macOS 15.4. If a macOS update breaks it, Islet falls back to Spotify and Apple Music. Wi-Fi names need Location permission.
-- **Linux:** on GNOME Wayland the island runs through XWayland. Web artwork (Spotify covers, for example) isn't downloaded yet.
+- **Linux:** on GNOME Wayland the island runs through XWayland. Web artwork (Spotify covers, for example) is downloaded only if you turn it on in Settings.
 - Notifications on the island are Linux-only: Windows reserves that for packaged Store apps, and macOS doesn't allow it at all.
 - Alarms ring only while the computer is awake and Islet is running.
 - No live turn-by-turn from your phone yet. An Android companion is planned.

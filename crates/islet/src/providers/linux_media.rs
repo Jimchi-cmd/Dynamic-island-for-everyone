@@ -123,7 +123,15 @@ impl State {
                 return img.clone();
             }
         }
-        let img = local_path(url).and_then(|p| std::fs::read(p).ok()).and_then(|b| art::decode(&b));
+        let bytes = match local_path(url) {
+            Some(p) => std::fs::read(p).ok(),
+            // Web artwork only when the user turned it on.
+            None if url.starts_with("https://") && super::WEB_ARTWORK.load(std::sync::atomic::Ordering::Relaxed) => {
+                crate::net::fetch_bytes(url, 3 * 1024 * 1024).ok()
+            }
+            None => None,
+        };
+        let img = bytes.and_then(|b| art::decode(&b));
         self.art = Some((url.to_string(), img.clone()));
         img
     }

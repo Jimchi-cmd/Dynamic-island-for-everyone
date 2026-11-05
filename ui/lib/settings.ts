@@ -212,6 +212,8 @@ export interface IslandPrefs {
   weather: { name: string; lat: number; lon: number } | null;
   fahrenheit: boolean;
   calendar: boolean;
+  mediaExclude: string[];
+  webArtwork: boolean;
 }
 
 /** Each switch's name for `islet set <name> on|off`. */
@@ -222,4 +224,5 @@ export const SWITCH_NAMES: Record<string, string> = {
   notifications: 'notifications',
   fahrenheit: 'fahrenheit',
   calendar: 'calendar',
+  webArtwork: 'web-artwork',
 };

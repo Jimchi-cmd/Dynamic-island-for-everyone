@@ -130,6 +130,20 @@
     }
   }
 
+  // Now Playing
+  let hideApp = $state('');
+
+  async function mediaVisibility(hide: boolean, app: string) {
+    if (!app.trim() || app.trim().startsWith('-')) return;
+    try {
+      await api.islet(['media', hide ? 'hide' : 'show', app.trim()]);
+      hideApp = '';
+      await loadIslandPrefs();
+    } catch (e) {
+      problem = api.message(e);
+    }
+  }
+
   // Weather
   let cityQuery = $state('');
   let cityResults: { name: string; lat: number; lon: number }[] = $state([]);
@@ -491,6 +505,33 @@
               you turn this off.
             </p>
           {/if}
+        </div>
+        <div class="card">
+          <h2>Now Playing</h2>
+          {#if info?.os === 'linux'}
+            <div class="net">
+              <span class="name">Download web artwork (e.g. Spotify covers)</span>
+              <input
+                type="checkbox"
+                class="switch"
+                aria-label="Download web artwork"
+                checked={islandPrefs?.webArtwork ?? false}
+                disabled={!islandPrefs}
+                onchange={(e) => setSwitch('webArtwork', e.currentTarget.checked)}
+              />
+            </div>
+          {/if}
+          <p class="muted small">Hide music and videos from these apps:</p>
+          {#each islandPrefs?.mediaExclude ?? [] as app (app)}
+            <div class="net">
+              <span class="name">{app}</span>
+              <button onclick={() => mediaVisibility(false, app)}>Show again</button>
+            </div>
+          {/each}
+          <form class="join" onsubmit={(e) => { e.preventDefault(); void mediaVisibility(true, hideApp); }}>
+            <input placeholder="App name, e.g. Firefox" bind:value={hideApp} aria-label="App to hide" />
+            <button type="submit" disabled={!hideApp.trim()}>Hide</button>
+          </form>
         </div>
         <div class="card">
           <h2>Notifications</h2>

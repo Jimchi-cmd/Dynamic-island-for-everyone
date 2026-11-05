@@ -93,6 +93,9 @@ pub fn debug_log(msg: &str) {
     }
 }
 
+/// Download artwork published as web links (an opt-in preference).
+pub static WEB_ARTWORK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Where providers send reports. Cloneable across threads.
 #[derive(Clone)]
 pub struct Sink {

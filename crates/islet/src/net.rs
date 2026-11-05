@@ -18,6 +18,20 @@ pub fn agent() -> ureq::Agent {
         .into()
 }
 
+/// Download a small file (artwork): at most `max` bytes, 5-second timeout.
+/// Only Linux needs it: Windows and macOS hand over artwork directly.
+#[cfg(target_os = "linux")]
+pub fn fetch_bytes(url: &str, max: u64) -> Result<Vec<u8>, String> {
+    let mut resp = agent()
+        .get(url)
+        .config()
+        .timeout_global(Some(Duration::from_secs(5)))
+        .build()
+        .call()
+        .map_err(|e| e.to_string())?;
+    resp.body_mut().with_config().limit(max).read_to_vec().map_err(|e| e.to_string())
+}
+
 /// The latest published release on GitHub: (version tag, release page).
 pub fn latest_release() -> Result<(String, String), String> {
     let repo = env!("CARGO_PKG_REPOSITORY").trim_start_matches("https://github.com/");

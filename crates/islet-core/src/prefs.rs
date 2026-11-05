@@ -25,6 +25,11 @@ pub struct IslandPrefs {
     pub fahrenheit: bool,
     /// Show upcoming events from the calendar link in the keychain.
     pub calendar: bool,
+    /// Apps whose Now Playing the island ignores (names or ids).
+    pub media_exclude: Vec<String>,
+    /// Download artwork that players publish as web links (Linux; e.g.
+    /// Spotify's covers). Off: only local artwork files are read.
+    pub web_artwork: bool,
 }
 
 impl Default for IslandPrefs {
@@ -37,15 +42,27 @@ impl Default for IslandPrefs {
             weather: None,
             fahrenheit: false,
             calendar: false,
+            media_exclude: Vec::new(),
+            web_artwork: false,
         }
     }
 }
 
 /// The switches `islet set <key> on|off` understands.
-pub const SWITCHES: [&str; 6] =
-    ["volume-hud", "brightness-hud", "caps-lock-hud", "notifications", "fahrenheit", "calendar"];
+pub const SWITCHES: [&str; 7] =
+    ["volume-hud", "brightness-hud", "caps-lock-hud", "notifications", "fahrenheit", "calendar", "web-artwork"];
 
 impl IslandPrefs {
+    /// Is this media session from an app the user hid?
+    pub fn excludes(&self, app_name: &str, source: &str) -> bool {
+        let (name, source) = (app_name.to_lowercase(), source.to_lowercase());
+        self.media_exclude
+            .iter()
+            .map(|x| x.trim().to_lowercase())
+            .filter(|x| !x.is_empty())
+            .any(|x| name == x || source.contains(&x))
+    }
+
     pub fn set_switch(&mut self, key: &str, on: bool) -> Result<(), String> {
         let slot = match key {
             "volume-hud" => &mut self.volume_hud,
@@ -54,6 +71,7 @@ impl IslandPrefs {
             "notifications" => &mut self.notifications,
             "fahrenheit" => &mut self.fahrenheit,
             "calendar" => &mut self.calendar,
+            "web-artwork" => &mut self.web_artwork,
             _ => return Err(format!("unknown setting {key:?} (one of: {})", SWITCHES.join(", "))),
         };
         *slot = on;
@@ -79,6 +97,14 @@ mod tests {
         assert!(p.volume_hud && !p.notifications && p.weather.is_none() && !p.calendar);
         let p: IslandPrefs = serde_json::from_str(r#"{"volumeHud":false,"unknownKey":1}"#).unwrap();
         assert!(!p.volume_hud);
+    }
+
+    #[test]
+    fn media_exclusions_match_names_and_ids() {
+        let p = IslandPrefs { media_exclude: vec!["Firefox".into(), "com.spotify".into()], ..IslandPrefs::default() };
+        assert!(p.excludes("firefox", "org.mpris.MediaPlayer2.firefox.instance_1_23"));
+        assert!(p.excludes("Spotify", "com.spotify.client"));
+        assert!(!p.excludes("VLC", "org.mpris.MediaPlayer2.vlc"));
     }
 
     #[test]

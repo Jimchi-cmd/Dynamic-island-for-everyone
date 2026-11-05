@@ -50,8 +50,9 @@ Usage:
   islet calendar on|off|clear              show events or not; clear removes the link
   islet shelf [--json]                     files on the shelf (drop files on the island to add)
   islet shelf clear                        empty the shelf (the files themselves stay)
+  islet media hide|show <app>              hide (or show again) one app's Now Playing
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
-                                           notifications, calendar, fahrenheit
+                                           notifications, calendar, fahrenheit, web-artwork
   islet prefs [--json]                     the island's settings
   islet autostart on|off                   start Islet when you log in (or stop doing so)
   islet status [--json]                    is Islet running, and how it is set up
@@ -116,6 +117,9 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
             config::save_shelf(&[]);
             let _ = control::send(&Control::ShelfChanged);
             Ok("The shelf is empty.".into())
+        }
+        ["media", verb @ ("hide" | "show"), app @ ..] if !app.is_empty() => {
+            media_exclude(*verb == "hide", &app.join(" "))
         }
         ["set", key, value] => set_switch(key, value),
         ["prefs"] => Ok(prefs_text(false)),
@@ -369,6 +373,17 @@ fn shelf_list(json: bool) -> String {
         return "The shelf is empty. Drag files onto the island to keep them handy.".into();
     }
     items.iter().map(|i| i.path.clone()).collect::<Vec<_>>().join("\n")
+}
+
+fn media_exclude(hide: bool, app: &str) -> Result<String, String> {
+    let mut p = config::load_prefs();
+    p.media_exclude.retain(|x| !x.eq_ignore_ascii_case(app));
+    if hide {
+        p.media_exclude.push(app.to_string());
+    }
+    config::save_prefs(&p)?;
+    prefs_changed();
+    Ok(if hide { format!("Now Playing from {app} is hidden.") } else { format!("Now Playing from {app} shows again.") })
 }
 
 fn prefs_changed() {
