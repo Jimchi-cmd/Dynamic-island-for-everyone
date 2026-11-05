@@ -13,18 +13,18 @@
 use super::{Backend, Button, Event, Key, Result, Waker, WindowSpec};
 use islet_core::geometry::Rect;
 use objc2::rc::Retained;
-use objc2::runtime::AnyObject;
-use objc2::{define_class, msg_send, AnyThread, MainThreadMarker, MainThreadOnly};
+use objc2::runtime::{AnyObject, ProtocolObject};
+use objc2::{define_class, msg_send, AnyThread, ClassType, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSColor, NSEvent, NSEventMask,
-    NSEventModifierFlags, NSEventType, NSPanel, NSResponder, NSScreen, NSStatusWindowLevel, NSTrackingArea,
-    NSTrackingAreaOptions, NSView, NSWindowCollectionBehavior, NSWindowStyleMask,
+    NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSColor, NSDragOperation, NSDraggingInfo,
+    NSEvent, NSEventMask, NSEventModifierFlags, NSEventType, NSPanel, NSPasteboardTypeFileURL, NSResponder, NSScreen,
+    NSStatusWindowLevel, NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindowCollectionBehavior, NSWindowStyleMask,
 };
 use objc2_core_foundation::{CFData, CFRetained};
 use objc2_core_graphics::{
     kCGColorSpaceSRGB, CGBitmapInfo, CGColorRenderingIntent, CGColorSpace, CGDataProvider, CGImage, CGImageAlphaInfo,
 };
-use objc2_foundation::{NSDate, NSDefaultRunLoopMode, NSObject, NSPoint, NSRect, NSSize};
+use objc2_foundation::{NSArray, NSDate, NSDefaultRunLoopMode, NSObject, NSPoint, NSRect, NSSize, NSURL};
 use objc2_quartz_core::CATransaction;
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
@@ -148,10 +148,53 @@ define_class!(
                 push(Event::Key(Key::Escape));
             }
         }
+
+        // File drops for the shelf.
+        #[unsafe(method(draggingEntered:))]
+        fn dragging_entered(&self, info: &ProtocolObject<dyn NSDraggingInfo>) -> NSDragOperation {
+            self.drag_at(info);
+            NSDragOperation::Copy
+        }
+
+        #[unsafe(method(draggingUpdated:))]
+        fn dragging_updated(&self, info: &ProtocolObject<dyn NSDraggingInfo>) -> NSDragOperation {
+            self.drag_at(info);
+            NSDragOperation::Copy
+        }
+
+        #[unsafe(method(draggingExited:))]
+        fn dragging_exited(&self, _info: Option<&ProtocolObject<dyn NSDraggingInfo>>) {
+            push(Event::DragLeave);
+        }
+
+        #[unsafe(method(performDragOperation:))]
+        fn perform_drag(&self, info: &ProtocolObject<dyn NSDraggingInfo>) -> bool {
+            let classes = NSArray::from_slice(&[NSURL::class()]);
+            // SAFETY: asks the pasteboard for NSURL objects only.
+            let objects = unsafe { info.draggingPasteboard().readObjectsForClasses_options(&classes, None) };
+            let paths: Vec<String> = objects
+                .map(|a| a.to_vec())
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|o| o.downcast::<NSURL>().ok())
+                .filter(|u| u.isFileURL())
+                .filter_map(|u| u.path().map(|p| p.to_string()))
+                .collect();
+            let ok = !paths.is_empty();
+            push(if ok { Event::Drop(paths) } else { Event::DragLeave });
+            ok
+        }
     }
 );
 
 impl IsletView {
+    fn drag_at(&self, info: &ProtocolObject<dyn NSDraggingInfo>) {
+        // Window coordinates → the (flipped) view's top-left coordinates.
+        let p = self.convertPoint_fromView(info.draggingLocation(), None);
+        set_interactive(true);
+        push(Event::DragOver { x: p.x, y: p.y });
+    }
+
     fn new(mtm: MainThreadMarker, frame: NSRect) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(());
         // SAFETY: NSView's designated initialiser.
@@ -231,6 +274,8 @@ impl Backend for Mac {
 
         let view = IsletView::new(mtm, NSRect::new(NSPoint::new(0.0, 0.0), frame.size));
         view.setWantsLayer(true);
+        // SAFETY: reading an AppKit constant.
+        view.registerForDraggedTypes(&NSArray::from_slice(&[unsafe { NSPasteboardTypeFileURL }]));
         let tracking = NSTrackingAreaOptions::MouseMoved
             | NSTrackingAreaOptions::MouseEnteredAndExited
             | NSTrackingAreaOptions::ActiveAlways

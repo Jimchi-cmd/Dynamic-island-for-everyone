@@ -46,6 +46,20 @@ pub fn save_prefs(prefs: &islet_core::prefs::IslandPrefs) -> Result<(), String> 
     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
+/// The file shelf, in shelf.json (paths only).
+pub fn load_shelf() -> Vec<islet_core::shelf::ShelfItem> {
+    file("shelf.json")
+        .and_then(|p| std::fs::read(p).ok())
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_shelf(items: &[islet_core::shelf::ShelfItem]) {
+    if let Some(path) = file("shelf.json") {
+        let _ = serde_json::to_vec_pretty(items).map(|b| std::fs::write(path, b));
+    }
+}
+
 /// Alarms, in alarms.json.
 pub fn load_alarms() -> Vec<Alarm> {
     file("alarms.json")

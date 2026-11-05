@@ -40,7 +40,7 @@ pub enum Key {
 /// Input and window events, in logical px relative to the window.
 /// Not every backend produces every event (layered Win32 windows never need
 /// a redraw; X11 reads its scale once), hence the dead-code allowance.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub enum Event {
     PointerMove {
@@ -65,6 +65,15 @@ pub enum Event {
     Key(Key),
     /// Caps Lock turned on or off (for the caps-lock HUD).
     CapsLock(bool),
+    /// Files are being dragged over the window, at (x, y).
+    DragOver {
+        x: f64,
+        y: f64,
+    },
+    /// The drag left without dropping.
+    DragLeave,
+    /// Files were dropped on the window.
+    Drop(Vec<String>),
     /// The OS lost our pixels (expose); present the last frame again.
     Redraw,
     ScaleChanged(f64),

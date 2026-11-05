@@ -11,6 +11,7 @@ pub mod island;
 pub mod nav;
 pub mod paths;
 pub mod prefs;
+pub mod shelf;
 pub mod spring;
 pub mod timer;
 pub mod version;

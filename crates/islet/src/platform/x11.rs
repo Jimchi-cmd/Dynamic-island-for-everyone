@@ -36,7 +36,26 @@ x11rb::atom_manager! {
         _NET_WM_STATE_SKIP_PAGER,
         _NET_WM_DESKTOP,
         _MOTIF_WM_HINTS,
+        XdndAware,
+        XdndEnter,
+        XdndPosition,
+        XdndStatus,
+        XdndLeave,
+        XdndDrop,
+        XdndFinished,
+        XdndSelection,
+        XdndActionCopy,
+        XdndTypeList,
+        TEXT_URI_LIST: b"text/uri-list",
+        ISLET_DND,
     }
+}
+
+/// An XDND drag over the island: who is dragging, and whether it offers files.
+#[derive(Clone, Copy)]
+struct Dnd {
+    source: Window,
+    files: bool,
 }
 
 pub struct X11 {
@@ -52,6 +71,10 @@ pub struct X11 {
     has_shape: bool,
     /// Caps Lock's last known state (XKB), to report only changes.
     caps: std::cell::Cell<Option<bool>>,
+    /// The window's position on the root window (for XDND coordinates).
+    pos: (i32, i32),
+    /// The drag in progress (XDND), if any.
+    dnd: std::cell::Cell<Option<Dnd>>,
     /// Frame converted to the server's pixel layout (BGRA on little-endian).
     buf: Vec<u8>,
     /// eventfd that other threads write to wake `poll`.
@@ -187,6 +210,8 @@ impl Backend for X11 {
             .map_err(xe)?;
         conn.change_property32(PropMode::REPLACE, win, atoms.WM_PROTOCOLS, AtomEnum::ATOM, &[atoms.WM_DELETE_WINDOW])
             .map_err(xe)?;
+        // Accept file drops (XDND version 5) for the shelf.
+        conn.change_property32(PropMode::REPLACE, win, atoms.XdndAware, AtomEnum::ATOM, &[5]).map_err(xe)?;
         let mut size_hints = WmSizeHints::new();
         size_hints.position = Some((WmSizeHintsSpecification::UserSpecified, x, y));
         size_hints.min_size = Some((size.0 as i32, size.1 as i32));
@@ -224,6 +249,8 @@ impl Backend for X11 {
             esc_keycode,
             has_shape,
             caps,
+            pos: (x, y),
+            dnd: std::cell::Cell::new(None),
             buf: Vec::new(),
             wake_fd,
         })
@@ -348,6 +375,13 @@ fn watch_caps_lock(conn: &RustConnection) -> Option<bool> {
 }
 
 impl X11 {
+    /// Send an XDND client message to the drag source.
+    fn dnd_send(&self, to: Window, kind: Atom, data: [u32; 5]) {
+        let ev = ClientMessageEvent::new(32, to, kind, data);
+        let _ = self.conn.send_event(false, to, EventMask::NO_EVENT, ev);
+        let _ = self.conn.flush();
+    }
+
     fn drain(&mut self, out: &mut Vec<Event>) -> Result<()> {
         while let Some(ev) = self.conn.poll_for_event().map_err(xe)? {
             if let Some(e) = self.translate(ev) {
@@ -392,6 +426,76 @@ impl X11 {
             {
                 Event::Quit
             }
+            XEvent::ClientMessage(e) if e.type_ == self.atoms.XdndEnter => {
+                let d = e.data.as_data32();
+                let types: Vec<Atom> = if d[1] & 1 != 0 {
+                    // More than three types: they're in XdndTypeList.
+                    self.conn
+                        .get_property(false, d[0], self.atoms.XdndTypeList, AtomEnum::ATOM, 0, 256)
+                        .ok()
+                        .and_then(|c| c.reply().ok())
+                        .and_then(|r| r.value32().map(|v| v.collect()))
+                        .unwrap_or_default()
+                } else {
+                    d[2..5].to_vec()
+                };
+                self.dnd.set(Some(Dnd { source: d[0], files: types.contains(&self.atoms.TEXT_URI_LIST) }));
+                return None;
+            }
+            XEvent::ClientMessage(e) if e.type_ == self.atoms.XdndPosition => {
+                let d = e.data.as_data32();
+                let dnd = self.dnd.get().filter(|g| g.source == d[0])?;
+                let (rx, ry) = ((d[2] >> 16) as i32, (d[2] & 0xffff) as i32);
+                let action = if dnd.files { self.atoms.XdndActionCopy } else { 0 };
+                // Accept (bit 0) and keep sending positions (bit 1).
+                self.dnd_send(dnd.source, self.atoms.XdndStatus, [self.win, u32::from(dnd.files) | 2, 0, 0, action]);
+                if !dnd.files {
+                    return None;
+                }
+                Event::DragOver { x: (rx - self.pos.0) as f64 / s, y: (ry - self.pos.1) as f64 / s }
+            }
+            XEvent::ClientMessage(e) if e.type_ == self.atoms.XdndLeave => {
+                self.dnd.take()?;
+                Event::DragLeave
+            }
+            XEvent::ClientMessage(e) if e.type_ == self.atoms.XdndDrop => {
+                let d = e.data.as_data32();
+                let dnd = self.dnd.get().filter(|g| g.source == d[0])?;
+                if !dnd.files {
+                    self.dnd.set(None);
+                    self.dnd_send(dnd.source, self.atoms.XdndFinished, [self.win, 0, 0, 0, 0]);
+                    return Some(Event::DragLeave);
+                }
+                // Ask for the file list; it arrives as a SelectionNotify.
+                let _ = self.conn.convert_selection(
+                    self.win,
+                    self.atoms.XdndSelection,
+                    self.atoms.TEXT_URI_LIST,
+                    self.atoms.ISLET_DND,
+                    d[2],
+                );
+                let _ = self.conn.flush();
+                return None;
+            }
+            XEvent::SelectionNotify(e) if e.property == self.atoms.ISLET_DND => {
+                let dnd = self.dnd.take()?;
+                let list = self
+                    .conn
+                    .get_property(true, self.win, self.atoms.ISLET_DND, AtomEnum::ANY, 0, 1 << 20)
+                    .ok()
+                    .and_then(|c| c.reply().ok())
+                    .map(|r| String::from_utf8_lossy(&r.value).into_owned())
+                    .unwrap_or_default();
+                let paths = islet_core::shelf::paths_from_uri_list(&list);
+                let ok = !paths.is_empty();
+                let action = if ok { self.atoms.XdndActionCopy } else { 0 };
+                self.dnd_send(dnd.source, self.atoms.XdndFinished, [self.win, u32::from(ok), action, 0, 0]);
+                if ok {
+                    Event::Drop(paths)
+                } else {
+                    Event::DragLeave
+                }
+            }
             _ => return None,
         })
     }
@@ -400,6 +504,77 @@ impl X11 {
 #[cfg(test)]
 mod tests {
     use super::parse_xft_dpi;
+
+    /// Plays an XDND drag source against the island's window: Enter,
+    /// Position, Drop, then serves the file list. Needs an X server
+    /// (`DISPLAY`), so it skips without one.
+    #[test]
+    fn xdnd_drop_reaches_the_island() {
+        use super::super::{Backend, Event, WindowSpec};
+        use super::*;
+        use std::time::{Duration, Instant};
+        if std::env::var_os("DISPLAY").is_none() {
+            eprintln!("skipping: no X display");
+            return;
+        }
+        let Ok(mut island) = X11::create(WindowSpec { width: 420.0, height: 260.0 }) else {
+            eprintln!("skipping: can't open the X display");
+            return;
+        };
+        let (src, screen) = x11rb::connect(None).unwrap();
+        let root = src.setup().roots[screen].root;
+        let atoms = Atoms::new(&src).unwrap().reply().unwrap();
+        let source = src.generate_id().unwrap();
+        src.create_window(0, source, root, 0, 0, 1, 1, 0, WindowClass::INPUT_ONLY, 0, &CreateWindowAux::new()).unwrap();
+        src.set_selection_owner(source, atoms.XdndSelection, x11rb::CURRENT_TIME).unwrap();
+        let win = island.win;
+        let send = |kind: Atom, data: [u32; 5]| {
+            let ev = ClientMessageEvent::new(32, win, kind, data);
+            src.send_event(false, win, EventMask::NO_EVENT, ev).unwrap();
+            src.flush().unwrap();
+        };
+        let pump = |island: &mut X11, until: &dyn Fn(&Event) -> bool| -> Option<Event> {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while Instant::now() < deadline {
+                let mut out = Vec::new();
+                island.wait(Some(Instant::now() + Duration::from_millis(20)), &mut out).unwrap();
+                if let Some(e) = out.into_iter().find(|e| until(e)) {
+                    return Some(e);
+                }
+                // Answer the island's request for the file list.
+                while let Some(ev) = src.poll_for_event().unwrap() {
+                    if let XEvent::SelectionRequest(r) = ev {
+                        let list = b"file:///home/a/Report%20final.pdf\r\nfile:///home/a/Photos\r\n";
+                        src.change_property8(PropMode::REPLACE, r.requestor, r.property, r.target, list).unwrap();
+                        let note = SelectionNotifyEvent {
+                            response_type: SELECTION_NOTIFY_EVENT,
+                            sequence: 0,
+                            time: r.time,
+                            requestor: r.requestor,
+                            selection: r.selection,
+                            target: r.target,
+                            property: r.property,
+                        };
+                        src.send_event(false, r.requestor, EventMask::NO_EVENT, note).unwrap();
+                        src.flush().unwrap();
+                    }
+                }
+            }
+            None
+        };
+        // Version 5, three types or fewer, the first is text/uri-list.
+        send(atoms.XdndEnter, [source, 5 << 24, atoms.TEXT_URI_LIST, 0, 0]);
+        let (x, y) = (island.pos.0 + 210, island.pos.1 + 15);
+        send(atoms.XdndPosition, [source, 0, ((x as u32) << 16) | y as u32, 0, atoms.XdndActionCopy]);
+        let over = pump(&mut island, &|e| matches!(e, Event::DragOver { .. }));
+        assert!(
+            matches!(over, Some(Event::DragOver { x, y }) if (x - 210.0 / island.scale).abs() < 1.0 && y > 0.0),
+            "{over:?}"
+        );
+        send(atoms.XdndDrop, [source, 0, 0, 0, 0]);
+        let dropped = pump(&mut island, &|e| matches!(e, Event::Drop(_)));
+        assert_eq!(dropped, Some(Event::Drop(vec!["/home/a/Report final.pdf".into(), "/home/a/Photos".into()])));
+    }
 
     #[test]
     fn parses_xft_dpi() {

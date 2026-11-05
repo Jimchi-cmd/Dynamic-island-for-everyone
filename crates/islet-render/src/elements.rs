@@ -48,6 +48,8 @@ pub enum Icon {
     Fog,
     Calendar,
     Message,
+    File,
+    Folder,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -331,6 +333,18 @@ impl IconPainter<'_> {
                     self.line((12.0 + 6.8 * c, 12.0 + 6.8 * s), (12.0 + 9.3 * c, 12.0 + 9.3 * s), 2.0);
                 }
             }
+            Icon::File => {
+                let page = Self::poly(&[(6.0, 3.0), (14.0, 3.0), (19.0, 8.0), (19.0, 21.0), (6.0, 21.0)]);
+                self.stroke(page, 1.8);
+                self.line((14.0, 3.5), (14.0, 8.0), 1.6);
+                self.line((14.0, 8.0), (18.5, 8.0), 1.6);
+                self.line((9.0, 13.0), (16.0, 13.0), 1.6);
+                self.line((9.0, 16.5), (16.0, 16.5), 1.6);
+            }
+            Icon::Folder => {
+                let tab = Self::poly(&[(3.0, 6.5), (9.5, 6.5), (11.5, 8.5), (21.0, 8.5), (21.0, 19.0), (3.0, 19.0)]);
+                self.fill(tab);
+            }
             Icon::Message => {
                 // A speech bubble with a tail.
                 let mut pb = PathBuilder::new();
@@ -557,7 +571,9 @@ mod tests {
         p.pixels().iter().filter(|c| c.alpha() > 0).count()
     }
 
-    const ALL: [Icon; 37] = [
+    const ALL: [Icon; 39] = [
+        Icon::File,
+        Icon::Folder,
         Icon::Message,
         Icon::Calendar,
         Icon::Moon,

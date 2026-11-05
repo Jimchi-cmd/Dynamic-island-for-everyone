@@ -36,6 +36,7 @@ pub const BLUE_TEXT: [u8; 3] = [64, 156, 255];
 pub enum Panel {
     Wifi,
     Bluetooth,
+    Shelf,
 }
 
 /// What a tap on the clock card or a list lands on.
@@ -48,6 +49,8 @@ pub enum ConnHit {
     Row(usize),
     /// The footer button ("Enter the password in Settings").
     Footer,
+    /// The × on a shelf row.
+    Remove(usize),
 }
 
 pub const ROW_H: f64 = 36.0;
@@ -999,17 +1002,28 @@ pub fn clock_weather(pill: Rect, w: &islet_core::weather::Weather, fahrenheit: b
 }
 
 /// The Wi-Fi and Bluetooth buttons along the bottom of the clock card.
-pub fn clock_chips(pill: Rect) -> [(Rect, Panel); 2] {
+/// The clock card's buttons: Wi-Fi and Bluetooth, plus the shelf when it
+/// has something on it.
+pub fn clock_chips(pill: Rect, shelf: bool) -> Vec<(Rect, Panel)> {
     let (x, w) = (pill.x + PAD, pill.w - 2.0 * PAD);
     let y = pill.y + 122.0;
-    let half = (w - 10.0) / 2.0;
-    [(Rect::new(x, y, half, 32.0), Panel::Wifi), (Rect::new(x + half + 10.0, y, half, 32.0), Panel::Bluetooth)]
+    let panels: &[Panel] =
+        if shelf { &[Panel::Wifi, Panel::Bluetooth, Panel::Shelf] } else { &[Panel::Wifi, Panel::Bluetooth] };
+    let n = panels.len() as f64;
+    let cw = (w - 10.0 * (n - 1.0)) / n;
+    panels.iter().enumerate().map(|(i, p)| (Rect::new(x + i as f64 * (cw + 10.0), y, cw, 32.0), *p)).collect()
 }
 
-pub fn clock_chip_elements(pill: Rect, c: &Connectivity, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+pub fn clock_chip_elements(
+    pill: Rect,
+    c: &Connectivity,
+    shelf: usize,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
     let mut v = Vec::new();
     let style = TextStyle { size: 13.0, weight: 600, opacity: o, ..TextStyle::default() };
-    for (r, panel) in clock_chips(pill) {
+    for (r, panel) in clock_chips(pill, shelf > 0) {
         let (x, y, w, h) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
         let (icon, label, on) = match panel {
             Panel::Wifi => (
@@ -1022,6 +1036,7 @@ pub fn clock_chip_elements(pill: Rect, c: &Connectivity, o: f32, engine: &mut Te
                 c.connected_device().map_or_else(|| "Bluetooth".into(), |d| d.name.clone()),
                 c.connected_device().is_some(),
             ),
+            Panel::Shelf => (Icon::Folder, format!("Shelf · {shelf}"), false),
         };
         let bg = if on { BLUE } else { WHITE };
         v.push(Element::Bar { x, y, w, h, color: bg, opacity: o * if on { 0.9 } else { 0.14 } });
@@ -1173,6 +1188,63 @@ pub fn expanded_wifi(pill: Rect, c: &Connectivity, o: f32, engine: &mut TextEngi
         v.extend(list_footer_elements(pill, w.networks.len(), &line, button, o, engine));
     }
     v
+}
+
+/// The shelf: dropped files (tap to open, × to remove).
+pub fn expanded_shelf(
+    pill: Rect,
+    items: &[islet_core::shelf::ShelfItem],
+    dragging: bool,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
+    let status =
+        (!items.is_empty()).then(|| format!("{} item{}", items.len(), if items.len() == 1 { "" } else { "s" }));
+    let mut v = list_header_elements(pill, Icon::Folder, "Shelf", status.as_deref(), o, engine);
+    let rows = list_rows(pill, items.len());
+    let name_style = TextStyle { size: 15.0, weight: 600, opacity: o, ..TextStyle::default() };
+    for (r, item) in rows.iter().zip(items) {
+        let (x, cy, rw) = (r.x as f32, (r.y + r.h / 2.0) as f32, r.w as f32);
+        let icon = if item.dir { Icon::Folder } else { Icon::File };
+        v.push(Element::Icon { icon, x: x + 10.0, y: cy - 10.0, size: 20.0, color: WHITE, opacity: o });
+        v.push(text(engine.ellipsize(item.name(), &name_style, rw - 90.0), name_style, x + 40.0, cy + 5.0));
+        v.push(Element::Icon {
+            icon: Icon::Close,
+            x: x + rw - 28.0,
+            y: cy - 8.0,
+            size: 16.0,
+            color: WHITE,
+            opacity: o * 0.5,
+        });
+    }
+    if items.is_empty() && !dragging {
+        let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
+        v.push(text(
+            "Drag files here to keep them handy",
+            style,
+            pill.x as f32 + 50.0,
+            (pill.y + LIST_TOP) as f32 + 23.0,
+        ));
+    }
+    if let Some((line, button)) = shelf_footer(items.len(), dragging) {
+        v.extend(list_footer_elements(pill, items.len(), &line, button, o, engine));
+    }
+    v
+}
+
+pub fn shelf_footer(items: usize, dragging: bool) -> Option<(String, bool)> {
+    if dragging {
+        Some(("Drop to keep here".into(), true))
+    } else if items > 0 {
+        Some(("Files stay where they are; the shelf keeps a shortcut".into(), false))
+    } else {
+        None
+    }
+}
+
+/// Is (x, y) on a shelf row's × button?
+pub fn shelf_remove_hit(row: Rect, x: f64) -> bool {
+    x >= row.right() - 40.0
 }
 
 pub fn expanded_bluetooth(pill: Rect, c: &Connectivity, o: f32, engine: &mut TextEngine) -> Vec<Element> {

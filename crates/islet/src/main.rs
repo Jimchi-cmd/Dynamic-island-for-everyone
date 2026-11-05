@@ -121,6 +121,7 @@ fn run() -> platform::Result<()> {
     if !scripted {
         app.set_alarms(config::load_alarms());
         app.set_prefs(config::load_prefs());
+        app.set_shelf(config::load_shelf());
     }
     win.watch_caps_lock(app.prefs().caps_lock_hud);
     providers.weather(app.prefs().weather.clone());
@@ -166,6 +167,15 @@ fn run() -> platform::Result<()> {
                 }
                 _ => {}
             }
+            if let Event::Drop(paths) = e {
+                // The island keeps references only: note which are folders.
+                let dropped = paths.into_iter().map(|p| {
+                    let dir = std::path::Path::new(&p).is_dir();
+                    (p, dir)
+                });
+                needs_frame |= app.drop_files(dropped.collect(), t);
+                continue;
+            }
             needs_frame |= app.handle(e, t);
         }
         // Reports from the media and battery providers.
@@ -201,6 +211,8 @@ fn run() -> platform::Result<()> {
                     providers.notifications(app.prefs().notifications);
                 }
                 Control::PrefsChanged => {}
+                Control::ShelfChanged if !scripted => app.set_shelf(config::load_shelf()),
+                Control::ShelfChanged => {}
             }
         }
         for action in app.take_nav_actions() {
@@ -212,13 +224,19 @@ fn run() -> platform::Result<()> {
                 _ => {}
             }
         }
+        if let Some(items) = app.take_shelf_changes() {
+            if !scripted {
+                config::save_shelf(&items);
+            }
+        }
         for cmd in app.take_conn_commands() {
             providers.conn(cmd);
         }
         for action in app.take_ui_actions() {
             match action {
-                UiAction::OpenUrl(url) => navigation::open_url(&url),
-                UiAction::OpenSettings(page) => open_settings(&page),
+                UiAction::Url(url) => navigation::open_url(&url),
+                UiAction::Settings(page) => open_settings(&page),
+                UiAction::Path(path) => open_path(&path),
             }
         }
         let open = app.nav_card_open(t);
@@ -306,4 +324,17 @@ fn open_settings(page: &str) {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn();
+}
+
+/// Open a shelf item with the OS's default app (never through a shell).
+fn open_path(path: &str) {
+    #[cfg(target_os = "macos")]
+    let r = std::process::Command::new("open").arg(path).spawn();
+    #[cfg(target_os = "windows")]
+    let r = std::process::Command::new("explorer").arg(path).spawn();
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let r = std::process::Command::new("xdg-open").arg(path).spawn();
+    if let Err(e) = r {
+        providers::debug_log(&format!("could not open a shelf item: {e}"));
+    }
 }

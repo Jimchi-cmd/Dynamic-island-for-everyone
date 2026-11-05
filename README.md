@@ -16,6 +16,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 - **Battery pop-ups** when headphones, earbuds, mice, keyboards or controllers connect, plus low-battery and charger alerts.
 - **Volume, brightness and caps-lock pop-ups**, like the iPhone's.
 - **Weather** on the clock card, from Open-Meteo (no account or key).
+- **File shelf:** drag files onto the island to keep them one tap away (it keeps shortcuts, never copies).
 - **Notifications** on the island (Linux, opt-in).
 - **Calendar:** what's next, ten minutes before it starts, and today's agenda (Google, Outlook or iCloud via their private iCal link).
 - **Timer and focus sessions:** a countdown ring on the island, or Pomodoro rounds of work and breaks.

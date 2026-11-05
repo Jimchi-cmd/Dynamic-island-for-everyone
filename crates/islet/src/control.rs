@@ -24,6 +24,8 @@ pub enum Control {
     Timer(TimerCommand),
     /// island.json changed: reload it.
     PrefsChanged,
+    /// shelf.json changed: reload it.
+    ShelfChanged,
     /// Is an island running? Answered by the control thread itself.
     Ping,
 }
@@ -87,6 +89,7 @@ fn handle(stream: &TcpStream, token: &str) -> Result<Control, String> {
         (Some("alarm-stop"), _) => Ok(Control::AlarmStop),
         (Some("alarm-snooze"), _) => Ok(Control::AlarmSnooze),
         (Some("prefs-changed"), _) => Ok(Control::PrefsChanged),
+        (Some("shelf-changed"), _) => Ok(Control::ShelfChanged),
         (Some("timer"), Some(json)) => serde_json::from_str(json).map(Control::Timer).map_err(|e| e.to_string()),
         (Some("ping"), _) => Ok(Control::Ping),
         _ => Err("unknown command".into()),
@@ -111,6 +114,7 @@ pub fn send(cmd: &Control) -> Result<(), String> {
         Control::AlarmStop => format!("{token}\talarm-stop"),
         Control::AlarmSnooze => format!("{token}\talarm-snooze"),
         Control::PrefsChanged => format!("{token}\tprefs-changed"),
+        Control::ShelfChanged => format!("{token}\tshelf-changed"),
         Control::Timer(cmd) => format!("{token}\ttimer\t{}", serde_json::to_string(cmd).map_err(|e| e.to_string())?),
         Control::Ping => format!("{token}\tping"),
     };

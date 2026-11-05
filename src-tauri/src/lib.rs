@@ -27,7 +27,7 @@ pub fn allowed(args: &[String]) -> bool {
         ["wifi", "connect", ssid] | ["wifi", "connect", ssid, "--password-stdin"] => !ssid.starts_with('-'),
         ["bt", "connect" | "disconnect", id] => !id.starts_with('-'),
         ["timer", "pause" | "resume" | "stop"] => true,
-        ["prefs", "--json"] | ["weather", "off"] => true,
+        ["prefs", "--json"] | ["weather", "off"] | ["shelf", "--json"] | ["shelf", "clear"] => true,
         ["calendar", "set"] | ["calendar", "on" | "off" | "clear"] | ["calendar", "--json"] => true,
         ["weather", "search", q, "--json"] => !q.starts_with('-'),
         ["weather", "set", "--lat", lat, "--lon", lon, "--name", name] => {

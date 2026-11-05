@@ -37,6 +37,105 @@ const WM_ISLET_WAKE: u32 = WM_APP + 1;
 /// Posted by the Caps Lock hook thread: wParam = 1 (on) or 0 (off).
 const WM_ISLET_CAPS: u32 = WM_APP + 2;
 
+/// File drops for the shelf (OLE drag and drop). OLE calls these on the
+/// window's thread while it pumps messages; events join the usual queue.
+#[windows_core::implement(windows::Win32::System::Ole::IDropTarget)]
+struct DropTarget {
+    hwnd: isize,
+}
+
+impl DropTarget {
+    /// Screen pixels → the window's logical coordinates.
+    fn local(&self, pt: &windows::Win32::Foundation::POINTL) -> (f64, f64) {
+        let mut r = windows::Win32::Foundation::RECT::default();
+        // SAFETY: our own window handle; `r` is a valid out-pointer.
+        let _ = unsafe { GetWindowRect(HWND(self.hwnd as *mut c_void), &mut r) };
+        let s = SCALE.with(|s| s.get()).max(0.1);
+        ((pt.x - r.left) as f64 / s, (pt.y - r.top) as f64 / s)
+    }
+}
+
+fn hdrop_format() -> windows::Win32::System::Com::FORMATETC {
+    windows::Win32::System::Com::FORMATETC {
+        cfFormat: windows::Win32::System::Ole::CF_HDROP.0,
+        ptd: std::ptr::null_mut(),
+        dwAspect: windows::Win32::System::Com::DVASPECT_CONTENT.0,
+        lindex: -1,
+        tymed: windows::Win32::System::Com::TYMED_HGLOBAL.0 as u32,
+    }
+}
+
+impl windows::Win32::System::Ole::IDropTarget_Impl for DropTarget_Impl {
+    fn DragEnter(
+        &self,
+        data: windows_core::Ref<windows::Win32::System::Com::IDataObject>,
+        _keys: windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS,
+        pt: &windows::Win32::Foundation::POINTL,
+        effect: *mut windows::Win32::System::Ole::DROPEFFECT,
+    ) -> windows_core::Result<()> {
+        use windows::Win32::System::Ole::{DROPEFFECT_COPY, DROPEFFECT_NONE};
+        // SAFETY: OLE passes a valid data object and effect pointer.
+        let files = data.as_ref().is_some_and(|d| unsafe { d.QueryGetData(&hdrop_format()) }.is_ok());
+        unsafe { *effect = if files { DROPEFFECT_COPY } else { DROPEFFECT_NONE } };
+        if files {
+            let (x, y) = self.local(pt);
+            push(Event::DragOver { x, y });
+        }
+        Ok(())
+    }
+
+    fn DragOver(
+        &self,
+        _keys: windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS,
+        pt: &windows::Win32::Foundation::POINTL,
+        effect: *mut windows::Win32::System::Ole::DROPEFFECT,
+    ) -> windows_core::Result<()> {
+        // SAFETY: OLE passes a valid effect pointer.
+        unsafe { *effect = windows::Win32::System::Ole::DROPEFFECT_COPY };
+        let (x, y) = self.local(pt);
+        push(Event::DragOver { x, y });
+        Ok(())
+    }
+
+    fn DragLeave(&self) -> windows_core::Result<()> {
+        push(Event::DragLeave);
+        Ok(())
+    }
+
+    fn Drop(
+        &self,
+        data: windows_core::Ref<windows::Win32::System::Com::IDataObject>,
+        _keys: windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS,
+        _pt: &windows::Win32::Foundation::POINTL,
+        effect: *mut windows::Win32::System::Ole::DROPEFFECT,
+    ) -> windows_core::Result<()> {
+        use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
+        let Some(data) = data.as_ref() else { return Ok(()) };
+        // SAFETY: CF_HDROP data is an HGLOBAL holding a DROPFILES list; the
+        // medium is released after reading it.
+        unsafe {
+            let mut medium = data.GetData(&hdrop_format())?;
+            let drop = HDROP(medium.u.hGlobal.0);
+            let count = DragQueryFileW(drop, u32::MAX, None);
+            let mut paths = Vec::new();
+            for i in 0..count {
+                let len = DragQueryFileW(drop, i, None) as usize;
+                let mut buf = vec![0u16; len + 1];
+                DragQueryFileW(drop, i, Some(&mut buf));
+                paths.push(String::from_utf16_lossy(&buf[..len]));
+            }
+            windows::Win32::System::Ole::ReleaseStgMedium(&mut medium);
+            *effect = windows::Win32::System::Ole::DROPEFFECT_COPY;
+            if paths.is_empty() {
+                push(Event::DragLeave);
+            } else {
+                push(Event::Drop(paths));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// The island window (for the hook thread to post to) and Caps Lock's state.
 static CAPS_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 static CAPS_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -201,6 +300,12 @@ impl Backend for Win32 {
                 scale: 1.0,
             };
             me.configure()?;
+            // Accept dropped files for the shelf (OLE needs a single-threaded
+            // apartment on this thread).
+            if windows::Win32::System::Ole::OleInitialize(None).is_ok() {
+                let target: windows::Win32::System::Ole::IDropTarget = DropTarget { hwnd: hwnd.0 as isize }.into();
+                let _ = windows::Win32::System::Ole::RegisterDragDrop(hwnd, &target);
+            }
             let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
             Ok(me)
         }

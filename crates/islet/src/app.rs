@@ -115,9 +115,11 @@ pub enum AlarmOut {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiAction {
     /// A link or settings URI (Windows Bluetooth settings).
-    OpenUrl(String),
+    Url(String),
+    /// A file or folder from the shelf, in its default app.
+    Path(String),
     /// Islet Settings at a page ("wifi:Home": join Home with a password).
-    OpenSettings(String),
+    Settings(String),
 }
 
 /// Windows has no public API to connect Bluetooth devices: its settings do.
@@ -164,6 +166,12 @@ pub struct App {
     timer_ringing: bool,
     timer_control: Option<TimerControl>,
     timer_sec: i64,
+    /// The file shelf; whether files are being dragged over the island (and
+    /// whether that opened it); and a pending save.
+    shelf: Vec<islet_core::shelf::ShelfItem>,
+    dragging: bool,
+    drag_opened: bool,
+    shelf_dirty: bool,
     /// The notifications card was opened from a notification: it stays
     /// until the island closes, even after the peek ends.
     notes_open: bool,
@@ -232,6 +240,10 @@ impl App {
             timer_ringing: false,
             timer_control: None,
             timer_sec: -1,
+            shelf: Vec::new(),
+            dragging: false,
+            drag_opened: false,
+            shelf_dirty: false,
             notes_open: false,
             prefs: IslandPrefs::default(),
             wall: 0.0,
@@ -508,6 +520,54 @@ impl App {
         std::mem::take(&mut self.conn_commands)
     }
 
+    pub fn set_shelf(&mut self, items: Vec<islet_core::shelf::ShelfItem>) {
+        self.shelf = items;
+    }
+
+    /// The shelf, if it changed since the last call (to save it).
+    pub fn take_shelf_changes(&mut self) -> Option<Vec<islet_core::shelf::ShelfItem>> {
+        std::mem::take(&mut self.shelf_dirty).then(|| self.shelf.clone())
+    }
+
+    /// Files were dropped on the island: (path, is a folder).
+    pub fn drop_files(&mut self, dropped: Vec<(String, bool)>, t: f64) -> bool {
+        islet_core::shelf::add(&mut self.shelf, &dropped);
+        self.shelf_dirty = true;
+        self.dragging = false;
+        self.drag_opened = false;
+        self.panel = Some(Panel::Shelf);
+        if !self.island.presentation().is_open() {
+            self.signal(Signal::Click, t);
+        }
+        // Show what landed, then close by itself unless the pointer is on it.
+        if !self.hovered {
+            self.left_open_at = Some(t);
+        }
+        self.sync_live(t);
+        true
+    }
+
+    fn drag_over(&mut self, x: f64, y: f64, t: f64) -> bool {
+        let open = self.island.presentation().is_open();
+        let over = self.hit(x, y, t) || (open && x.is_finite() && self.bounds(t).inflate(8.0).contains(x, y));
+        if over == self.dragging {
+            return false;
+        }
+        self.dragging = over;
+        if over {
+            self.panel = Some(Panel::Shelf);
+            if !open {
+                self.drag_opened = true;
+                self.signal(Signal::Click, t);
+            }
+            self.left_open_at = None;
+        } else if std::mem::take(&mut self.drag_opened) {
+            self.signal(Signal::Escape, t);
+        }
+        self.sync_live(t);
+        true
+    }
+
     /// Links and Settings pages to open.
     pub fn take_ui_actions(&mut self) -> Vec<UiAction> {
         std::mem::take(&mut self.ui_actions)
@@ -521,18 +581,24 @@ impl App {
         let cr = self.content_rect(self.pill_rect(t));
         let c = self.activities.connectivity();
         match self.open_content(&self.live(t)) {
-            OpenContent::Clock => {
-                content::clock_chips(cr).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, p)| ConnHit::Open(p))
-            }
+            OpenContent::Clock => content::clock_chips(cr, !self.shelf.is_empty())
+                .into_iter()
+                .find(|(r, _)| r.contains(x, y))
+                .map(|(_, p)| ConnHit::Open(p)),
             OpenContent::Panel(p) => {
                 let (rows, footer) = match p {
                     Panel::Wifi => (c.wifi.networks.len(), content::wifi_footer(c)),
                     Panel::Bluetooth => (c.bt.devices.len(), content::bt_footer(c)),
+                    Panel::Shelf => (self.shelf.len(), None),
                 };
                 if content::list_header(cr).contains(x, y) {
                     return Some(ConnHit::Back);
                 }
-                if let Some(i) = content::list_rows(cr, rows).iter().position(|r| r.contains(x, y)) {
+                let list = content::list_rows(cr, rows);
+                if let Some(i) = list.iter().position(|r| r.contains(x, y)) {
+                    if p == Panel::Shelf && content::shelf_remove_hit(list[i], x) {
+                        return Some(ConnHit::Remove(i));
+                    }
                     return Some(ConnHit::Row(i));
                 }
                 (footer.is_some_and(|(_, button)| button) && content::list_footer(cr, rows).contains(x, y))
@@ -548,10 +614,17 @@ impl App {
             ConnHit::Open(p) => {
                 self.panel = Some(p);
                 self.activities.report(Report::Connectivity(ConnUpdate::ClearFailure), t);
-                self.conn_commands.push(match p {
-                    Panel::Wifi => ConnCommand::ScanWifi,
-                    Panel::Bluetooth => ConnCommand::ListBluetooth,
-                });
+                match p {
+                    Panel::Wifi => self.conn_commands.push(ConnCommand::ScanWifi),
+                    Panel::Bluetooth => self.conn_commands.push(ConnCommand::ListBluetooth),
+                    Panel::Shelf => {}
+                }
+            }
+            ConnHit::Remove(i) => {
+                if i < self.shelf.len() {
+                    self.shelf.remove(i);
+                    self.shelf_dirty = true;
+                }
             }
             ConnHit::Back => self.panel = None,
             ConnHit::Row(i) => match self.panel {
@@ -563,7 +636,7 @@ impl App {
                 Some(Panel::Bluetooth) => {
                     if let Some(d) = c.bt.devices.get(i) {
                         if !c.bt.can_connect {
-                            self.ui_actions.push(UiAction::OpenUrl(BLUETOOTH_SETTINGS.into()));
+                            self.ui_actions.push(UiAction::Url(BLUETOOTH_SETTINGS.into()));
                         } else if d.connected {
                             self.conn_commands.push(ConnCommand::DisconnectBluetooth(d.id.clone()));
                         } else {
@@ -571,13 +644,18 @@ impl App {
                         }
                     }
                 }
+                Some(Panel::Shelf) => {
+                    if let Some(item) = self.shelf.get(i) {
+                        self.ui_actions.push(UiAction::Path(item.path.clone()));
+                    }
+                }
                 None => {}
             },
             ConnHit::Footer => match (self.panel, &c.failure) {
                 (Some(Panel::Wifi), Some((_, Some(ssid)))) => {
-                    self.ui_actions.push(UiAction::OpenSettings(format!("wifi:{ssid}")))
+                    self.ui_actions.push(UiAction::Settings(format!("wifi:{ssid}")))
                 }
-                (Some(Panel::Bluetooth), _) => self.ui_actions.push(UiAction::OpenUrl(BLUETOOTH_SETTINGS.into())),
+                (Some(Panel::Bluetooth), _) => self.ui_actions.push(UiAction::Url(BLUETOOTH_SETTINGS.into())),
                 _ => {}
             },
         }
@@ -774,6 +852,9 @@ impl App {
                 OpenContent::Panel(Panel::Bluetooth) => {
                     out.extend(content::expanded_bluetooth(cr, self.activities.connectivity(), eo, engine))
                 }
+                OpenContent::Panel(Panel::Shelf) => {
+                    out.extend(content::expanded_shelf(cr, &self.shelf, self.dragging, eo, engine))
+                }
                 OpenContent::Media(m) => out.extend(content::expanded_media(cr, m, t, eo, self.scrub, engine)),
                 OpenContent::Nav(n) => out.extend(content::expanded_nav(cr, n, self.clock.as_ref(), eo, engine)),
                 OpenContent::Battery => out.extend(content::expanded_battery(
@@ -787,7 +868,13 @@ impl App {
                     if let Some(now) = self.clock {
                         out.extend(content::expanded_clock(cr, &now, self.h24, eo, engine));
                     }
-                    out.extend(content::clock_chip_elements(cr, self.activities.connectivity(), eo, engine));
+                    out.extend(content::clock_chip_elements(
+                        cr,
+                        self.activities.connectivity(),
+                        self.shelf.len(),
+                        eo,
+                        engine,
+                    ));
                     if let Some(w) = self.activities.weather() {
                         out.extend(content::clock_weather(cr, w, self.prefs.fahrenheit, eo));
                     }
@@ -839,6 +926,10 @@ impl App {
                             Panel::Bluetooth => {
                                 content::list_height(c.bt.devices.len(), content::bt_footer(c).is_some())
                             }
+                            Panel::Shelf => content::list_height(
+                                self.shelf.len(),
+                                content::shelf_footer(self.shelf.len(), self.dragging).is_some(),
+                            ),
                         }
                     }
                     OpenContent::Media(_) | OpenContent::Nav(_) => MEDIA_H,
@@ -1056,6 +1147,8 @@ impl App {
             }
             Event::Key(Key::Escape) => self.signal(Signal::Escape, t),
             Event::CapsLock(on) => self.report(Report::Hud(Hud::CapsLock(on)), t),
+            Event::DragOver { x, y } => self.drag_over(x, y, t),
+            Event::DragLeave => self.drag_over(f64::NAN, f64::NAN, t),
             Event::Scroll { dx, dy } if self.hovered => self.scroll(dx, dy, t),
             Event::Redraw | Event::ScaleChanged(_) => true,
             _ => false,
@@ -1594,7 +1687,7 @@ mod tests {
 
         // Open the Wi-Fi list.
         let cr = app.content_rect(app.pill_rect(5.0));
-        press(&mut app, content::clock_chips(cr)[0].0, 5.0);
+        press(&mut app, content::clock_chips(cr, false)[0].0, 5.0);
         assert_eq!(app.take_conn_commands(), [ConnCommand::ScanWifi]);
         let rows = content::list_rows(app.content_rect(app.pill_rect(9.0)), 2);
         assert!(texts(&app, 9.0, &mut engine).iter().any(|s| s == "Cafe"));
@@ -1611,7 +1704,7 @@ mod tests {
         );
         let cr = app.content_rect(app.pill_rect(13.0));
         press(&mut app, content::list_footer(cr, 2), 13.0);
-        assert_eq!(app.take_ui_actions(), [UiAction::OpenSettings("wifi:Cafe".into())]);
+        assert_eq!(app.take_ui_actions(), [UiAction::Settings("wifi:Cafe".into())]);
         assert_eq!(app.presentation(), Expanded, "list taps don't close the island");
 
         // Back to the clock, then Bluetooth on a system that can't connect from apps.
@@ -1632,11 +1725,11 @@ mod tests {
             14.0,
         );
         let cr = app.content_rect(app.pill_rect(18.0));
-        press(&mut app, content::clock_chips(cr)[1].0, 18.0);
+        press(&mut app, content::clock_chips(cr, false)[1].0, 18.0);
         assert_eq!(app.take_conn_commands(), [ConnCommand::ListBluetooth]);
         let rows = content::list_rows(app.content_rect(app.pill_rect(22.0)), 1);
         press(&mut app, rows[0], 22.0);
-        assert_eq!(app.take_ui_actions(), [UiAction::OpenUrl("ms-settings:bluetooth".into())]);
+        assert_eq!(app.take_ui_actions(), [UiAction::Url("ms-settings:bluetooth".into())]);
 
         // Closing the island forgets the list.
         app.handle(Event::Key(Key::Escape), 23.0);
@@ -1780,6 +1873,35 @@ mod tests {
     }
 
     #[test]
+    fn files_dropped_on_the_island_land_on_the_shelf() {
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        let (x, y) = centre(&app, 0.0);
+        assert!(app.handle(Event::DragOver { x, y }, 0.0));
+        assert_eq!(app.presentation(), Expanded, "a drag over the island opens the shelf");
+        assert!(texts(&app, 4.0, &mut engine).iter().any(|s| s == "Drop to keep here"));
+        app.drop_files(vec![("/home/a/Report final.pdf".into(), false), ("/home/a/Photos".into(), true)], 4.0);
+        assert_eq!(app.take_shelf_changes().map(|v| v.len()), Some(2), "saved");
+        let shown = texts(&app, 6.0, &mut engine);
+        assert!(shown.iter().any(|s| s == "Report final.pdf") && shown.iter().any(|s| s == "Photos"), "{shown:?}");
+
+        // Tap a file to open it; × removes it.
+        let rows = content::list_rows(app.content_rect(app.pill_rect(6.0)), 2);
+        press(&mut app, Rect::new(rows[0].x, rows[0].y, 100.0, rows[0].h), 6.0);
+        assert_eq!(app.take_ui_actions(), [UiAction::Path("/home/a/Report final.pdf".into())]);
+        press(&mut app, Rect::new(rows[1].right() - 30.0, rows[1].y, 20.0, rows[1].h), 7.0);
+        assert_eq!(app.take_shelf_changes().map(|v| v.len()), Some(1));
+
+        // A drag that leaves again closes what it opened.
+        app.handle(Event::Key(Key::Escape), 8.0);
+        app.tick(8.0 + AUTO_COLLAPSE_SECS);
+        let (x, y) = centre(&app, 20.0);
+        app.handle(Event::DragOver { x, y }, 20.0);
+        app.handle(Event::DragLeave, 21.0);
+        assert_eq!(app.presentation(), Idle);
+    }
+
+    #[test]
     fn idle_island_shows_no_clock_and_never_wakes_for_it() {
         let mut app = App::new(Demo::None, false);
         assert!(!app.set_time(NOW, 0.0), "nothing to redraw while idle");
@@ -1892,6 +2014,53 @@ mod tests {
             let extra = if p == Minimal { MINIMAL_GAP + MINIMAL_CIRCLE } else { 0.0 };
             assert!((w + extra) * 1.03 <= WINDOW.0 && h * 1.03 + TOP_GAP <= WINDOW.1, "{p:?}");
         }
+    }
+
+    /// Shelf views for visual review:
+    /// `ISLET_SHELF_SHEET=/path/out.png cargo test -p islet shelf_sheet`
+    #[test]
+    fn shelf_sheet() {
+        let Some(out) = std::env::var_os("ISLET_SHELF_SHEET") else { return };
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let mut engine = TextEngine::new();
+        let mut dragging = App::new(Demo::None, false);
+        let (x, y) = centre(&dragging, 0.0);
+        dragging.handle(Event::DragOver { x, y }, 0.0);
+        let mut full = App::new(Demo::None, false);
+        full.drop_files(
+            vec![
+                ("/home/a/Report final.pdf".into(), false),
+                ("/home/a/Photos/Kampala trip".into(), true),
+                ("/home/a/island-motion.mov".into(), false),
+            ],
+            0.0,
+        );
+        let mut clock = App::new(Demo::None, false);
+        clock.set_shelf(full.shelf.clone());
+        clock.set_time(NOW, 0.0);
+        click(&mut clock, 0.0);
+        let apps = [dragging, full, clock];
+        let (cw, ch) = (WINDOW.0 as u32, 230u32);
+        let mut sheet = Pixmap::new(cw * 3, ch).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        for (i, a) in apps.iter().enumerate() {
+            let t = 4.0;
+            let mut cell = Pixmap::new(cw, WINDOW.1 as u32).unwrap();
+            let frame = a.frame(t);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, WINDOW.1 as u32, 1.0);
+            let els = a.elements(t, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            sheet.draw_pixmap(
+                i as i32 * cw as i32,
+                0,
+                cell.as_ref(),
+                &PixmapPaint::default(),
+                Transform::identity(),
+                None,
+            );
+        }
+        sheet.save_png(out).unwrap();
     }
 
     /// Notification views for visual review:
@@ -2148,7 +2317,7 @@ mod tests {
             click(&mut a, 0.0);
             if let Some(i) = panel {
                 let cr = a.content_rect(a.pill_rect(5.0));
-                press(&mut a, content::clock_chips(cr)[i].0, 5.0);
+                press(&mut a, content::clock_chips(cr, false)[i].0, 5.0);
                 if fail {
                     a.report(
                         Report::Connectivity(ConnUpdate::Failed {

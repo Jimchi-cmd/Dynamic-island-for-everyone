@@ -48,6 +48,8 @@ Usage:
   islet calendar set                       read a private iCal (ICS) link from stdin into the
                                            OS keychain and turn calendar on
   islet calendar on|off|clear              show events or not; clear removes the link
+  islet shelf [--json]                     files on the shelf (drop files on the island to add)
+  islet shelf clear                        empty the shelf (the files themselves stay)
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
                                            notifications, calendar, fahrenheit
   islet prefs [--json]                     the island's settings
@@ -108,6 +110,13 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["calendar", "clear"] => secrets::clear_calendar_url()
             .and_then(|()| set_switch("calendar", "off"))
             .map(|_| "Calendar link removed.".into()),
+        ["shelf"] => Ok(shelf_list(false)),
+        ["shelf", "--json"] => Ok(shelf_list(true)),
+        ["shelf", "clear"] => {
+            config::save_shelf(&[]);
+            let _ = control::send(&Control::ShelfChanged);
+            Ok("The shelf is empty.".into())
+        }
         ["set", key, value] => set_switch(key, value),
         ["prefs"] => Ok(prefs_text(false)),
         ["prefs", "--json"] => Ok(prefs_text(true)),
@@ -349,6 +358,17 @@ fn calendar_list(json: bool) -> Result<String, String> {
         })
         .collect::<Vec<_>>()
         .join("\n"))
+}
+
+fn shelf_list(json: bool) -> String {
+    let items = config::load_shelf();
+    if json {
+        return serde_json::to_string(&items).unwrap_or_default();
+    }
+    if items.is_empty() {
+        return "The shelf is empty. Drag files onto the island to keep them handy.".into();
+    }
+    items.iter().map(|i| i.path.clone()).collect::<Vec<_>>().join("\n")
 }
 
 fn prefs_changed() {
