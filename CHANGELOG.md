@@ -17,6 +17,7 @@ The first public release.
 - **Navigation ETA** with live traffic via the Google Routes API (your own key, kept in the OS keychain), adaptive refresh, and hand-off to Google Maps or Waze.
 - **Alarms**: one-time or repeating. When one rings, the island opens with a swinging bell and plays an original chime until you snooze or stop it.
 - **Wi-Fi and Bluetooth** pickers from the clock card: join networks and connect paired devices.
+- **Notifications** mirrored on the island (Linux, opt-in), with the latest few one click away.
 - **Calendar:** "up next" on the island ten minutes before an event, and today's agenda, from your calendar's private iCal link (Google, Outlook, iCloud).
 - **Weather** on the clock card from Open-Meteo (no key; off until you choose a place).
 - **Volume, brightness and caps-lock pop-ups** on the island (each can be switched off).

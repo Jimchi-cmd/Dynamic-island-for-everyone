@@ -11,7 +11,7 @@ Each phase ships with tests and green CI on Windows, macOS and Linux before the 
 | **3b** | **Alarms**: one-time or repeating alarms; when one rings, the island opens with a swinging bell (the bell stays at the right of the pill when collapsed) and an original chime plays until Snooze (9 min) or Stop | ✅ done: alarm logic (catches up after sleep, never rings hours late), island views, chime synthesised by Islet and played with the OS player, `islet alarm` commands, Alarms page in Settings |
 | **3c** | **Wi-Fi & Bluetooth**: pick a Wi-Fi network or a paired Bluetooth device from the island (clock card → Wi-Fi / Bluetooth) or Settings | ✅ Linux via NetworkManager + BlueZ (tested end to end against fake services); Windows Wi-Fi via WiFiAdapter and macOS via CoreWLAN + IOBluetooth (compile; need testing on real machines). See the notes below |
 | **4** | Release pipeline and v0.1.0: installers for every OS, auto-update, Settings app, first-run permissions screen | in progress: ✅ Settings app with first-run welcome and permissions, installers (deb, rpm, AppImage, msi, setup exe, portable zip, universal dmg), tag-triggered draft releases with checksums, signed in-app updates (once a key is set up), README, CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, CHANGELOG, issue and PR templates, third-party licenses, [install](install.md), [signing](signing.md) and [publishing](publishing-checklist.md) guides · ⬜ the v0.1.0 tag (maintainer), smoke tests on real Windows and Mac machines |
-| **5** | Notifications, volume/brightness/caps-lock HUD, calendar, file shelf, focus timer, weather | in progress: ✅ timer and focus sessions (countdown ring on the island, Pause/Resume/Stop, chime and quick look at each phase change, Repeat when done; keeps time across sleep); volume, brightness and caps-lock pop-ups (see below); weather on the clock card (Open-Meteo, off until a place is chosen, hourly); calendar "up next" and agenda from a private iCal link (time zones, DST and recurring events handled) · ⬜ notifications, file shelf |
+| **5** | Notifications, volume/brightness/caps-lock HUD, calendar, file shelf, focus timer, weather | in progress: ✅ timer and focus sessions (countdown ring on the island, Pause/Resume/Stop, chime and quick look at each phase change, Repeat when done; keeps time across sleep); volume, brightness and caps-lock pop-ups (see below); weather on the clock card (Open-Meteo, off until a place is chosen, hourly); calendar "up next" and agenda from a private iCal link (time zones, DST and recurring events handled); notifications on the island (Linux, opt-in; see below) · ⬜ file shelf |
 | **6** | Camera/mic indicators, system monitor, clipboard history, quick toggles | |
 | **7** | Themes, size and position, per-monitor settings, hotkeys UI, plugin API for live activities, GNOME Shell extension | |
 | **8** | Android companion for live turn-by-turn from Google Maps / Waze (separate plan) | |
@@ -68,3 +68,11 @@ Islet can only show a level the device reports to the OS. If your OS's own setti
 | macOS | CoreAudio property listener | Not available (no public API) | Modifier-flag changes (may need Accessibility permission) |
 
 All of them are event-driven: nothing polls, and each pop-up can be switched off in Settings → General (or `islet set volume-hud off`).
+
+## Notifications
+
+| | |
+|---|---|
+| Linux | Opt-in. A separate session-bus connection becomes a D-Bus monitor for `org.freedesktop.Notifications.Notify` only, so the desktop's own notifications are untouched. Turning it off closes that connection. Notifications are never logged or stored on disk. |
+| Windows | Not yet. `UserNotificationListener` needs package identity (an MSIX package), planned with Phase 7's sparse package. |
+| macOS | Not possible: macOS has no API for reading other apps' notifications. |

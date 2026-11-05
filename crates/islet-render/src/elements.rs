@@ -47,6 +47,7 @@ pub enum Icon {
     Storm,
     Fog,
     Calendar,
+    Message,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -330,6 +331,14 @@ impl IconPainter<'_> {
                     self.line((12.0 + 6.8 * c, 12.0 + 6.8 * s), (12.0 + 9.3 * c, 12.0 + 9.3 * s), 2.0);
                 }
             }
+            Icon::Message => {
+                // A speech bubble with a tail.
+                let mut pb = PathBuilder::new();
+                arc(&mut pb, 12.0, 11.0, 8.0, 2.3, 5.7, true);
+                pb.line_to(5.0, 19.5);
+                pb.close();
+                self.fill(pb.finish());
+            }
             Icon::Calendar => {
                 self.stroke(rounded_rect(4.0, 5.5, 16.0, 15.0, 3.0), 1.8);
                 self.fill(rounded_rect(4.0, 5.5, 16.0, 4.5, 2.0));
@@ -548,7 +557,8 @@ mod tests {
         p.pixels().iter().filter(|c| c.alpha() > 0).count()
     }
 
-    const ALL: [Icon; 36] = [
+    const ALL: [Icon; 37] = [
+        Icon::Message,
         Icon::Calendar,
         Icon::Moon,
         Icon::Cloud,

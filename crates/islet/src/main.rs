@@ -112,7 +112,7 @@ fn run() -> platform::Result<()> {
     let mut skew = skew_now();
     let now = || epoch.elapsed().as_secs_f64();
 
-    let providers = providers::Providers::start(win.waker());
+    let mut providers = providers::Providers::start(win.waker());
     let (control_tx, control_rx) = std::sync::mpsc::channel::<Control>();
     control::serve(control_tx, win.waker());
     let mut nav_card_open = false;
@@ -125,6 +125,7 @@ fn run() -> platform::Result<()> {
     win.watch_caps_lock(app.prefs().caps_lock_hud);
     providers.weather(app.prefs().weather.clone());
     providers.calendar(app.prefs().calendar);
+    providers.notifications(app.prefs().notifications);
     let mut alarm_sound = sound::AlarmSound::default();
     trace("providers started");
 
@@ -194,8 +195,10 @@ fn run() -> platform::Result<()> {
                     win.watch_caps_lock(app.prefs().caps_lock_hud);
                     providers.weather(app.prefs().weather.clone());
                     providers.calendar(app.prefs().calendar);
+                    providers.notifications(app.prefs().notifications);
                     providers.weather(app.prefs().weather.clone());
                     providers.calendar(app.prefs().calendar);
+                    providers.notifications(app.prefs().notifications);
                 }
                 Control::PrefsChanged => {}
             }

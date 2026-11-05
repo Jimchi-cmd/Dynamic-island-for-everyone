@@ -17,6 +17,8 @@ pub(crate) mod linux_brightness;
 mod linux_conn;
 #[cfg(target_os = "linux")]
 mod linux_media;
+#[cfg(target_os = "linux")]
+pub(crate) mod linux_notifications;
 #[cfg(all(test, target_os = "linux"))]
 mod linux_tests;
 #[cfg(target_os = "linux")]
@@ -131,6 +133,8 @@ fn describe(r: &Report) -> String {
         Report::Hud(h) => format!("hud: {h:?}"),
         Report::Weather(w) => format!("weather: {w:?}"),
         Report::Calendar(c) => format!("calendar: {} events", c.as_ref().map_or(0, |c| c.len())),
+        // Never log what a notification says.
+        Report::Notification(n) => format!("notification from {:?}", n.app),
         Report::UpNext(u) => format!("up next: {:?}", u.as_ref().map(|(e, _)| &e.summary)),
     }
 }
@@ -142,6 +146,9 @@ pub struct Providers {
     conn: Sender<islet_core::connectivity::ConnCommand>,
     weather: Sender<Option<islet_core::prefs::Place>>,
     calendar: Sender<bool>,
+    sink: Sink,
+    #[cfg(target_os = "linux")]
+    notifications: linux_notifications::Notifications,
 }
 
 impl Providers {
@@ -154,11 +161,30 @@ impl Providers {
         let conn = connectivity::start(sink.clone());
         let weather = weather::start(sink.clone());
         let calendar = calendar::start(sink.clone());
-        if std::env::var("ISLET_DEMO").as_deref() == Ok("media") {
-            return Self { reports, media: Some(demo::start(sink)), nav, conn, weather, calendar };
+        let media = if std::env::var("ISLET_DEMO").as_deref() == Ok("media") {
+            Some(demo::start(sink.clone()))
+        } else {
+            platform_start(sink.clone())
+        };
+        Self {
+            reports,
+            media,
+            nav,
+            conn,
+            weather,
+            calendar,
+            sink,
+            #[cfg(target_os = "linux")]
+            notifications: linux_notifications::Notifications::default(),
         }
-        let media = platform_start(sink);
-        Self { reports, media, nav, conn, weather, calendar }
+    }
+
+    /// Mirror desktop notifications (Linux), or stop and close the monitor.
+    pub fn notifications(&mut self, on: bool) {
+        #[cfg(target_os = "linux")]
+        self.notifications.set(on, &self.sink, &Bus::Session);
+        #[cfg(not(target_os = "linux"))]
+        let _ = (on, &self.sink);
     }
 
     /// Turn calendar on (and refresh now) or off.

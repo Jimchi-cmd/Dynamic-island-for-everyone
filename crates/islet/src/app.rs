@@ -126,6 +126,7 @@ const BLUETOOTH_SETTINGS: &str = "ms-settings:bluetooth";
 /// What an open island shows.
 enum OpenContent<'a> {
     Agenda,
+    Notes,
     Alarm(&'a Alarm),
     Panel(Panel),
     Timer(&'a Timer),
@@ -163,6 +164,9 @@ pub struct App {
     timer_ringing: bool,
     timer_control: Option<TimerControl>,
     timer_sec: i64,
+    /// The notifications card was opened from a notification: it stays
+    /// until the island closes, even after the peek ends.
+    notes_open: bool,
     /// island.json: which pop-ups are on, weather, calendar…
     prefs: IslandPrefs,
     /// Unix time and UTC offset at the last `set_wall` (for calendar events).
@@ -228,6 +232,7 @@ impl App {
             timer_ringing: false,
             timer_control: None,
             timer_sec: -1,
+            notes_open: false,
             prefs: IslandPrefs::default(),
             wall: 0.0,
             utc_offset: 0,
@@ -701,6 +706,8 @@ impl App {
             OpenContent::Alarm(a)
         } else if let Some(p) = self.panel {
             OpenContent::Panel(p)
+        } else if self.notes_open || matches!(live.first(), Some(Live::Note(_))) {
+            OpenContent::Notes
         } else if let Some(Live::Event { .. }) = live.first() {
             OpenContent::Agenda
         } else if let (Some(Live::Timer(_)), Some(tm)) = (live.first(), self.activities.timer()) {
@@ -760,6 +767,7 @@ impl App {
                 OpenContent::Alarm(a) => out.extend(content::expanded_alarm(cr, a, self.h24, t, eo, engine)),
                 OpenContent::Timer(tm) => out.extend(content::expanded_timer(cr, tm, t, eo, engine)),
                 OpenContent::Agenda => out.extend(content::expanded_agenda(cr, &self.agenda(), eo, engine)),
+                OpenContent::Notes => out.extend(content::expanded_notes(cr, self.activities.notes(), eo, engine)),
                 OpenContent::Panel(Panel::Wifi) => {
                     out.extend(content::expanded_wifi(cr, self.activities.connectivity(), eo, engine))
                 }
@@ -821,6 +829,7 @@ impl App {
                     OpenContent::Alarm(_) => content::ALARM_H,
                     OpenContent::Timer(_) => content::TIMER_H,
                     OpenContent::Agenda => content::agenda_height(self.agenda().len()),
+                    OpenContent::Notes => content::notes_height(self.activities.notes().count()),
                     OpenContent::Panel(p) => {
                         let c = self.activities.connectivity();
                         match p {
@@ -887,6 +896,9 @@ impl App {
             self.control = None;
             self.scrub = None;
             self.panel = None;
+            self.notes_open = false;
+        } else if !from.is_open() && matches!(self.open_content(&self.live(t)), OpenContent::Notes) {
+            self.notes_open = true;
         } else if !from.is_open() && matches!(self.open_content(&self.live(t)), OpenContent::Clock) {
             // Show the current network and device on the clock card's buttons.
             self.conn_commands.push(ConnCommand::Status);
@@ -1745,6 +1757,28 @@ mod tests {
         assert_eq!(app.presentation(), Idle);
     }
 
+    fn note(app: &str, summary: &str, body: &str) -> Report {
+        Report::Notification(islet_core::activity::Note { app: app.into(), summary: summary.into(), body: body.into() })
+    }
+
+    #[test]
+    fn notifications_peek_and_list() {
+        use islet_core::activity::NOTE_SECS;
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.report(note("Chat", "Amina", "See you at 5"), 0.0);
+        app.report(note("Mail", "Invoice #42", "Due Friday"), 1.0);
+        app.tick(1.0);
+        assert_eq!(app.presentation(), Compact);
+        assert!(texts(&app, 2.0, &mut engine).iter().any(|s| s == "Invoice #42"), "the newest shows");
+        click(&mut app, 2.0);
+        let card = texts(&app, 6.0, &mut engine);
+        assert!(card.iter().any(|s| s == "Notifications") && card.iter().any(|s| s == "See you at 5"), "{card:?}");
+        app.handle(Event::Key(Key::Escape), 6.1);
+        app.tick(1.0 + NOTE_SECS + 0.1);
+        assert_eq!(app.presentation(), Idle);
+    }
+
     #[test]
     fn idle_island_shows_no_clock_and_never_wakes_for_it() {
         let mut app = App::new(Demo::None, false);
@@ -1858,6 +1892,51 @@ mod tests {
             let extra = if p == Minimal { MINIMAL_GAP + MINIMAL_CIRCLE } else { 0.0 };
             assert!((w + extra) * 1.03 <= WINDOW.0 && h * 1.03 + TOP_GAP <= WINDOW.1, "{p:?}");
         }
+    }
+
+    /// Notification views for visual review:
+    /// `ISLET_NOTE_SHEET=/path/out.png cargo test -p islet note_sheet`
+    #[test]
+    fn note_sheet() {
+        let Some(out) = std::env::var_os("ISLET_NOTE_SHEET") else { return };
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let mut engine = TextEngine::new();
+        let make = |open: bool| {
+            let mut a = App::new(Demo::None, false);
+            a.report(note("Calendar", "Dentist tomorrow", "9:30 at Kampala Dental"), 0.0);
+            a.report(note("Chat", "Amina", "See you at 5, bring the charger please"), 0.0);
+            a.report(
+                note("Mail", "Invoice #42 from Islet Supplies", "Due Friday. Reply to this email with questions."),
+                0.0,
+            );
+            a.tick(0.0);
+            if open {
+                click(&mut a, 0.1);
+            }
+            a
+        };
+        let apps = [make(false), make(true)];
+        let (cw, ch) = (WINDOW.0 as u32, 240u32);
+        let mut sheet = Pixmap::new(cw * 2, ch).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        for (i, a) in apps.iter().enumerate() {
+            let t = 3.0;
+            let mut cell = Pixmap::new(cw, WINDOW.1 as u32).unwrap();
+            let frame = a.frame(t);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, WINDOW.1 as u32, 1.0);
+            let els = a.elements(t, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            sheet.draw_pixmap(
+                i as i32 * cw as i32,
+                0,
+                cell.as_ref(),
+                &PixmapPaint::default(),
+                Transform::identity(),
+                None,
+            );
+        }
+        sheet.save_png(out).unwrap();
     }
 
     /// Calendar views for visual review:

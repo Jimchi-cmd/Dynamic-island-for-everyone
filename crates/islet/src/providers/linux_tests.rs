@@ -719,3 +719,100 @@ fn brightness_changes_from_gnome_and_kde() {
     zbus::block_on(FakeKdeBrightness::brightness_changed(ctl.signal_emitter(), 50)).unwrap();
     expect(&rx, "KDE brightness 50/200", |r| matches!(r, Report::Hud(Hud::Brightness(b)) if (*b - 0.25).abs() < 1e-6));
 }
+
+// ---------------------------------------------------------- Notifications ---
+
+struct FakeNotificationServer(Arc<Mutex<u32>>);
+
+#[zbus::interface(name = "org.freedesktop.Notifications")]
+impl FakeNotificationServer {
+    #[allow(clippy::too_many_arguments)]
+    fn notify(
+        &self,
+        _app: String,
+        _replaces: u32,
+        _icon: String,
+        _summary: String,
+        _body: String,
+        _actions: Vec<String>,
+        _hints: HashMap<String, OwnedValue>,
+        _timeout: i32,
+    ) -> u32 {
+        let mut n = self.0.lock().unwrap();
+        *n += 1;
+        *n
+    }
+}
+
+#[test]
+fn notifications_are_mirrored_without_disturbing_the_desktop() {
+    let bus = bus_or_skip!();
+    let shown = Arc::new(Mutex::new(0u32));
+    let _server = zbus::blocking::connection::Builder::address(bus.address.as_str())
+        .unwrap()
+        .name("org.freedesktop.Notifications")
+        .unwrap()
+        .serve_at("/org/freedesktop/Notifications", FakeNotificationServer(shown.clone()))
+        .unwrap()
+        .build()
+        .unwrap();
+    let (sink, rx) = sink();
+    let mut notes = super::linux_notifications::Notifications::default();
+    notes.set(true, &sink, &Bus::Address(bus.address.clone()));
+    std::thread::sleep(Duration::from_millis(300)); // monitor in place
+
+    let app = zbus::blocking::Connection::session_or(&bus.address);
+    let id: u32 = app
+        .call_method(
+            Some("org.freedesktop.Notifications"),
+            "/org/freedesktop/Notifications",
+            Some("org.freedesktop.Notifications"),
+            "Notify",
+            &(
+                "Chat",
+                0u32,
+                "",
+                "Amina",
+                "<b>See you</b> at 5",
+                Vec::<String>::new(),
+                HashMap::<String, Value>::new(),
+                -1i32,
+            ),
+        )
+        .unwrap()
+        .body()
+        .deserialize()
+        .unwrap();
+    assert_eq!(id, 1, "the desktop's notification server still answered");
+    let r = expect(&rx, "the notification", |r| matches!(r, Report::Notification(_)));
+    let Report::Notification(n) = r else { unreachable!() };
+    assert_eq!((n.app.as_str(), n.summary.as_str(), n.body.as_str()), ("Chat", "Amina", "See you at 5"));
+
+    // Turned off: no more copies.
+    notes.set(false, &sink, &Bus::Address(bus.address.clone()));
+    std::thread::sleep(Duration::from_millis(200));
+    let _: u32 = app
+        .call_method(
+            Some("org.freedesktop.Notifications"),
+            "/org/freedesktop/Notifications",
+            Some("org.freedesktop.Notifications"),
+            "Notify",
+            &("Chat", 0u32, "", "Later", "", Vec::<String>::new(), HashMap::<String, Value>::new(), -1i32),
+        )
+        .unwrap()
+        .body()
+        .deserialize()
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!rx.try_iter().any(|(r, _)| matches!(r, Report::Notification(_))), "nothing after turning it off");
+}
+
+trait SessionOr {
+    fn session_or(address: &str) -> zbus::blocking::Connection;
+}
+
+impl SessionOr for zbus::blocking::Connection {
+    fn session_or(address: &str) -> zbus::blocking::Connection {
+        zbus::blocking::connection::Builder::address(address).unwrap().build().unwrap()
+    }
+}

@@ -118,6 +118,18 @@ pub enum Hud {
     CapsLock(bool),
 }
 
+/// A desktop notification mirrored on the island.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Note {
+    pub app: String,
+    pub summary: String,
+    pub body: String,
+}
+
+/// How long a new notification shows, and how many are kept.
+pub const NOTE_SECS: f64 = 5.0;
+pub const NOTE_HISTORY: usize = 20;
+
 /// How long a HUD stays after the last change.
 pub const HUD_SECS: f64 = 1.6;
 
@@ -159,6 +171,8 @@ pub enum Report {
     Calendar(Option<Vec<crate::calendar::CalEvent>>),
     /// The event to show as "up next", and when it starts on the app clock.
     UpNext(Option<(crate::calendar::CalEvent, f64)>),
+    /// A desktop notification arrived.
+    Notification(Note),
 }
 
 /// Why a battery peek is showing.
@@ -175,6 +189,8 @@ pub enum Live {
     Alarm(crate::alarm::Alarm),
     /// A volume / brightness / caps-lock change, for a moment.
     Hud(Hud),
+    /// A notification that just arrived, for a few seconds.
+    Note(Note),
     Battery {
         device: BatteryDevice,
         reason: PeekReason,
@@ -209,6 +225,8 @@ pub struct Activities {
     weather: Option<crate::weather::Weather>,
     calendar: Vec<crate::calendar::CalEvent>,
     up_next: Option<(crate::calendar::CalEvent, f64)>,
+    notes: std::collections::VecDeque<Note>,
+    note_until: f64,
     nav: Option<NavInfo>,
     media: Option<MediaInfo>,
     paused_since: Option<f64>,
@@ -240,6 +258,11 @@ impl Activities {
 
     pub fn connectivity(&self) -> &crate::connectivity::Connectivity {
         &self.conn
+    }
+
+    /// Recent notifications, newest first.
+    pub fn notes(&self) -> impl Iterator<Item = &Note> {
+        self.notes.iter()
     }
 
     pub fn calendar(&self) -> &[crate::calendar::CalEvent] {
@@ -347,6 +370,12 @@ impl Activities {
                 self.calendar = c.unwrap_or_default();
                 true
             }
+            Report::Notification(n) => {
+                self.notes.push_front(n);
+                self.notes.truncate(NOTE_HISTORY);
+                self.note_until = t + NOTE_SECS;
+                true
+            }
             Report::UpNext(u) => {
                 let changed = self.up_next.as_ref().map(|(e, _)| e) != u.as_ref().map(|(e, _)| e);
                 self.up_next = u;
@@ -380,6 +409,11 @@ impl Activities {
                 out.push(Live::Hud(*h));
             }
         }
+        if t < self.note_until {
+            if let Some(n) = self.notes.front() {
+                out.push(Live::Note(n.clone()));
+            }
+        }
         if let Some((d, reason, until)) = &self.peek {
             if t < *until {
                 out.push(Live::Battery { device: d.clone(), reason: *reason });
@@ -407,6 +441,11 @@ impl Activities {
     pub fn next_change(&self, t: f64) -> Option<f64> {
         let peek_end = self.peek.as_ref().map(|(_, _, until)| *until).filter(|&u| u > t);
         let hud_end = self.hud.as_ref().map(|(_, until)| *until).filter(|&u| u > t);
+        let note_end = Some(self.note_until).filter(|&u| u > t);
+        let hud_end = match (hud_end, note_end) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
         let peek_end = match (peek_end, hud_end) {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),

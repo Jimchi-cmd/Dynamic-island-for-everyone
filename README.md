@@ -16,6 +16,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 - **Battery pop-ups** when headphones, earbuds, mice, keyboards or controllers connect, plus low-battery and charger alerts.
 - **Volume, brightness and caps-lock pop-ups**, like the iPhone's.
 - **Weather** on the clock card, from Open-Meteo (no account or key).
+- **Notifications** on the island (Linux, opt-in).
 - **Calendar:** what's next, ten minutes before it starts, and today's agenda (Google, Outlook or iCloud via their private iCal link).
 - **Timer and focus sessions:** a countdown ring on the island, or Pomodoro rounds of work and breaks.
 - **Alarms:** one-time or repeating. When one rings, the island opens with a swinging bell and a chime until you snooze or stop it.
@@ -74,6 +75,7 @@ Right-click the island to quit.
 - **Windows:** apps can't connect Bluetooth devices, so Islet lists them and opens Bluetooth settings. Listing Wi-Fi networks needs Location permission on Windows 11.
 - **macOS:** Now Playing for every app uses a small helper that runs through the system's Perl, because Apple restricted the MediaRemote API in macOS 15.4. If a macOS update breaks it, Islet falls back to Spotify and Apple Music. Wi-Fi names need Location permission.
 - **Linux:** on GNOME Wayland the island runs through XWayland. Web artwork (Spotify covers, for example) isn't downloaded yet.
+- Notifications on the island are Linux-only: Windows reserves that for packaged Store apps, and macOS doesn't allow it at all.
 - Alarms ring only while the computer is awake and Islet is running.
 - No live turn-by-turn from your phone yet. An Android companion is planned.
 

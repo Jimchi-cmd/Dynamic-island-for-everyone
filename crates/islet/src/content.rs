@@ -1,7 +1,7 @@
 //! What is drawn inside the island for each activity and presentation
 //! (docs/design-spec.md §3). Pure layout: rects in, display list out.
 
-use islet_core::activity::{BatteryDevice, DeviceKind, Hud, Live, MediaInfo, NavInfo, Part};
+use islet_core::activity::{BatteryDevice, DeviceKind, Hud, Live, MediaInfo, NavInfo, Note, Part};
 use islet_core::alarm::{self, Alarm};
 use islet_core::clock::{format_date, format_time, LocalTime};
 use islet_core::connectivity::{self, BtState, Connectivity, WifiState};
@@ -102,6 +102,42 @@ fn hud_trailing(h: &Hud, right: f32, cy: f32, bar_w: f32, o: f32) -> Vec<Element
 /// "in 8 min" / "now", from app-clock times.
 fn relative_label(starts_at: f64, t: f64) -> String {
     islet_core::calendar::relative(starts_at.ceil() as i64, t.floor() as i64)
+}
+
+pub const NOTE_ROWS: usize = 3;
+
+pub fn notes_height(rows: usize) -> f64 {
+    46.0 + rows.clamp(1, NOTE_ROWS) as f64 * 52.0 + 4.0
+}
+
+/// Recent notifications: app, title and the first line of the text.
+pub fn expanded_notes<'a>(
+    pill: Rect,
+    notes: impl Iterator<Item = &'a Note>,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
+    let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
+    let pad = PAD as f32;
+    let head = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
+    let mut v = vec![
+        Element::Icon { icon: Icon::Message, x: x + pad, y: y + 18.0, size: 20.0, color: GREEN, opacity: o },
+        text("Notifications", head, x + pad + 28.0, y + 33.0),
+    ];
+    let app = TextStyle { size: 12.0, opacity: o * 0.6, ..TextStyle::default() };
+    let title = TextStyle { size: 14.5, weight: 600, opacity: o, ..TextStyle::default() };
+    let body = TextStyle { size: 13.0, opacity: o * 0.8, ..TextStyle::default() };
+    let width = w - 2.0 * pad;
+    for (i, n) in notes.take(NOTE_ROWS).enumerate() {
+        let ry = y + 46.0 + i as f32 * 52.0;
+        v.push(text(engine.ellipsize(&n.app, &app, width), app, x + pad, ry + 12.0));
+        v.push(text(engine.ellipsize(&n.summary, &title, width), title, x + pad, ry + 29.0));
+        let first = n.body.lines().next().unwrap_or("");
+        if !first.is_empty() {
+            v.push(text(engine.ellipsize(first, &body, width), body, x + pad, ry + 45.0));
+        }
+    }
+    v
 }
 
 /// A row of the agenda card: start time, title, place.
@@ -236,6 +272,7 @@ pub fn compact_width(live: &Live) -> f64 {
         Live::Media(_) | Live::Navigation(_) | Live::Alarm(_) | Live::Timer(_) | Live::Hud(_) | Live::Event { .. } => {
             COMPACT_MEDIA_W
         }
+        Live::Note(_) => COMPACT_BATTERY_W,
         Live::Battery { .. } => COMPACT_BATTERY_W,
     }
 }
@@ -306,6 +343,19 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
     let cy = (pill.y + pill.h / 2.0) as f32;
     match live {
         Live::Timer(tm) => vec![timer_ring(tm, x + 20.0, cy, 8.5, t, o), countdown(tm, right - 14.0, cy, 15.0, t, o)],
+        Live::Note(n) => {
+            let app = TextStyle { size: 12.5, opacity: o * 0.6, ..TextStyle::default() };
+            let title = TextStyle { size: 13.5, weight: 600, opacity: o, ..TextStyle::default() };
+            let app_label = engine.ellipsize(&n.app, &app, 90.0);
+            let app_w = engine.measure(&app_label, &app);
+            let line = if n.summary.is_empty() { n.body.clone() } else { n.summary.clone() };
+            let room = (right - x) - 38.0 - app_w - 26.0;
+            vec![
+                Element::Icon { icon: Icon::Message, x: x + 11.0, y: cy - 9.0, size: 18.0, color: GREEN, opacity: o },
+                text(app_label, app, x + 36.0, cy + 4.5),
+                text(engine.ellipsize(&line, &title, room), title, x + 36.0 + app_w + 8.0, cy + 4.5),
+            ]
+        }
         Live::Event { event, starts_at } => {
             let when = TextStyle {
                 size: 13.0,
@@ -471,6 +521,14 @@ pub fn minimal(
             }),
             Live::Alarm(_) => v.push(bell(b.x, b.y, 20.0, t, o)),
             Live::Timer(tm) => v.push(timer_ring(tm, b.x, b.y, b.r - 7.5, t, o)),
+            Live::Note(_) => v.push(Element::Icon {
+                icon: Icon::Message,
+                x: b.x - 9.0,
+                y: b.y - 9.0,
+                size: 18.0,
+                color: GREEN,
+                opacity: o,
+            }),
             Live::Event { .. } => v.push(Element::Icon {
                 icon: Icon::Calendar,
                 x: b.x - 9.0,
@@ -510,6 +568,9 @@ pub fn minimal(
 
 fn leading(live: &Live, x: f32, cy: f32, o: f32, h24: bool) -> Vec<Element> {
     match live {
+        Live::Note(_) => {
+            vec![Element::Icon { icon: Icon::Message, x: x + 3.0, y: cy - 9.0, size: 18.0, color: GREEN, opacity: o }]
+        }
         Live::Event { .. } => {
             vec![Element::Icon { icon: Icon::Calendar, x: x + 3.0, y: cy - 10.0, size: 20.0, color: RED, opacity: o }]
         }

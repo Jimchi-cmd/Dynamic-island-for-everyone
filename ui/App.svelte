@@ -493,6 +493,33 @@
           {/if}
         </div>
         <div class="card">
+          <h2>Notifications</h2>
+          {#if info?.os === 'linux'}
+            <div class="net">
+              <span class="name">Show notifications on the island</span>
+              <input
+                type="checkbox"
+                class="switch"
+                aria-label="Show notifications on the island"
+                checked={islandPrefs?.notifications ?? false}
+                disabled={!islandPrefs}
+                onchange={(e) => setSwitch('notifications', e.currentTarget.checked)}
+              />
+            </div>
+            <p class="muted small">
+              New notifications appear on the island for a few seconds. Click it to see the latest ones. They stay on this
+              computer and are never logged.
+            </p>
+          {:else if info?.os === 'windows'}
+            <p class="muted small">
+              Windows only lets packaged Store apps read other apps' notifications. Islet will add this once it has a
+              packaged version.
+            </p>
+          {:else}
+            <p class="muted small">macOS doesn't let apps read other apps' notifications, so this isn't available on a Mac.</p>
+          {/if}
+        </div>
+        <div class="card">
           <h2>Weather</h2>
           <p class="muted small">
             Shows on the clock card. Off until you choose a place. Then Islet asks Open-Meteo once an hour (no account or
