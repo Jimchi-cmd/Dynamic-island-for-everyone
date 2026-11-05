@@ -219,15 +219,7 @@ pub fn expanded_custom(pill: Rect, c: &Custom, t: f64, o: f32, engine: &mut Text
     let color = custom_color(c);
     let title = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
     let pct = custom_right(c);
-    let rs = TextStyle {
-        size: 22.0,
-        weight: 600,
-        opacity: o,
-        color,
-        tabular: true,
-        align: Align::Right,
-        ..TextStyle::default()
-    };
+    let rs = TextStyle { size: 22.0, weight: 600, opacity: o, color, tabular: true, align: Align::Right };
     let room = w - 2.0 * pad - 40.0 - engine.measure(&pct, &rs) - 12.0;
     let mut v = vec![
         custom_ring(c, x + pad + 13.0, y + 36.0, 11.0, t, o),
@@ -418,15 +410,7 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
             let color = custom_color(c);
             let title = TextStyle { size: 13.5, weight: 600, opacity: o, ..TextStyle::default() };
             let right_text = custom_right(c);
-            let rs = TextStyle {
-                size: 13.0,
-                weight: 600,
-                opacity: o,
-                color,
-                tabular: true,
-                align: Align::Right,
-                ..TextStyle::default()
-            };
+            let rs = TextStyle { size: 13.0, weight: 600, opacity: o, color, tabular: true, align: Align::Right };
             let room = (right - x) - 40.0 - engine.measure(&right_text, &rs) - 24.0;
             vec![
                 custom_ring(c, x + 20.0, cy, 8.5, t, o),
@@ -602,7 +586,6 @@ pub fn minimal(
             color: custom_color(c),
             tabular: true,
             align: Align::Right,
-            ..TextStyle::default()
         };
         v.push(text(custom_right(c), rs, pill.right() as f32 - 13.0, cy + 4.5));
     }
