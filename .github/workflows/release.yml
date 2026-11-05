@@ -181,11 +181,28 @@ jobs:
           esac
           ls -la out
 
+      - name: MSIX package (Windows)
+        if: matrix.name == 'windows'
+        shell: pwsh
+        env:
+          MSIX_PFX_BASE64: ${{ secrets.MSIX_PFX_BASE64 }}
+          MSIX_PFX_PASSWORD: ${{ secrets.MSIX_PFX_PASSWORD }}
+        run: |
+          $ver = node -p "require('./src-tauri/tauri.conf.json').version"
+          ./scripts/msix.ps1 -Version $ver -Out out
+
+      - name: GNOME Shell extension (Linux)
+        if: matrix.name == 'linux'
+        shell: bash
+        run: |
+          sudo apt-get install -y libglib2.0-bin zip
+          bash scripts/gnome-extension.sh out
+
       - name: Size budget
         shell: bash
         run: |
           shopt -s nullglob
-          target/release/islet-perf size out/*.{deb,rpm,AppImage,msi,exe,dmg,zip} --markdown size.md --enforce
+          target/release/islet-perf size out/*.{deb,rpm,AppImage,msi,msix,exe,dmg,zip} --markdown size.md --enforce
           cat size.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Signed update bundles were produced

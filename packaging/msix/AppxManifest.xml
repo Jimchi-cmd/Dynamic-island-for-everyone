@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Islet as an MSIX package. scripts/msix.ps1 fills in @VERSION@ and
+     @PUBLISHER@ (the signing certificate's subject). The package gives
+     Islet an identity, which Windows requires for reading other apps'
+     notifications; everything else works the same as the .msi/.exe. -->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 desktop rescap">
+
+  <Identity Name="Islet.Island" Publisher="@PUBLISHER@" Version="@VERSION@" ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Islet</DisplayName>
+    <PublisherDisplayName>Islet contributors</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="Island" Executable="islet.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="Islet" Description="A Dynamic Island-style overlay"
+        BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <!-- Start at login (Islet Settings turns it on or off). -->
+        <desktop:Extension Category="windows.startupTask" Executable="islet.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="IsletStartup" Enabled="false" DisplayName="Islet" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+    <Application Id="Settings" Executable="islet-settings.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="Islet Settings" Description="Set up Islet"
+        BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <uap3:Capability Name="userNotificationListener" />
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

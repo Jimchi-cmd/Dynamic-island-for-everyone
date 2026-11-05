@@ -792,7 +792,7 @@
         </div>
         <div class="card">
           <h2>Notifications</h2>
-          {#if info?.os === 'linux'}
+          {#if info?.os === 'linux' || info?.os === 'windows'}
             <div class="net">
               <span class="name">Show notifications on the island</span>
               <input
@@ -808,11 +808,12 @@
               New notifications appear on the island for a few seconds. Click it to see the latest ones. They stay on this
               computer and are never logged.
             </p>
-          {:else if info?.os === 'windows'}
-            <p class="muted small">
-              Windows only lets packaged Store apps read other apps' notifications. Islet will add this once it has a
-              packaged version.
-            </p>
+            {#if info?.os === 'windows'}
+              <p class="muted small">
+                Windows lets only packaged apps read other apps' notifications, so this needs the MSIX version of Islet.
+                Windows then asks once; you can change it later in Settings → Privacy &amp; security → Notifications.
+              </p>
+            {/if}
           {:else}
             <p class="muted small">macOS doesn't let apps read other apps' notifications, so this isn't available on a Mac.</p>
           {/if}

@@ -43,6 +43,7 @@ The release workflow passes them to the Tauri bundler only when they're set. It 
 
 Choose one:
 
+- **MSIX package:** `scripts/msix.ps1` signs the `.msix` with the certificate in the `MSIX_PFX_BASE64` secret (a base64-encoded `.pfx`) and `MSIX_PFX_PASSWORD`; the package's Publisher becomes the certificate's subject. Without them, CI and releases sign it with a throwaway self-signed certificate (`CN=Islet Test`) and ship its public `.cer`, which testers trust once ([install guide](install.md#installing-the-msix)). The private key is created on the runner and never saved.
 - **[SignPath Foundation](https://signpath.org/)**: free code signing for open-source projects, after approval. Signing runs through their GitHub Action, as a step after "Build installers".
 - **[Azure Artifact Signing](https://azure.microsoft.com/products/artifact-signing)** (formerly Trusted Signing): a low monthly fee. Set `bundle.windows.signCommand` in `src-tauri/tauri.bundle.json` to its `signtool` invocation and add the Azure credentials as secrets.
 - A traditional OV or EV certificate from a certificate authority, used through `signCommand` in the same way.

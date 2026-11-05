@@ -20,6 +20,8 @@ mod clock;
 mod config;
 mod content;
 mod control;
+#[cfg(target_os = "windows")]
+mod msix;
 mod net;
 mod platform;
 mod providers;

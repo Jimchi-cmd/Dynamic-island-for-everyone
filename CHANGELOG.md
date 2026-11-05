@@ -28,6 +28,8 @@ The first public release.
 
 - **Screen readers:** the island describes itself and exposes its controls to Orca, Narrator/NVDA and VoiceOver.
 
+- **GNOME Shell extension** (GNOME 45–49): a shortcut that opens and closes the island, the Caps Lock pop-up on GNOME Wayland, and an option to hide the clock the island covers.
+- **Windows MSIX package**: gives Islet a package identity, so it can show other apps' notifications on the island (opt-in), and starts at login through Windows' startup list. Signed with a test certificate until a real one is configured.
 - **System monitor** on the clock card (CPU, memory, disk), sampled only while it's open.
 - **Clipboard history** (opt-in, memory only, password-manager copies skipped).
 - **Wi-Fi and Bluetooth switches** in their panels, and `islet wifi|bt on|off`.

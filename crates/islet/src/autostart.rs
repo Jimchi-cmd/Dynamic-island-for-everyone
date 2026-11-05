@@ -109,6 +109,9 @@ mod win {
     const NAME: &str = "Islet";
 
     pub fn set(on: bool) -> Result<(), String> {
+        if crate::msix::packaged() {
+            return crate::msix::set_autostart(on);
+        }
         let (key, name) = (HSTRING::from(RUN), HSTRING::from(NAME));
         unsafe {
             if on {
@@ -136,6 +139,9 @@ mod win {
     }
 
     pub fn is_on() -> bool {
+        if crate::msix::packaged() {
+            return crate::msix::autostart_on();
+        }
         let (key, name) = (HSTRING::from(RUN), HSTRING::from(NAME));
         unsafe {
             RegGetValueW(

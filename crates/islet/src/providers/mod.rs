@@ -51,6 +51,8 @@ mod windows_conn;
 #[cfg(target_os = "windows")]
 mod windows_media;
 #[cfg(target_os = "windows")]
+mod windows_notifications;
+#[cfg(target_os = "windows")]
 mod windows_privacy;
 #[cfg(target_os = "windows")]
 mod windows_volume;
@@ -186,6 +188,8 @@ pub struct Providers {
     sink: Sink,
     #[cfg(target_os = "linux")]
     notifications: linux_notifications::Notifications,
+    #[cfg(target_os = "windows")]
+    notifications: Option<windows_notifications::Listener>,
 }
 
 impl Providers {
@@ -218,6 +222,8 @@ impl Providers {
             sink,
             #[cfg(target_os = "linux")]
             notifications: linux_notifications::Notifications::default(),
+            #[cfg(target_os = "windows")]
+            notifications: None,
         }
     }
 
@@ -225,7 +231,16 @@ impl Providers {
     pub fn notifications(&mut self, on: bool) {
         #[cfg(target_os = "linux")]
         self.notifications.set(on, &self.sink, &Bus::Session);
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "windows")]
+        if !on {
+            self.notifications = None;
+        } else if self.notifications.is_none() {
+            match windows_notifications::start(self.sink.clone()) {
+                Ok(l) => self.notifications = Some(l),
+                Err(e) => debug_log(&format!("notifications: {e}")),
+            }
+        }
+        #[cfg(target_os = "macos")]
         let _ = (on, &self.sink);
     }
 

@@ -200,11 +200,14 @@ fn info() -> Info {
     // Linux packages (.deb/.rpm) are updated by the package manager; only an
     // AppImage replaces itself.
     let linux_package = cfg!(target_os = "linux") && std::env::var_os("APPIMAGE").is_none();
+    // The MSIX package lives in a read-only folder; new versions come as a new package.
+    let msix = cfg!(windows)
+        && std::env::current_exe().is_ok_and(|p| p.to_string_lossy().to_ascii_lowercase().contains("\\windowsapps\\"));
     Info {
         os: std::env::consts::OS,
         version: env!("CARGO_PKG_VERSION"),
         repo: REPO,
-        self_update: UPDATER_PUBKEY.is_some() && !linux_package,
+        self_update: UPDATER_PUBKEY.is_some() && !linux_package && !msix,
     }
 }
 

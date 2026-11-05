@@ -14,6 +14,24 @@ After installing, open **Islet** from your apps. Settings opens with a short wel
 - **Installer:** `Islet_<version>_x64-setup.exe` (or the `.msi`).
 - **Portable:** `Islet_<version>_x64_portable.zip`. Unzip anywhere and run `islet-settings.exe`.
 
+- **MSIX package:** `Islet_<version>_x64.msix`. Choose this if you want **notifications on the island**: Windows lets only packaged apps read other apps' notifications. It also starts at login through Windows' own startup list (Task Manager → Startup apps).
+
+### Installing the MSIX
+
+Until Islet has a real code-signing certificate, the MSIX is signed with a test certificate, `Islet-test-certificate.cer`, which comes with it. Windows installs a package only if it trusts the signer, so trust the certificate once (this needs an administrator):
+
+1. Double-click `Islet-test-certificate.cer` → **Install Certificate** → **Local Machine** → **Place all certificates in the following store** → **Browse** → **Trusted People** → **OK** → **Next** → **Finish**.
+2. Double-click `Islet_<version>_x64.msix` → **Install**.
+
+Or in an administrator PowerShell, from the download folder:
+
+```powershell
+Import-Certificate -FilePath .\Islet-test-certificate.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople
+Add-AppxPackage .\Islet_<version>_x64.msix
+```
+
+Then open **Islet** (the island) or **Islet Settings** from the Start menu. To use notifications, turn on **Settings → Notifications → Show notifications on the island**; Windows asks once for permission. A packaged app keeps its settings in its own folder, so the MSIX doesn't share settings with an `.msi`/`.exe` install, and new versions come as a new MSIX (Settings opens the download page). Uninstall it like any app (Settings → Apps), and remove the certificate with `certlm.msc` → Trusted People if you like.
+
 Islet isn't code-signed yet, so **SmartScreen** may say "Windows protected your PC". Click **More info**, then **Run anyway**. Windows 11 may ask for **Location** permission the first time you open the Wi-Fi list, because Windows requires it before apps can see network names.
 
 ## macOS 11 and later (Apple silicon and Intel)
@@ -45,7 +63,26 @@ macOS will ask once for **Bluetooth** (battery levels and connecting devices), a
 - The AppImage includes its own WebKitGTK for the Settings window, so it's much larger than the packages (the island itself is the same small binary).
 - Saving a Google Routes key needs `secret-tool` (package `libsecret-tools` on Debian/Ubuntu, `libsecret` on Fedora/Arch) and a running keyring (GNOME Keyring or KWallet).
 - Wi-Fi uses NetworkManager and Bluetooth uses BlueZ, which most desktops already run.
-- On GNOME with Wayland, Islet runs through XWayland. Nothing to set up.
+- On GNOME with Wayland, Islet runs through XWayland. It works without anything else, but GNOME hides global keys and the Caps Lock state from XWayland apps. The **GNOME Shell extension** fills that in (see below).
+
+### GNOME Shell extension (GNOME 45–49)
+
+`islet@jimchi-cmd.github.io.shell-extension.zip` adds, on GNOME:
+
+- a shortcut (default **Ctrl+Alt+I**) that opens and closes the island;
+- the Caps Lock pop-up;
+- an option to hide the top bar's clock, which the island sits over.
+
+Install it and log out and back in (GNOME on Wayland loads new extensions at login):
+
+```bash
+gnome-extensions install --force islet@jimchi-cmd.github.io.shell-extension.zip
+# log out and back in, then:
+gnome-extensions enable islet@jimchi-cmd.github.io
+gnome-extensions prefs islet@jimchi-cmd.github.io   # shortcut, Caps Lock, clock
+```
+
+It runs Islet's command line (`islet toggle`, `islet caps-lock on|off`), so the `islet` program must be installed (the `.deb`/`.rpm` put it in `/usr/bin`; for an AppImage or a build, set its path in the extension's settings). It makes no network requests.
 
 ## Updating
 
