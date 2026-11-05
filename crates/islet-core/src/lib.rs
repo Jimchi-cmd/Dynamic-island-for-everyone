@@ -2,6 +2,7 @@
 //! so everything is unit-testable on any machine.
 
 pub mod activity;
+pub mod alarm;
 pub mod clock;
 pub mod geometry;
 pub mod island;

@@ -16,6 +16,7 @@ export interface Status {
   autostart: boolean;
   routesKey: boolean;
   trip: Trip | null;
+  alarms: Alarm[];
 }
 
 export const MODES: { id: TravelMode; label: string }[] = [
@@ -34,6 +35,7 @@ export function parseStatus(json: string): Status {
     autostart: v.autostart === true,
     routesKey: v.routesKey === true,
     trip: v.trip ?? null,
+    alarms: Array.isArray(v.alarms) ? v.alarms : [],
   };
 }
 
@@ -98,4 +100,61 @@ export function permissionsFor(os: Os): Permission[] {
         },
       ];
   }
+}
+
+export interface Alarm {
+  id: number;
+  hour: number;
+  minute: number;
+  label: string;
+  /** Bit 0 = Sunday … bit 6 = Saturday; 0 = once. */
+  days: number;
+  enabled: boolean;
+}
+
+export const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const DAILY = 0b1111111;
+const WEEKDAYS = 0b0111110;
+const WEEKENDS = 0b1000001;
+
+export function describeDays(days: number): string {
+  switch (days & DAILY) {
+    case 0:
+      return 'Once';
+    case DAILY:
+      return 'Every day';
+    case WEEKDAYS:
+      return 'Weekdays';
+    case WEEKENDS:
+      return 'Weekends';
+    default:
+      return DAY_NAMES.filter((_, i) => days & (1 << i))
+        .map((d) => d.charAt(0).toUpperCase() + d.slice(1))
+        .join(', ');
+  }
+}
+
+/** "07:30" (24-hour) or "7:30 AM". */
+export function formatAlarmTime(a: Pick<Alarm, 'hour' | 'minute'>, h24: boolean): string {
+  const mm = String(a.minute).padStart(2, '0');
+  if (h24) return `${String(a.hour).padStart(2, '0')}:${mm}`;
+  const h = a.hour % 12 === 0 ? 12 : a.hour % 12;
+  return `${h}:${mm} ${a.hour < 12 ? 'AM' : 'PM'}`;
+}
+
+/** Arguments for `islet alarm add`, from an <input type="time"> value. */
+export function alarmAddArgs(time: string, label: string, days: number): string[] | { error: string } {
+  if (!/^\d{1,2}:\d{2}$/.test(time.trim())) return { error: 'Pick a time.' };
+  if (label.trim().startsWith('-')) return { error: 'The name cannot start with "-".' };
+  const args = ['alarm', 'add', time.trim()];
+  if (label.trim()) args.push('--label', label.trim());
+  const d = days & DAILY;
+  if (d) args.push('--days', DAY_NAMES.filter((_, i) => d & (1 << i)).join(','));
+  return args;
+}
+
+export function parseAlarms(json: string): Alarm[] {
+  const v = JSON.parse(json);
+  return Array.isArray(v) ? v : [];
 }

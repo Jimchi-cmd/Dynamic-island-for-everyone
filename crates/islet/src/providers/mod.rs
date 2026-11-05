@@ -105,6 +105,8 @@ fn describe(r: &Report) -> String {
             n.route.as_ref().map_or_else(|| n.error.clone().unwrap_or_default(), |r| format!("{:.0} s", r.duration))
         ),
         Report::Navigation(None) => "navigation stopped".into(),
+        Report::Alarm(Some(a)) => format!("alarm ringing: {:?} at {:02}:{:02}", a.title(), a.hour, a.minute),
+        Report::Alarm(None) => "alarm stopped".into(),
     }
 }
 

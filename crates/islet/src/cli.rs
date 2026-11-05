@@ -9,6 +9,7 @@
 
 use crate::{autostart, config, control, net, secrets};
 use control::Control;
+use islet_core::alarm::{self, Alarm};
 use islet_core::nav::{TravelMode, Trip};
 
 pub const USAGE: &str = "\
@@ -21,6 +22,12 @@ Usage:
   islet key routes                         store your Google Routes API key in the OS
                                            keychain (reads one line from stdin)
   islet key routes --clear                 remove it
+  islet alarm add <time> [--label <name>] [--days <days>]
+                                           set an alarm: 7:30, 19:30 or 7:30pm; days:
+                                           once (default), daily, weekdays, weekends, mon,wed,…
+  islet alarm list [--json]                your alarms
+  islet alarm remove|on|off <id>           delete, turn on or turn off an alarm
+  islet alarm stop|snooze                  answer a ringing alarm
   islet autostart on|off                   start Islet when you log in (or stop doing so)
   islet status [--json]                    is Islet running, and how it is set up
   islet quit                               close the running island
@@ -47,6 +54,12 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["status", "--json"] => Ok(status(true)),
         ["update", "check"] => update_check(false),
         ["update", "check", "--json"] => update_check(true),
+        ["alarm", "add", rest @ ..] => alarm_add(rest),
+        ["alarm", "list"] => Ok(alarm_list(false)),
+        ["alarm", "list", "--json"] => Ok(alarm_list(true)),
+        ["alarm", verb @ ("remove" | "on" | "off"), id] => alarm_edit(verb, id),
+        ["alarm", "stop"] => control::send(&Control::AlarmStop).map(|()| "Stopped.".into()),
+        ["alarm", "snooze"] => control::send(&Control::AlarmSnooze).map(|()| "Snoozed for 9 minutes.".into()),
         ["quit"] => control::send(&Control::Quit).map(|()| "Closed.".into()),
         _ => Err(format!("unknown command\n\n{USAGE}")),
     })
@@ -98,6 +111,93 @@ fn stop_trip() -> Result<String, String> {
     Ok("Stopped.".into())
 }
 
+pub fn parse_alarm(args: &[&str], id: u32) -> Result<Alarm, String> {
+    let mut words = Vec::new();
+    let (mut label, mut days) = (String::new(), 0u8);
+    let mut it = args.iter();
+    while let Some(&arg) = it.next() {
+        let mut value = |name: &str| it.next().copied().ok_or_else(|| format!("{name} needs a value"));
+        match arg {
+            "--label" => label = value("--label")?.to_string(),
+            "--days" => {
+                let d = value("--days")?;
+                days =
+                    alarm::parse_days(d).ok_or_else(|| format!("unknown days {d:?} (try weekdays or mon,wed,fri)"))?;
+            }
+            other if other.starts_with("--") => return Err(format!("unknown option {other}")),
+            w => words.push(w),
+        }
+    }
+    let time = words.join(" ");
+    let (hour, minute) =
+        alarm::parse_time(&time).ok_or_else(|| format!("say when: islet alarm add 7:30 (not {time:?})"))?;
+    Ok(Alarm { id, hour, minute, label, days, enabled: true })
+}
+
+/// Tell a running island to reload alarms.json (fine if none is running).
+fn alarms_changed() {
+    let _ = control::send(&Control::AlarmsChanged);
+}
+
+fn alarm_add(args: &[&str]) -> Result<String, String> {
+    let mut alarms = config::load_alarms();
+    let id = alarms.iter().map(|a| a.id).max().unwrap_or(0) + 1;
+    let a = parse_alarm(args, id)?;
+    let msg = format!(
+        "Alarm {id} set for {} ({}){}.",
+        alarm::format_hm(a.hour, a.minute, true),
+        alarm::describe_days(a.days).to_lowercase(),
+        if a.label.is_empty() { String::new() } else { format!(": {}", a.label) }
+    );
+    alarms.push(a);
+    config::save_alarms(&alarms)?;
+    alarms_changed();
+    Ok(msg)
+}
+
+fn alarm_list(json: bool) -> String {
+    let alarms = config::load_alarms();
+    if json {
+        return serde_json::to_string(&alarms).unwrap_or_else(|_| "[]".into());
+    }
+    if alarms.is_empty() {
+        return "No alarms. Add one with: islet alarm add 7:30".into();
+    }
+    alarms
+        .iter()
+        .map(|a| {
+            format!(
+                "{:>3}  {}  {:<14} {}{}",
+                a.id,
+                alarm::format_hm(a.hour, a.minute, true),
+                alarm::describe_days(a.days),
+                a.title(),
+                if a.enabled { "" } else { "  (off)" }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn alarm_edit(verb: &str, id: &str) -> Result<String, String> {
+    let id: u32 = id.parse().map_err(|_| format!("{id:?} is not an alarm number (see islet alarm list)"))?;
+    let mut alarms = config::load_alarms();
+    let pos = alarms.iter().position(|a| a.id == id).ok_or_else(|| format!("no alarm {id}"))?;
+    let msg = match verb {
+        "remove" => {
+            alarms.remove(pos);
+            format!("Removed alarm {id}.")
+        }
+        on => {
+            alarms[pos].enabled = on == "on";
+            format!("Alarm {id} turned {on}.")
+        }
+    };
+    config::save_alarms(&alarms)?;
+    alarms_changed();
+    Ok(msg)
+}
+
 fn status(json: bool) -> String {
     let running = control::send(&Control::Ping).is_ok();
     let autostart = autostart::is_on();
@@ -110,6 +210,7 @@ fn status(json: bool) -> String {
             "autostart": autostart,
             "routesKey": key,
             "trip": trip,
+            "alarms": config::load_alarms(),
         })
         .to_string();
     }
@@ -164,6 +265,15 @@ mod tests {
         assert!(parse_trip(&["Work"]).unwrap_err().contains("--from"));
         assert!(parse_trip(&["--from", "Ntinda"]).unwrap_err().contains("where to"));
         assert!(parse_trip(&["X", "--mode", "rocket", "--from", "Y"]).is_err());
+    }
+
+    #[test]
+    fn parses_alarm_arguments() {
+        let a = parse_alarm(&["6:45", "am", "--label", "Gym", "--days", "weekdays"], 3).unwrap();
+        assert_eq!((a.id, a.hour, a.minute, a.label.as_str(), a.days), (3, 6, 45, "Gym", alarm::WEEKDAYS));
+        assert_eq!(parse_alarm(&["21:00"], 1).unwrap().days, 0, "once by default");
+        assert!(parse_alarm(&["soon"], 1).is_err());
+        assert!(parse_alarm(&["7:00", "--days", "funday"], 1).is_err());
     }
 
     #[test]

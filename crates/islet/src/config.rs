@@ -1,5 +1,6 @@
 //! Islet's files (see `islet_core::paths`) and the saved trip.
 
+use islet_core::alarm::Alarm;
 use islet_core::nav::Trip;
 use std::path::PathBuf;
 
@@ -28,6 +29,23 @@ pub fn save_trip(trip: Option<&Trip>) {
         Some(t) => serde_json::to_vec_pretty(t).map_err(std::io::Error::other).and_then(|b| std::fs::write(&path, b)),
         None => std::fs::remove_file(&path),
     };
+}
+
+/// Alarms, in alarms.json.
+pub fn load_alarms() -> Vec<Alarm> {
+    file("alarms.json")
+        .and_then(|p| std::fs::read(p).ok())
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_alarms(alarms: &[Alarm]) -> Result<(), String> {
+    let path = file("alarms.json").ok_or("no config folder")?;
+    let json = serde_json::to_vec_pretty(alarms).map_err(|e| e.to_string())?;
+    // Write then rename, so the island never reads a half-written file.
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
 }
 
 /// Write a file only the current user can read (the control token).

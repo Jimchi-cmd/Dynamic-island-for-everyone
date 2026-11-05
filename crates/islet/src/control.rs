@@ -16,6 +16,10 @@ pub enum Control {
     NavStop,
     /// Quit the island (Settings restarts it after an update).
     Quit,
+    /// alarms.json changed: reload it.
+    AlarmsChanged,
+    AlarmStop,
+    AlarmSnooze,
     /// Is an island running? Answered by the control thread itself.
     Ping,
 }
@@ -75,6 +79,9 @@ fn handle(stream: &TcpStream, token: &str) -> Result<Control, String> {
         (Some("nav-start"), Some(json)) => serde_json::from_str(json).map(Control::NavStart).map_err(|e| e.to_string()),
         (Some("nav-stop"), _) => Ok(Control::NavStop),
         (Some("quit"), _) => Ok(Control::Quit),
+        (Some("alarms-changed"), _) => Ok(Control::AlarmsChanged),
+        (Some("alarm-stop"), _) => Ok(Control::AlarmStop),
+        (Some("alarm-snooze"), _) => Ok(Control::AlarmSnooze),
         (Some("ping"), _) => Ok(Control::Ping),
         _ => Err("unknown command".into()),
     }
@@ -94,6 +101,9 @@ pub fn send(cmd: &Control) -> Result<(), String> {
         }
         Control::NavStop => format!("{token}\tnav-stop"),
         Control::Quit => format!("{token}\tquit"),
+        Control::AlarmsChanged => format!("{token}\talarms-changed"),
+        Control::AlarmStop => format!("{token}\talarm-stop"),
+        Control::AlarmSnooze => format!("{token}\talarm-snooze"),
         Control::Ping => format!("{token}\tping"),
     };
     writeln!(stream, "{line}").map_err(|e| e.to_string())?;

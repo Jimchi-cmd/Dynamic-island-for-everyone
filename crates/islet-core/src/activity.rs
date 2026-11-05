@@ -129,6 +129,8 @@ pub enum Report {
     Laptop(BatteryDevice),
     /// The active trip (None when navigation stops).
     Navigation(Option<NavInfo>),
+    /// An alarm started ringing (None when it stops or snoozes).
+    Alarm(Option<crate::alarm::Alarm>),
 }
 
 /// Why a battery peek is showing.
@@ -141,7 +143,12 @@ pub enum PeekReason {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Live {
-    Battery { device: BatteryDevice, reason: PeekReason },
+    /// A ringing alarm: always first.
+    Alarm(crate::alarm::Alarm),
+    Battery {
+        device: BatteryDevice,
+        reason: PeekReason,
+    },
     Navigation(NavInfo),
     Media(MediaInfo),
 }
@@ -159,6 +166,7 @@ pub const LOW_LEVELS: [u8; 2] = [20, 10];
 
 #[derive(Debug, Default)]
 pub struct Activities {
+    alarm: Option<crate::alarm::Alarm>,
     nav: Option<NavInfo>,
     media: Option<MediaInfo>,
     paused_since: Option<f64>,
@@ -186,6 +194,10 @@ impl Activities {
 
     pub fn laptop(&self) -> Option<&BatteryDevice> {
         self.laptop.as_ref()
+    }
+
+    pub fn alarm(&self) -> Option<&crate::alarm::Alarm> {
+        self.alarm.as_ref()
     }
 
     pub fn nav(&self) -> Option<&NavInfo> {
@@ -253,6 +265,10 @@ impl Activities {
                 self.nav = n;
                 true
             }
+            Report::Alarm(a) => {
+                self.alarm = a;
+                true
+            }
             Report::Laptop(d) => {
                 let charger_changed = self.laptop.as_ref().is_some_and(|old| old.charging != d.charging);
                 let crossed = self.laptop.as_ref().is_some_and(|old| {
@@ -269,10 +285,13 @@ impl Activities {
         }
     }
 
-    /// Live activities in priority order: a battery peek, then navigation,
-    /// then media.
+    /// Live activities in priority order: a ringing alarm, a battery peek,
+    /// navigation, then media.
     pub fn live(&self, t: f64) -> Vec<Live> {
         let mut out = Vec::new();
+        if let Some(a) = &self.alarm {
+            out.push(Live::Alarm(a.clone()));
+        }
         if let Some((d, reason, until)) = &self.peek {
             if t < *until {
                 out.push(Live::Battery { device: d.clone(), reason: *reason });

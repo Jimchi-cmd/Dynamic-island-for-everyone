@@ -22,6 +22,12 @@ pub fn allowed(args: &[String]) -> bool {
     match a.as_slice() {
         ["status", "--json"] | ["autostart", "on" | "off"] | ["nav", "stop"] | ["quit"] => true,
         ["key", "routes"] | ["key", "routes", "--clear"] | ["update", "check", "--json"] => true,
+        ["alarm", "list", "--json"] | ["alarm", "stop" | "snooze"] => true,
+        ["alarm", "remove" | "on" | "off", id] => id.parse::<u32>().is_ok(),
+        ["alarm", "add", time, rest @ ..] => {
+            !time.starts_with('-')
+                && rest.chunks(2).all(|kv| matches!(kv, ["--label" | "--days", v] if !v.starts_with('-')))
+        }
         ["nav", "start", rest @ ..] => {
             // Values are passed as separate arguments (never through a
             // shell); only the known options may appear.
@@ -276,6 +282,9 @@ mod tests {
         assert!(!allowed(&args(&["nav", "start", "X", "--from"])), "option without a value");
         assert!(!allowed(&args(&["nav", "start", "X", "--evil", "y"])));
         assert!(!allowed(&args(&["--mediaremote-probe"])));
+        assert!(allowed(&args(&["alarm", "add", "07:30", "--label", "Gym", "--days", "weekdays"])));
+        assert!(!allowed(&args(&["alarm", "add", "07:30", "--label"])), "option without a value");
+        assert!(!allowed(&args(&["alarm", "remove", "all"])));
         assert!(!allowed(&args(&[])), "running the island itself goes through start_island");
     }
 

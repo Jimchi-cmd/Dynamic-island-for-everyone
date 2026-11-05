@@ -29,6 +29,8 @@ pub enum Icon {
     Bolt,
     Navigation,
     Close,
+    /// A bell, tilted by this many degrees (it swings while ringing).
+    Bell(i8),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -257,6 +259,25 @@ impl IconPainter<'_> {
                 self.line((6.5, 6.5), (17.5, 17.5), 2.2);
                 self.line((17.5, 6.5), (6.5, 17.5), 2.2);
             }
+            Icon::Bell(tilt) => {
+                // Swings about the knob at the top.
+                self.ts = self.ts.pre_concat(Transform::from_rotate_at(f32::from(tilt), 12.0, 3.5));
+                let mut pb = PathBuilder::new();
+                pb.move_to(6.4, 16.2);
+                pb.line_to(6.4, 11.0);
+                pb.cubic_to(6.4, 7.6, 8.8, 5.0, 12.0, 5.0);
+                pb.cubic_to(15.2, 5.0, 17.6, 7.6, 17.6, 11.0);
+                pb.line_to(17.6, 16.2);
+                pb.line_to(19.4, 18.2);
+                pb.line_to(4.6, 18.2);
+                pb.close();
+                let body = pb.finish();
+                self.fill(body.clone());
+                self.stroke(body, 1.2);
+                let (knob, clapper) = (self.circle(12.0, 3.9, 1.5), self.circle(12.0, 20.3, 2.0));
+                self.fill(knob);
+                self.fill(clapper);
+            }
             Icon::Bolt => {
                 let p = Self::poly(&[(13.5, 2.0), (5.0, 13.5), (11.0, 13.5), (10.0, 22.0), (19.0, 10.0), (13.0, 10.0)]);
                 self.fill(p);
@@ -345,7 +366,9 @@ mod tests {
         p.pixels().iter().filter(|c| c.alpha() > 0).count()
     }
 
-    const ALL: [Icon; 18] = [
+    const ALL: [Icon; 20] = [
+        Icon::Bell(0),
+        Icon::Bell(-14),
         Icon::Navigation,
         Icon::Close,
         Icon::Play,

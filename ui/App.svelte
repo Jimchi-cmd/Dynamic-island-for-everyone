@@ -2,11 +2,23 @@
   import { onMount } from 'svelte';
   import * as api from './lib/bridge';
   import type { Info, Prefs, UpdateInfo } from './lib/bridge';
-  import { keyLooksValid, MODES, navStartArgs, permissionsFor, type Status, type Trip } from './lib/settings';
+  import {
+    alarmAddArgs,
+    DAY_LETTERS,
+    describeDays,
+    formatAlarmTime,
+    keyLooksValid,
+    MODES,
+    navStartArgs,
+    permissionsFor,
+    type Status,
+    type Trip,
+  } from './lib/settings';
 
-  type Page = 'general' | 'navigation' | 'updates' | 'about';
+  type Page = 'general' | 'alarms' | 'navigation' | 'updates' | 'about';
   const PAGES: { id: Page; label: string }[] = [
     { id: 'general', label: 'General' },
+    { id: 'alarms', label: 'Alarms' },
     { id: 'navigation', label: 'Navigation' },
     { id: 'updates', label: 'Updates' },
     { id: 'about', label: 'About' },
@@ -25,6 +37,38 @@
   let keyNote = $state('');
   let trip: Trip = $state({ label: '', destination: '', origin: '', mode: 'drive' });
   let tripNote = $state('');
+
+  // Alarms
+  let alarmTime = $state('07:00');
+  let alarmLabel = $state('');
+  let alarmDays = $state(0);
+  let alarmNote = $state('');
+  // 12/24-hour display follows the system locale.
+  const h24 = !new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions().hour12;
+
+  async function addAlarm() {
+    const args = alarmAddArgs(alarmTime, alarmLabel, alarmDays);
+    if ('error' in args) {
+      alarmNote = args.error;
+      return;
+    }
+    try {
+      alarmNote = await api.islet(args);
+      alarmLabel = '';
+      await refresh();
+    } catch (e) {
+      alarmNote = api.message(e);
+    }
+  }
+
+  async function alarmCmd(verb: 'on' | 'off' | 'remove', id: number) {
+    try {
+      await api.islet(['alarm', verb, String(id)]);
+      await refresh();
+    } catch (e) {
+      alarmNote = api.message(e);
+    }
+  }
 
   // Updates
   let update: UpdateInfo | null = $state(null);
@@ -247,6 +291,60 @@
           />
         </div>
         <p class="muted small">Right-click the island to close it. Click it to open, and press and hold for more.</p>
+      {:else if page === 'alarms'}
+        <h1>Alarms</h1>
+        <p class="muted">
+          When an alarm goes off, the island opens with a bell and plays a chime until you snooze or stop it. Alarms
+          ring while Islet is running and your computer is awake.
+        </p>
+        <div class="card">
+          <h2>New alarm</h2>
+          <div class="two">
+            <div>
+              <label for="atime">Time</label>
+              <input id="atime" type="time" bind:value={alarmTime} />
+            </div>
+            <div>
+              <label for="alabel">Name (optional)</label>
+              <input id="alabel" bind:value={alarmLabel} placeholder="Wake up" />
+            </div>
+          </div>
+          <span class="label" id="days-label">Repeat</span>
+          <div class="days" role="group" aria-labelledby="days-label">
+            {#each DAY_LETTERS as d, i (i)}
+              <button
+                class="day"
+                class:on={alarmDays & (1 << i)}
+                aria-pressed={(alarmDays & (1 << i)) !== 0}
+                aria-label={['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i]}
+                onclick={() => (alarmDays ^= 1 << i)}>{d}</button
+              >
+            {/each}
+            <span class="muted small">{describeDays(alarmDays)}</span>
+          </div>
+          <div class="actions"><button class="primary" onclick={addAlarm}>Add alarm</button></div>
+          {#if alarmNote}<p class="small" role="status">{alarmNote}</p>{/if}
+        </div>
+        {#each status?.alarms ?? [] as a (a.id)}
+          <div class="card row">
+            <div>
+              <h2 class:muted={!a.enabled}>{formatAlarmTime(a, h24)}</h2>
+              <p class="muted">{a.label || 'Alarm'} · {describeDays(a.days)}</p>
+            </div>
+            <div class="row">
+              <button class="link" onclick={() => alarmCmd('remove', a.id)}>Delete</button>
+              <input
+                type="checkbox"
+                class="switch"
+                aria-label="Alarm at {formatAlarmTime(a, h24)} on"
+                checked={a.enabled}
+                onchange={(e) => alarmCmd(e.currentTarget.checked ? 'on' : 'off', a.id)}
+              />
+            </div>
+          </div>
+        {:else}
+          <p class="muted">No alarms yet.</p>
+        {/each}
       {:else if page === 'navigation'}
         <h1>Navigation</h1>
         <p class="muted">
@@ -428,6 +526,29 @@
   }
   .steps .on {
     color: var(--accent);
+  }
+  .label {
+    display: block;
+    font-weight: 550;
+    margin: 10px 0 4px;
+  }
+  .days {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .day {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 50%;
+  }
+  .day.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-text);
+    font-weight: 600;
   }
   .switch {
     width: 20px;

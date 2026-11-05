@@ -2,9 +2,10 @@
 //! state machine → springs → frame and content. No OS calls in here, so all
 //! of it is unit-tested.
 
-use crate::content::{self, Control, NavControl};
+use crate::content::{self, AlarmControl, Control, NavControl};
 use crate::platform::{Button, Event, Key};
 use islet_core::activity::{Activities, Live, MediaCommand, MediaInfo, NavInfo, Report};
+use islet_core::alarm::{Alarm, AlarmClock, AlarmEvent};
 use islet_core::clock::{secs_to_next_minute, LocalTime};
 use islet_core::geometry::Rect;
 use islet_core::island::{
@@ -96,8 +97,18 @@ struct Press {
     long_fired: bool,
 }
 
+/// What the main loop should do about alarms.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AlarmOut {
+    /// Start (true) or stop (false) the alarm sound.
+    Sound(bool),
+    /// A one-time alarm rang: save it as turned off.
+    Disable(u32),
+}
+
 /// What an open island shows.
 enum OpenContent<'a> {
+    Alarm(&'a Alarm),
     Nav(&'a NavInfo),
     Media(&'a MediaInfo),
     Battery,
@@ -119,6 +130,10 @@ pub struct App {
     /// A navigation-card button being pressed, and pressed buttons to act on.
     nav_control: Option<NavControl>,
     nav_actions: Vec<NavControl>,
+    /// Alarms: the schedule, a pressed Snooze/Stop button, and work for the loop.
+    alarms: AlarmClock,
+    alarm_control: Option<AlarmControl>,
+    alarm_out: Vec<AlarmOut>,
     scrub: Option<f64>,
     commands: Vec<MediaCommand>,
     /// When the pointer left an open island (auto-collapse timer).
@@ -165,6 +180,9 @@ impl App {
             control: None,
             nav_control: None,
             nav_actions: Vec::new(),
+            alarms: AlarmClock::new(),
+            alarm_control: None,
+            alarm_out: Vec::new(),
             scrub: None,
             commands: Vec::new(),
             left_open_at: None,
@@ -247,6 +265,77 @@ impl App {
         self.activities.nav().map(|n| &n.trip)
     }
 
+    /// Replace the alarm list (loaded from alarms.json).
+    pub fn set_alarms(&mut self, alarms: Vec<Alarm>) {
+        self.alarms.set_alarms(alarms);
+    }
+
+    /// Sound and persistence work for the main loop, since the last call.
+    pub fn take_alarm_out(&mut self) -> Vec<AlarmOut> {
+        std::mem::take(&mut self.alarm_out)
+    }
+
+    /// Stop the ringing alarm (Stop button, or `islet alarm stop`).
+    pub fn stop_alarm(&mut self, t: f64) -> bool {
+        if !self.alarms.stop() {
+            return false;
+        }
+        self.end_ringing(t)
+    }
+
+    /// Ring again in 9 minutes.
+    pub fn snooze_alarm(&mut self, t: f64) -> bool {
+        let Some(now) = self.clock else { return false };
+        if !self.alarms.snooze(&now) {
+            return false;
+        }
+        self.end_ringing(t)
+    }
+
+    fn end_ringing(&mut self, t: f64) -> bool {
+        self.alarm_out.push(AlarmOut::Sound(false));
+        let changed = self.report(Report::Alarm(None), t);
+        if self.island.presentation().is_open() && self.activities.live(t).is_empty() {
+            self.signal(Signal::Escape, t);
+        }
+        changed
+    }
+
+    fn alarm_events(&mut self, now: &LocalTime, t: f64) -> bool {
+        let mut changed = false;
+        for e in self.alarms.tick(now) {
+            match e {
+                AlarmEvent::Ring(a) => {
+                    self.alarm_out.push(AlarmOut::Sound(true));
+                    changed |= self.report(Report::Alarm(Some(a)), t);
+                    // Like a phone's alarm screen: open the island to show it.
+                    if !self.island.presentation().is_open() {
+                        self.rotation = 0;
+                        changed |= self.signal(Signal::Click, t);
+                    }
+                }
+                AlarmEvent::TimedOut => {
+                    self.alarm_out.push(AlarmOut::Sound(false));
+                    changed |= self.report(Report::Alarm(None), t);
+                }
+                AlarmEvent::Finished(id) => self.alarm_out.push(AlarmOut::Disable(id)),
+            }
+        }
+        changed
+    }
+
+    /// The Snooze/Stop button under (x, y) on an open alarm card.
+    fn alarm_control_at(&self, x: f64, y: f64, t: f64) -> Option<AlarmControl> {
+        if !self.island.presentation().is_open() || self.animating(t) {
+            return None;
+        }
+        if !matches!(self.open_content(&self.live(t)), OpenContent::Alarm(_)) {
+            return None;
+        }
+        let cr = self.content_rect(self.pill_rect(t));
+        content::alarm_controls(cr).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, c)| c)
+    }
+
     /// Commands for the media session, collected since the last call.
     pub fn take_commands(&mut self) -> Vec<MediaCommand> {
         std::mem::take(&mut self.commands)
@@ -263,7 +352,8 @@ impl App {
     pub fn set_time(&mut self, now: LocalTime, t: f64) -> bool {
         let changed = self.clock.is_none_or(|c| (c.hour, c.minute, c.day) != (now.hour, now.minute, now.day));
         self.clock = Some(now);
-        changed && self.clock_shown(t)
+        let alarm = changed && self.alarm_events(&now, t);
+        (changed && self.clock_shown(t)) || alarm
     }
 
     fn live(&self, t: f64) -> Vec<Live> {
@@ -296,7 +386,9 @@ impl App {
     }
 
     fn open_content(&self, live: &[Live]) -> OpenContent<'_> {
-        if matches!(live.first(), Some(Live::Battery { .. })) {
+        if let (Some(Live::Alarm(_)), Some(a)) = (live.first(), self.activities.alarm()) {
+            OpenContent::Alarm(a)
+        } else if matches!(live.first(), Some(Live::Battery { .. })) {
             OpenContent::Battery
         } else if let (Some(Live::Navigation(_)) | None, Some(n)) = (live.first(), self.activities.nav()) {
             OpenContent::Nav(n)
@@ -348,6 +440,7 @@ impl App {
         let cr = self.content_rect(p);
         if eo > 0.0 {
             match self.open_content(&live) {
+                OpenContent::Alarm(a) => out.extend(content::expanded_alarm(cr, a, self.h24, t, eo, engine)),
                 OpenContent::Media(m) => out.extend(content::expanded_media(cr, m, t, eo, self.scrub, engine)),
                 OpenContent::Nav(n) => out.extend(content::expanded_nav(cr, n, self.clock.as_ref(), eo, engine)),
                 OpenContent::Battery => out.extend(content::expanded_battery(
@@ -379,7 +472,7 @@ impl App {
                         (Live::Battery { .. }, Some(second)) if self.rotation == 0 => (second, Some(first)),
                         _ => (first, live.get(1)),
                     };
-                    out.extend(content::minimal(p, self.bubble_circle(t), pill, bubble, t, co));
+                    out.extend(content::minimal(p, self.bubble_circle(t), pill, bubble, t, co, self.h24));
                 }
                 (_, Some(first)) => out.extend(content::compact(p, first, t, co, engine)),
                 _ => {}
@@ -396,6 +489,7 @@ impl App {
             Presentation::Compact => (live.first().map_or(w, content::compact_width), h, r),
             Presentation::Expanded => {
                 let h = match self.open_content(&live) {
+                    OpenContent::Alarm(_) => content::ALARM_H,
                     OpenContent::Media(_) | OpenContent::Nav(_) => MEDIA_H,
                     OpenContent::Clock => CLOCK_H,
                     OpenContent::Battery => {
@@ -518,6 +612,10 @@ impl App {
             Event::PointerMove { x, y } => self.pointer_at(x, y, t),
             Event::PointerLeave => self.pointer_at(f64::NAN, f64::NAN, t),
             Event::PointerDown { x, y, button: Button::Primary } if self.hit(x, y, t) => {
+                if let Some(c) = self.alarm_control_at(x, y, t) {
+                    self.alarm_control = Some(c);
+                    return true;
+                }
                 if let Some(c) = self.nav_control_at(x, y, t) {
                     self.nav_control = Some(c);
                     return true;
@@ -537,6 +635,13 @@ impl App {
                 }
             }
             Event::PointerUp { x, y, button: Button::Primary } => {
+                if let Some(c) = self.alarm_control.take() {
+                    return match c {
+                        _ if self.alarm_control_at(x, y, t) != Some(c) => true, // released elsewhere
+                        AlarmControl::Snooze => self.snooze_alarm(t),
+                        AlarmControl::Stop => self.stop_alarm(t),
+                    };
+                }
                 if let Some(c) = self.nav_control.take() {
                     if self.nav_control_at(x, y, t) == Some(c) {
                         self.nav_actions.push(c);
@@ -611,6 +716,10 @@ impl App {
             return Some(FRAME);
         }
         let live = self.live(t);
+        // The bell swings while an alarm rings and is on screen.
+        if self.activities.alarm().is_some() && self.has_content(t) {
+            return Some(WAVE_FRAME);
+        }
         let playing = self.activities.media().is_some_and(|m| m.playing);
         let compact_wave = matches!(live.first(), Some(Live::Media(_))) && self.compact_opacity(t, &live) > 0.0;
         let card_wave = self.expanded_opacity(t) > 0.0 && matches!(self.open_content(&live), OpenContent::Media(_));
@@ -638,6 +747,10 @@ impl App {
         // The clock wakes the island once a minute, and only while it is shown.
         if let Some(now) = self.clock.filter(|_| self.clock_shown(t)) {
             at(t + secs_to_next_minute(&now));
+        }
+        // Alarms are checked each minute, only while one is set.
+        if let Some(secs) = self.clock.and_then(|now| self.alarms.next_check(&now)) {
+            at(t + secs);
         }
         next.map(|n| (n - t).max(0.0))
     }
@@ -985,6 +1098,63 @@ mod tests {
         assert!(!app.nav_card_open(6.0));
     }
 
+    fn press(app: &mut App, r: Rect, t: f64) {
+        let (x, y) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
+        app.handle(Event::PointerDown { x, y, button: Button::Primary }, t);
+        app.handle(Event::PointerUp { x, y, button: Button::Primary }, t + 0.05);
+    }
+
+    fn bell_shown(app: &App, t: f64, engine: &mut TextEngine) -> bool {
+        app.elements(t, engine)
+            .iter()
+            .any(|e| matches!(e, Element::Icon { icon: islet_render::elements::Icon::Bell(_), .. }))
+    }
+
+    #[test]
+    fn a_ringing_alarm_opens_the_island_and_shows_a_bell() {
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        let alarm = Alarm { id: 1, hour: 14, minute: 6, label: "Tea".into(), days: 0, enabled: true };
+        app.set_alarms(vec![alarm]);
+        app.set_time(NOW, 0.0);
+        assert!((app.next_timer(0.0).unwrap() - 18.05).abs() < 1e-9, "checks at the next minute");
+        let ring = LocalTime { minute: 6, second: 0, ..NOW };
+        assert!(app.set_time(ring, 18.0));
+        assert_eq!(app.take_alarm_out(), [AlarmOut::Disable(1), AlarmOut::Sound(true)]);
+        assert_eq!(app.presentation(), Expanded, "the alarm opens the island");
+        assert!(texts(&app, 22.0, &mut engine).iter().any(|s| s == "Tea"));
+        assert!(bell_shown(&app, 22.0, &mut engine));
+        assert_eq!(app.frame_interval(22.0), Some(WAVE_FRAME), "the bell swings");
+
+        // Collapsed, the compact pill keeps the bell at its right end.
+        app.handle(Event::Key(Key::Escape), 23.0);
+        assert_eq!(app.presentation(), Compact);
+        let pill = app.pill_rect(27.0);
+        let bell_x = app.elements(27.0, &mut engine).iter().find_map(|e| match e {
+            Element::Icon { icon: islet_render::elements::Icon::Bell(_), x, .. } => Some(*x as f64),
+            _ => None,
+        });
+        assert!(bell_x.is_some_and(|x| x > pill.x + pill.w * 0.7), "bell on the right");
+
+        // Open the card again and press Snooze.
+        click(&mut app, 28.0);
+        let (snooze, _) = content::alarm_controls(app.content_rect(app.pill_rect(32.0)))[0];
+        press(&mut app, snooze, 32.0);
+        assert_eq!(app.take_alarm_out(), [AlarmOut::Sound(false)]);
+        assert!(!bell_shown(&app, 36.0, &mut engine));
+        assert_eq!(app.presentation(), Idle, "nothing else live: the island closes");
+
+        // Nine minutes later it rings again; Stop ends it for good.
+        app.set_time(LocalTime { minute: 15, second: 0, ..NOW }, 600.0);
+        assert_eq!(app.take_alarm_out(), [AlarmOut::Sound(true)]);
+        let (_, stop) = content::alarm_controls(app.content_rect(app.pill_rect(605.0)))[1];
+        assert_eq!(stop, AlarmControl::Stop);
+        let (stop_rect, _) = content::alarm_controls(app.content_rect(app.pill_rect(605.0)))[1];
+        press(&mut app, stop_rect, 605.0);
+        assert_eq!(app.take_alarm_out(), [AlarmOut::Sound(false)]);
+        assert_eq!(app.next_timer(610.0), None, "the one-time alarm is done: zero wakeups");
+    }
+
     #[test]
     fn idle_island_shows_no_clock_and_never_wakes_for_it() {
         let mut app = App::new(Demo::None, false);
@@ -1098,6 +1268,56 @@ mod tests {
             let extra = if p == Minimal { MINIMAL_GAP + MINIMAL_CIRCLE } else { 0.0 };
             assert!((w + extra) * 1.03 <= WINDOW.0 && h * 1.03 + TOP_GAP <= WINDOW.1, "{p:?}");
         }
+    }
+
+    /// Alarm frames for visual review:
+    /// `ISLET_ALARM_SHEET=/path/out.png cargo test -p islet alarm_sheet`
+    #[test]
+    fn alarm_sheet() {
+        let Some(out) = std::env::var_os("ISLET_ALARM_SHEET") else { return };
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let mut engine = TextEngine::new();
+        let alarm = Alarm {
+            id: 1,
+            hour: 6,
+            minute: 30,
+            label: "Wake up".into(),
+            days: islet_core::alarm::WEEKDAYS,
+            enabled: true,
+        };
+        let mut app = App::new(Demo::None, false);
+        app.set_clock_style(false);
+        app.set_alarms(vec![alarm]);
+        app.set_time(LocalTime { hour: 6, minute: 29, ..NOW }, 0.0);
+        app.set_time(LocalTime { hour: 6, minute: 30, second: 0, ..NOW }, 1.0);
+        let mut music = App::new(Demo::None, false);
+        music.set_clock_style(false);
+        music.report(Report::Media(Some(song(true))), 0.0);
+        music.set_alarms(app.alarms.alarms().to_vec());
+        music.set_time(LocalTime { hour: 6, minute: 29, ..NOW }, 0.0);
+        music.set_time(LocalTime { hour: 6, minute: 30, second: 0, ..NOW }, 1.0);
+        music.handle(Event::Key(Key::Escape), 1.5);
+        let mut frames: Vec<(&App, f64)> = vec![(&app, 4.0), (&app, 4.1), (&app, 4.2)];
+        let mut compact = App::new(Demo::None, false);
+        compact.set_alarms(app.alarms.alarms().to_vec());
+        compact.set_time(LocalTime { hour: 6, minute: 29, ..NOW }, 0.0);
+        compact.set_time(LocalTime { hour: 6, minute: 30, second: 0, ..NOW }, 1.0);
+        compact.handle(Event::Key(Key::Escape), 1.5);
+        frames.extend([(&compact, 5.0), (&compact, 5.05), (&music, 5.1)]);
+        let (cw, ch) = (WINDOW.0 as u32, 180u32);
+        let mut sheet = Pixmap::new(cw * 3, ch * 2).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        for (i, (a, t)) in frames.iter().enumerate() {
+            let mut cell = Pixmap::new(cw, WINDOW.1 as u32).unwrap();
+            let frame = a.frame(*t);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, WINDOW.1 as u32, 1.0);
+            let els = a.elements(*t, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            let (x, y) = ((i % 3) as i32 * cw as i32, (i / 3) as i32 * ch as i32);
+            sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+        }
+        sheet.save_png(out).unwrap();
     }
 
     /// Renders a scripted session (music, a device connecting, the open

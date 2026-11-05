@@ -21,7 +21,7 @@ describe('navStartArgs', () => {
 describe('parseStatus', () => {
   it('reads the island status', () => {
     const s = parseStatus('{"version":"0.1.0","running":true,"autostart":false,"routesKey":true,"trip":null}');
-    expect(s).toEqual({ version: '0.1.0', running: true, autostart: false, routesKey: true, trip: null });
+    expect(s).toEqual({ version: '0.1.0', running: true, autostart: false, routesKey: true, trip: null, alarms: [] });
   });
 });
 
@@ -35,5 +35,25 @@ describe('keyLooksValid', () => {
 describe('permissionsFor', () => {
   it('has guidance for every OS', () => {
     for (const os of ['macos', 'windows', 'linux']) expect(permissionsFor(os).length).toBeGreaterThan(0);
+  });
+});
+
+import { alarmAddArgs, describeDays, formatAlarmTime } from './settings';
+
+describe('alarms', () => {
+  it('builds alarm add arguments', () => {
+    expect(alarmAddArgs('07:30', ' Gym ', 0b0111110)).toEqual([
+      'alarm', 'add', '07:30', '--label', 'Gym', '--days', 'mon,tue,wed,thu,fri',
+    ]);
+    expect(alarmAddArgs('21:00', '', 0)).toEqual(['alarm', 'add', '21:00']);
+    expect(alarmAddArgs('', '', 0)).toHaveProperty('error');
+  });
+
+  it('describes days and times', () => {
+    expect(describeDays(0)).toBe('Once');
+    expect(describeDays(0b0101010)).toBe('Mon, Wed, Fri');
+    expect(describeDays(0b1000001)).toBe('Weekends');
+    expect(formatAlarmTime({ hour: 0, minute: 5 }, false)).toBe('12:05 AM');
+    expect(formatAlarmTime({ hour: 18, minute: 0 }, true)).toBe('18:00');
   });
 });

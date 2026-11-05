@@ -23,8 +23,9 @@ mod net;
 mod platform;
 mod providers;
 mod secrets;
+mod sound;
 
-use app::{App, Demo, FRAME, WINDOW};
+use app::{AlarmOut, App, Demo, FRAME, WINDOW};
 use content::NavControl;
 use control::Control;
 use islet_core::activity::Report;
@@ -108,6 +109,12 @@ fn run() -> platform::Result<()> {
     let (control_tx, control_rx) = std::sync::mpsc::channel::<Control>();
     control::serve(control_tx, win.waker());
     let mut nav_card_open = false;
+    // Demos and perf runs leave the user's alarms alone.
+    let scripted = demo != Demo::None || std::env::var_os("ISLET_DEMO").is_some();
+    if !scripted {
+        app.set_alarms(config::load_alarms());
+    }
+    let mut alarm_sound = sound::AlarmSound::default();
     trace("providers started");
 
     let mut needs_frame = true;
@@ -160,6 +167,10 @@ fn run() -> platform::Result<()> {
                 Control::NavStop => providers.nav(NavMsg::Stop),
                 Control::Quit => return Ok(()),
                 Control::Ping => {}
+                Control::AlarmsChanged if !scripted => app.set_alarms(config::load_alarms()),
+                Control::AlarmsChanged => {}
+                Control::AlarmStop => needs_frame |= app.stop_alarm(t),
+                Control::AlarmSnooze => needs_frame |= app.snooze_alarm(t),
             }
         }
         for action in app.take_nav_actions() {
@@ -180,6 +191,19 @@ fn run() -> platform::Result<()> {
             return Ok(());
         }
         needs_frame |= app.set_time(clock::now(), t);
+        for out in app.take_alarm_out() {
+            match out {
+                AlarmOut::Sound(on) => alarm_sound.set(on),
+                AlarmOut::Disable(id) if !scripted => {
+                    let mut alarms = config::load_alarms();
+                    if let Some(a) = alarms.iter_mut().find(|a| a.id == id) {
+                        a.enabled = false;
+                        let _ = config::save_alarms(&alarms);
+                    }
+                }
+                AlarmOut::Disable(_) => {}
+            }
+        }
         needs_frame |= app.tick(t);
 
         let new_region = app.input_region(t);

@@ -2,6 +2,7 @@
 //! (docs/design-spec.md §3). Pure layout: rects in, display list out.
 
 use islet_core::activity::{BatteryDevice, DeviceKind, Live, MediaInfo, NavInfo, Part};
+use islet_core::alarm::{self, Alarm};
 use islet_core::clock::{format_date, format_time, LocalTime};
 use islet_core::geometry::Rect;
 use islet_core::nav;
@@ -23,6 +24,36 @@ pub enum NavControl {
 }
 
 pub const GREEN_NAV: [u8; 3] = [52, 199, 89];
+pub const ORANGE: [u8; 3] = [255, 159, 10];
+
+/// Buttons of the ringing-alarm card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlarmControl {
+    Snooze,
+    Stop,
+}
+
+/// The bell's swing while ringing: a quick shake, then a pause, repeating.
+pub fn bell_tilt(t: f64) -> i8 {
+    let phase = t.rem_euclid(1.2);
+    if phase < 0.6 {
+        let fade = 1.0 - phase / 0.6;
+        (18.0 * fade * (phase * std::f64::consts::TAU * 7.0).sin()).round() as i8
+    } else {
+        0
+    }
+}
+
+fn bell(cx: f32, cy: f32, size: f32, t: f64, o: f32) -> Element {
+    Element::Icon {
+        icon: Icon::Bell(bell_tilt(t)),
+        x: cx - size / 2.0,
+        y: cy - size / 2.0,
+        size,
+        color: ORANGE,
+        opacity: o,
+    }
+}
 
 /// Interactive areas of the expanded media card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,7 +69,7 @@ pub const COMPACT_BATTERY_W: f64 = 300.0;
 
 pub fn compact_width(live: &Live) -> f64 {
     match live {
-        Live::Media(_) | Live::Navigation(_) => COMPACT_MEDIA_W,
+        Live::Media(_) | Live::Navigation(_) | Live::Alarm(_) => COMPACT_MEDIA_W,
         Live::Battery { .. } => COMPACT_BATTERY_W,
     }
 }
@@ -108,6 +139,12 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
     let (x, right) = (pill.x as f32, pill.right() as f32);
     let cy = (pill.y + pill.h / 2.0) as f32;
     match live {
+        Live::Alarm(a) => {
+            // The alarm's name on the left, the swinging bell on the right.
+            let style = TextStyle { size: 14.0, weight: 600, opacity: o, color: ORANGE, ..TextStyle::default() };
+            let title = engine.ellipsize(a.title(), &style, (right - x) - 70.0);
+            vec![text(title, style, x + 16.0, cy + 5.0), bell(right - 22.0, cy, 20.0, t, o)]
+        }
         Live::Media(m) => {
             let tint = m.art.as_ref().map_or(WHITE, |a| brighten(a.dominant));
             let mut v = vec![Element::Art {
@@ -194,16 +231,20 @@ pub fn minimal(
     secondary: Option<&Live>,
     t: f64,
     o: f32,
+    h24: bool,
 ) -> Vec<Element> {
     let cy = (pill.y + pill.h / 2.0) as f32;
     let x = pill.x as f32;
-    let mut v = leading(primary, x + 6.0, cy, o);
+    let mut v = leading(primary, x + 6.0, cy, o, h24);
     if let Live::Media(m) = primary {
         let tint = m.art.as_ref().map_or(WHITE, |a| brighten(a.dominant));
         v.extend(waveform(pill.right() as f32 - 31.0, cy, 4, t, m.playing, tint, o));
     }
     if let Live::Navigation(n) = primary {
         v.push(nav_eta(n, pill.right() as f32 - 13.0, cy, o));
+    }
+    if let Live::Alarm(_) = primary {
+        v.push(bell(pill.right() as f32 - 22.0, cy, 20.0, t, o));
     }
     if let (Some(b), Some(s)) = (bubble, secondary) {
         match s {
@@ -216,6 +257,7 @@ pub fn minimal(
                 color: level_color(d.percent, d.charging),
                 opacity: o,
             }),
+            Live::Alarm(_) => v.push(bell(b.x, b.y, 20.0, t, o)),
             Live::Navigation(_) => v.push(Element::Icon {
                 icon: Icon::Navigation,
                 x: b.x - 10.0,
@@ -237,8 +279,13 @@ pub fn minimal(
     v
 }
 
-fn leading(live: &Live, x: f32, cy: f32, o: f32) -> Vec<Element> {
+fn leading(live: &Live, x: f32, cy: f32, o: f32, h24: bool) -> Vec<Element> {
     match live {
+        Live::Alarm(a) => {
+            let style =
+                TextStyle { size: 14.0, weight: 600, opacity: o, color: ORANGE, tabular: true, ..TextStyle::default() };
+            vec![text(alarm::format_hm(a.hour, a.minute, h24), style, x + 8.0, cy + 5.0)]
+        }
         Live::Navigation(_) => {
             vec![Element::Icon {
                 icon: Icon::Navigation,
@@ -364,6 +411,47 @@ pub fn expanded_media(
 }
 
 /// Buttons along the bottom of the navigation card.
+/// Height of the ringing-alarm card.
+pub const ALARM_H: f64 = 132.0;
+
+pub fn alarm_controls(pill: Rect) -> [(Rect, AlarmControl); 2] {
+    let y = pill.y + 84.0;
+    let (x, w) = (pill.x + PAD, pill.w - 2.0 * PAD);
+    let half = (w - 10.0) / 2.0;
+    [
+        (Rect::new(x, y, half, 34.0), AlarmControl::Snooze),
+        (Rect::new(x + half + 10.0, y, half, 34.0), AlarmControl::Stop),
+    ]
+}
+
+/// The ringing-alarm card: bell, name, time, Snooze and Stop.
+pub fn expanded_alarm(pill: Rect, a: &Alarm, h24: bool, t: f64, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
+    let pad = PAD as f32;
+    let mut v = vec![bell(x + pad + 13.0, y + 36.0, 28.0, t, o)];
+    let time_style =
+        TextStyle { size: 26.0, weight: 600, opacity: o, tabular: true, align: Align::Right, ..TextStyle::default() };
+    let time = alarm::format_hm(a.hour, a.minute, h24);
+    let time_w = engine.measure(&time, &time_style);
+    let title_style = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
+    let title = engine.ellipsize(a.title(), &title_style, w - 2.0 * pad - 40.0 - time_w - 12.0);
+    v.push(text(title, title_style, x + pad + 38.0, y + 34.0));
+    let small = TextStyle { size: 13.0, opacity: o * 0.6, ..TextStyle::default() };
+    v.push(text(alarm::describe_days(a.days), small, x + pad + 38.0, y + 53.0));
+    v.push(text(time, time_style, x + w - pad, y + 46.0));
+    let label = TextStyle { size: 14.0, weight: 600, opacity: o, align: Align::Center, ..TextStyle::default() };
+    for (r, c) in alarm_controls(pill) {
+        let (bx, by, bw, bh) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
+        let (fill, alpha, word, color) = match c {
+            AlarmControl::Snooze => (WHITE, 0.16, "Snooze", WHITE),
+            AlarmControl::Stop => (ORANGE, 1.0, "Stop", [0, 0, 0]),
+        };
+        v.push(Element::Bar { x: bx, y: by, w: bw, h: bh, color: fill, opacity: o * alpha });
+        v.push(text(word, TextStyle { color, ..label }, bx + bw / 2.0, by + 22.0));
+    }
+    v
+}
+
 pub fn nav_controls(pill: Rect) -> [(Rect, NavControl); 3] {
     let y = pill.y + 118.0;
     let (x, w) = (pill.x + PAD, pill.w - 2.0 * PAD);
