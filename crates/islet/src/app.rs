@@ -4,7 +4,7 @@
 
 use crate::content::{self, AlarmControl, ConnHit, Control, NavControl, Panel, TimerControl, TIMER_ALARM_ID};
 use crate::platform::{Button, Event, Key};
-use islet_core::activity::{Activities, Live, MediaCommand, MediaInfo, NavInfo, Report};
+use islet_core::activity::{Activities, Hud, Live, MediaCommand, MediaInfo, NavInfo, Report};
 use islet_core::alarm::{Alarm, AlarmClock, AlarmEvent};
 use islet_core::clock::{secs_to_next_minute, LocalTime};
 use islet_core::connectivity::{ConnCommand, ConnUpdate};
@@ -13,6 +13,7 @@ use islet_core::island::{
     spring_for, target_size, Island, Presentation, Signal, AUTO_COLLAPSE_SECS, LONG_PRESS_SECS, MINIMAL_CIRCLE,
     MINIMAL_GAP,
 };
+use islet_core::prefs::IslandPrefs;
 use islet_core::spring::{Animated, Spring};
 use islet_core::timer::{Timer, TimerCommand, TimerEvent};
 use islet_render::elements::Element;
@@ -161,6 +162,8 @@ pub struct App {
     timer_ringing: bool,
     timer_control: Option<TimerControl>,
     timer_sec: i64,
+    /// island.json: which pop-ups are on, weather, calendar…
+    prefs: IslandPrefs,
     /// The open Wi-Fi or Bluetooth list, a pressed entry, and requests.
     panel: Option<Panel>,
     conn_hit: Option<ConnHit>,
@@ -221,6 +224,7 @@ impl App {
             timer_ringing: false,
             timer_control: None,
             timer_sec: -1,
+            prefs: IslandPrefs::default(),
             panel: None,
             conn_hit: None,
             conn_commands: Vec::new(),
@@ -575,8 +579,26 @@ impl App {
         std::mem::take(&mut self.commands)
     }
 
+    pub fn set_prefs(&mut self, prefs: IslandPrefs) {
+        self.prefs = prefs;
+    }
+
+    pub fn prefs(&self) -> &IslandPrefs {
+        &self.prefs
+    }
+
     /// Apply a provider report. Returns true if a redraw is needed.
     pub fn report(&mut self, r: Report, t: f64) -> bool {
+        if let Report::Hud(h) = &r {
+            let on = match h {
+                Hud::Volume { .. } => self.prefs.volume_hud,
+                Hud::Brightness(_) => self.prefs.brightness_hud,
+                Hud::CapsLock(_) => self.prefs.caps_lock_hud,
+            };
+            if !on {
+                return false;
+            }
+        }
         let changed = self.activities.report(r, t);
         self.sync_live(t) || changed
     }
@@ -620,6 +642,11 @@ impl App {
     }
 
     fn open_content(&self, live: &[Live]) -> OpenContent<'_> {
+        // A HUD is only a moment's notice: the card shows what is under it.
+        let live = match live.first() {
+            Some(Live::Hud(_)) => &live[1..],
+            _ => live,
+        };
         if let (Some(Live::Alarm(_)), Some(a)) = (live.first(), self.activities.alarm()) {
             OpenContent::Alarm(a)
         } else if let Some(p) = self.panel {
@@ -959,6 +986,7 @@ impl App {
                 false
             }
             Event::Key(Key::Escape) => self.signal(Signal::Escape, t),
+            Event::CapsLock(on) => self.report(Report::Hud(Hud::CapsLock(on)), t),
             Event::Scroll { dx, dy } if self.hovered => self.scroll(dx, dy, t),
             Event::Redraw | Event::ScaleChanged(_) => true,
             _ => false,
@@ -1576,6 +1604,37 @@ mod tests {
     }
 
     #[test]
+    fn hud_pops_up_briefly_and_respects_its_switch() {
+        use islet_core::activity::HUD_SECS;
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        assert!(app.report(Report::Hud(Hud::Volume { level: 0.5, muted: false }), 0.0));
+        app.tick(0.0);
+        assert_eq!(app.presentation(), Compact);
+        assert!(app.next_timer(0.5).is_some_and(|w| (w - (HUD_SECS - 0.5)).abs() < 1e-9), "wakes once, to hide it");
+        app.tick(HUD_SECS + 0.1);
+        assert_eq!(app.presentation(), Idle);
+
+        // Caps lock from the window system, with its switch off: nothing.
+        let mut p = app.prefs().clone();
+        p.caps_lock_hud = false;
+        app.set_prefs(p);
+        assert!(!app.handle(Event::CapsLock(true), 5.0));
+        assert_eq!(app.presentation(), Idle);
+
+        // With music playing, the HUD takes the pill and music the bubble.
+        app.report(Report::Media(Some(song(true))), 10.0);
+        app.report(Report::Hud(Hud::Brightness(0.8)), 10.0);
+        app.tick(10.0);
+        assert_eq!(app.presentation(), Minimal);
+        let sun = app
+            .elements(11.4, &mut engine)
+            .iter()
+            .any(|e| matches!(e, Element::Icon { icon: islet_render::elements::Icon::Sun, .. }));
+        assert!(sun);
+    }
+
+    #[test]
     fn idle_island_shows_no_clock_and_never_wakes_for_it() {
         let mut app = App::new(Demo::None, false);
         assert!(!app.set_time(NOW, 0.0), "nothing to redraw while idle");
@@ -1688,6 +1747,50 @@ mod tests {
             let extra = if p == Minimal { MINIMAL_GAP + MINIMAL_CIRCLE } else { 0.0 };
             assert!((w + extra) * 1.03 <= WINDOW.0 && h * 1.03 + TOP_GAP <= WINDOW.1, "{p:?}");
         }
+    }
+
+    /// HUD screens for visual review:
+    /// `ISLET_HUD_SHEET=/path/out.png cargo test -p islet hud_sheet`
+    #[test]
+    fn hud_sheet() {
+        let Some(out) = std::env::var_os("ISLET_HUD_SHEET") else { return };
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let mut engine = TextEngine::new();
+        let huds = [
+            Hud::Volume { level: 0.62, muted: false },
+            Hud::Volume { level: 0.62, muted: true },
+            Hud::Brightness(0.35),
+            Hud::CapsLock(true),
+        ];
+        let (cw, ch) = (WINDOW.0 as u32, 50u32);
+        let mut sheet = Pixmap::new(cw * 2, ch * 3).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        let mut cells: Vec<App> = huds
+            .iter()
+            .map(|h| {
+                let mut a = App::new(Demo::None, false);
+                a.report(Report::Hud(*h), 0.0);
+                a.tick(0.0);
+                a
+            })
+            .collect();
+        let mut with_music = App::new(Demo::None, false);
+        with_music.report(Report::Media(Some(song(true))), 0.0);
+        with_music.report(Report::Hud(Hud::Volume { level: 0.3, muted: false }), 0.0);
+        with_music.tick(0.0);
+        cells.push(with_music);
+        for (i, a) in cells.iter().enumerate() {
+            let t = 0.9;
+            let mut cell = Pixmap::new(cw, WINDOW.1 as u32).unwrap();
+            let frame = a.frame(t);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, WINDOW.1 as u32, 1.0);
+            let els = a.elements(t, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            let (x, y) = ((i % 2) as i32 * cw as i32, (i / 2) as i32 * ch as i32);
+            sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+        }
+        sheet.save_png(out).unwrap();
     }
 
     /// Timer screens for visual review:

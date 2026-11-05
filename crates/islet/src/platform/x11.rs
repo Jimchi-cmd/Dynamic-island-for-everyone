@@ -50,6 +50,8 @@ pub struct X11 {
     atoms: Atoms,
     esc_keycode: Option<Keycode>,
     has_shape: bool,
+    /// Caps Lock's last known state (XKB), to report only changes.
+    caps: std::cell::Cell<Option<bool>>,
     /// Frame converted to the server's pixel layout (BGRA on little-endian).
     buf: Vec<u8>,
     /// eventfd that other threads write to wake `poll`.
@@ -199,6 +201,7 @@ impl Backend for X11 {
         let has_shape = conn.extension_information(shape::X11_EXTENSION_NAME).map_err(xe)?.is_some();
         let lsb = conn.setup().image_byte_order == ImageOrder::LSB_FIRST;
         let esc_keycode = find_keycode(&conn, 0xff1b);
+        let caps = std::cell::Cell::new(watch_caps_lock(&conn));
 
         conn.map_window(win).map_err(xe)?;
         conn.flush().map_err(xe)?;
@@ -209,7 +212,21 @@ impl Backend for X11 {
         }
         // SAFETY: `raw` is a valid, owned file descriptor.
         let wake_fd = Arc::new(unsafe { OwnedFd::from_raw_fd(raw) });
-        Ok(Self { conn, win, gc, depth, lsb, scale, size, atoms, esc_keycode, has_shape, buf: Vec::new(), wake_fd })
+        Ok(Self {
+            conn,
+            win,
+            gc,
+            depth,
+            lsb,
+            scale,
+            size,
+            atoms,
+            esc_keycode,
+            has_shape,
+            caps,
+            buf: Vec::new(),
+            wake_fd,
+        })
     }
 
     fn scale(&self) -> f64 {
@@ -313,6 +330,23 @@ impl Backend for X11 {
     }
 }
 
+/// Ask XKB for Caps Lock changes (no key events are read: XKB reports the
+/// lock state itself). Returns the state now, or None without XKB.
+fn watch_caps_lock(conn: &RustConnection) -> Option<bool> {
+    use x11rb::protocol::xkb::{self, ConnectionExt as _};
+    conn.extension_information(xkb::X11_EXTENSION_NAME).ok()??;
+    if !conn.xkb_use_extension(1, 0).ok()?.reply().ok()?.supported {
+        return None;
+    }
+    let spec: xkb::DeviceSpec = xkb::ID::USE_CORE_KBD.into();
+    let lock = xkb::StatePart::MODIFIER_LOCK;
+    let details = xkb::SelectEventsAux::new()
+        .state_notify(xkb::SelectEventsAuxStateNotify { affect_state: lock, state_details: lock });
+    conn.xkb_select_events(spec, 0u16.into(), 0u16.into(), 0u16.into(), 0u16.into(), &details).ok()?;
+    let state = conn.xkb_get_state(spec).ok()?.reply().ok()?;
+    Some(state.locked_mods.contains(ModMask::LOCK))
+}
+
 impl X11 {
     fn drain(&mut self, out: &mut Vec<Event>) -> Result<()> {
         while let Some(ev) = self.conn.poll_for_event().map_err(xe)? {
@@ -346,6 +380,13 @@ impl X11 {
                 Event::PointerUp { x: e.event_x as f64 / s, y: e.event_y as f64 / s, button: button(e.detail)? }
             }
             XEvent::KeyPress(e) if Some(e.detail) == self.esc_keycode => Event::Key(Key::Escape),
+            XEvent::XkbStateNotify(e) => {
+                let on = e.locked_mods.contains(ModMask::LOCK);
+                if self.caps.replace(Some(on)) == Some(on) {
+                    return None;
+                }
+                Event::CapsLock(on)
+            }
             XEvent::ClientMessage(e)
                 if e.type_ == self.atoms.WM_PROTOCOLS && e.data.as_data32()[0] == self.atoms.WM_DELETE_WINDOW =>
             {

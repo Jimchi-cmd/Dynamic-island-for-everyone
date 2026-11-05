@@ -27,6 +27,8 @@ pub fn allowed(args: &[String]) -> bool {
         ["wifi", "connect", ssid] | ["wifi", "connect", ssid, "--password-stdin"] => !ssid.starts_with('-'),
         ["bt", "connect" | "disconnect", id] => !id.starts_with('-'),
         ["timer", "pause" | "resume" | "stop"] => true,
+        ["prefs", "--json"] => true,
+        ["set", key, "on" | "off"] => islet_core::prefs::SWITCHES.contains(key),
         ["timer", "start", dur, rest @ ..] => {
             !dur.starts_with('-') && rest.chunks(2).all(|kv| matches!(kv, ["--label", v] if !v.starts_with('-')))
         }

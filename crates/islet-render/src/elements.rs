@@ -35,6 +35,10 @@ pub enum Icon {
     Wifi(u8),
     Lock,
     Check,
+    /// A speaker with 0..=3 sound waves; 255 = muted (a slash).
+    Volume(u8),
+    Sun,
+    CapsLock,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -293,6 +297,45 @@ impl IconPainter<'_> {
                 pb.line_to(15.5, 10.8);
                 self.stroke(pb.finish(), 2.0);
             }
+            Icon::Volume(waves) => {
+                let body = Self::poly(&[(3.5, 9.0), (7.5, 9.0), (12.5, 4.5), (12.5, 19.5), (7.5, 15.0), (3.5, 15.0)]);
+                self.fill(body.clone());
+                self.stroke(body, 1.2);
+                if waves == 255 {
+                    self.line((15.5, 9.0), (21.0, 15.0), 2.0);
+                    self.line((21.0, 9.0), (15.5, 15.0), 2.0);
+                } else {
+                    for i in 0..waves.min(3) {
+                        let r = 3.5 + f32::from(i) * 3.3;
+                        let mut pb = PathBuilder::new();
+                        arc(&mut pb, 13.0, 12.0, r, -0.9, 1.8, true);
+                        self.stroke(pb.finish(), 1.9);
+                    }
+                }
+            }
+            Icon::Sun => {
+                let core = self.circle(12.0, 12.0, 4.2);
+                self.fill(core);
+                for i in 0..8 {
+                    let a = i as f32 * std::f32::consts::FRAC_PI_4;
+                    let (c, s) = (a.cos(), a.sin());
+                    self.line((12.0 + 6.8 * c, 12.0 + 6.8 * s), (12.0 + 9.3 * c, 12.0 + 9.3 * s), 2.0);
+                }
+            }
+            Icon::CapsLock => {
+                let arrow = Self::poly(&[
+                    (12.0, 3.5),
+                    (20.0, 11.5),
+                    (15.5, 11.5),
+                    (15.5, 15.5),
+                    (8.5, 15.5),
+                    (8.5, 11.5),
+                    (4.0, 11.5),
+                ]);
+                self.fill(arrow.clone());
+                self.stroke(arrow, 1.2);
+                self.fill(rounded_rect(8.5, 17.5, 7.0, 3.0, 1.0));
+            }
             Icon::Check => {
                 let mut pb = PathBuilder::new();
                 pb.move_to(5.0, 12.5);
@@ -407,7 +450,11 @@ mod tests {
         p.pixels().iter().filter(|c| c.alpha() > 0).count()
     }
 
-    const ALL: [Icon; 24] = [
+    const ALL: [Icon; 28] = [
+        Icon::Volume(0),
+        Icon::Volume(255),
+        Icon::Sun,
+        Icon::CapsLock,
         Icon::Wifi(0),
         Icon::Wifi(3),
         Icon::Lock,

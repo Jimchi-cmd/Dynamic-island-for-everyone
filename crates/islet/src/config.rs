@@ -31,6 +31,21 @@ pub fn save_trip(trip: Option<&Trip>) {
     };
 }
 
+/// The island's preferences, in island.json.
+pub fn load_prefs() -> islet_core::prefs::IslandPrefs {
+    file("island.json")
+        .and_then(|p| std::fs::read(p).ok())
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_prefs(prefs: &islet_core::prefs::IslandPrefs) -> Result<(), String> {
+    let path = file("island.json").ok_or("no config folder")?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec_pretty(prefs).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
 /// Alarms, in alarms.json.
 pub fn load_alarms() -> Vec<Alarm> {
     file("alarms.json")

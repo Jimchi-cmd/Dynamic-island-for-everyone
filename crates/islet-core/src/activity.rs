@@ -105,6 +105,22 @@ pub struct NavInfo {
     pub error: Option<String>,
 }
 
+/// A level change the island shows briefly (like the iPhone's volume HUD).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Hud {
+    /// Output volume 0..=1, and whether it is muted.
+    Volume {
+        level: f32,
+        muted: bool,
+    },
+    /// Screen brightness 0..=1.
+    Brightness(f32),
+    CapsLock(bool),
+}
+
+/// How long a HUD stays after the last change.
+pub const HUD_SECS: f64 = 1.6;
+
 /// Commands the island sends to the current media session.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MediaCommand {
@@ -135,6 +151,8 @@ pub enum Report {
     Connectivity(crate::connectivity::ConnUpdate),
     /// The running (or paused) timer, or None.
     Timer(Option<crate::timer::Timer>),
+    /// Volume, brightness or caps lock changed.
+    Hud(Hud),
 }
 
 /// Why a battery peek is showing.
@@ -149,6 +167,8 @@ pub enum PeekReason {
 pub enum Live {
     /// A ringing alarm: always first.
     Alarm(crate::alarm::Alarm),
+    /// A volume / brightness / caps-lock change, for a moment.
+    Hud(Hud),
     Battery {
         device: BatteryDevice,
         reason: PeekReason,
@@ -174,6 +194,7 @@ pub struct Activities {
     alarm: Option<crate::alarm::Alarm>,
     conn: crate::connectivity::Connectivity,
     timer: Option<crate::timer::Timer>,
+    hud: Option<(Hud, f64)>,
     nav: Option<NavInfo>,
     media: Option<MediaInfo>,
     paused_since: Option<f64>,
@@ -292,6 +313,10 @@ impl Activities {
                 self.timer = t;
                 true
             }
+            Report::Hud(h) => {
+                self.hud = Some((h, t + HUD_SECS));
+                true
+            }
             Report::Laptop(d) => {
                 let charger_changed = self.laptop.as_ref().is_some_and(|old| old.charging != d.charging);
                 let crossed = self.laptop.as_ref().is_some_and(|old| {
@@ -314,6 +339,11 @@ impl Activities {
         let mut out = Vec::new();
         if let Some(a) = &self.alarm {
             out.push(Live::Alarm(a.clone()));
+        }
+        if let Some((h, until)) = &self.hud {
+            if t < *until {
+                out.push(Live::Hud(*h));
+            }
         }
         if let Some((d, reason, until)) = &self.peek {
             if t < *until {
@@ -338,6 +368,11 @@ impl Activities {
     /// Next moment the live set changes on its own (a peek or linger ends).
     pub fn next_change(&self, t: f64) -> Option<f64> {
         let peek_end = self.peek.as_ref().map(|(_, _, until)| *until).filter(|&u| u > t);
+        let hud_end = self.hud.as_ref().map(|(_, until)| *until).filter(|&u| u > t);
+        let peek_end = match (peek_end, hud_end) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
         let linger_end = match (&self.media, self.paused_since) {
             (Some(m), Some(p)) if !m.playing => Some(p + MEDIA_LINGER).filter(|&e| e > t),
             _ => None,

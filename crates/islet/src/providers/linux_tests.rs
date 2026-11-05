@@ -655,3 +655,67 @@ fn missing_services_are_reported_not_fatal() {
     let bt = b.bluetooth();
     assert!(!bt.available && bt.note.is_some());
 }
+
+// ------------------------------------------------------------- Brightness ---
+
+struct FakeGnomeScreen {
+    brightness: i32,
+}
+
+#[zbus::interface(name = "org.gnome.SettingsDaemon.Power.Screen")]
+impl FakeGnomeScreen {
+    #[zbus(property)]
+    fn brightness(&self) -> i32 {
+        self.brightness
+    }
+}
+
+struct FakeKdeBrightness;
+
+#[zbus::interface(name = "org.kde.Solid.PowerManagement.Actions.BrightnessControl")]
+impl FakeKdeBrightness {
+    #[zbus(name = "brightnessMax")]
+    fn brightness_max(&self) -> i32 {
+        200
+    }
+
+    #[zbus(signal, name = "brightnessChanged")]
+    async fn brightness_changed(emitter: &SignalEmitter<'_>, value: i32) -> zbus::Result<()>;
+}
+
+#[test]
+fn brightness_changes_from_gnome_and_kde() {
+    use islet_core::activity::Hud;
+    let bus = bus_or_skip!();
+    let gnome = zbus::blocking::connection::Builder::address(bus.address.as_str())
+        .unwrap()
+        .name("org.gnome.SettingsDaemon.Power")
+        .unwrap()
+        .serve_at("/org/gnome/SettingsDaemon/Power", FakeGnomeScreen { brightness: 40 })
+        .unwrap()
+        .build()
+        .unwrap();
+    let kde = zbus::blocking::connection::Builder::address(bus.address.as_str())
+        .unwrap()
+        .name("org.kde.Solid.PowerManagement")
+        .unwrap()
+        .serve_at("/org/kde/Solid/PowerManagement/Actions/BrightnessControl", FakeKdeBrightness)
+        .unwrap()
+        .build()
+        .unwrap();
+    let (sink, rx) = sink();
+    super::linux_brightness::start(sink, Bus::Address(bus.address.clone()));
+    std::thread::sleep(Duration::from_millis(300)); // match rules in place
+
+    let screen = gnome.object_server().interface::<_, FakeGnomeScreen>("/org/gnome/SettingsDaemon/Power").unwrap();
+    screen.get_mut().brightness = 70;
+    zbus::block_on(screen.get().brightness_changed(screen.signal_emitter())).unwrap();
+    expect(&rx, "GNOME brightness 70%", |r| matches!(r, Report::Hud(Hud::Brightness(b)) if (*b - 0.7).abs() < 1e-6));
+
+    let ctl = kde
+        .object_server()
+        .interface::<_, FakeKdeBrightness>("/org/kde/Solid/PowerManagement/Actions/BrightnessControl")
+        .unwrap();
+    zbus::block_on(FakeKdeBrightness::brightness_changed(ctl.signal_emitter(), 50)).unwrap();
+    expect(&rx, "KDE brightness 50/200", |r| matches!(r, Report::Hud(Hud::Brightness(b)) if (*b - 0.25).abs() < 1e-6));
+}

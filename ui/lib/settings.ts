@@ -202,3 +202,24 @@ export function signalBars(strength: number): string {
   const n = strength < 35 ? 1 : strength < 65 ? 2 : 3;
   return '▂▄▆'.slice(0, n).padEnd(3, '·');
 }
+
+/** island.json, as `islet prefs --json` prints it. */
+export interface IslandPrefs {
+  volumeHud: boolean;
+  brightnessHud: boolean;
+  capsLockHud: boolean;
+  notifications: boolean;
+  weather: { name: string; lat: number; lon: number } | null;
+  fahrenheit: boolean;
+  calendar: boolean;
+}
+
+/** Each switch's name for `islet set <name> on|off`. */
+export const SWITCH_NAMES: Record<string, string> = {
+  volumeHud: 'volume-hud',
+  brightnessHud: 'brightness-hud',
+  capsLockHud: 'caps-lock-hud',
+  notifications: 'notifications',
+  fahrenheit: 'fahrenheit',
+  calendar: 'calendar',
+};

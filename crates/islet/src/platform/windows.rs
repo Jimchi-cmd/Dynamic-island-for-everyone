@@ -34,6 +34,40 @@ const WM_MOUSELEAVE: u32 = 0x02A3;
 const INFINITE: u32 = u32::MAX;
 /// Posted by `Waker` from other threads; only its arrival matters.
 const WM_ISLET_WAKE: u32 = WM_APP + 1;
+/// Posted by the Caps Lock hook thread: wParam = 1 (on) or 0 (off).
+const WM_ISLET_CAPS: u32 = WM_APP + 2;
+
+/// The island window (for the hook thread to post to) and Caps Lock's state.
+static CAPS_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+static CAPS_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static CAPS_HELD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Low-level keyboard hook. It looks only at the Caps Lock key (to flip the
+/// lock state it shows) and passes every key on untouched; nothing else is
+/// read or kept.
+unsafe extern "system" fn caps_hook(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    use std::sync::atomic::Ordering::Relaxed;
+    use windows::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL;
+    if code >= 0 {
+        // SAFETY: for WH_KEYBOARD_LL, lParam points to a KBDLLHOOKSTRUCT.
+        let k = unsafe { &*(lp.0 as *const KBDLLHOOKSTRUCT) };
+        if k.vkCode == u32::from(VK_CAPITAL.0) {
+            let down = matches!(wp.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
+            // Auto-repeat sends more key-downs: flip once per press.
+            if down && !CAPS_HELD.swap(true, Relaxed) {
+                let on = !CAPS_ON.load(Relaxed);
+                CAPS_ON.store(on, Relaxed);
+                let hwnd = HWND(CAPS_HWND.load(Relaxed) as *mut c_void);
+                // SAFETY: posting to our own window.
+                let _ = unsafe { PostMessageW(Some(hwnd), WM_ISLET_CAPS, WPARAM(on as usize), LPARAM(0)) };
+            } else if !down {
+                CAPS_HELD.store(false, Relaxed);
+            }
+        }
+    }
+    // SAFETY: passes the event on to the next hook, as required.
+    unsafe { CallNextHookEx(None, code, wp, lp) }
+}
 
 thread_local! {
     static QUEUE: RefCell<Vec<Event>> = const { RefCell::new(Vec::new()) };
@@ -47,6 +81,8 @@ fn push(e: Event) {
 
 pub struct Win32 {
     hwnd: HWND,
+    /// The Caps Lock hook thread, while the caps-lock pop-up is on.
+    caps_thread: Option<u32>,
     spec: WindowSpec,
     mem_dc: HDC,
     dib: HBITMAP,
@@ -157,6 +193,7 @@ impl Backend for Win32 {
                 spec,
                 mem_dc,
                 dib: HBITMAP::default(),
+                caps_thread: None,
                 old_obj: HGDIOBJ::default(),
                 bits: std::ptr::null_mut(),
                 size: (1, 1),
@@ -216,6 +253,37 @@ impl Backend for Win32 {
     fn set_input_region(&mut self, _rect: Rect) -> Result<()> {
         // Layered windows already ignore clicks on fully transparent pixels.
         Ok(())
+    }
+
+    fn watch_caps_lock(&mut self, on: bool) {
+        use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CAPITAL};
+        match (on, self.caps_thread.take()) {
+            (true, None) => {
+                CAPS_HWND.store(self.hwnd.0 as isize, std::sync::atomic::Ordering::Relaxed);
+                // SAFETY: GetKeyState has no preconditions; bit 0 is the toggle state.
+                let now = unsafe { GetKeyState(i32::from(VK_CAPITAL.0)) } & 1 != 0;
+                CAPS_ON.store(now, std::sync::atomic::Ordering::Relaxed);
+                let (tx, rx) = std::sync::mpsc::channel();
+                let _ = std::thread::Builder::new().name("islet-capslock".into()).spawn(move || {
+                    // SAFETY: the hook lives on this thread, which pumps messages
+                    // until WM_QUIT, then removes it.
+                    unsafe {
+                        use windows::Win32::System::Threading::GetCurrentThreadId;
+                        let Ok(hook) = SetWindowsHookExW(WH_KEYBOARD_LL, Some(caps_hook), None, 0) else { return };
+                        let _ = tx.send(GetCurrentThreadId());
+                        let mut msg = MSG::default();
+                        while GetMessageW(&mut msg, None, 0, 0).as_bool() {}
+                        let _ = UnhookWindowsHookEx(hook);
+                    }
+                });
+                self.caps_thread = rx.recv().ok();
+            }
+            (false, Some(thread)) => {
+                // SAFETY: asks the hook thread to quit (it unhooks itself).
+                let _ = unsafe { PostThreadMessageW(thread, WM_QUIT, WPARAM(0), LPARAM(0)) };
+            }
+            (_, keep) => self.caps_thread = keep,
+        }
     }
 
     fn waker(&self) -> Waker {
@@ -312,6 +380,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
         WM_MOUSEHWHEEL => handled(Event::Scroll { dx: hiword(wp.0 as isize) as f64 / 120.0, dy: 0.0 }),
         WM_MOUSEACTIVATE => LRESULT(MA_NOACTIVATE as isize),
         WM_KEYDOWN if wp.0 == VK_ESCAPE.0 as usize => handled(Event::Key(Key::Escape)),
+        WM_ISLET_CAPS => handled(Event::CapsLock(wp.0 != 0)),
         WM_DPICHANGED | WM_DISPLAYCHANGE => handled(Event::ScaleChanged(s)),
         WM_CLOSE => handled(Event::Quit),
         WM_ISLET_WAKE => LRESULT(0),

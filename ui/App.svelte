@@ -13,7 +13,9 @@
     parsePage,
     permissionsFor,
     signalBars,
+    SWITCH_NAMES,
     type BtList,
+    type IslandPrefs,
     type WifiList,
     type Status,
     type Trip,
@@ -105,6 +107,28 @@
   $effect(() => {
     if (page === 'connections' && !wifi) void loadConnections(true);
   });
+
+  // The island's own preferences (island.json via the CLI)
+  let islandPrefs: IslandPrefs | null = $state(null);
+
+  async function loadIslandPrefs() {
+    try {
+      islandPrefs = JSON.parse(await api.islet(['prefs', '--json']));
+    } catch (e) {
+      problem = api.message(e);
+    }
+  }
+
+  async function setSwitch(key: keyof IslandPrefs, on: boolean) {
+    const name = SWITCH_NAMES[key];
+    if (!name) return;
+    try {
+      await api.islet(['set', name, on ? 'on' : 'off']);
+      await loadIslandPrefs();
+    } catch (e) {
+      problem = api.message(e);
+    }
+  }
 
   // Timer & focus
   let timerMinutes = $state(10);
@@ -290,6 +314,7 @@
       problem = api.message(e);
     }
     await refresh();
+    await loadIslandPrefs();
     const wanted = parsePage(await api.initialPage().catch(() => null));
     if (wanted?.page === 'connections') {
       page = 'connections';
@@ -384,6 +409,31 @@
             disabled={busy || !status}
             onchange={(e) => setAutostart(e.currentTarget.checked)}
           />
+        </div>
+        <div class="card">
+          <h2>Pop-ups</h2>
+          <p class="muted small">The island shows a moment's notice when these change.</p>
+          {#each [['volumeHud', 'Volume'], ['brightnessHud', 'Screen brightness'], ['capsLockHud', 'Caps Lock']] as [key, label] (key)}
+            <div class="net">
+              <span class="name">{label}</span>
+              <input
+                type="checkbox"
+                class="switch"
+                aria-label="{label} pop-up"
+                checked={islandPrefs ? Boolean(islandPrefs[key as keyof IslandPrefs]) : true}
+                disabled={!islandPrefs}
+                onchange={(e) => setSwitch(key as keyof IslandPrefs, e.currentTarget.checked)}
+              />
+            </div>
+          {/each}
+          {#if info?.os === 'macos'}
+            <p class="muted small">macOS doesn't let apps see brightness changes, so there's no brightness pop-up on a Mac.</p>
+          {:else if info?.os === 'windows'}
+            <p class="muted small">
+              On Windows the Caps Lock pop-up uses a keyboard hook that checks only the Caps Lock key. It's removed when
+              you turn this off.
+            </p>
+          {/if}
         </div>
         <p class="muted small">Right-click the island to close it. Click it to open, and press and hold for more.</p>
       {:else if page === 'connections'}

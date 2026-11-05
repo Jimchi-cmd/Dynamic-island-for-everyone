@@ -120,7 +120,9 @@ fn run() -> platform::Result<()> {
     let scripted = demo != Demo::None || std::env::var_os("ISLET_DEMO").is_some();
     if !scripted {
         app.set_alarms(config::load_alarms());
+        app.set_prefs(config::load_prefs());
     }
+    win.watch_caps_lock(app.prefs().caps_lock_hud);
     let mut alarm_sound = sound::AlarmSound::default();
     trace("providers started");
 
@@ -185,6 +187,11 @@ fn run() -> platform::Result<()> {
                 Control::AlarmStop => needs_frame |= app.stop_alarm(t),
                 Control::AlarmSnooze => needs_frame |= app.snooze_alarm(t),
                 Control::Timer(cmd) => needs_frame |= app.timer_command(cmd, t),
+                Control::PrefsChanged if !scripted => {
+                    app.set_prefs(config::load_prefs());
+                    win.watch_caps_lock(app.prefs().caps_lock_hud);
+                }
+                Control::PrefsChanged => {}
             }
         }
         for action in app.take_nav_actions() {

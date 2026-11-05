@@ -40,6 +40,9 @@ Usage:
                                            join a network (the password is read from stdin)
   islet bt list [--json]                   paired Bluetooth devices
   islet bt connect|disconnect <id>         connect or disconnect one (id from bt list)
+  islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
+                                           notifications, calendar, fahrenheit
+  islet prefs [--json]                     the island's settings
   islet autostart on|off                   start Islet when you log in (or stop doing so)
   islet status [--json]                    is Islet running, and how it is set up
   islet quit                               close the running island
@@ -84,6 +87,9 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["timer", "resume"] => send_timer(TimerCommand::Resume),
         ["timer", "stop"] => send_timer(TimerCommand::Stop),
         ["focus", rest @ ..] => parse_focus(rest).and_then(send_timer),
+        ["set", key, value] => set_switch(key, value),
+        ["prefs"] => Ok(prefs_text(false)),
+        ["prefs", "--json"] => Ok(prefs_text(true)),
         ["quit"] => control::send(&Control::Quit).map(|()| "Closed.".into()),
         _ => Err(format!("unknown command\n\n{USAGE}")),
     })
@@ -220,6 +226,37 @@ fn alarm_edit(verb: &str, id: &str) -> Result<String, String> {
     config::save_alarms(&alarms)?;
     alarms_changed();
     Ok(msg)
+}
+
+fn prefs_changed() {
+    let _ = control::send(&Control::PrefsChanged);
+}
+
+fn set_switch(key: &str, value: &str) -> Result<String, String> {
+    let on = islet_core::prefs::parse_on_off(value).ok_or_else(|| format!("say on or off, not {value:?}"))?;
+    let mut p = config::load_prefs();
+    p.set_switch(key, on)?;
+    config::save_prefs(&p)?;
+    prefs_changed();
+    Ok(format!("{key} is {}.", if on { "on" } else { "off" }))
+}
+
+fn prefs_text(json: bool) -> String {
+    let p = config::load_prefs();
+    if json {
+        return serde_json::to_string(&p).unwrap_or_default();
+    }
+    let yes = |b: bool| if b { "on" } else { "off" };
+    format!(
+        "volume-hud {}\nbrightness-hud {}\ncaps-lock-hud {}\nnotifications {}\ncalendar {}\nfahrenheit {}\nweather {}",
+        yes(p.volume_hud),
+        yes(p.brightness_hud),
+        yes(p.caps_lock_hud),
+        yes(p.notifications),
+        yes(p.calendar),
+        yes(p.fahrenheit),
+        p.weather.as_ref().map_or("off".to_string(), |w| w.name.clone())
+    )
 }
 
 fn duration(s: &str) -> Result<f64, String> {

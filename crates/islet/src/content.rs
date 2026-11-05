@@ -1,7 +1,7 @@
 //! What is drawn inside the island for each activity and presentation
 //! (docs/design-spec.md §3). Pure layout: rects in, display list out.
 
-use islet_core::activity::{BatteryDevice, DeviceKind, Live, MediaInfo, NavInfo, Part};
+use islet_core::activity::{BatteryDevice, DeviceKind, Hud, Live, MediaInfo, NavInfo, Part};
 use islet_core::alarm::{self, Alarm};
 use islet_core::clock::{format_date, format_time, LocalTime};
 use islet_core::connectivity::{self, BtState, Connectivity, WifiState};
@@ -53,6 +53,51 @@ pub enum ConnHit {
 pub const ROW_H: f64 = 36.0;
 pub const MAX_ROWS: usize = 5;
 const LIST_TOP: f64 = 52.0;
+
+fn hud_icon(h: &Hud) -> Icon {
+    match *h {
+        Hud::Volume { muted: true, .. } => Icon::Volume(255),
+        Hud::Volume { level, .. } if level <= 0.001 => Icon::Volume(0),
+        Hud::Volume { level, .. } => Icon::Volume(if level < 0.34 {
+            1
+        } else if level < 0.67 {
+            2
+        } else {
+            3
+        }),
+        Hud::Brightness(_) => Icon::Sun,
+        Hud::CapsLock(_) => Icon::CapsLock,
+    }
+}
+
+/// A level bar (track plus fill) ending at `right`.
+fn level_bar(level: f32, right: f32, cy: f32, w: f32, dim: bool, o: f32) -> [Element; 2] {
+    let (x, h) = (right - w, 6.0);
+    let fill = (w * level.clamp(0.0, 1.0)).max(if level > 0.0 { h } else { 0.0 });
+    [
+        Element::Bar { x, y: cy - h / 2.0, w, h, color: WHITE, opacity: o * 0.25 },
+        Element::Bar { x, y: cy - h / 2.0, w: fill, h, color: WHITE, opacity: o * if dim { 0.45 } else { 1.0 } },
+    ]
+}
+
+/// The HUD's right-hand side: a level bar, or caps lock's state.
+fn hud_trailing(h: &Hud, right: f32, cy: f32, bar_w: f32, o: f32) -> Vec<Element> {
+    match *h {
+        Hud::Volume { level, muted } => level_bar(level, right, cy, bar_w, muted, o).to_vec(),
+        Hud::Brightness(level) => level_bar(level, right, cy, bar_w, false, o).to_vec(),
+        Hud::CapsLock(on) => {
+            let style = TextStyle {
+                size: 14.0,
+                weight: 600,
+                opacity: o * if on { 1.0 } else { 0.6 },
+                color: if on { GREEN } else { WHITE },
+                align: Align::Right,
+                ..TextStyle::default()
+            };
+            vec![text(if on { "On" } else { "Off" }, style, right, cy + 5.0)]
+        }
+    }
+}
 
 /// Buttons of the timer card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -140,7 +185,7 @@ pub const COMPACT_BATTERY_W: f64 = 300.0;
 
 pub fn compact_width(live: &Live) -> f64 {
     match live {
-        Live::Media(_) | Live::Navigation(_) | Live::Alarm(_) | Live::Timer(_) => COMPACT_MEDIA_W,
+        Live::Media(_) | Live::Navigation(_) | Live::Alarm(_) | Live::Timer(_) | Live::Hud(_) => COMPACT_MEDIA_W,
         Live::Battery { .. } => COMPACT_BATTERY_W,
     }
 }
@@ -211,6 +256,22 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
     let cy = (pill.y + pill.h / 2.0) as f32;
     match live {
         Live::Timer(tm) => vec![timer_ring(tm, x + 20.0, cy, 8.5, t, o), countdown(tm, right - 14.0, cy, 15.0, t, o)],
+        Live::Hud(h) => {
+            let mut v = vec![Element::Icon {
+                icon: hud_icon(h),
+                x: x + 10.0,
+                y: cy - 10.0,
+                size: 20.0,
+                color: WHITE,
+                opacity: o,
+            }];
+            if let Hud::CapsLock(_) = h {
+                let style = TextStyle { size: 14.0, weight: 600, opacity: o, ..TextStyle::default() };
+                v.push(text("Caps Lock", style, x + 38.0, cy + 5.0));
+            }
+            v.extend(hud_trailing(h, right - 16.0, cy, 96.0, o));
+            v
+        }
         Live::Alarm(a) => {
             // The alarm's name on the left, the swinging bell on the right.
             let style = TextStyle { size: 14.0, weight: 600, opacity: o, color: ORANGE, ..TextStyle::default() };
@@ -321,6 +382,9 @@ pub fn minimal(
     if let Live::Timer(tm) = primary {
         v.push(countdown(tm, pill.right() as f32 - 13.0, cy, 14.0, t, o));
     }
+    if let Live::Hud(h) = primary {
+        v.extend(hud_trailing(h, pill.right() as f32 - 14.0, cy, 56.0, o));
+    }
     if let (Some(b), Some(s)) = (bubble, secondary) {
         match s {
             Live::Battery { device: d, .. } => v.push(Element::Ring {
@@ -334,6 +398,14 @@ pub fn minimal(
             }),
             Live::Alarm(_) => v.push(bell(b.x, b.y, 20.0, t, o)),
             Live::Timer(tm) => v.push(timer_ring(tm, b.x, b.y, b.r - 7.5, t, o)),
+            Live::Hud(h) => v.push(Element::Icon {
+                icon: hud_icon(h),
+                x: b.x - 9.0,
+                y: b.y - 9.0,
+                size: 18.0,
+                color: WHITE,
+                opacity: o,
+            }),
             Live::Navigation(_) => v.push(Element::Icon {
                 icon: Icon::Navigation,
                 x: b.x - 10.0,
@@ -357,6 +429,9 @@ pub fn minimal(
 
 fn leading(live: &Live, x: f32, cy: f32, o: f32, h24: bool) -> Vec<Element> {
     match live {
+        Live::Hud(h) => {
+            vec![Element::Icon { icon: hud_icon(h), x: x + 3.0, y: cy - 10.0, size: 20.0, color: WHITE, opacity: o }]
+        }
         Live::Timer(tm) => vec![Element::Ring {
             cx: x + 12.0,
             cy,

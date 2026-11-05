@@ -14,6 +14,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 - **The island itself:** iPhone-style continuous corners and spring motion. Hover to peek, click to expand, press and hold for more, scroll to switch between activities. Two activities split into a pill and a bubble joined by a liquid neck. On a notched MacBook it wraps the notch.
 - **Now Playing** from any app: artwork, a live waveform, progress you can drag, and play/pause/skip.
 - **Battery pop-ups** when headphones, earbuds, mice, keyboards or controllers connect, plus low-battery and charger alerts.
+- **Volume, brightness and caps-lock pop-ups**, like the iPhone's.
 - **Timer and focus sessions:** a countdown ring on the island, or Pomodoro rounds of work and breaks.
 - **Alarms:** one-time or repeating. When one rings, the island opens with a swinging bell and a chime until you snooze or stop it.
 - **Wi-Fi and Bluetooth:** open the island, tap Wi-Fi or Bluetooth on the clock card, and pick a network or a device.

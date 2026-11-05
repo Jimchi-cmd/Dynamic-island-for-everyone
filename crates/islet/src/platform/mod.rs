@@ -63,6 +63,8 @@ pub enum Event {
         dy: f64,
     },
     Key(Key),
+    /// Caps Lock turned on or off (for the caps-lock HUD).
+    CapsLock(bool),
     /// The OS lost our pixels (expose); present the last frame again.
     Redraw,
     ScaleChanged(f64),
@@ -115,6 +117,11 @@ pub trait Backend: Sized {
 
     /// A thread-safe handle that makes a blocked `wait` return early.
     fn waker(&self) -> Waker;
+
+    /// Start or stop watching Caps Lock (Windows needs a keyboard hook for
+    /// it, installed only while the caps-lock pop-up is on). Elsewhere the
+    /// lock state comes with the window system's own events.
+    fn watch_caps_lock(&mut self, _on: bool) {}
 
     /// The display's camera notch (width, height in logical px), if the
     /// island sits on one (notched MacBooks).

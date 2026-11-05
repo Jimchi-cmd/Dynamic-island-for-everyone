@@ -32,6 +32,7 @@ use tiny_skia::Pixmap;
 
 thread_local! {
     static QUEUE: RefCell<Vec<Event>> = const { RefCell::new(Vec::new()) };
+    static CAPS: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
     /// The input region (logical px, top-left origin) and the panel, for
     /// click-through: the panel ignores the mouse except over the island.
     static REGION: Cell<(f64, f64, f64, f64)> = const { Cell::new((0.0, 0.0, 0.0, 0.0)) };
@@ -174,6 +175,7 @@ pub struct Mac {
     notch: Option<(f64, f64)>,
     /// Keeps the global mouse monitor registered.
     _monitor: Option<Retained<AnyObject>>,
+    _caps_monitor: Option<Retained<AnyObject>>,
 }
 
 /// The camera notch of `screen`: the gap between the menu-bar areas on
@@ -264,6 +266,20 @@ impl Backend for Mac {
             NSEventMask::MouseMoved | NSEventMask::LeftMouseDragged,
             &handler,
         );
+        // Caps Lock: modifier-flag changes only (no key presses are read).
+        let caps_handler = block2::RcBlock::new(move |event: std::ptr::NonNull<NSEvent>| {
+            // SAFETY: AppKit passes a valid event for the duration of the call.
+            let flags = unsafe { event.as_ref() }.modifierFlags();
+            let on = flags.contains(objc2_app_kit::NSEventModifierFlags::CapsLock);
+            if CAPS.with(|c| c.replace(Some(on))) != Some(on) {
+                push(Event::CapsLock(on));
+            }
+        });
+        CAPS.with(|c| {
+            c.set(Some(NSEvent::modifierFlags_class().contains(objc2_app_kit::NSEventModifierFlags::CapsLock)))
+        });
+        let caps_monitor =
+            NSEvent::addGlobalMonitorForEventsMatchingMask_handler(NSEventMask::FlagsChanged, &caps_handler);
         panel.orderFrontRegardless();
 
         // SAFETY: reading a CoreGraphics constant.
@@ -272,7 +288,7 @@ impl Backend for Mac {
             .ok_or("no colour space")?;
         let size = ((spec.width * scale).round() as u32, (spec.height * scale).round() as u32);
         let notch = notch_of(&screen);
-        Ok(Self { app, panel, view, color_space, scale, size, notch, _monitor: monitor })
+        Ok(Self { app, panel, view, color_space, scale, size, notch, _monitor: monitor, _caps_monitor: caps_monitor })
     }
 
     fn scale(&self) -> f64 {

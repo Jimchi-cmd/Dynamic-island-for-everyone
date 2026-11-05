@@ -11,11 +11,15 @@ mod demo;
 #[cfg(target_os = "linux")]
 mod linux_battery;
 #[cfg(target_os = "linux")]
+pub(crate) mod linux_brightness;
+#[cfg(target_os = "linux")]
 mod linux_conn;
 #[cfg(target_os = "linux")]
 mod linux_media;
 #[cfg(all(test, target_os = "linux"))]
 mod linux_tests;
+#[cfg(target_os = "linux")]
+mod linux_volume;
 #[cfg(target_os = "macos")]
 mod macos_battery;
 #[cfg(target_os = "macos")]
@@ -24,13 +28,19 @@ mod macos_conn;
 mod macos_media;
 #[cfg(target_os = "macos")]
 pub mod macos_mediaremote;
+#[cfg(target_os = "macos")]
+mod macos_volume;
 pub mod navigation;
 #[cfg(target_os = "windows")]
 mod windows_battery;
 #[cfg(target_os = "windows")]
+mod windows_brightness;
+#[cfg(target_os = "windows")]
 mod windows_conn;
 #[cfg(target_os = "windows")]
 mod windows_media;
+#[cfg(target_os = "windows")]
+mod windows_volume;
 
 use crate::platform::Waker;
 use islet_core::activity::{MediaCommand, Report};
@@ -116,6 +126,7 @@ fn describe(r: &Report) -> String {
         Report::Alarm(None) => "alarm stopped".into(),
         Report::Connectivity(u) => format!("connectivity: {u:?}"),
         Report::Timer(t) => format!("timer: {:?}", t.as_ref().map(|t| t.title())),
+        Report::Hud(h) => format!("hud: {h:?}"),
     }
 }
 
@@ -251,18 +262,23 @@ mod bus_tests {
 #[cfg(target_os = "linux")]
 fn platform_start(sink: Sink) -> Option<Sender<MediaCommand>> {
     linux_battery::start(sink.clone(), Bus::System);
+    linux_volume::start(sink.clone());
+    linux_brightness::start(sink.clone(), Bus::Session);
     linux_media::start(sink, Bus::Session)
 }
 
 #[cfg(target_os = "windows")]
 fn platform_start(sink: Sink) -> Option<Sender<MediaCommand>> {
     windows_battery::start(sink.clone());
+    windows_volume::start(sink.clone());
+    windows_brightness::start(sink.clone());
     windows_media::start(sink)
 }
 
 #[cfg(target_os = "macos")]
 fn platform_start(sink: Sink) -> Option<Sender<MediaCommand>> {
     macos_battery::start(sink.clone());
+    macos_volume::start(sink.clone());
     // Every app's Now Playing via the MediaRemote helper; falls back to the
     // Spotify / Apple Music notifications if the helper can't run.
     macos_mediaremote::start(sink)
