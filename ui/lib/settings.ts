@@ -223,6 +223,7 @@ export interface IslandPrefs {
   accent: string;
   size: string;
   offset: number;
+  display: string;
 }
 
 export const ACCENTS: Record<string, string> = {

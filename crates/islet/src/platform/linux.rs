@@ -94,3 +94,18 @@ impl Backend for Linux {
         }
     }
 }
+
+/// Display names from whichever backend the island would use.
+pub fn displays() -> Vec<String> {
+    let wayland = match std::env::var("ISLET_BACKEND").as_deref() {
+        Ok("x11") => false,
+        Ok("wayland") => true,
+        _ => std::env::var_os("WAYLAND_DISPLAY").is_some(),
+    };
+    if wayland {
+        if let Some(v) = super::wayland::displays() {
+            return v;
+        }
+    }
+    super::x11::displays()
+}

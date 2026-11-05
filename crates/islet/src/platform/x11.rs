@@ -117,17 +117,44 @@ pub(crate) fn parse_xft_dpi(resources: &str) -> Option<f64> {
 }
 
 /// Geometry (x, y, w, h) of the primary monitor.
-fn primary_monitor(conn: &RustConnection, screen: &Screen) -> (i32, i32, u32, u32) {
-    let fallback = (0, 0, screen.width_in_pixels as u32, screen.height_in_pixels as u32);
+/// A RandR monitor: name, primary, rect (x, y, w, h).
+type Monitor = (String, bool, (i32, i32, u32, u32));
+
+/// RandR monitors, primary first.
+fn monitors(conn: &RustConnection, screen: &Screen) -> Vec<Monitor> {
     let Ok(Ok(reply)) = conn.randr_get_monitors(screen.root, true).map(|c| c.reply()) else {
-        return fallback;
+        return Vec::new();
     };
-    reply
+    let mut v: Vec<_> = reply
         .monitors
         .iter()
-        .find(|m| m.primary)
-        .or_else(|| reply.monitors.first())
-        .map_or(fallback, |m| (m.x as i32, m.y as i32, m.width as u32, m.height as u32))
+        .map(|m| {
+            let name = conn
+                .get_atom_name(m.name)
+                .ok()
+                .and_then(|c| c.reply().ok())
+                .map(|r| String::from_utf8_lossy(&r.name).into_owned())
+                .unwrap_or_default();
+            (name, m.primary, (m.x as i32, m.y as i32, m.width as u32, m.height as u32))
+        })
+        .collect();
+    v.sort_by_key(|m| !m.1);
+    v
+}
+
+/// The chosen monitor (Settings → Look), else the primary one.
+fn primary_monitor(conn: &RustConnection, screen: &Screen) -> (i32, i32, u32, u32) {
+    let fallback = (0, 0, screen.width_in_pixels as u32, screen.height_in_pixels as u32);
+    let all = monitors(conn, screen);
+    let wanted = super::preferred_display();
+    all.iter().find(|m| wanted.as_deref() == Some(m.0.as_str())).or(all.first()).map_or(fallback, |m| m.2)
+}
+
+/// Monitor names, primary first (for `islet displays`).
+pub fn displays() -> Vec<String> {
+    let Ok((conn, n)) = x11rb::connect(None) else { return Vec::new() };
+    let screen = conn.setup().roots[n].clone();
+    monitors(&conn, &screen).into_iter().map(|m| m.0).collect()
 }
 
 fn find_argb_visual(screen: &Screen) -> Option<Visualid> {

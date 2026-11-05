@@ -29,6 +29,31 @@ pub use self::macos::Mac as Native;
 
 pub type Result<T> = std::result::Result<T, String>;
 
+/// Which display the island goes on (Settings → Look), by the name
+/// `displays()` reports; None or an unknown name means the primary one.
+static DISPLAY: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+pub fn set_preferred_display(name: Option<String>) {
+    if let Ok(mut d) = DISPLAY.lock() {
+        *d = name.filter(|n| !n.trim().is_empty());
+    }
+}
+
+#[cfg_attr(not(any(target_os = "linux", target_os = "windows", target_os = "macos")), allow(dead_code))]
+pub(crate) fn preferred_display() -> Option<String> {
+    DISPLAY.lock().ok()?.clone()
+}
+
+/// Names of the connected displays, primary first.
+pub fn displays() -> Vec<String> {
+    #[cfg(target_os = "linux")]
+    return linux::displays();
+    #[cfg(target_os = "windows")]
+    return windows::displays();
+    #[cfg(target_os = "macos")]
+    return macos::displays();
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Button {
     Primary,

@@ -112,9 +112,12 @@
   // The island's own preferences (island.json via the CLI)
   let islandPrefs: IslandPrefs | null = $state(null);
 
+  let displays = $state<string[]>([]);
+
   async function loadIslandPrefs() {
     try {
       islandPrefs = JSON.parse(await api.islet(['prefs', '--json']));
+      displays = JSON.parse(await api.islet(['displays', '--json']));
     } catch (e) {
       problem = api.message(e);
     }
@@ -153,7 +156,7 @@
     hotkeyDraft = parts.join('+');
   }
 
-  async function setLook(what: 'accent' | 'size' | 'offset', value: string) {
+  async function setLook(what: 'accent' | 'size' | 'offset' | 'display', value: string) {
     try {
       await api.islet(['look', what, value]);
       await loadIslandPrefs();
@@ -632,6 +635,22 @@
               <option value="large">Large</option>
             </select>
           </div>
+          {#if displays.length > 1}
+            <div class="net">
+              <span class="name">Display</span>
+              <select
+                aria-label="Display for the island"
+                value={islandPrefs?.display || 'primary'}
+                disabled={!islandPrefs}
+                onchange={(e) => setLook('display', e.currentTarget.value)}
+              >
+                <option value="primary">Primary display</option>
+                {#each displays as d (d)}
+                  <option value={d}>{d}</option>
+                {/each}
+              </select>
+            </div>
+          {/if}
           <div class="net">
             <span class="name">Gap above the island</span>
             <input
@@ -646,7 +665,7 @@
             />
             <span class="muted small">{islandPrefs?.offset ?? 0} px</span>
           </div>
-          <p class="muted small">Islet restarts itself to apply a new size or gap. Notched Macs always hang the island from the notch.</p>
+          <p class="muted small">Islet restarts itself to apply a new size, gap or display. Notched Macs always hang the island from the notch.</p>
         </div>
         <div class="card">
           <h2>Shortcut</h2>

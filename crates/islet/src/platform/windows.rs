@@ -196,11 +196,50 @@ fn we<E: std::fmt::Display>(e: E) -> String {
     format!("Win32: {e}")
 }
 
-/// Primary monitor rect (physical px) and its scale factor.
+/// Every monitor with its device name ("DISPLAY2"), primary first.
+fn monitors() -> Vec<(windows::Win32::Graphics::Gdi::HMONITOR, String)> {
+    use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, HDC, HMONITOR, MONITORINFOEXW};
+    unsafe extern "system" fn each(
+        m: HMONITOR,
+        _: HDC,
+        _: *mut windows::Win32::Foundation::RECT,
+        data: LPARAM,
+    ) -> windows_core::BOOL {
+        // SAFETY: `data` is the Vec passed below, alive for the call.
+        let list = unsafe { &mut *(data.0 as *mut Vec<(HMONITOR, String, bool)>) };
+        let mut info = MONITORINFOEXW::default();
+        info.monitorInfo.cbSize = std::mem::size_of::<MONITORINFOEXW>() as u32;
+        // SAFETY: a correctly sized MONITORINFOEXW.
+        if unsafe { GetMonitorInfoW(m, &mut info as *mut MONITORINFOEXW as *mut MONITORINFO) }.as_bool() {
+            let end = info.szDevice.iter().position(|&c| c == 0).unwrap_or(info.szDevice.len());
+            let name = String::from_utf16_lossy(&info.szDevice[..end]);
+            list.push((m, name.trim_start_matches(r"\\.\").to_string(), info.monitorInfo.dwFlags & 1 != 0));
+        }
+        true.into()
+    }
+    let mut list: Vec<(HMONITOR, String, bool)> = Vec::new();
+    // SAFETY: the callback only touches `list` during the call.
+    unsafe {
+        let _ = EnumDisplayMonitors(None, None, Some(each), LPARAM(&mut list as *mut _ as isize));
+    }
+    list.sort_by_key(|m| !m.2);
+    list.into_iter().map(|(m, n, _)| (m, n)).collect()
+}
+
+pub fn displays() -> Vec<String> {
+    monitors().into_iter().map(|(_, n)| n).collect()
+}
+
+/// The chosen monitor's rect (physical px) and scale factor; else the primary one.
 fn primary_monitor() -> ((i32, i32), (u32, u32), f64) {
     // SAFETY: plain Win32 queries with valid out-pointers.
     unsafe {
-        let mon = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
+        let wanted = super::preferred_display();
+        let mon = monitors()
+            .into_iter()
+            .find(|(_, n)| wanted.as_deref() == Some(n.as_str()))
+            .map(|(m, _)| m)
+            .unwrap_or_else(|| MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY));
         let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
         let rc = if GetMonitorInfoW(mon, &mut info).as_bool() {
             info.rcMonitor

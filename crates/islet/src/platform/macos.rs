@@ -268,8 +268,15 @@ impl Backend for Mac {
         app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
         app.finishLaunching();
 
-        // The primary display (with the menu bar) is the first screen.
-        let screen = NSScreen::screens(mtm).firstObject().ok_or("no screens")?;
+        // The display chosen in Settings, else the primary one (with the
+        // menu bar), which is the first screen.
+        let screens = NSScreen::screens(mtm);
+        let wanted = super::preferred_display();
+        let screen = screens
+            .iter()
+            .find(|s| wanted.as_deref() == Some(s.localizedName().to_string().as_str()))
+            .or_else(|| screens.firstObject())
+            .ok_or("no screens")?;
         let sf = screen.frame();
         let scale = screen.backingScaleFactor();
         let frame = NSRect::new(
@@ -495,6 +502,12 @@ impl Drop for Mac {
     fn drop(&mut self) {
         self.panel.close();
     }
+}
+
+/// Screen names, primary first.
+pub fn displays() -> Vec<String> {
+    let Some(mtm) = MainThreadMarker::new() else { return Vec::new() };
+    NSScreen::screens(mtm).iter().map(|s| s.localizedName().to_string()).collect()
 }
 
 /// The global shortcut through Carbon's hot-key API: it needs no

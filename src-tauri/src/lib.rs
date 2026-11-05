@@ -41,6 +41,8 @@ pub fn allowed(args: &[String]) -> bool {
         ["hotkey", combo] => islet_core::hotkey::Hotkey::parse(combo).is_ok(),
         ["look", "accent", name] => islet_core::prefs::ACCENTS.iter().any(|(n, _)| n == name),
         ["look", "size", name] => islet_core::prefs::SIZES.iter().any(|(n, _)| n == name),
+        ["displays", "--json"] | ["look", "display", "primary"] => true,
+        ["look", "display", name] => !name.starts_with('-'),
         ["look", "offset", px] => px.parse::<u32>().is_ok_and(|v| v <= islet_core::prefs::MAX_OFFSET),
         ["timer", "start", dur, rest @ ..] => {
             !dur.starts_with('-') && rest.chunks(2).all(|kv| matches!(kv, ["--label", v] if !v.starts_with('-')))

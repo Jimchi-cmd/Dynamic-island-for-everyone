@@ -38,8 +38,8 @@ Usage:
                                            a focus session: work and breaks, with a chime
   islet wifi list [--scan] [--json]        nearby Wi-Fi networks
   islet wifi connect <name> [--password-stdin]
-  islet wifi on|off                        turn Wi-Fi on or off
                                            join a network (the password is read from stdin)
+  islet wifi on|off                        turn Wi-Fi on or off
   islet bt list [--json]                   paired Bluetooth devices
   islet bt connect|disconnect <id>         connect or disconnect one (id from bt list)
   islet bt on|off                          turn Bluetooth on or off
@@ -64,7 +64,9 @@ Usage:
   islet toggle                             open the island, or close it
   islet look accent <colour>               blue, purple, pink, red, orange, green, teal
   islet look size small|medium|large       the island's size
-  islet look offset <px>                   gap above the island, 0–40
+  islet look offset <px>                   gap above the island, 0–40 px
+  islet look display <name>|primary        which display (names from `islet displays`)
+  islet displays [--json]                  connected displays, primary first
   islet hotkey [<keys>|off]                the shortcut for that, e.g. Ctrl+Alt+I
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
                                            notifications, calendar, fahrenheit, web-artwork,
@@ -176,6 +178,19 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
                 .ok_or("size is small, medium or large")?;
             p.size = (*n).into();
             Ok(format!("Size: {n}."))
+        }),
+        ["displays"] => Ok(crate::platform::displays().join("\n")),
+        ["displays", "--json"] => Ok(serde_json::to_string(&crate::platform::displays()).unwrap_or_default()),
+        ["look", "display", "primary"] => set_look(|p| {
+            p.display.clear();
+            Ok("The island shows on the primary display.".into())
+        }),
+        ["look", "display", name] => set_look(|p| {
+            if !crate::platform::displays().iter().any(|d| d == name) {
+                return Err(format!("no display called {name:?} (see `islet displays`)"));
+            }
+            p.display = name.to_string();
+            Ok(format!("The island shows on {name}."))
         }),
         ["look", "offset", px] => set_look(|p| {
             let v: u32 = px

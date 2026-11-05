@@ -101,7 +101,16 @@ impl Wayland {
         let shm = Shm::bind(&globals, &qh).map_err(we)?;
         let data_manager = DataDeviceManagerState::bind(&globals, &qh).ok();
         let surface = compositor.create_surface(&qh);
-        let layer = layer_shell.create_layer_surface(&qh, surface, Layer::Overlay, Some("islet"), None);
+        // Outputs are announced asynchronously: learn their names first, so
+        // the island can go on the one chosen in Settings.
+        let output = super::preferred_display().and_then(|name| {
+            let probe = Probe::run(&conn, &globals)?;
+            probe
+                .outputs
+                .outputs()
+                .find(|o| probe.outputs.info(o).and_then(|i| i.name).as_deref() == Some(name.as_str()))
+        });
+        let layer = layer_shell.create_layer_surface(&qh, surface, Layer::Overlay, Some("islet"), output.as_ref());
         layer.set_anchor(anchor);
         layer.set_size(spec.width as u32, spec.height as u32);
         // Sit at the very top edge, over panels, like the iPhone's island.
@@ -499,6 +508,54 @@ impl DataSourceHandler for State {
     fn dnd_dropped(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_data_source::WlDataSource) {}
     fn dnd_finished(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_data_source::WlDataSource) {}
     fn action(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_data_source::WlDataSource, _: DndAction) {}
+}
+
+/// Learns the outputs' names on a queue of its own (same connection, so
+/// its `wl_output`s can place the island's surface).
+struct Probe {
+    registry: RegistryState,
+    outputs: OutputState,
+}
+
+impl Probe {
+    fn run(conn: &Connection, globals: &wayland_client::globals::GlobalList) -> Option<Probe> {
+        let mut queue = conn.new_event_queue::<Probe>();
+        let qh = queue.handle();
+        let mut probe = Probe { registry: RegistryState::new(globals), outputs: OutputState::new(globals, &qh) };
+        // Bind, then receive each output's description.
+        queue.roundtrip(&mut probe).ok()?;
+        queue.roundtrip(&mut probe).ok()?;
+        Some(probe)
+    }
+}
+
+impl OutputHandler for Probe {
+    fn output_state(&mut self) -> &mut OutputState {
+        &mut self.outputs
+    }
+    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
+    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
+    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
+}
+
+impl ProvidesRegistryState for Probe {
+    fn registry(&mut self) -> &mut RegistryState {
+        &mut self.registry
+    }
+    registry_handlers![OutputState];
+}
+
+delegate_output!(Probe);
+delegate_registry!(Probe);
+
+/// Output names (None without a layer-shell compositor, where the island
+/// uses X11).
+pub fn displays() -> Option<Vec<String>> {
+    let conn = Connection::connect_to_env().ok()?;
+    let (globals, queue) = registry_queue_init::<State>(&conn).ok()?;
+    LayerShell::bind(&globals, &queue.handle()).ok()?;
+    let probe = Probe::run(&conn, &globals)?;
+    Some(probe.outputs.outputs().filter_map(|o| probe.outputs.info(&o).and_then(|i| i.name)).collect())
 }
 
 impl ShmHandler for State {

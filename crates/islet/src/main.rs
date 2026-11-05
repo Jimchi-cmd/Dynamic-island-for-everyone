@@ -105,6 +105,8 @@ fn run() -> platform::Result<()> {
     };
     let k = layout_prefs.size_factor();
     let top = layout_prefs.top_offset();
+    let display = layout_prefs.display.clone();
+    platform::set_preferred_display(Some(display.clone()));
     let mut win = Native::create(WindowSpec { width: WINDOW.0 * k, height: (WINDOW.1 + top) * k })?;
     trace("window created");
     let new_pixmap = |win: &Native| {
@@ -242,7 +244,8 @@ fn run() -> platform::Result<()> {
                     app.set_prefs(config::load_prefs());
                     // A new size or gap needs a new window: start afresh.
                     let p = app.prefs();
-                    if (p.size_factor() - k).abs() > 1e-9 || (p.top_offset() - top).abs() > 1e-9 {
+                    if (p.size_factor() - k).abs() > 1e-9 || (p.top_offset() - top).abs() > 1e-9 || p.display != display
+                    {
                         if let Ok(exe) = std::env::current_exe() {
                             if std::process::Command::new(exe).env("ISLET_RELAUNCH", "1").spawn().is_ok() {
                                 return Ok(());

@@ -46,6 +46,8 @@ pub struct IslandPrefs {
     /// Gap between the top of the screen and the island, in px (0–40;
     /// applies on restart; ignored on notched Macs, where it hangs from the notch).
     pub offset: u32,
+    /// The display to show the island on, by name ("" = the primary one).
+    pub display: String,
 }
 
 /// Accent colours: name and RGB.
@@ -81,6 +83,7 @@ impl Default for IslandPrefs {
             accent: "blue".into(),
             size: "medium".into(),
             offset: 0,
+            display: String::new(),
         }
     }
 }
