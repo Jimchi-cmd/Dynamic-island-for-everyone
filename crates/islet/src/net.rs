@@ -19,8 +19,6 @@ pub fn agent() -> ureq::Agent {
 }
 
 /// Download a small file (artwork): at most `max` bytes, 5-second timeout.
-/// Only Linux needs it: Windows and macOS hand over artwork directly.
-#[cfg(target_os = "linux")]
 pub fn fetch_bytes(url: &str, max: u64) -> Result<Vec<u8>, String> {
     let mut resp = agent()
         .get(url)

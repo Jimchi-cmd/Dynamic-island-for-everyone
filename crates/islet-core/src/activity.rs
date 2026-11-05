@@ -173,6 +173,8 @@ pub enum Report {
     UpNext(Option<(crate::calendar::CalEvent, f64)>),
     /// A desktop notification arrived.
     Notification(Note),
+    /// Playback on another device (Spotify Connect), or None.
+    RemoteMedia(Option<MediaInfo>),
 }
 
 /// Why a battery peek is showing.
@@ -226,6 +228,7 @@ pub struct Activities {
     calendar: Vec<crate::calendar::CalEvent>,
     up_next: Option<(crate::calendar::CalEvent, f64)>,
     notes: std::collections::VecDeque<Note>,
+    remote: Option<MediaInfo>,
     note_until: f64,
     nav: Option<NavInfo>,
     media: Option<MediaInfo>,
@@ -241,8 +244,15 @@ impl Activities {
         Self::default()
     }
 
+    /// The session the island shows: this computer's when it's playing (or
+    /// just paused and nothing plays elsewhere), else another device's.
     pub fn media(&self) -> Option<&MediaInfo> {
-        self.media.as_ref()
+        let remote = self.remote.as_ref().filter(|r| r.playing);
+        match (&self.media, remote) {
+            (Some(local), _) if local.playing => Some(local),
+            (_, Some(r)) => Some(r),
+            (local, None) => local.as_ref().or(self.remote.as_ref()),
+        }
     }
 
     /// Connected devices with a battery level, sorted by name.
@@ -370,6 +380,10 @@ impl Activities {
                 self.calendar = c.unwrap_or_default();
                 true
             }
+            Report::RemoteMedia(m) => {
+                self.remote = m;
+                true
+            }
             Report::Notification(n) => {
                 self.notes.push_front(n);
                 self.notes.truncate(NOTE_HISTORY);
@@ -428,11 +442,13 @@ impl Activities {
         if let Some(n) = &self.nav {
             out.push(Live::Navigation(n.clone()));
         }
-        if let Some(m) = &self.media {
-            let lingering = self.paused_since.is_some_and(|p| t - p < MEDIA_LINGER);
-            if m.playing || lingering {
-                out.push(Live::Media(m.clone()));
-            }
+        let local =
+            self.media.as_ref().filter(|m| m.playing || self.paused_since.is_some_and(|p| t - p < MEDIA_LINGER));
+        match (local, self.remote.as_ref().filter(|r| r.playing)) {
+            (Some(m), _) if m.playing => out.push(Live::Media(m.clone())),
+            (_, Some(r)) => out.push(Live::Media(r.clone())),
+            (Some(m), None) => out.push(Live::Media(m.clone())),
+            (None, None) => {}
         }
         out
     }
@@ -556,6 +572,20 @@ mod tests {
         assert!(!a.report(Report::Laptop(laptop.clone()), 0.0), "first report is just the baseline");
         assert!(a.report(Report::Laptop(BatteryDevice { charging: true, ..laptop }), 10.0));
         assert!(matches!(&a.live(10.5)[..], [Live::Battery { reason: PeekReason::ChargerChanged, .. }]));
+    }
+
+    #[test]
+    fn this_computer_wins_unless_only_another_device_plays() {
+        let mut a = Activities::new();
+        let phone =
+            MediaInfo { source: "spotify-connect".into(), title: "On the phone".into(), playing: true, ..song(true) };
+        a.report(Report::RemoteMedia(Some(phone)), 0.0);
+        assert_eq!(a.media().map(|m| m.title.as_str()), Some("On the phone"));
+        a.report(Report::Media(Some(song(true))), 1.0);
+        assert_eq!(a.media().map(|m| m.source.as_str()), Some(song(true).source.as_str()), "local playback wins");
+        a.report(Report::Media(Some(song(false))), 2.0);
+        assert_eq!(a.media().map(|m| m.title.as_str()), Some("On the phone"), "paused here, playing there");
+        assert!(matches!(&a.live(3.0)[..], [Live::Media(m)] if m.title == "On the phone"));
     }
 
     #[test]

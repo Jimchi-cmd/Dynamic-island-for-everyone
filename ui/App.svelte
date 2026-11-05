@@ -144,6 +144,32 @@
     }
   }
 
+  // Spotify
+  let spotifyClient = $state('');
+  let spotifyNote = $state('');
+
+  async function spotifyLogin() {
+    spotifyNote = 'Finish signing in in your browser…';
+    try {
+      spotifyNote = await api.islet(['spotify', 'login', spotifyClient.trim()]);
+      spotifyClient = '';
+      await refresh();
+      await loadIslandPrefs();
+    } catch (e) {
+      spotifyNote = api.message(e);
+    }
+  }
+
+  async function spotifyCmd(verb: 'logout' | 'on' | 'off') {
+    try {
+      spotifyNote = await api.islet(['spotify', verb]);
+      await refresh();
+      await loadIslandPrefs();
+    } catch (e) {
+      spotifyNote = api.message(e);
+    }
+  }
+
   // Weather
   let cityQuery = $state('');
   let cityResults: { name: string; lat: number; lon: number }[] = $state([]);
@@ -532,6 +558,39 @@
             <input placeholder="App name, e.g. Firefox" bind:value={hideApp} aria-label="App to hide" />
             <button type="submit" disabled={!hideApp.trim()}>Hide</button>
           </form>
+        </div>
+        <div class="card">
+          <h2>Spotify on your other devices</h2>
+          <p class="muted small">
+            Optional. Shows what's playing on your phone or a speaker through Spotify Connect, with controls (controls need
+            Premium). It uses your own Spotify app and checks every 10 seconds while something plays, every minute
+            otherwise.
+          </p>
+          {#if status?.spotifyLinked}
+            <div class="net">
+              <span class="name ok">Linked</span>
+              <input
+                type="checkbox"
+                class="switch"
+                aria-label="Show Spotify playback from other devices"
+                checked={islandPrefs?.spotify ?? false}
+                onchange={(e) => spotifyCmd(e.currentTarget.checked ? 'on' : 'off')}
+              />
+            </div>
+            <div class="actions left"><button class="link" onclick={() => spotifyCmd('logout')}>Unlink</button></div>
+          {:else}
+            <details class="small muted">
+              <summary>How to set it up</summary>
+              <p>1. Open <button class="link" onclick={() => api.openLink('https://developer.spotify.com/dashboard')}>developer.spotify.com/dashboard</button> and create an app (any name), choosing "Web API".</p>
+              <p>2. Add this redirect URI exactly: <code>http://127.0.0.1:43821/callback</code></p>
+              <p>3. Copy the app's Client ID here and sign in.</p>
+            </details>
+            <form class="join" onsubmit={(e) => { e.preventDefault(); if (/^[A-Za-z0-9]{1,64}$/.test(spotifyClient.trim())) void spotifyLogin(); }}>
+              <input placeholder="Client ID" bind:value={spotifyClient} aria-label="Spotify client ID" autocomplete="off" />
+              <button class="primary" type="submit" disabled={!/^[A-Za-z0-9]{1,64}$/.test(spotifyClient.trim())}>Sign in</button>
+            </form>
+          {/if}
+          {#if spotifyNote}<p class="small" role="status">{spotifyNote}</p>{/if}
         </div>
         <div class="card">
           <h2>Notifications</h2>

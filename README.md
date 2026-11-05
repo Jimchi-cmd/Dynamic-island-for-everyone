@@ -12,7 +12,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 ## What it does
 
 - **The island itself:** iPhone-style continuous corners and spring motion. Hover to peek, click to expand, press and hold for more, scroll to switch between activities. Two activities split into a pill and a bubble joined by a liquid neck. On a notched MacBook it wraps the notch.
-- **Now Playing** from any app: artwork, a live waveform, progress you can drag, and play/pause/skip.
+- **Now Playing** from any app: artwork, a live waveform, progress you can drag, and play/pause/skip. Optionally, Spotify playback on your phone or speakers too.
 - **Battery pop-ups** when headphones, earbuds, mice, keyboards or controllers connect, plus low-battery and charger alerts.
 - **Volume, brightness and caps-lock pop-ups**, like the iPhone's.
 - **Weather** on the clock card, from Open-Meteo (no account or key).
@@ -40,7 +40,7 @@ Islet isn't code-signed yet, so Windows SmartScreen and macOS Gatekeeper will wa
 ## Privacy
 
 - No accounts, no analytics, no telemetry.
-- Islet uses the network only for features you turn on: your calendar link (every 15 minutes), weather (Open-Meteo, hourly, only the place you chose), the navigation ETA (straight to Google, with your key) and update checks (off by default).
+- Islet uses the network only for features you turn on: Spotify Connect (if you link it), your calendar link (every 15 minutes), weather (Open-Meteo, hourly, only the place you chose), the navigation ETA (straight to Google, with your key) and update checks (off by default).
 - Your Google key is kept in the OS keychain, never in a file. Route results are never stored.
 - Wi-Fi and Bluetooth lists load only when you open them.
 

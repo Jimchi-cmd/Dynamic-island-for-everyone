@@ -34,6 +34,7 @@ pub mod macos_mediaremote;
 #[cfg(target_os = "macos")]
 mod macos_volume;
 pub mod navigation;
+pub mod spotify;
 pub mod weather;
 #[cfg(target_os = "windows")]
 mod windows_battery;
@@ -138,6 +139,7 @@ fn describe(r: &Report) -> String {
         Report::Calendar(c) => format!("calendar: {} events", c.as_ref().map_or(0, |c| c.len())),
         // Never log what a notification says.
         Report::Notification(n) => format!("notification from {:?}", n.app),
+        Report::RemoteMedia(m) => format!("remote media: {:?}", m.as_ref().map(|m| &m.app_name)),
         Report::UpNext(u) => format!("up next: {:?}", u.as_ref().map(|(e, _)| &e.summary)),
     }
 }
@@ -149,6 +151,7 @@ pub struct Providers {
     conn: Sender<islet_core::connectivity::ConnCommand>,
     weather: Sender<Option<islet_core::prefs::Place>>,
     calendar: Sender<bool>,
+    spotify: Sender<spotify::SpotifyMsg>,
     sink: Sink,
     #[cfg(target_os = "linux")]
     notifications: linux_notifications::Notifications,
@@ -164,6 +167,7 @@ impl Providers {
         let conn = connectivity::start(sink.clone());
         let weather = weather::start(sink.clone());
         let calendar = calendar::start(sink.clone());
+        let spotify = spotify::start(sink.clone());
         let media = if std::env::var("ISLET_DEMO").as_deref() == Ok("media") {
             Some(demo::start(sink.clone()))
         } else {
@@ -176,6 +180,7 @@ impl Providers {
             conn,
             weather,
             calendar,
+            spotify,
             sink,
             #[cfg(target_os = "linux")]
             notifications: linux_notifications::Notifications::default(),
@@ -207,6 +212,19 @@ impl Providers {
 
     pub fn nav(&self, msg: navigation::NavMsg) {
         let _ = self.nav.send(msg);
+    }
+
+    pub fn spotify(&self, on: bool) {
+        let _ = self.spotify.send(spotify::SpotifyMsg::Enable(on));
+    }
+
+    /// A playback command for the session the island shows.
+    pub fn command_for(&self, source: &str, cmd: MediaCommand) {
+        if source == spotify::SOURCE {
+            let _ = self.spotify.send(spotify::SpotifyMsg::Command(cmd));
+        } else {
+            self.command(cmd);
+        }
     }
 
     pub fn command(&self, cmd: MediaCommand) {

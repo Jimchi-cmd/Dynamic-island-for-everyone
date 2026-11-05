@@ -17,6 +17,8 @@ The first public release.
 - **Navigation ETA** with live traffic via the Google Routes API (your own key, kept in the OS keychain), adaptive refresh, and hand-off to Google Maps or Waze.
 - **Alarms**: one-time or repeating. When one rings, the island opens with a swinging bell and plays an original chime until you snooze or stop it.
 - **Wi-Fi and Bluetooth** pickers from the clock card: join networks and connect paired devices.
+- **Spotify on your other devices** (optional): playback on your phone or a speaker shows on the island, with controls, using your own Spotify app.
+- **Hide Now Playing** for chosen apps; opt-in **web artwork** on Linux.
 - **File shelf:** drag files onto the island to keep shortcuts to them; tap to open.
 - **Notifications** mirrored on the island (Linux, opt-in), with the latest few one click away.
 - **Calendar:** "up next" on the island ten minutes before an event, and today's agenda, from your calendar's private iCal link (Google, Outlook, iCloud).

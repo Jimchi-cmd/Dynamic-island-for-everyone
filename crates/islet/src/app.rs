@@ -663,6 +663,11 @@ impl App {
         true
     }
 
+    /// Where media commands go: the shown session's source.
+    pub fn media_source(&self) -> String {
+        self.activities.media().map(|m| m.source.clone()).unwrap_or_default()
+    }
+
     /// Commands for the media session, collected since the last call.
     pub fn take_commands(&mut self) -> Vec<MediaCommand> {
         std::mem::take(&mut self.commands)

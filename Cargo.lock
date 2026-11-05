@@ -1920,6 +1920,7 @@ name = "islet"
 version = "0.1.0"
 dependencies = [
  "block2",
+ "getrandom 0.3.4",
  "islet-core",
  "islet-mediaremote",
  "islet-render",
@@ -1935,6 +1936,7 @@ dependencies = [
  "objc2-io-bluetooth",
  "objc2-quartz-core",
  "serde_json",
+ "sha2",
  "tiny-skia",
  "ureq",
  "windows",

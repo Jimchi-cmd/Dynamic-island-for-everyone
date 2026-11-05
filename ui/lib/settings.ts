@@ -17,6 +17,7 @@ export interface Status {
   routesKey: boolean;
   trip: Trip | null;
   alarms: Alarm[];
+  spotifyLinked: boolean;
 }
 
 export const MODES: { id: TravelMode; label: string }[] = [
@@ -36,6 +37,7 @@ export function parseStatus(json: string): Status {
     routesKey: v.routesKey === true,
     trip: v.trip ?? null,
     alarms: Array.isArray(v.alarms) ? v.alarms : [],
+    spotifyLinked: v.spotifyLinked === true,
   };
 }
 
@@ -214,6 +216,7 @@ export interface IslandPrefs {
   calendar: boolean;
   mediaExclude: string[];
   webArtwork: boolean;
+  spotify: boolean;
 }
 
 /** Each switch's name for `islet set <name> on|off`. */
@@ -225,4 +228,5 @@ export const SWITCH_NAMES: Record<string, string> = {
   fahrenheit: 'fahrenheit',
   calendar: 'calendar',
   webArtwork: 'web-artwork',
+  spotify: 'spotify',
 };

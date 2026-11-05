@@ -30,6 +30,8 @@ pub struct IslandPrefs {
     /// Download artwork that players publish as web links (Linux; e.g.
     /// Spotify's covers). Off: only local artwork files are read.
     pub web_artwork: bool,
+    /// Show Spotify Connect playback (needs `islet spotify login`).
+    pub spotify: bool,
 }
 
 impl Default for IslandPrefs {
@@ -44,13 +46,22 @@ impl Default for IslandPrefs {
             calendar: false,
             media_exclude: Vec::new(),
             web_artwork: false,
+            spotify: false,
         }
     }
 }
 
 /// The switches `islet set <key> on|off` understands.
-pub const SWITCHES: [&str; 7] =
-    ["volume-hud", "brightness-hud", "caps-lock-hud", "notifications", "fahrenheit", "calendar", "web-artwork"];
+pub const SWITCHES: [&str; 8] = [
+    "volume-hud",
+    "brightness-hud",
+    "caps-lock-hud",
+    "notifications",
+    "fahrenheit",
+    "calendar",
+    "web-artwork",
+    "spotify",
+];
 
 impl IslandPrefs {
     /// Is this media session from an app the user hid?
@@ -72,6 +83,7 @@ impl IslandPrefs {
             "fahrenheit" => &mut self.fahrenheit,
             "calendar" => &mut self.calendar,
             "web-artwork" => &mut self.web_artwork,
+            "spotify" => &mut self.spotify,
             _ => return Err(format!("unknown setting {key:?} (one of: {})", SWITCHES.join(", "))),
         };
         *slot = on;

@@ -21,7 +21,15 @@ describe('navStartArgs', () => {
 describe('parseStatus', () => {
   it('reads the island status', () => {
     const s = parseStatus('{"version":"0.1.0","running":true,"autostart":false,"routesKey":true,"trip":null}');
-    expect(s).toEqual({ version: '0.1.0', running: true, autostart: false, routesKey: true, trip: null, alarms: [] });
+    expect(s).toEqual({
+      version: '0.1.0',
+      running: true,
+      autostart: false,
+      routesKey: true,
+      trip: null,
+      alarms: [],
+      spotifyLinked: false,
+    });
   });
 });
 

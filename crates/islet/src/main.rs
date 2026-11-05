@@ -128,6 +128,7 @@ fn run() -> platform::Result<()> {
     providers.calendar(app.prefs().calendar);
     providers.notifications(app.prefs().notifications);
     providers::WEB_ARTWORK.store(app.prefs().web_artwork, std::sync::atomic::Ordering::Relaxed);
+    providers.spotify(app.prefs().spotify && !scripted);
     let mut alarm_sound = sound::AlarmSound::default();
     trace("providers started");
 
@@ -186,8 +187,9 @@ fn run() -> platform::Result<()> {
             }
             needs_frame |= app.report(report, t);
         }
+        let source = app.media_source();
         for cmd in app.take_commands() {
-            providers.command(cmd);
+            providers.command_for(&source, cmd);
         }
         // `islet nav start/stop` from the command line.
         while let Ok(c) = control_rx.try_recv() {
@@ -208,6 +210,7 @@ fn run() -> platform::Result<()> {
                     providers.calendar(app.prefs().calendar);
                     providers.notifications(app.prefs().notifications);
                     providers::WEB_ARTWORK.store(app.prefs().web_artwork, std::sync::atomic::Ordering::Relaxed);
+                    providers.spotify(app.prefs().spotify);
                     providers.weather(app.prefs().weather.clone());
                     providers.calendar(app.prefs().calendar);
                     providers.notifications(app.prefs().notifications);

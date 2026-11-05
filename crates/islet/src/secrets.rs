@@ -4,11 +4,13 @@
 //!
 //! - the Google Routes API key (`ISLET_GOOGLE_ROUTES_KEY` overrides it for
 //!   development only);
-//! - the private calendar (ICS) link, which contains its own secret token.
+//! - the private calendar (ICS) link, which contains its own secret token;
+//! - the Spotify refresh token (and the user's own client id).
 
 const SERVICE: &str = "islet";
 const ROUTES: &str = "google-routes";
 const CALENDAR: &str = "calendar-ics";
+const SPOTIFY: &str = "spotify";
 
 pub fn routes_key() -> Result<String, String> {
     if let Ok(k) = std::env::var("ISLET_GOOGLE_ROUTES_KEY") {
@@ -37,6 +39,19 @@ pub fn set_calendar_url(url: &str) -> Result<(), String> {
 
 pub fn clear_calendar_url() -> Result<(), String> {
     clear(CALENDAR)
+}
+
+/// The Spotify client id and refresh token (JSON).
+pub fn spotify() -> Option<String> {
+    get(SPOTIFY)
+}
+
+pub fn set_spotify(value: &str) -> Result<(), String> {
+    set(SPOTIFY, value, "Islet: Spotify sign-in")
+}
+
+pub fn clear_spotify() -> Result<(), String> {
+    clear(SPOTIFY)
 }
 
 fn get(account: &str) -> Option<String> {

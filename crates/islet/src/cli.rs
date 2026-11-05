@@ -50,6 +50,9 @@ Usage:
   islet calendar on|off|clear              show events or not; clear removes the link
   islet shelf [--json]                     files on the shelf (drop files on the island to add)
   islet shelf clear                        empty the shelf (the files themselves stay)
+  islet spotify login <client-id>          show Spotify playback from your other devices (opens
+                                           the browser; register the redirect URI first)
+  islet spotify logout|on|off
   islet media hide|show <app>              hide (or show again) one app's Now Playing
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
                                            notifications, calendar, fahrenheit, web-artwork
@@ -121,6 +124,14 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["media", verb @ ("hide" | "show"), app @ ..] if !app.is_empty() => {
             media_exclude(*verb == "hide", &app.join(" "))
         }
+        ["spotify", "login", client_id] => {
+            providers::spotify::login(client_id).and_then(|m| set_switch("spotify", "on").map(|_| m))
+        }
+        ["spotify", "logout"] => secrets::clear_spotify()
+            .and_then(|()| set_switch("spotify", "off"))
+            .map(|_| "Unlinked from Spotify.".into()),
+        ["spotify", "on"] => set_switch("spotify", "on"),
+        ["spotify", "off"] => set_switch("spotify", "off"),
         ["set", key, value] => set_switch(key, value),
         ["prefs"] => Ok(prefs_text(false)),
         ["prefs", "--json"] => Ok(prefs_text(true)),
@@ -552,6 +563,7 @@ fn status(json: bool) -> String {
             "routesKey": key,
             "trip": trip,
             "alarms": config::load_alarms(),
+            "spotifyLinked": providers::spotify::linked(),
         })
         .to_string();
     }
