@@ -48,6 +48,10 @@ Usage:
   islet calendar set                       read a private iCal (ICS) link from stdin into the
                                            OS keychain and turn calendar on
   islet calendar on|off|clear              show events or not; clear removes the link
+  islet activity start|update <id> --title <text> [--subtitle <text>] [--progress 0-100]
+                                 [--color #rrggbb]
+                                           show your own live activity (a build, a download…)
+  islet activity end <id>                  remove it
   islet shelf [--json]                     files on the shelf (drop files on the island to add)
   islet shelf clear                        empty the shelf (the files themselves stay)
   islet spotify login <client-id>          show Spotify playback from your other devices (opens
@@ -114,6 +118,10 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["calendar", "clear"] => secrets::clear_calendar_url()
             .and_then(|()| set_switch("calendar", "off"))
             .map(|_| "Calendar link removed.".into()),
+        ["activity", "start" | "update", id, rest @ ..] => {
+            parse_activity(id, rest).and_then(|c| control::send(&Control::Activity(c)).map(|()| String::new()))
+        }
+        ["activity", "end", id] => control::send(&Control::ActivityEnd(id.to_string())).map(|()| String::new()),
         ["shelf"] => Ok(shelf_list(false)),
         ["shelf", "--json"] => Ok(shelf_list(true)),
         ["shelf", "clear"] => {
@@ -373,6 +381,43 @@ fn calendar_list(json: bool) -> Result<String, String> {
         })
         .collect::<Vec<_>>()
         .join("\n"))
+}
+
+pub fn parse_activity(id: &str, args: &[&str]) -> Result<islet_core::activity::Custom, String> {
+    if id.is_empty() || id.starts_with('-') || id.contains(['\t', '\n']) {
+        return Err("give the activity an id: islet activity start build --title Build".into());
+    }
+    let mut c = islet_core::activity::Custom {
+        id: id.into(),
+        title: String::new(),
+        subtitle: String::new(),
+        progress: None,
+        color: None,
+    };
+    let mut it = args.iter();
+    while let Some(&arg) = it.next() {
+        let mut value = |name: &str| it.next().copied().ok_or_else(|| format!("{name} needs a value"));
+        match arg {
+            "--title" => c.title = value("--title")?.into(),
+            "--subtitle" => c.subtitle = value("--subtitle")?.into(),
+            "--progress" => {
+                let v = value("--progress")?;
+                let p: f32 =
+                    v.trim_end_matches('%').parse().map_err(|_| format!("{v:?} isn't a number from 0 to 100"))?;
+                c.progress = Some((p / 100.0).clamp(0.0, 1.0));
+            }
+            "--color" => {
+                let v = value("--color")?.trim_start_matches('#');
+                let n = u32::from_str_radix(v, 16).ok().filter(|_| v.len() == 6).ok_or("--color takes #rrggbb")?;
+                c.color = Some([(n >> 16) as u8, (n >> 8) as u8, n as u8]);
+            }
+            o => return Err(format!("unknown option {o}")),
+        }
+    }
+    if c.title.trim().is_empty() {
+        c.title = c.id.clone();
+    }
+    Ok(c)
 }
 
 fn shelf_list(json: bool) -> String {
@@ -641,6 +686,15 @@ mod tests {
             TimerCommand::Focus { work: 3000.0, brk: 300.0, rounds: 2 }
         );
         assert!(parse_focus(&["--rounds", "99"]).is_err());
+    }
+
+    #[test]
+    fn parses_activity_arguments() {
+        let c = parse_activity("build", &["--title", "Build", "--progress", "40%", "--color", "#30d158"]).unwrap();
+        assert_eq!((c.title.as_str(), c.progress, c.color), ("Build", Some(0.4), Some([0x30, 0xd1, 0x58])));
+        assert_eq!(parse_activity("dl", &[]).unwrap().title, "dl", "the id is the default title");
+        assert!(parse_activity("x", &["--color", "red"]).is_err());
+        assert!(parse_activity("--title", &[]).is_err());
     }
 
     #[test]

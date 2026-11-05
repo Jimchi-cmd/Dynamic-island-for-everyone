@@ -118,6 +118,26 @@ pub enum Hud {
     CapsLock(bool),
 }
 
+/// A live activity started by a script or another app (`islet activity`):
+/// a build, a download, a delivery…
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Custom {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub subtitle: String,
+    /// 0..=1, or None for "in progress" without a known amount.
+    #[serde(default)]
+    pub progress: Option<f32>,
+    /// Accent colour (RGB), default blue.
+    #[serde(default)]
+    pub color: Option<[u8; 3]>,
+}
+
+/// At most this many script activities at once.
+pub const MAX_CUSTOM: usize = 8;
+
 /// A desktop notification mirrored on the island.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Note {
@@ -175,6 +195,10 @@ pub enum Report {
     Notification(Note),
     /// Playback on another device (Spotify Connect), or None.
     RemoteMedia(Option<MediaInfo>),
+    /// A script's live activity started or changed…
+    Custom(Custom),
+    /// …or ended.
+    CustomEnded(String),
 }
 
 /// Why a battery peek is showing.
@@ -198,6 +222,8 @@ pub enum Live {
         reason: PeekReason,
     },
     Timer(crate::timer::Timer),
+    /// A script's live activity.
+    Custom(Custom),
     /// A calendar event starting soon (`starts_at` on the app clock).
     Event {
         event: crate::calendar::CalEvent,
@@ -229,6 +255,7 @@ pub struct Activities {
     up_next: Option<(crate::calendar::CalEvent, f64)>,
     notes: std::collections::VecDeque<Note>,
     remote: Option<MediaInfo>,
+    custom: Vec<Custom>,
     note_until: f64,
     nav: Option<NavInfo>,
     media: Option<MediaInfo>,
@@ -268,6 +295,11 @@ impl Activities {
 
     pub fn connectivity(&self) -> &crate::connectivity::Connectivity {
         &self.conn
+    }
+
+    /// Script activities, newest first.
+    pub fn custom(&self) -> &[Custom] {
+        &self.custom
     }
 
     /// Recent notifications, newest first.
@@ -380,6 +412,21 @@ impl Activities {
                 self.calendar = c.unwrap_or_default();
                 true
             }
+            Report::Custom(c) => {
+                match self.custom.iter_mut().find(|x| x.id == c.id) {
+                    Some(x) => *x = c,
+                    None => {
+                        self.custom.insert(0, c);
+                        self.custom.truncate(MAX_CUSTOM);
+                    }
+                }
+                true
+            }
+            Report::CustomEnded(id) => {
+                let before = self.custom.len();
+                self.custom.retain(|c| c.id != id);
+                self.custom.len() != before
+            }
             Report::RemoteMedia(m) => {
                 self.remote = m;
                 true
@@ -435,6 +482,9 @@ impl Activities {
         }
         if let Some(tm) = &self.timer {
             out.push(Live::Timer(tm.clone()));
+        }
+        if let Some(c) = self.custom.first() {
+            out.push(Live::Custom(c.clone()));
         }
         if let Some((event, starts_at)) = &self.up_next {
             out.push(Live::Event { event: event.clone(), starts_at: *starts_at });

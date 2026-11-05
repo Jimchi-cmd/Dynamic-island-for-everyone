@@ -1,7 +1,7 @@
 //! What is drawn inside the island for each activity and presentation
 //! (docs/design-spec.md §3). Pure layout: rects in, display list out.
 
-use islet_core::activity::{BatteryDevice, DeviceKind, Hud, Live, MediaInfo, NavInfo, Note, Part};
+use islet_core::activity::{BatteryDevice, Custom, DeviceKind, Hud, Live, MediaInfo, NavInfo, Note, Part};
 use islet_core::alarm::{self, Alarm};
 use islet_core::clock::{format_date, format_time, LocalTime};
 use islet_core::connectivity::{self, BtState, Connectivity, WifiState};
@@ -186,6 +186,73 @@ pub fn expanded_agenda(pill: Rect, rows: &[AgendaRow], o: f32, engine: &mut Text
     v
 }
 
+pub fn custom_color(c: &Custom) -> [u8; 3] {
+    c.color.unwrap_or(BLUE_TEXT)
+}
+
+/// "40%", or the subtitle when there's no known amount.
+fn custom_right(c: &Custom) -> String {
+    match c.progress {
+        Some(p) => format!("{}%", (p.clamp(0.0, 1.0) * 100.0).round() as i32),
+        None => String::new(),
+    }
+}
+
+/// A progress ring, or a turning arc when the amount isn't known.
+fn custom_ring(c: &Custom, cx: f32, cy: f32, r: f32, t: f64, o: f32) -> Element {
+    let color = custom_color(c);
+    match c.progress {
+        Some(p) => Element::Ring { cx, cy, r, width: 2.6, fraction: p.clamp(0.0, 1.0), color, opacity: o },
+        // Ring draws from 12 o'clock; vary the length so it visibly works.
+        None => {
+            Element::Ring { cx, cy, r, width: 2.6, fraction: 0.25 + 0.15 * (t * 3.0).sin() as f32, color, opacity: o }
+        }
+    }
+}
+
+pub const CUSTOM_H: f64 = 112.0;
+
+/// A script activity's card: title, subtitle and a progress bar.
+pub fn expanded_custom(pill: Rect, c: &Custom, t: f64, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
+    let pad = PAD as f32;
+    let color = custom_color(c);
+    let title = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
+    let pct = custom_right(c);
+    let rs = TextStyle {
+        size: 22.0,
+        weight: 600,
+        opacity: o,
+        color,
+        tabular: true,
+        align: Align::Right,
+        ..TextStyle::default()
+    };
+    let room = w - 2.0 * pad - 40.0 - engine.measure(&pct, &rs) - 12.0;
+    let mut v = vec![
+        custom_ring(c, x + pad + 13.0, y + 36.0, 11.0, t, o),
+        text(engine.ellipsize(&c.title, &title, room), title, x + pad + 38.0, y + 34.0),
+        text(pct, rs, x + w - pad, y + 42.0),
+    ];
+    if !c.subtitle.is_empty() {
+        let small = TextStyle { size: 13.0, opacity: o * 0.6, ..TextStyle::default() };
+        v.push(text(engine.ellipsize(&c.subtitle, &small, room), small, x + pad + 38.0, y + 53.0));
+    }
+    let (bx, by, bw) = (x + pad, y + 78.0, w - 2.0 * pad);
+    v.push(Element::Bar { x: bx, y: by, w: bw, h: 6.0, color: WHITE, opacity: o * 0.2 });
+    let fill = match c.progress {
+        Some(p) => bw * p.clamp(0.0, 1.0),
+        None => bw * 0.3,
+    };
+    let start = match c.progress {
+        Some(_) => bx,
+        // Unknown amount: a segment sweeping back and forth.
+        None => bx + (bw - fill) * (0.5 + 0.5 * (t * 1.6).sin() as f32),
+    };
+    v.push(Element::Bar { x: start, y: by, w: fill.max(6.0), h: 6.0, color, opacity: o });
+    v
+}
+
 /// Buttons of the timer card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimerControl {
@@ -276,6 +343,7 @@ pub fn compact_width(live: &Live) -> f64 {
             COMPACT_MEDIA_W
         }
         Live::Note(_) => COMPACT_BATTERY_W,
+        Live::Custom(_) => COMPACT_BATTERY_W,
         Live::Battery { .. } => COMPACT_BATTERY_W,
     }
 }
@@ -346,6 +414,26 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
     let cy = (pill.y + pill.h / 2.0) as f32;
     match live {
         Live::Timer(tm) => vec![timer_ring(tm, x + 20.0, cy, 8.5, t, o), countdown(tm, right - 14.0, cy, 15.0, t, o)],
+        Live::Custom(c) => {
+            let color = custom_color(c);
+            let title = TextStyle { size: 13.5, weight: 600, opacity: o, ..TextStyle::default() };
+            let right_text = custom_right(c);
+            let rs = TextStyle {
+                size: 13.0,
+                weight: 600,
+                opacity: o,
+                color,
+                tabular: true,
+                align: Align::Right,
+                ..TextStyle::default()
+            };
+            let room = (right - x) - 40.0 - engine.measure(&right_text, &rs) - 24.0;
+            vec![
+                custom_ring(c, x + 20.0, cy, 8.5, t, o),
+                text(engine.ellipsize(&c.title, &title, room), title, x + 38.0, cy + 4.5),
+                text(right_text, rs, right - 14.0, cy + 4.5),
+            ]
+        }
         Live::Note(n) => {
             let app = TextStyle { size: 12.5, opacity: o * 0.6, ..TextStyle::default() };
             let title = TextStyle { size: 13.5, weight: 600, opacity: o, ..TextStyle::default() };
@@ -506,6 +594,18 @@ pub fn minimal(
     if let Live::Hud(h) = primary {
         v.extend(hud_trailing(h, pill.right() as f32 - 14.0, cy, 56.0, o));
     }
+    if let Live::Custom(c) = primary {
+        let rs = TextStyle {
+            size: 13.0,
+            weight: 600,
+            opacity: o,
+            color: custom_color(c),
+            tabular: true,
+            align: Align::Right,
+            ..TextStyle::default()
+        };
+        v.push(text(custom_right(c), rs, pill.right() as f32 - 13.0, cy + 4.5));
+    }
     if let Live::Event { starts_at, .. } = primary {
         let when =
             TextStyle { size: 13.0, weight: 600, opacity: o, color: RED, align: Align::Right, ..TextStyle::default() };
@@ -524,6 +624,7 @@ pub fn minimal(
             }),
             Live::Alarm(_) => v.push(bell(b.x, b.y, 20.0, t, o)),
             Live::Timer(tm) => v.push(timer_ring(tm, b.x, b.y, b.r - 7.5, t, o)),
+            Live::Custom(c) => v.push(custom_ring(c, b.x, b.y, b.r - 7.5, t, o)),
             Live::Note(_) => v.push(Element::Icon {
                 icon: Icon::Message,
                 x: b.x - 9.0,
@@ -571,6 +672,15 @@ pub fn minimal(
 
 fn leading(live: &Live, x: f32, cy: f32, o: f32, h24: bool) -> Vec<Element> {
     match live {
+        Live::Custom(c) => vec![Element::Ring {
+            cx: x + 12.0,
+            cy,
+            r: 8.5,
+            width: 2.6,
+            fraction: c.progress.unwrap_or(0.3),
+            color: custom_color(c),
+            opacity: o,
+        }],
         Live::Note(_) => {
             vec![Element::Icon { icon: Icon::Message, x: x + 3.0, y: cy - 9.0, size: 18.0, color: GREEN, opacity: o }]
         }

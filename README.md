@@ -57,6 +57,8 @@ islet bt list
 islet key routes                                    # paste your Google Routes key (stored in the keychain)
 islet nav start "Kampala Road" --from "Ntinda" --label Work
 islet autostart on
+islet activity start build --title "Build" --progress 40   # your own live activity
+islet activity end build
 ```
 
 ## Build from source

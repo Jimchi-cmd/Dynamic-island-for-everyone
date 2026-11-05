@@ -138,6 +138,7 @@ const BLUETOOTH_SETTINGS: &str = "ms-settings:bluetooth";
 /// What an open island shows.
 enum OpenContent<'a> {
     Agenda,
+    Custom(&'a islet_core::activity::Custom),
     Notes,
     Alarm(&'a Alarm),
     Panel(Panel),
@@ -695,6 +696,10 @@ impl App {
             Some(Live::Battery { device: d, .. }) => {
                 format!("{} {}%{}", d.name, d.percent, if d.charging { ", charging" } else { "" })
             }
+            Some(Live::Custom(c)) => match c.progress {
+                Some(p) => format!("{}, {}%", c.title, (p * 100.0).round() as i32),
+                None => format!("{}, in progress", c.title),
+            },
             Some(Live::Timer(tm)) => format!(
                 "{}, {} left{}",
                 tm.title(),
@@ -954,6 +959,8 @@ impl App {
             OpenContent::Notes
         } else if let Some(Live::Event { .. }) = live.first() {
             OpenContent::Agenda
+        } else if let (Some(Live::Custom(_)), Some(c)) = (live.first(), self.activities.custom().first()) {
+            OpenContent::Custom(c)
         } else if let (Some(Live::Timer(_)), Some(tm)) = (live.first(), self.activities.timer()) {
             OpenContent::Timer(tm)
         } else if matches!(live.first(), Some(Live::Battery { .. })) {
@@ -1011,6 +1018,7 @@ impl App {
                 OpenContent::Alarm(a) => out.extend(content::expanded_alarm(cr, a, self.h24, t, eo, engine)),
                 OpenContent::Timer(tm) => out.extend(content::expanded_timer(cr, tm, t, eo, engine)),
                 OpenContent::Agenda => out.extend(content::expanded_agenda(cr, &self.agenda(), eo, engine)),
+                OpenContent::Custom(c) => out.extend(content::expanded_custom(cr, c, t, eo, engine)),
                 OpenContent::Notes => out.extend(content::expanded_notes(cr, self.activities.notes(), eo, engine)),
                 OpenContent::Panel(Panel::Wifi) => {
                     out.extend(content::expanded_wifi(cr, self.activities.connectivity(), eo, engine))
@@ -1082,6 +1090,7 @@ impl App {
                     OpenContent::Alarm(_) => content::ALARM_H,
                     OpenContent::Timer(_) => content::TIMER_H,
                     OpenContent::Agenda => content::agenda_height(self.agenda().len()),
+                    OpenContent::Custom(_) => content::CUSTOM_H,
                     OpenContent::Notes => content::notes_height(self.activities.notes().count()),
                     OpenContent::Panel(p) => {
                         let c = self.activities.connectivity();
@@ -1364,6 +1373,13 @@ impl App {
             return Some(FRAME);
         }
         let live = self.live(t);
+        // An activity without a known amount animates its ring while shown.
+        if self.activities.custom().first().is_some_and(|c| c.progress.is_none())
+            && matches!(live.first(), Some(Live::Custom(_)))
+            && self.has_content(t)
+        {
+            return Some(WAVE_FRAME);
+        }
         // The bell swings while an alarm rings and is on screen.
         if self.activities.alarm().is_some() && self.has_content(t) {
             return Some(WAVE_FRAME);

@@ -139,6 +139,8 @@ fn describe(r: &Report) -> String {
         Report::Calendar(c) => format!("calendar: {} events", c.as_ref().map_or(0, |c| c.len())),
         // Never log what a notification says.
         Report::Notification(n) => format!("notification from {:?}", n.app),
+        Report::Custom(c) => format!("activity {:?}: {:?}", c.id, c.progress),
+        Report::CustomEnded(id) => format!("activity {id:?} ended"),
         Report::RemoteMedia(m) => format!("remote media: {:?}", m.as_ref().map(|m| &m.app_name)),
         Report::UpNext(u) => format!("up next: {:?}", u.as_ref().map(|(e, _)| &e.summary)),
     }

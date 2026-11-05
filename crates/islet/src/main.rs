@@ -230,6 +230,8 @@ fn run() -> platform::Result<()> {
                 Control::PrefsChanged => {}
                 Control::ShelfChanged if !scripted => app.set_shelf(config::load_shelf()),
                 Control::ShelfChanged => {}
+                Control::Activity(c) => needs_frame |= app.report(Report::Custom(c), t),
+                Control::ActivityEnd(id) => needs_frame |= app.report(Report::CustomEnded(id), t),
             }
         }
         for action in app.take_nav_actions() {

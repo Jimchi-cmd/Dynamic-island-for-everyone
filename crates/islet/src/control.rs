@@ -26,6 +26,10 @@ pub enum Control {
     PrefsChanged,
     /// shelf.json changed: reload it.
     ShelfChanged,
+    /// A script's live activity started or changed (`islet activity`)…
+    Activity(islet_core::activity::Custom),
+    /// …or ended.
+    ActivityEnd(String),
     /// Is an island running? Answered by the control thread itself.
     Ping,
 }
@@ -90,6 +94,8 @@ fn handle(stream: &TcpStream, token: &str) -> Result<Control, String> {
         (Some("alarm-snooze"), _) => Ok(Control::AlarmSnooze),
         (Some("prefs-changed"), _) => Ok(Control::PrefsChanged),
         (Some("shelf-changed"), _) => Ok(Control::ShelfChanged),
+        (Some("activity"), Some(json)) => serde_json::from_str(json).map(Control::Activity).map_err(|e| e.to_string()),
+        (Some("activity-end"), Some(id)) => Ok(Control::ActivityEnd(id.to_string())),
         (Some("timer"), Some(json)) => serde_json::from_str(json).map(Control::Timer).map_err(|e| e.to_string()),
         (Some("ping"), _) => Ok(Control::Ping),
         _ => Err("unknown command".into()),
@@ -115,6 +121,8 @@ pub fn send(cmd: &Control) -> Result<(), String> {
         Control::AlarmSnooze => format!("{token}\talarm-snooze"),
         Control::PrefsChanged => format!("{token}\tprefs-changed"),
         Control::ShelfChanged => format!("{token}\tshelf-changed"),
+        Control::Activity(c) => format!("{token}\tactivity\t{}", serde_json::to_string(c).map_err(|e| e.to_string())?),
+        Control::ActivityEnd(id) => format!("{token}\tactivity-end\t{id}"),
         Control::Timer(cmd) => format!("{token}\ttimer\t{}", serde_json::to_string(cmd).map_err(|e| e.to_string())?),
         Control::Ping => format!("{token}\tping"),
     };

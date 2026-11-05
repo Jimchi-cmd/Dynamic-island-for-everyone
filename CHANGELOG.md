@@ -28,6 +28,8 @@ The first public release.
 
 - **Screen readers:** the island describes itself and exposes its controls to Orca, Narrator/NVDA and VoiceOver.
 
+- **Live activities for scripts and apps:** `islet activity start|update|end` shows your own activity (a build, a download, a delivery) with a progress ring and bar.
+
 ### Apps and tools
 - Islet Settings: a first-run welcome with permissions, start at login, Wi-Fi & Bluetooth, alarms, navigation key and trip, updates (opt-in checks) and about.
 - `islet` command line: `nav`, `key`, `alarm`, `wifi`, `bt`, `autostart`, `status`, `update check`, `quit`.
