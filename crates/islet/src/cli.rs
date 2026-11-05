@@ -63,6 +63,7 @@ Usage:
   islet spotify logout|on|off
   islet media hide|show <app>              hide (or show again) one app's Now Playing
   islet toggle                             open the island, or close it
+  islet caps-lock on|off                   show the Caps Lock pop-up (used by the GNOME extension)
   islet look accent <colour>               blue, purple, pink, red, orange, green, teal
   islet look size small|medium|large       the island's size
   islet look offset <px>                   gap above the island, 0–40 px
@@ -159,6 +160,9 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["prefs", "--json"] => Ok(prefs_text(true)),
         ["quit"] => control::send(&Control::Quit).map(|()| "Closed.".into()),
         ["toggle"] => control::send(&Control::Toggle).map(|()| String::new()),
+        ["caps-lock", state @ ("on" | "off")] => {
+            control::send(&Control::CapsLock(*state == "on")).map(|()| String::new())
+        }
         ["hotkey"] => {
             let h = config::load_prefs().hotkey;
             Ok(if h.is_empty() { "No shortcut.".into() } else { h })

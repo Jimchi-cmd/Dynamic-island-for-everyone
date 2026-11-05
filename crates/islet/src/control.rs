@@ -35,6 +35,9 @@ pub enum Control {
     /// Open the island, or close it if open (`islet toggle`, for desktop
     /// shortcuts on Wayland).
     Toggle,
+    /// Caps Lock turned on or off, as seen by a helper that can watch it
+    /// (the GNOME Shell extension; GNOME hides it from XWayland apps).
+    CapsLock(bool),
 }
 
 fn token() -> String {
@@ -102,6 +105,8 @@ fn handle(stream: &TcpStream, token: &str) -> Result<Control, String> {
         (Some("timer"), Some(json)) => serde_json::from_str(json).map(Control::Timer).map_err(|e| e.to_string()),
         (Some("ping"), _) => Ok(Control::Ping),
         (Some("toggle"), _) => Ok(Control::Toggle),
+        (Some("caps-lock"), Some("on")) => Ok(Control::CapsLock(true)),
+        (Some("caps-lock"), Some("off")) => Ok(Control::CapsLock(false)),
         _ => Err("unknown command".into()),
     }
 }
@@ -137,6 +142,7 @@ pub fn send(cmd: &Control) -> Result<(), String> {
         Control::Timer(cmd) => format!("{token}\ttimer\t{}", serde_json::to_string(cmd).map_err(|e| e.to_string())?),
         Control::Ping => format!("{token}\tping"),
         Control::Toggle => format!("{token}\ttoggle"),
+        Control::CapsLock(on) => format!("{token}\tcaps-lock\t{}", if *on { "on" } else { "off" }),
     };
     writeln!(stream, "{line}").map_err(|e| e.to_string())?;
     let mut reply = String::new();
@@ -169,6 +175,10 @@ mod tests {
         assert_eq!(rx.recv().unwrap(), Control::NavStart(trip));
         send(&Control::NavStop).unwrap();
         assert_eq!(rx.recv().unwrap(), Control::NavStop);
+        send(&Control::CapsLock(true)).unwrap();
+        assert_eq!(rx.recv().unwrap(), Control::CapsLock(true));
+        send(&Control::Toggle).unwrap();
+        assert_eq!(rx.recv().unwrap(), Control::Toggle);
         send(&Control::Ping).unwrap();
         assert!(rx.try_recv().is_err(), "pings are answered without waking the island");
         let _ = std::fs::remove_dir_all(dir);

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.islet" path="/org/gnome/shell/extensions/islet/">
+    <key name="toggle-island" type="as">
+      <default><![CDATA[['<Control><Alt>i']]]></default>
+      <summary>Shortcut that opens or closes the island</summary>
+    </key>
+    <key name="caps-lock" type="b">
+      <default>true</default>
+      <summary>Tell Islet when Caps Lock turns on or off</summary>
+      <description>GNOME on Wayland doesn't tell XWayland apps about the keyboard, so Islet's Caps Lock pop-up needs this.</description>
+    </key>
+    <key name="hide-clock" type="b">
+      <default>false</default>
+      <summary>Hide the top bar's clock</summary>
+      <description>The island sits at the top centre, over GNOME's clock.</description>
+    </key>
+    <key name="islet-path" type="s">
+      <default>''</default>
+      <summary>Path to the islet program (empty: look in PATH and the usual places)</summary>
+    </key>
+  </schema>
+</schemalist>

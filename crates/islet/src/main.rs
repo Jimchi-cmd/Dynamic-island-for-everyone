@@ -266,6 +266,7 @@ fn run() -> platform::Result<()> {
                 Control::ShelfChanged => {}
                 Control::Activity(c) => needs_frame |= app.report(Report::Custom(c), t),
                 Control::Toggle => needs_frame |= app.toggle(t),
+                Control::CapsLock(on) => needs_frame |= app.handle(Event::CapsLock(on), t),
                 Control::ActivityEnd(id) => needs_frame |= app.report(Report::CustomEnded(id), t),
             }
         }
