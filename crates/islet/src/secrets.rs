@@ -41,7 +41,7 @@ pub fn clear_routes_key() -> Result<(), String> {
     let status = std::process::Command::new("secret-tool")
         .args(["clear", "application", SERVICE, "key", ACCOUNT])
         .status()
-        .map_err(|e| format!("secret-tool is needed to manage secrets (package libsecret-tools): {e}"))?;
+        .map_err(secret_tool_error)?;
     status.success().then_some(()).ok_or_else(|| "secret-tool could not remove the key".into())
 }
 
@@ -56,13 +56,23 @@ fn get() -> Option<String> {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn secret_tool_error(e: std::io::Error) -> String {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        "secret-tool is not installed. Install libsecret-tools (Debian, Ubuntu) or libsecret (Fedora, Arch), then try again."
+            .into()
+    } else {
+        format!("could not run secret-tool: {e}")
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn set_routes_key(key: &str) -> Result<(), String> {
     use std::io::Write;
     let mut child = std::process::Command::new("secret-tool")
         .args(["store", "--label=Islet: Google Routes API key", "application", SERVICE, "key", ACCOUNT])
         .stdin(std::process::Stdio::piped())
         .spawn()
-        .map_err(|e| format!("secret-tool is needed to store secrets (package libsecret-tools): {e}"))?;
+        .map_err(secret_tool_error)?;
     child.stdin.take().ok_or("no stdin")?.write_all(key.as_bytes()).map_err(|e| e.to_string())?;
     let status = child.wait().map_err(|e| e.to_string())?;
     status.success().then_some(()).ok_or_else(|| "secret-tool could not store the key (is a keyring unlocked?)".into())

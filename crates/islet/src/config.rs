@@ -1,24 +1,10 @@
-//! Where Islet keeps its files, and the saved trip.
-//! Linux: `$XDG_CONFIG_HOME/islet` (or `~/.config/islet`); macOS:
-//! `~/Library/Application Support/Islet`; Windows: `%APPDATA%\Islet`.
+//! Islet's files (see `islet_core::paths`) and the saved trip.
 
 use islet_core::nav::Trip;
 use std::path::PathBuf;
 
 pub fn dir() -> Option<PathBuf> {
-    if let Some(d) = std::env::var_os("ISLET_CONFIG_DIR") {
-        return Some(PathBuf::from(d));
-    }
-    #[cfg(target_os = "windows")]
-    let base = std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("Islet"));
-    #[cfg(target_os = "macos")]
-    let base = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/Islet"));
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-        .map(|c| c.join("islet"));
-    base
+    islet_core::paths::config_dir()
 }
 
 fn file(name: &str) -> Option<PathBuf> {

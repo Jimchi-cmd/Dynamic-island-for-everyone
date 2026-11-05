@@ -19,6 +19,7 @@ mod clock;
 mod config;
 mod content;
 mod control;
+mod net;
 mod platform;
 mod providers;
 mod secrets;

@@ -7,7 +7,7 @@
 //! islet key routes                        read a Google Routes API key from stdin into the OS keychain
 //! ```
 
-use crate::{autostart, config, control, secrets};
+use crate::{autostart, config, control, net, secrets};
 use control::Control;
 use islet_core::nav::{TravelMode, Trip};
 
@@ -24,6 +24,7 @@ Usage:
   islet autostart on|off                   start Islet when you log in (or stop doing so)
   islet status [--json]                    is Islet running, and how it is set up
   islet quit                               close the running island
+  islet update check [--json]              ask GitHub for the latest release
   islet --version
   islet --help                             this text";
 
@@ -44,6 +45,8 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["autostart", "off"] => autostart::set(false).map(|()| "Islet will no longer start at login.".into()),
         ["status"] => Ok(status(false)),
         ["status", "--json"] => Ok(status(true)),
+        ["update", "check"] => update_check(false),
+        ["update", "check", "--json"] => update_check(true),
         ["quit"] => control::send(&Control::Quit).map(|()| "Closed.".into()),
         _ => Err(format!("unknown command\n\n{USAGE}")),
     })
@@ -120,8 +123,24 @@ fn status(json: bool) -> String {
     )
 }
 
+fn update_check(json: bool) -> Result<String, String> {
+    let current = env!("CARGO_PKG_VERSION");
+    let (latest, url) = net::latest_release()?;
+    let newer = islet_core::version::is_newer(&latest, current);
+    Ok(if json {
+        serde_json::json!({ "current": current, "latest": latest, "newer": newer, "url": url }).to_string()
+    } else if newer {
+        format!("Islet {latest} is available (you have {current}): {url}")
+    } else {
+        format!("Islet {current} is up to date.")
+    })
+}
+
 fn store_key() -> Result<String, String> {
-    eprintln!("Paste your Google Routes API key and press Enter:");
+    use std::io::IsTerminal;
+    if std::io::stdin().is_terminal() {
+        eprintln!("Paste your Google Routes API key and press Enter:");
+    }
     let mut key = String::new();
     std::io::stdin().read_line(&mut key).map_err(|e| e.to_string())?;
     let key = key.trim();

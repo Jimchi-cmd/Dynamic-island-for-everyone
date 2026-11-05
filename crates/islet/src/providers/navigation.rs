@@ -35,22 +35,10 @@ fn fetch(agent: &ureq::Agent, endpoint: &str, key: &str, trip: &Trip) -> Result<
     nav::parse_routes(&body)
 }
 
-fn agent() -> ureq::Agent {
-    let builder = ureq::Agent::config_builder();
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    let builder = builder.tls_config(
-        ureq::tls::TlsConfig::builder()
-            .provider(ureq::tls::TlsProvider::NativeTls)
-            .root_certs(ureq::tls::RootCerts::PlatformVerifier)
-            .build(),
-    );
-    builder.http_status_as_error(false).timeout_global(Some(Duration::from_secs(15))).build().into()
-}
-
 pub fn start(sink: Sink) -> Sender<NavMsg> {
     let (tx, rx) = channel::<NavMsg>();
     let _ = std::thread::Builder::new().name("islet-nav".into()).spawn(move || {
-        let agent = agent();
+        let agent = crate::net::agent();
         // Demos and perf runs never touch the network or the user's trip.
         let scripted = std::env::var_os("ISLET_DEMO").is_some() || std::env::var_os("ISLET_PERF_DEMO").is_some();
         let mut trip: Option<Trip> = if scripted { None } else { config::load_trip() };
@@ -178,7 +166,7 @@ mod tests {
     fn requests_a_route_with_key_and_field_mask() {
         let (url, server) =
             serve_once("200 OK", r#"{"routes":[{"duration":"900s","staticDuration":"600s","distanceMeters":5200}]}"#);
-        let r = fetch(&agent(), &url, "test-key", &trip()).unwrap();
+        let r = fetch(&crate::net::agent(), &url, "test-key", &trip()).unwrap();
         assert_eq!((r.duration, r.delay(), r.distance_m), (900.0, 300.0, 5200.0));
         let req = server.join().unwrap().to_ascii_lowercase();
         assert!(req.starts_with("post /directions/v2:computeroutes"));
@@ -190,7 +178,7 @@ mod tests {
     #[test]
     fn surfaces_api_errors() {
         let (url, server) = serve_once("403 Forbidden", r#"{"error":{"code":403,"message":"API key not valid."}}"#);
-        assert_eq!(fetch(&agent(), &url, "bad", &trip()).unwrap_err(), "API key not valid.");
+        assert_eq!(fetch(&crate::net::agent(), &url, "bad", &trip()).unwrap_err(), "API key not valid.");
         server.join().unwrap();
     }
 }

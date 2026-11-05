@@ -1,92 +1,438 @@
 <script lang="ts">
-  // Phase 0 pill: just enough to measure the stack's baseline cost.
-  // The real morph (9-slice squircle + springs) replaces this in Phase 1.
   import { onMount } from 'svelte';
-  import { pillRect, scaleFor, SIZES, type PillState } from './lib/geometry';
-  import { bootConfig, setHitRegion, uiReady } from './lib/bridge';
+  import * as api from './lib/bridge';
+  import type { Info, Prefs, UpdateInfo } from './lib/bridge';
+  import { keyLooksValid, MODES, navStartArgs, permissionsFor, type Status, type Trip } from './lib/settings';
 
-  let state: PillState = $state('idle');
-  const scale = $derived(scaleFor(state));
-  const box = pillRect('expanded');
+  type Page = 'general' | 'navigation' | 'updates' | 'about';
+  const PAGES: { id: Page; label: string }[] = [
+    { id: 'general', label: 'General' },
+    { id: 'navigation', label: 'Navigation' },
+    { id: 'updates', label: 'Updates' },
+    { id: 'about', label: 'About' },
+  ];
 
-  function setState(next: PillState) {
-    if (next === state) return;
-    // Grow the input region before expanding so the growing pill is clickable;
-    // shrink it only after the collapse animation ends (see onTransitionEnd).
-    if (next === 'expanded') void setHitRegion(pillRect('expanded'));
-    state = next;
+  let page: Page = $state('general');
+  let info: Info | null = $state(null);
+  let prefs: Prefs = $state({ welcomed: true, checkUpdates: false });
+  let status: Status | null = $state(null);
+  let problem = $state('');
+  let welcomeStep = $state(0);
+  let busy = $state(false);
+
+  // Navigation form
+  let key = $state('');
+  let keyNote = $state('');
+  let trip: Trip = $state({ label: '', destination: '', origin: '', mode: 'drive' });
+  let tripNote = $state('');
+
+  // Updates
+  let update: UpdateInfo | null = $state(null);
+  let updateNote = $state('');
+
+  const docs = (path: string) => `${info?.repo ?? ''}/blob/main/${path}`;
+
+  async function refresh() {
+    try {
+      status = await api.status();
+      problem = '';
+    } catch (e) {
+      problem = api.message(e);
+    }
   }
 
-  function onTransitionEnd(e: TransitionEvent) {
-    if (e.target === e.currentTarget && state === 'idle') void setHitRegion(pillRect('idle'));
+  async function run<T>(f: () => Promise<T>): Promise<T | undefined> {
+    busy = true;
+    try {
+      return await f();
+    } catch (e) {
+      problem = api.message(e);
+    } finally {
+      busy = false;
+    }
   }
 
-  function onKey(e: KeyboardEvent) {
-    if (e.key === 'Escape') setState('idle');
-  }
-
-  onMount(() => {
-    let demo: ReturnType<typeof setInterval> | undefined;
-    void setHitRegion(pillRect('idle'));
-    // Two frames: the first rAF runs before paint, the second after it.
-    requestAnimationFrame(() => requestAnimationFrame(() => void uiReady()));
-    void bootConfig().then((cfg) => {
-      if (cfg.perfDemo) {
-        demo = setInterval(() => setState(state === 'idle' ? 'expanded' : 'idle'), 1200);
-      }
+  async function startIsland() {
+    await run(async () => {
+      await api.startIsland();
+      await new Promise((r) => setTimeout(r, 600));
+      await refresh();
     });
-    return () => clearInterval(demo);
+  }
+
+  async function setAutostart(on: boolean) {
+    await run(async () => {
+      await api.islet(['autostart', on ? 'on' : 'off']);
+      await refresh();
+    });
+  }
+
+  async function saveKey() {
+    keyNote = '';
+    try {
+      await api.islet(['key', 'routes'], key.trim());
+      key = '';
+      keyNote = 'Saved to your keychain.';
+      await refresh();
+    } catch (e) {
+      keyNote = api.message(e);
+    }
+  }
+
+  async function clearKey() {
+    keyNote = '';
+    try {
+      await api.islet(['key', 'routes', '--clear']);
+      keyNote = 'Removed.';
+      await refresh();
+    } catch (e) {
+      keyNote = api.message(e);
+    }
+  }
+
+  async function startTrip() {
+    const args = navStartArgs(trip);
+    if ('error' in args) {
+      tripNote = args.error;
+      return;
+    }
+    try {
+      tripNote = await api.islet(args);
+      await refresh();
+    } catch (e) {
+      tripNote = api.message(e);
+    }
+  }
+
+  async function stopTrip() {
+    try {
+      await api.islet(['nav', 'stop']);
+      tripNote = 'Stopped.';
+      await refresh();
+    } catch (e) {
+      tripNote = api.message(e);
+    }
+  }
+
+  async function checkUpdate() {
+    updateNote = 'Checking…';
+    try {
+      update = await api.checkUpdate();
+      updateNote = update.newer ? '' : `Islet ${update.current} is up to date.`;
+    } catch (e) {
+      update = null;
+      updateNote = api.message(e);
+    }
+  }
+
+  async function installUpdate() {
+    updateNote = 'Downloading and installing…';
+    try {
+      await api.installUpdate();
+    } catch (e) {
+      updateNote = api.message(e);
+    }
+  }
+
+  async function savePrefs() {
+    await run(() => api.setPrefs(prefs));
+  }
+
+  async function finishWelcome(autostart: boolean) {
+    await run(async () => {
+      if (autostart) await api.islet(['autostart', 'on']);
+      if (!status?.running) await api.startIsland();
+      prefs.welcomed = true;
+      await api.setPrefs(prefs);
+      await new Promise((r) => setTimeout(r, 600));
+      await refresh();
+    });
+  }
+
+  onMount(async () => {
+    try {
+      [info, prefs] = await Promise.all([api.info(), api.getPrefs()]);
+    } catch (e) {
+      problem = api.message(e);
+    }
+    await refresh();
+    if (status?.trip) trip = { ...status.trip };
+    // Opening Settings starts the island if it isn't running (after setup).
+    if (prefs.welcomed && status && !status.running) await startIsland();
+    if (prefs.checkUpdates) await checkUpdate();
   });
 </script>
 
-<svelte:window onkeydown={onKey} />
+{#if info && !prefs.welcomed}
+  <main class="welcome" aria-live="polite">
+    {#if welcomeStep === 0}
+      <h1>Welcome to Islet</h1>
+      <p>
+        Islet adds a Dynamic Island-style pill to the top of your screen. It shows what’s playing, the battery of
+        headphones and mice when they connect, and your ETA when you’re heading somewhere.
+      </p>
+      <div class="card">
+        <h2>Private by default</h2>
+        <p class="muted">
+          No accounts, no analytics, no telemetry. Islet uses the network only for features you turn on: navigation
+          ETA (with your own Google key) and update checks.
+        </p>
+      </div>
+      <div class="actions"><button class="primary" onclick={() => (welcomeStep = 1)}>Continue</button></div>
+    {:else if welcomeStep === 1}
+      <h1>What Islet may ask for</h1>
+      {#each permissionsFor(info.os) as p (p.title)}
+        <div class="card">
+          <h2>{p.title}</h2>
+          <p class="muted">{p.body}</p>
+        </div>
+      {/each}
+      <div class="actions">
+        <button onclick={() => (welcomeStep = 0)}>Back</button>
+        <button class="primary" onclick={() => (welcomeStep = 2)}>Continue</button>
+      </div>
+    {:else}
+      <h1>Start Islet</h1>
+      <p>Islet uses a few megabytes of memory and no CPU while nothing is happening, so it can run all the time.</p>
+      <div class="actions">
+        <button disabled={busy} onclick={() => finishWelcome(false)}>Start, just this once</button>
+        <button class="primary" disabled={busy} onclick={() => finishWelcome(true)}>Start now and at login</button>
+      </div>
+      {#if problem}<p class="error" role="alert">{problem}</p>{/if}
+    {/if}
+    <p class="steps muted" aria-label="Step {welcomeStep + 1} of 3">
+      {#each [0, 1, 2] as i (i)}<span class:on={i === welcomeStep}>●</span>{/each}
+    </p>
+  </main>
+{:else}
+  <div class="layout">
+    <nav aria-label="Settings sections">
+      <div class="brand">Islet</div>
+      {#each PAGES as p (p.id)}
+        <button class="tab" class:active={page === p.id} aria-current={page === p.id} onclick={() => (page = p.id)}>
+          {p.label}
+        </button>
+      {/each}
+    </nav>
+    <main>
+      {#if problem}<p class="error" role="alert">{problem}</p>{/if}
 
-<button
-  class="pill"
-  class:expanded={state === 'expanded'}
-  style:left="{box.x}px"
-  style:top="{box.y}px"
-  style:width="{SIZES.expanded.w}px"
-  style:height="{SIZES.expanded.h}px"
-  style:transform="scale({scale.sx}, {scale.sy})"
-  aria-label="Islet"
-  aria-expanded={state === 'expanded'}
-  onclick={() => setState(state === 'idle' ? 'expanded' : 'idle')}
-  ontransitionend={onTransitionEnd}
->
-  <span class="content" aria-hidden={state === 'idle'}>Islet</span>
-</button>
+      {#if page === 'general'}
+        <h1>General</h1>
+        <div class="card row">
+          <div>
+            <h2>Island</h2>
+            {#if status?.running}<p class="ok">Running</p>{:else}<p class="muted">Not running</p>{/if}
+          </div>
+          {#if status?.running}
+            <button disabled={busy} onclick={() => run(async () => { await api.islet(['quit']); await refresh(); })}>
+              Quit Islet
+            </button>
+          {:else}
+            <button class="primary" disabled={busy} onclick={startIsland}>Start Islet</button>
+          {/if}
+        </div>
+        <div class="card row">
+          <div>
+            <h2>Start at login</h2>
+            <p class="muted">Islet opens by itself when you log in.</p>
+          </div>
+          <input
+            type="checkbox"
+            class="switch"
+            aria-label="Start at login"
+            checked={status?.autostart ?? false}
+            disabled={busy || !status}
+            onchange={(e) => setAutostart(e.currentTarget.checked)}
+          />
+        </div>
+        <p class="muted small">Right-click the island to close it. Click it to open, and press and hold for more.</p>
+      {:else if page === 'navigation'}
+        <h1>Navigation</h1>
+        <p class="muted">
+          See your travel time with live traffic, then hand off to Google Maps or Waze. Uses the Google Routes API with
+          <strong>your own</strong> key: Google bills your project, usually within its free monthly allowance.
+          <button class="link" onclick={() => api.openLink(docs('docs/navigation.md'))}>How to get a key</button>
+        </p>
+        <div class="card">
+          <h2>Google Routes API key</h2>
+          <p class={status?.routesKey ? 'ok' : 'muted'}>{status?.routesKey ? 'Saved in your keychain' : 'Not set'}</p>
+          <label for="key">{status?.routesKey ? 'Replace key' : 'Key'}</label>
+          <input id="key" type="password" autocomplete="off" spellcheck="false" bind:value={key} placeholder="AIza…" />
+          {#if key && !keyLooksValid(key)}<p class="warn small">This doesn’t look like a Google API key.</p>{/if}
+          <div class="actions">
+            {#if status?.routesKey}<button onclick={clearKey}>Remove key</button>{/if}
+            <button class="primary" disabled={!key.trim()} onclick={saveKey}>Save key</button>
+          </div>
+          {#if keyNote}<p class="small" role="status">{keyNote}</p>{/if}
+        </div>
+        <div class="card">
+          <h2>Trip</h2>
+          {#if status?.trip}
+            <p class="ok">Showing the trip to {status.trip.label || status.trip.destination}</p>
+          {/if}
+          <label for="dest">Destination</label>
+          <input id="dest" bind:value={trip.destination} placeholder="Plot 5, Kampala Road" />
+          <label for="from">From</label>
+          <input id="from" bind:value={trip.origin} placeholder="An address or “lat,lng”" />
+          <div class="two">
+            <div>
+              <label for="label">Name on the island (optional)</label>
+              <input id="label" bind:value={trip.label} placeholder="Work" />
+            </div>
+            <div>
+              <label for="mode">Travel by</label>
+              <select id="mode" bind:value={trip.mode}>
+                {#each MODES as m (m.id)}<option value={m.id}>{m.label}</option>{/each}
+              </select>
+            </div>
+          </div>
+          <div class="actions">
+            {#if status?.trip}<button onclick={stopTrip}>Stop trip</button>{/if}
+            <button class="primary" onclick={startTrip}>{status?.trip ? 'Update trip' : 'Start trip'}</button>
+          </div>
+          {#if tripNote}<p class="small" role="status">{tripNote}</p>{/if}
+        </div>
+        <p class="muted small">
+          Islet refreshes the ETA every minute while the card is open and every 2–5 minutes otherwise, and makes no
+          requests without a trip. Trips go straight to Google; route results are never stored.
+        </p>
+      {:else if page === 'updates'}
+        <h1>Updates</h1>
+        <div class="card row">
+          <div>
+            <h2>Check when Settings opens</h2>
+            <p class="muted">Off by default: Islet makes no network requests you didn’t ask for.</p>
+          </div>
+          <input
+            type="checkbox"
+            class="switch"
+            aria-label="Check for updates when Settings opens"
+            bind:checked={prefs.checkUpdates}
+            onchange={savePrefs}
+          />
+        </div>
+        <div class="actions left"><button onclick={checkUpdate}>Check for updates now</button></div>
+        {#if update?.newer}
+          <div class="card">
+            <h2>Islet {update.latest} is available</h2>
+            {#if update.notes}<p class="muted notes">{update.notes}</p>{/if}
+            {#if info?.selfUpdate}
+              <button class="primary" onclick={installUpdate}>Install and restart</button>
+            {:else}
+              <button class="primary" onclick={() => api.openLink(update?.url || `${info?.repo}/releases/latest`)}>
+                Open the download page
+              </button>
+            {/if}
+          </div>
+        {/if}
+        {#if updateNote}<p class="small" role="status">{updateNote}</p>{/if}
+      {:else}
+        <h1>About Islet</h1>
+        <p>Version {info?.version}</p>
+        <p class="muted">
+          Free and open source under the MIT License. Islet is not affiliated with, endorsed by or sponsored by Apple
+          Inc. “Dynamic Island” is a trademark of Apple Inc. Google Maps is a trademark of Google LLC; Waze is a
+          trademark of Waze Mobile Ltd.
+        </p>
+        <div class="actions left">
+          <button onclick={() => api.openLink(info?.repo ?? '')}>Source code</button>
+          <button onclick={() => api.openLink(docs('THIRD_PARTY_LICENSES.md'))}>Third-party licenses</button>
+          <button onclick={() => api.openLink(`${info?.repo}/issues/new/choose`)}>Report a problem</button>
+        </div>
+      {/if}
+    </main>
+  </div>
+{/if}
 
 <style>
-  .pill {
-    position: absolute;
-    margin: 0;
-    padding: 0;
+  .layout {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    height: 100%;
+  }
+  nav {
+    background: var(--sidebar);
+    border-right: 1px solid var(--line);
+    padding: 18px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .brand {
+    font-weight: 700;
+    font-size: 16px;
+    padding: 0 10px 14px;
+  }
+  .tab {
     border: 0;
-    background: #000;
-    border-radius: 44px;
-    transform-origin: 50% 0;
-    /* Placeholder curve with slight overshoot; Phase 1 uses a real spring. */
-    transition: transform 420ms cubic-bezier(0.32, 1.25, 0.5, 1);
-    will-change: transform;
-    color: #fff;
-    font: 600 17px system-ui, sans-serif;
-    outline: none;
+    background: none;
+    text-align: left;
+    padding: 7px 10px;
   }
-  .pill:focus-visible {
-    box-shadow: 0 0 0 2px #fff;
+  .tab.active {
+    background: var(--panel);
+    font-weight: 600;
   }
-  .content {
-    opacity: 0;
-    transition: opacity 200ms ease-out;
+  main {
+    padding: 24px 28px;
+    overflow-y: auto;
   }
-  .expanded .content {
-    opacity: 1;
-    transition-delay: 120ms;
+  .welcome {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 40px 24px;
   }
-  @media (prefers-reduced-motion: reduce) {
-    .pill {
-      transition-duration: 1ms;
-    }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin: 12px 0;
+  }
+  .card p:last-child {
+    margin-bottom: 0;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .two {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .actions.left {
+    justify-content: flex-start;
+  }
+  .small {
+    font-size: 12.5px;
+  }
+  .notes {
+    white-space: pre-wrap;
+  }
+  .steps {
+    text-align: center;
+    margin-top: 28px;
+    letter-spacing: 6px;
+    font-size: 10px;
+  }
+  .steps .on {
+    color: var(--accent);
+  }
+  .switch {
+    width: 20px;
+    height: 20px;
+    flex: none;
+    accent-color: var(--accent);
   }
 </style>

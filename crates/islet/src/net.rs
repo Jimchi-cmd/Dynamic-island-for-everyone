@@ -1,0 +1,61 @@
+//! HTTPS for the features that use the network (only when the user turns
+//! them on): the OS TLS stack on macOS (Security.framework) and Windows
+//! (SChannel); rustls on Linux. All of them trust the system's root
+//! certificates, so corporate proxies with their own CA keep working.
+
+use std::time::Duration;
+
+pub fn agent() -> ureq::Agent {
+    let tls = ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier);
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let tls = tls.provider(ureq::tls::TlsProvider::NativeTls);
+    ureq::Agent::config_builder()
+        .tls_config(tls.build())
+        .http_status_as_error(false)
+        .timeout_global(Some(Duration::from_secs(15)))
+        .user_agent(concat!("islet/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .into()
+}
+
+/// The latest published release on GitHub: (version tag, release page).
+pub fn latest_release() -> Result<(String, String), String> {
+    let repo = env!("CARGO_PKG_REPOSITORY").trim_start_matches("https://github.com/");
+    let url = format!("https://api.github.com/repos/{repo}/releases/latest");
+    let mut resp = agent()
+        .get(&url)
+        .header("Accept", "application/vnd.github+json")
+        .call()
+        .map_err(|e| format!("network: {e}"))?;
+    let status = resp.status();
+    let body = resp.body_mut().read_to_string().map_err(|e| format!("network: {e}"))?;
+    if status == 404 {
+        return Err("no releases published yet".into());
+    }
+    parse_release(&body)
+}
+
+pub fn parse_release(json: &str) -> Result<(String, String), String> {
+    let v: serde_json::Value = serde_json::from_str(json).map_err(|e| format!("bad response: {e}"))?;
+    if let Some(msg) = v.get("message").and_then(|m| m.as_str()) {
+        return Err(msg.to_string());
+    }
+    let tag = v["tag_name"].as_str().ok_or("release has no tag")?;
+    let page = v["html_url"].as_str().unwrap_or_default();
+    Ok((tag.to_string(), page.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn parses_a_release() {
+        let (tag, url) =
+            super::parse_release(r#"{"tag_name":"v0.2.0","html_url":"https://github.com/o/r/releases/tag/v0.2.0"}"#)
+                .unwrap();
+        assert_eq!((tag.as_str(), url.as_str()), ("v0.2.0", "https://github.com/o/r/releases/tag/v0.2.0"));
+        assert_eq!(
+            super::parse_release(r#"{"message":"API rate limit exceeded"}"#).unwrap_err(),
+            "API rate limit exceeded"
+        );
+    }
+}

@@ -18,7 +18,7 @@ zune-jpeg = "0.4"
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }
 
 # HTTPS for the Routes API: the OS TLS stack on macOS (Security.framework)
-# and Windows (SChannel); rustls with Mozilla's roots on Linux.
+# and Windows (SChannel); rustls with the system's trusted roots on Linux.
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies.ureq]
 version = "3"
 default-features = false
@@ -27,7 +27,7 @@ features = ["native-tls-no-default"]
 [target.'cfg(not(any(target_os = "macos", target_os = "windows")))'.dependencies.ureq]
 version = "3"
 default-features = false
-features = ["rustls"]
+features = ["rustls", "platform-verifier"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = { version = "0.13", features = ["shape", "randr"] }

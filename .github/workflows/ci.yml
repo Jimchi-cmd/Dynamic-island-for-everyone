@@ -43,14 +43,17 @@ jobs:
         include:
           - os: ubuntu-latest
             bundles: deb,rpm,appimage
+            bundle_config: src-tauri/tauri.bundle.json
             exe: ""
           - os: windows-latest
             bundles: msi,nsis
+            bundle_config: src-tauri/tauri.bundle.json
             exe: .exe
           # Apple-silicon runners are capacity-limited and jobs often go
           # unscheduled; the Intel image is reliably available.
           - os: macos-15-intel
             bundles: app,dmg
+            bundle_config: src-tauri/tauri.bundle.macos.json
             exe: ""
     runs-on: ${{ matrix.os }}
     steps:
@@ -104,8 +107,22 @@ jobs:
           bash "$RUNNER_TEMP/run_gui.sh" target/release/islet-perf run --app target/release/islet${{ matrix.exe }}
           --idle-secs 60 --active-secs 20 --json perf-native.json --markdown perf-native.md --enforce
 
-      - name: Build installers (Tauri settings app)
-        run: npx tauri build --bundles ${{ matrix.bundles }}
+      # Installers: the Settings app with the island as its sidecar.
+      - name: Stage the island for bundling
+        shell: bash
+        run: bash scripts/stage-island.sh
+      - name: Stop Spotlight indexing (macOS dmg builds fail when it holds the image)
+        if: runner.os == 'macOS'
+        run: sudo mdutil -a -i off || true
+      - name: Build installers
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            npx tauri build --bundles ${{ matrix.bundles }} --config ${{ matrix.bundle_config }} && exit 0
+            echo "::warning::bundling failed (attempt $attempt)"
+            sleep 10
+          done
+          exit 1
 
       - name: Installer and binary sizes
         shell: bash
@@ -114,20 +131,11 @@ jobs:
           files=(target/release/islet${{ matrix.exe }} target/release/bundle/{deb/*.deb,rpm/*.rpm,appimage/*.AppImage,msi/*.msi,nsis/*.exe,dmg/*.dmg})
           target/release/islet-perf size "${files[@]}" --markdown size.md --enforce
 
-      # Phase 0 baseline: the same pill drawn by a Tauri webview. Reported for
-      # comparison only; it is expected to exceed the RAM budget.
-      - name: Perf baseline (Tauri webview pill)
-        continue-on-error: true
-        shell: bash
-        run: >
-          bash "$RUNNER_TEMP/run_gui.sh" target/release/islet-perf run --app target/release/islet-settings${{ matrix.exe }}
-          --idle-secs 30 --active-secs 15 --json perf-tauri.json --markdown perf-tauri.md
-
       - name: Job summary
         if: always()
         shell: bash
         run: |
-          for f in perf-native.md size.md perf-tauri.md; do
+          for f in perf-native.md size.md; do
             if [ -f "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY"; fi
           done
 
