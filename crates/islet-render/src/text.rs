@@ -9,9 +9,10 @@
 //! costs memory for the pages actually read.
 
 use cosmic_text::{
-    fontdb, Attrs, Buffer, Family, FeatureTag, FontFeatures, FontSystem, Metrics, Shaping, SwashCache, SwashContent,
-    Weight,
+    fontdb, Attrs, Buffer, Family, FeatureTag, FontFeatures, FontSystem, LayoutGlyph, Metrics, Shaping, SwashCache,
+    SwashContent, Weight,
 };
+use std::collections::HashMap;
 use std::sync::Arc;
 use tiny_skia::{Mask, Pixmap};
 
@@ -63,7 +64,19 @@ pub struct TextEngine {
     cache: SwashCache,
     family: String,
     buffer: Option<Buffer>,
+    /// Shaped text by (text, size, weight, tabular): the island draws the
+    /// same few strings every animation frame, and shaping is the costly part.
+    shaped: HashMap<(String, u32, u16, bool), Arc<Shaped>>,
 }
+
+/// One shaped string: its width and each line's glyphs.
+struct Shaped {
+    width: f32,
+    runs: Vec<(f32, Vec<LayoutGlyph>)>,
+}
+
+/// Forget shaped strings past this many (the island shows a few dozen).
+const SHAPED_MAX: usize = 512;
 
 impl Default for TextEngine {
     fn default() -> Self {
@@ -89,7 +102,7 @@ impl TextEngine {
         let family = system_font.then(|| system_ui_family(&mut db)).flatten().unwrap_or_else(|| INTER.to_string());
         let locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
         let fonts = FontSystem::new_with_locale_and_db(locale, db);
-        Self { fonts, cache: SwashCache::new(), family, buffer: None }
+        Self { fonts, cache: SwashCache::new(), family, buffer: None, shaped: HashMap::new() }
     }
 
     /// The family used for island text ("Inter", or the macOS system font).
@@ -113,9 +126,26 @@ impl TextEngine {
         buffer
     }
 
+    fn shaped(&mut self, text: &str, style: &TextStyle) -> Arc<Shaped> {
+        let key = (text.to_string(), style.size.to_bits(), style.weight, style.tabular);
+        if let Some(s) = self.shaped.get(&key) {
+            return s.clone();
+        }
+        let buffer = self.layout(text, style);
+        let shaped = Arc::new(Shaped {
+            width: buffer.layout_runs().map(|run| run.line_w).fold(0.0, f32::max),
+            runs: buffer.layout_runs().map(|run| (run.line_y, run.glyphs.to_vec())).collect(),
+        });
+        if self.shaped.len() >= SHAPED_MAX {
+            self.shaped.clear();
+        }
+        self.shaped.insert(key, shaped.clone());
+        shaped
+    }
+
     /// Width of `text` in logical px.
     pub fn measure(&mut self, text: &str, style: &TextStyle) -> f32 {
-        self.layout(text, style).layout_runs().map(|run| run.line_w).fold(0.0, f32::max)
+        self.shaped(text, style).width
     }
 
     /// `text`, shortened with "…" so it fits in `max_width`.
@@ -153,19 +183,17 @@ impl TextEngine {
         };
         // Lay out at physical size so glyphs are rasterised crisply.
         let physical = TextStyle { size: style.size * scale, ..style };
-        self.layout(&item.text, &physical);
-        let Some(buffer) = self.buffer.take() else { return };
+        let shaped = self.shaped(&item.text, &physical);
         let origin = (left * scale, item.baseline * scale);
-        for run in buffer.layout_runs() {
-            for glyph in run.glyphs {
-                let pg = glyph.physical((origin.0, origin.1 - run.line_y), 1.0);
+        for (line_y, glyphs) in &shaped.runs {
+            for glyph in glyphs {
+                let pg = glyph.physical((origin.0, origin.1 - line_y), 1.0);
                 let Some(image) = self.cache.get_image(&mut self.fonts, pg.cache_key) else { continue };
                 let gx = pg.x + image.placement.left;
-                let gy = (run.line_y as i32) + pg.y - image.placement.top;
+                let gy = (*line_y as i32) + pg.y - image.placement.top;
                 blit(pixmap, image, gx, gy, style.color, opacity, clip);
             }
         }
-        self.buffer = Some(buffer);
     }
 }
 

@@ -764,7 +764,7 @@ impl App {
                 if m.app_name.is_empty() { String::new() } else { format!(", in {}", m.app_name) }
             ),
         };
-        let label = match self.activities.privacy().describe() {
+        let label = match self.privacy_shown().then(|| self.activities.privacy().describe()).flatten() {
             Some(p) => format!("{label}. {p}"),
             None => label,
         };
@@ -1087,10 +1087,15 @@ impl App {
     /// The camera / microphone dot shows while the pill is closed (idle or
     /// compact) and fades as it opens; the two-at-once layout has no room.
     fn privacy_opacity(&self, t: f64) -> f32 {
-        if !self.activities.privacy().active() || self.island.presentation() == Presentation::Minimal {
+        if !self.privacy_shown() || self.island.presentation() == Presentation::Minimal {
             return 0.0;
         }
         smooth((56.0 - self.pill_rect(t).h) / 12.0) as f32
+    }
+
+    /// The camera / microphone dot is on (in use, and not switched off).
+    fn privacy_shown(&self) -> bool {
+        self.prefs.privacy_dots && self.activities.privacy().active()
     }
 
     /// Green for the camera (it takes precedence), orange for the microphone.
@@ -1176,7 +1181,7 @@ impl App {
                 }
                 (_, Some(first)) => {
                     // Leave the right end to the camera / microphone dot.
-                    let room = if self.activities.privacy().active() { PRIVACY_W } else { 0.0 };
+                    let room = if self.privacy_shown() { PRIVACY_W } else { 0.0 };
                     let inner = Rect::new(p.x, p.y, (p.w - room).max(1.0), p.h);
                     out.extend(content::compact(inner, first, t, co, engine))
                 }
@@ -1196,7 +1201,7 @@ impl App {
         let live = self.live(t);
         let dims = match p {
             Presentation::Compact => {
-                let room = if self.activities.privacy().active() { PRIVACY_W } else { 0.0 };
+                let room = if self.privacy_shown() { PRIVACY_W } else { 0.0 };
                 (live.first().map_or(w, content::compact_width) + room, h, r)
             }
             Presentation::Expanded => {
@@ -1751,6 +1756,10 @@ mod tests {
         app.handle(Event::Key(Key::Escape), 10.0);
         app.report(Report::Privacy(Privacy::default()), 10.0);
         assert!((app.pill_rect(15.0).w - content::COMPACT_BATTERY_W).abs() < 0.5);
+        // Switched off in Settings: no dot even while the mic is in use.
+        app.set_prefs(IslandPrefs { privacy_dots: false, ..Default::default() });
+        app.report(Report::Privacy(Privacy { camera: None, mic: Some(vec![]) }), 16.0);
+        assert_eq!(dot(&app.elements(20.0, &mut engine)), None);
         assert_eq!(dot(&app.elements(15.0, &mut engine)), None);
     }
 
@@ -2445,6 +2454,85 @@ mod tests {
         app.handle(Event::PointerMove { x, y }, t + 4.0);
         app.handle(Event::PointerDown { x, y, button: Button::Primary }, t + 4.0);
         app.handle(Event::PointerUp { x, y, button: Button::Primary }, t + 4.05);
+    }
+
+    /// Where a frame's time goes during expand/collapse at 2× (Retina):
+    /// `cargo test --release -p islet frame_cost -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn frame_cost() {
+        use std::time::Instant;
+        let scale = 2.0f32;
+        let mut engine = TextEngine::new();
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        let (w, h) = ((WINDOW.0 * 2.0) as u32, (WINDOW.1 * 2.0) as u32);
+        let mut pixmap = tiny_skia::Pixmap::new(w, h).unwrap();
+        let (mut t_draw, mut t_clip, mut t_els, mut t_paint, mut t_swizzle) = (0.0, 0.0, 0.0, 0.0, 0.0);
+        let mut out = vec![0u8; (w * h * 4) as usize];
+        let mut by_kind = [0.0f64; 4];
+        let mut frames = 0;
+        for cycle in 0..10 {
+            let t0 = cycle as f64 * 2.0;
+            click(&mut app, t0);
+            for i in 0..120 {
+                let t = t0 + i as f64 / 60.0;
+                let frame = app.frame(t);
+                let a = Instant::now();
+                islet_render::draw(&mut pixmap, &frame, scale);
+                let b = Instant::now();
+                if app.has_content(t) {
+                    let els = app.elements(t, &mut engine);
+                    let clip = islet_render::elements::needs_clip(&frame, &els, &mut engine)
+                        .then(|| islet_render::clip_mask(&frame, w, h, scale))
+                        .flatten();
+                    let c = Instant::now();
+                    let d = Instant::now();
+                    for el in &els {
+                        let k = match el {
+                            Element::Text(_) => 0,
+                            Element::Bar { .. } => 1,
+                            Element::Icon { .. } => 2,
+                            _ => 3,
+                        };
+                        let s0 = Instant::now();
+                        islet_render::elements::draw_elements(
+                            &mut pixmap,
+                            std::slice::from_ref(el),
+                            &mut engine,
+                            scale,
+                            clip.as_ref(),
+                        );
+                        by_kind[k] += s0.elapsed().as_secs_f64();
+                    }
+                    let e = Instant::now();
+                    t_clip += (c - b).as_secs_f64();
+                    t_els += (d - c).as_secs_f64();
+                    t_paint += (e - d).as_secs_f64();
+                }
+                let f = Instant::now();
+                islet_render::rgba_to_bgra(pixmap.data(), &mut out);
+                t_swizzle += f.elapsed().as_secs_f64();
+                t_draw += (b - a).as_secs_f64();
+                frames += 1;
+            }
+        }
+        let ms = |x: f64| x * 1000.0 / frames as f64;
+        eprintln!(
+            "per frame: draw {:.3} ms, clip {:.3} ms, elements {:.3} ms, paint {:.3} ms, swizzle/copy {:.3} ms",
+            ms(t_draw),
+            ms(t_clip),
+            ms(t_els),
+            ms(t_paint),
+            ms(t_swizzle)
+        );
+        eprintln!(
+            "paint by kind: text {:.3} ms, bars {:.3} ms, icons {:.3} ms, other {:.3} ms",
+            ms(by_kind[0]),
+            ms(by_kind[1]),
+            ms(by_kind[2]),
+            ms(by_kind[3])
+        );
     }
 
     #[test]

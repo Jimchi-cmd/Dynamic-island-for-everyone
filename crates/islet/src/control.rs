@@ -109,7 +109,14 @@ pub fn send(cmd: &Control) -> Result<(), String> {
         serde_json::from_slice(&std::fs::read(path).map_err(|_| "Islet is not running")?).map_err(|e| e.to_string())?;
     let port = info["port"].as_u64().ok_or("bad control file")? as u16;
     let token = info["token"].as_str().ok_or("bad control file")?;
-    let mut stream = TcpStream::connect(("127.0.0.1", port)).map_err(|_| "Islet is not running")?;
+    // A loopback connect either succeeds at once or nobody is listening (a
+    // stale file from an earlier run). Windows retries a refused loopback
+    // connect for about two seconds, which would delay every start after a
+    // crash or shutdown, so don't wait for that.
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let mut stream =
+        TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(250)).map_err(|_| "Islet is not running")?;
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
     let line = match cmd {
         Control::NavStart(trip) => {
             format!("{token}\tnav-start\t{}", serde_json::to_string(trip).map_err(|e| e.to_string())?)

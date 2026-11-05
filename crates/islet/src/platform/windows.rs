@@ -339,10 +339,7 @@ impl Backend for Win32 {
         let src = frame.data();
         // SAFETY: the DIB holds exactly width*height*4 bytes (top-down, 32bpp).
         let dst = unsafe { std::slice::from_raw_parts_mut(self.bits, src.len()) };
-        for (d, s) in dst.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
-            // Premultiplied RGBA → premultiplied BGRA.
-            d.copy_from_slice(&[s[2], s[1], s[0], s[3]]);
-        }
+        islet_render::rgba_to_bgra(src, dst);
         let blend = BLENDFUNCTION {
             BlendOp: AC_SRC_OVER as u8,
             BlendFlags: 0,

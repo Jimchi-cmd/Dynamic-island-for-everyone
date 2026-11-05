@@ -155,9 +155,7 @@ impl Wayland {
         let (w, h) = (frame.width() as i32, frame.height() as i32);
         let (buffer, canvas) = self.pool.create_buffer(w, h, w * 4, wl_shm::Format::Argb8888).map_err(we)?;
         // Premultiplied RGBA → ARGB8888 (BGRA bytes on little-endian).
-        for (dst, src) in canvas.chunks_exact_mut(4).zip(frame.data().chunks_exact(4)) {
-            dst.copy_from_slice(&[src[2], src[1], src[0], src[3]]);
-        }
+        islet_render::rgba_to_bgra(frame.data(), canvas);
         let surface = self.state.layer.wl_surface();
         surface.set_buffer_scale(self.state.scale);
         buffer.attach_to(surface).map_err(we)?;

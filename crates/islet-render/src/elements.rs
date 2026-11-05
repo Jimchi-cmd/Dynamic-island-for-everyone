@@ -512,8 +512,54 @@ impl IconPainter<'_> {
 
 /// Draw `elements` at `scale` (physical px per logical px), clipped to `clip`.
 pub fn draw_elements(pm: &mut Pixmap, elements: &[Element], text: &mut TextEngine, scale: f32, clip: Option<&Mask>) {
+    draw_elements_in(pm, elements, text, scale, clip, None);
+}
+
+/// The box an element covers (logical px).
+fn bounds(el: &Element, text: &mut TextEngine) -> Option<(f32, f32, f32, f32)> {
+    match el {
+        Element::Text(t) => {
+            let w = text.measure(&t.text, &t.style);
+            let left = match t.style.align {
+                crate::text::Align::Left => t.x,
+                crate::text::Align::Center => t.x - w / 2.0,
+                crate::text::Align::Right => t.x - w,
+            };
+            // Ascenders and descenders stay within about 1.1 × the size.
+            let s = t.style.size;
+            Some((left - 2.0, t.baseline - s * 1.1, w + 4.0, s * 1.5))
+        }
+        Element::Bar { x, y, w, h, .. } => Some((*x, *y, w.max(*h), *h)),
+        Element::Icon { x, y, size, .. } | Element::Art { x, y, size, .. } => Some((*x, *y, *size, *size)),
+        Element::Ring { cx, cy, r, width, .. } => {
+            let e = r + width / 2.0;
+            Some((cx - e, cy - e, 2.0 * e, 2.0 * e))
+        }
+    }
+}
+
+/// Whether any element reaches outside `frame`'s outline (so a clip mask
+/// is needed at all).
+pub fn needs_clip(frame: &crate::PillFrame, elements: &[Element], text: &mut TextEngine) -> bool {
+    elements.iter().any(|el| !bounds(el, text).is_some_and(|(x, y, w, h)| frame.contains_rect(x, y, w, h)))
+}
+
+/// Like `draw_elements`, but elements wholly inside `frame`'s outline skip
+/// the clip mask (masked fills are several times slower).
+pub fn draw_elements_in(
+    pm: &mut Pixmap,
+    elements: &[Element],
+    text: &mut TextEngine,
+    scale: f32,
+    clip: Option<&Mask>,
+    frame: Option<&crate::PillFrame>,
+) {
     let base = Transform::from_scale(scale, scale);
     for el in elements {
+        let clip = match (frame, clip.and_then(|_| bounds(el, text))) {
+            (Some(f), Some((x, y, w, h))) if f.contains_rect(x, y, w, h) => None,
+            _ => clip,
+        };
         match el {
             Element::Text(item) => text.draw(pm, item, scale, clip),
             Element::Bar { x, y, w, h, color, opacity } => {

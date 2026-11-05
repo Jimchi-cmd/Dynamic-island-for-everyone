@@ -322,8 +322,18 @@ fn run() -> platform::Result<()> {
             if app.has_content(t) {
                 let engine = text.get_or_insert_with(TextEngine::new);
                 let elements = app.elements(t, engine);
-                let clip = islet_render::clip_mask(&frame, pixmap.width(), pixmap.height(), scale);
-                islet_render::elements::draw_elements(&mut pixmap, &elements, engine, scale, clip.as_ref());
+                // Clip only what reaches past the outline (mid-morph content).
+                let clip = islet_render::elements::needs_clip(&frame, &elements, engine)
+                    .then(|| islet_render::clip_mask(&frame, pixmap.width(), pixmap.height(), scale))
+                    .flatten();
+                islet_render::elements::draw_elements_in(
+                    &mut pixmap,
+                    &elements,
+                    engine,
+                    scale,
+                    clip.as_ref(),
+                    Some(&frame),
+                );
             }
             if first_frame {
                 trace("first frame drawn");

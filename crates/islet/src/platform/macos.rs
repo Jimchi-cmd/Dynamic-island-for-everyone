@@ -23,6 +23,7 @@ use objc2_app_kit::{
 use objc2_core_foundation::{CFData, CFRetained};
 use objc2_core_graphics::{
     kCGColorSpaceSRGB, CGBitmapInfo, CGColorRenderingIntent, CGColorSpace, CGDataProvider, CGImage, CGImageAlphaInfo,
+    CGImageByteOrderInfo,
 };
 use objc2_foundation::{NSArray, NSDate, NSDefaultRunLoopMode, NSObject, NSPoint, NSRect, NSSize, NSString, NSURL};
 use objc2_quartz_core::CATransaction;
@@ -237,6 +238,9 @@ pub struct Mac {
     panel: Retained<NSPanel>,
     view: Retained<IsletView>,
     color_space: CFRetained<CGColorSpace>,
+    /// The frame in Core Animation's native layout (premultiplied BGRA,
+    /// little-endian), so it can use the pixels without converting them.
+    bgra: Vec<u8>,
     scale: f64,
     size: (u32, u32),
     notch: Option<(f64, f64)>,
@@ -357,7 +361,18 @@ impl Backend for Mac {
             .ok_or("no colour space")?;
         let size = ((spec.width * scale).round() as u32, (spec.height * scale).round() as u32);
         let notch = notch_of(&screen);
-        Ok(Self { app, panel, view, color_space, scale, size, notch, _monitor: monitor, _caps_monitor: caps_monitor })
+        Ok(Self {
+            app,
+            panel,
+            view,
+            color_space,
+            bgra: Vec::new(),
+            scale,
+            size,
+            notch,
+            _monitor: monitor,
+            _caps_monitor: caps_monitor,
+        })
     }
 
     fn scale(&self) -> f64 {
@@ -378,11 +393,12 @@ impl Backend for Mac {
 
     fn present(&mut self, frame: &Pixmap) -> Result<()> {
         let (w, h) = (frame.width() as usize, frame.height() as usize);
-        let data = CFData::from_bytes(frame.data());
+        self.bgra.resize(frame.data().len(), 0);
+        islet_render::rgba_to_bgra(frame.data(), &mut self.bgra);
+        let data = CFData::from_bytes(&self.bgra);
         let provider = CGDataProvider::with_cf_data(Some(&data)).ok_or("CGDataProvider failed")?;
-        // tiny-skia pixels are premultiplied R,G,B,A bytes.
-        // Byte order "default" is 0, so the alpha info alone describes the layout.
-        let info = CGBitmapInfo(CGImageAlphaInfo::PremultipliedLast.0);
+        // Premultiplied B,G,R,A bytes = 32-bit little-endian ARGB words.
+        let info = CGBitmapInfo(CGImageAlphaInfo::PremultipliedFirst.0 | CGImageByteOrderInfo::Order32Little.0);
         // SAFETY: the provider holds exactly w*h*4 bytes with the given layout.
         let image = unsafe {
             CGImage::new(

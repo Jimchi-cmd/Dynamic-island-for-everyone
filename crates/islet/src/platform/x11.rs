@@ -272,11 +272,11 @@ impl Backend for X11 {
         let (w, h) = (frame.width(), frame.height());
         let src = frame.data();
         self.buf.resize(src.len(), 0);
-        for (d, s) in self.buf.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
-            // tiny-skia: premultiplied R,G,B,A bytes. X: 0xAARRGGBB pixels.
-            if self.lsb {
-                d.copy_from_slice(&[s[2], s[1], s[0], s[3]]);
-            } else {
+        // tiny-skia: premultiplied R,G,B,A bytes. X: 0xAARRGGBB pixels.
+        if self.lsb {
+            islet_render::rgba_to_bgra(src, &mut self.buf);
+        } else {
+            for (d, s) in self.buf.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
                 d.copy_from_slice(&[s[3], s[0], s[1], s[2]]);
             }
         }

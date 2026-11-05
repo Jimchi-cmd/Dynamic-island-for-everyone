@@ -27,6 +27,42 @@ pub struct PillFrame {
 }
 
 impl PillFrame {
+    /// Whether the rectangle (logical px) is certainly inside the outline,
+    /// so drawing it needs no clip mask. Conservative: the corners are
+    /// treated as circles of radius (1 + smoothing) × r, which lie inside
+    /// the squircle's smoothed corners.
+    pub fn contains_rect(&self, x: f32, y: f32, w: f32, h: f32) -> bool {
+        if self.bubble.is_some() {
+            return false;
+        }
+        let s = &self.shape;
+        if x < s.x || y < s.y || x + w > s.x + s.w || y + h > s.y + s.h {
+            return false;
+        }
+        let r = (s.radius * (1.0 + s.smoothing)).min(s.w / 2.0).min(s.h / 2.0);
+        let (l, t, rr, b) = (s.x + r, s.y + r, s.x + s.w - r, s.y + s.h - r);
+        [(x, y), (x + w, y), (x, y + h), (x + w, y + h)].iter().all(|&(px, py)| {
+            let cx = if px < l {
+                l
+            } else if px > rr {
+                rr
+            } else {
+                return true;
+            };
+            let cy = if py < t {
+                if self.flat_top {
+                    return true;
+                }
+                t
+            } else if py > b {
+                b
+            } else {
+                return true;
+            };
+            (px - cx).powi(2) + (py - cy).powi(2) <= r * r
+        })
+    }
+
     pub fn pill(shape: Squircle) -> Self {
         Self { shape, bubble: None, highlight: 0.0, flat_top: false }
     }
@@ -103,5 +139,63 @@ pub fn draw(pixmap: &mut Pixmap, frame: &PillFrame, scale: f32) {
             let stroke = Stroke { width: 1.0 / scale, ..Stroke::default() };
             pixmap.stroke_path(&p, &hl, &stroke, ts, None);
         }
+    }
+}
+
+/// Premultiplied RGBA bytes (tiny-skia) → premultiplied BGRA bytes, the
+/// native layout of Windows DIBs, X11/Wayland ARGB32 (little-endian) and
+/// Core Animation. Swaps red and blue a whole pixel at a time, which the
+/// compiler turns into vector code.
+pub fn rgba_to_bgra(src: &[u8], dst: &mut [u8]) {
+    let n = src.len().min(dst.len()) / 4 * 4;
+    let (src, dst) = (&src[..n], &mut dst[..n]);
+    // SAFETY: any four bytes are a valid u32; align_to only reinterprets
+    // the aligned middle of each slice.
+    let (sp, sm, ss) = unsafe { src.align_to::<u32>() };
+    let (dp, dm, ds) = unsafe { dst.align_to_mut::<u32>() };
+    if sp.is_empty() && dp.is_empty() && ss.is_empty() && ds.is_empty() && sm.len() == dm.len() {
+        // Pixel bytes R,G,B,A read as a little-endian word are 0xAABBGGRR.
+        let swap = |p: u32| (p & 0xFF00_FF00) | ((p & 0x0000_00FF) << 16) | ((p >> 16) & 0x0000_00FF);
+        if cfg!(target_endian = "little") {
+            for (d, &p) in dm.iter_mut().zip(sm) {
+                *d = swap(p);
+            }
+            return;
+        }
+    }
+    for (d, s) in dst.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
+        d.copy_from_slice(&[s[2], s[1], s[0], s[3]]);
+    }
+}
+
+#[cfg(test)]
+mod contains_tests {
+    use super::*;
+
+    #[test]
+    fn rects_inside_the_outline() {
+        let f = PillFrame::pill(Squircle { x: 0.0, y: 0.0, w: 300.0, h: 160.0, radius: 40.0, smoothing: 0.6 });
+        assert!(f.contains_rect(100.0, 60.0, 100.0, 40.0), "the middle");
+        assert!(f.contains_rect(20.0, 70.0, 50.0, 20.0), "the left edge, between corners");
+        assert!(!f.contains_rect(2.0, 2.0, 30.0, 30.0), "a corner");
+        assert!(!f.contains_rect(280.0, 70.0, 40.0, 10.0), "past the edge");
+        let mut bubbled = f;
+        bubbled.bubble = Some(Circle { x: 320.0, y: 18.0, r: 18.0 });
+        assert!(!bubbled.contains_rect(100.0, 60.0, 10.0, 10.0));
+    }
+}
+
+#[cfg(test)]
+mod swizzle_tests {
+    #[test]
+    fn red_and_blue_swap() {
+        // Aligned buffers take the word path; an odd offset takes the byte path.
+        let src: Vec<u8> = vec![1, 2, 3, 4, 250, 0, 9, 255];
+        let mut dst = vec![0u8; 8];
+        super::rgba_to_bgra(&src, &mut dst);
+        assert_eq!(dst, [3, 2, 1, 4, 9, 0, 250, 255]);
+        let mut odd = [0u8; 9];
+        super::rgba_to_bgra(&src, &mut odd[1..]);
+        assert_eq!(&odd[1..], [3, 2, 1, 4, 9, 0, 250, 255]);
     }
 }
