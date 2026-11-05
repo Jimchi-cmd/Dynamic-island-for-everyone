@@ -10,8 +10,8 @@ use std::time::Instant;
 use tiny_skia::Pixmap;
 
 pub enum Linux {
-    X11(X11),
-    Wayland(Wayland),
+    X11(Box<X11>),
+    Wayland(Box<Wayland>),
 }
 
 impl Backend for Linux {
@@ -24,12 +24,12 @@ impl Backend for Linux {
         };
         if want_wayland {
             match Wayland::create(spec) {
-                Ok(w) => return Ok(Linux::Wayland(w)),
+                Ok(w) => return Ok(Linux::Wayland(Box::new(w))),
                 Err(e) if forced.as_deref() == Some("wayland") => return Err(e),
                 Err(e) => crate::providers::debug_log(&format!("using X11 ({e})")),
             }
         }
-        X11::create(spec).map(Linux::X11)
+        X11::create(spec).map(|x| Linux::X11(Box::new(x)))
     }
 
     fn scale(&self) -> f64 {
