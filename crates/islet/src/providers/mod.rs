@@ -31,6 +31,7 @@ pub mod macos_mediaremote;
 #[cfg(target_os = "macos")]
 mod macos_volume;
 pub mod navigation;
+pub mod weather;
 #[cfg(target_os = "windows")]
 mod windows_battery;
 #[cfg(target_os = "windows")]
@@ -127,6 +128,7 @@ fn describe(r: &Report) -> String {
         Report::Connectivity(u) => format!("connectivity: {u:?}"),
         Report::Timer(t) => format!("timer: {:?}", t.as_ref().map(|t| t.title())),
         Report::Hud(h) => format!("hud: {h:?}"),
+        Report::Weather(w) => format!("weather: {w:?}"),
     }
 }
 
@@ -135,6 +137,7 @@ pub struct Providers {
     media: Option<Sender<MediaCommand>>,
     nav: Sender<navigation::NavMsg>,
     conn: Sender<islet_core::connectivity::ConnCommand>,
+    weather: Sender<Option<islet_core::prefs::Place>>,
 }
 
 impl Providers {
@@ -145,11 +148,17 @@ impl Providers {
         let sink = Sink { tx, waker };
         let nav = navigation::start(sink.clone());
         let conn = connectivity::start(sink.clone());
+        let weather = weather::start(sink.clone());
         if std::env::var("ISLET_DEMO").as_deref() == Ok("media") {
-            return Self { reports, media: Some(demo::start(sink)), nav, conn };
+            return Self { reports, media: Some(demo::start(sink)), nav, conn, weather };
         }
         let media = platform_start(sink);
-        Self { reports, media, nav, conn }
+        Self { reports, media, nav, conn, weather }
+    }
+
+    /// Follow this place's weather (None turns weather off).
+    pub fn weather(&self, place: Option<islet_core::prefs::Place>) {
+        let _ = self.weather.send(place);
     }
 
     /// A Wi-Fi / Bluetooth request (the worker only runs when asked).

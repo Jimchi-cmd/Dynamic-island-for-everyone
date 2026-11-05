@@ -13,3 +13,4 @@ pub mod prefs;
 pub mod spring;
 pub mod timer;
 pub mod version;
+pub mod weather;

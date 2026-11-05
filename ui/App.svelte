@@ -130,6 +130,40 @@
     }
   }
 
+  // Weather
+  let cityQuery = $state('');
+  let cityResults: { name: string; lat: number; lon: number }[] = $state([]);
+  let weatherNote = $state('');
+
+  async function searchCity() {
+    weatherNote = 'Searching…';
+    try {
+      cityResults = JSON.parse(await api.islet(['weather', 'search', cityQuery.trim(), '--json']));
+      weatherNote = cityResults.length ? '' : 'No places found.';
+    } catch (e) {
+      weatherNote = api.message(e);
+    }
+  }
+
+  async function chooseCity(p: { name: string; lat: number; lon: number }) {
+    try {
+      weatherNote = await api.islet(['weather', 'set', '--lat', String(p.lat), '--lon', String(p.lon), '--name', p.name]);
+      cityResults = [];
+      await loadIslandPrefs();
+    } catch (e) {
+      weatherNote = api.message(e);
+    }
+  }
+
+  async function weatherOff() {
+    try {
+      weatherNote = await api.islet(['weather', 'off']);
+      await loadIslandPrefs();
+    } catch (e) {
+      weatherNote = api.message(e);
+    }
+  }
+
   // Timer & focus
   let timerMinutes = $state(10);
   let timerLabel = $state('');
@@ -434,6 +468,41 @@
               you turn this off.
             </p>
           {/if}
+        </div>
+        <div class="card">
+          <h2>Weather</h2>
+          <p class="muted small">
+            Shows on the clock card. Off until you choose a place. Then Islet asks Open-Meteo once an hour (no account or
+            key; it sees only the place's coordinates).
+          </p>
+          {#if islandPrefs?.weather}
+            <div class="net">
+              <span class="name ok">{islandPrefs.weather.name}</span>
+              <button onclick={weatherOff}>Turn off</button>
+            </div>
+            <div class="net">
+              <span class="name">Fahrenheit</span>
+              <input
+                type="checkbox"
+                class="switch"
+                aria-label="Show temperatures in Fahrenheit"
+                checked={islandPrefs.fahrenheit}
+                onchange={(e) => setSwitch('fahrenheit', e.currentTarget.checked)}
+              />
+            </div>
+          {/if}
+          <form class="join" onsubmit={(e) => { e.preventDefault(); if (cityQuery.trim() && !cityQuery.trim().startsWith('-')) void searchCity(); }}>
+            <input placeholder="City, e.g. Kampala" bind:value={cityQuery} aria-label="City" />
+            <button type="submit" disabled={!cityQuery.trim()}>Search</button>
+          </form>
+          {#each cityResults as p (p.name + p.lat)}
+            <div class="net">
+              <span class="name">{p.name}</span>
+              <button class="primary" onclick={() => chooseCity(p)}>Use</button>
+            </div>
+          {/each}
+          {#if weatherNote}<p class="small" role="status">{weatherNote}</p>{/if}
+          <p class="muted small">Weather data by <button class="link" onclick={() => api.openLink('https://open-meteo.com/')}>Open-Meteo.com</button> (CC BY 4.0).</p>
         </div>
         <p class="muted small">Right-click the island to close it. Click it to open, and press and hold for more.</p>
       {:else if page === 'connections'}

@@ -15,6 +15,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 - **Now Playing** from any app: artwork, a live waveform, progress you can drag, and play/pause/skip.
 - **Battery pop-ups** when headphones, earbuds, mice, keyboards or controllers connect, plus low-battery and charger alerts.
 - **Volume, brightness and caps-lock pop-ups**, like the iPhone's.
+- **Weather** on the clock card, from Open-Meteo (no account or key).
 - **Timer and focus sessions:** a countdown ring on the island, or Pomodoro rounds of work and breaks.
 - **Alarms:** one-time or repeating. When one rings, the island opens with a swinging bell and a chime until you snooze or stop it.
 - **Wi-Fi and Bluetooth:** open the island, tap Wi-Fi or Bluetooth on the clock card, and pick a network or a device.
@@ -36,7 +37,7 @@ Islet isn't code-signed yet, so Windows SmartScreen and macOS Gatekeeper will wa
 ## Privacy
 
 - No accounts, no analytics, no telemetry.
-- Islet uses the network only for features you turn on: the navigation ETA (straight to Google, with your key) and update checks (off by default).
+- Islet uses the network only for features you turn on: weather (Open-Meteo, hourly, only the place you chose), the navigation ETA (straight to Google, with your key) and update checks (off by default).
 - Your Google key is kept in the OS keychain, never in a file. Route results are never stored.
 - Wi-Fi and Bluetooth lists load only when you open them.
 
@@ -83,6 +84,6 @@ More docs: [roadmap](docs/roadmap.md) · [design spec](docs/design-spec.md) · [
 
 ## Legal
 
-Islet is not affiliated with, endorsed by or sponsored by Apple Inc. "Dynamic Island", "iPhone", "macOS" and "San Francisco" are trademarks of Apple Inc. Islet doesn't include Apple's fonts, icons, symbols or sounds: it draws its own icons, synthesises its own alarm chime, and on macOS uses the system font that's already on your Mac. Google Maps is a trademark of Google LLC; Waze is a trademark of Waze Mobile Ltd. Windows is a trademark of Microsoft Corporation. All other product names are trademarks of their respective owners.
+Islet is not affiliated with, endorsed by or sponsored by Apple Inc. "Dynamic Island", "iPhone", "macOS" and "San Francisco" are trademarks of Apple Inc. Islet doesn't include Apple's fonts, icons, symbols or sounds: it draws its own icons, synthesises its own alarm chime, and on macOS uses the system font that's already on your Mac. Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0). Google Maps is a trademark of Google LLC; Waze is a trademark of Waze Mobile Ltd. Windows is a trademark of Microsoft Corporation. All other product names are trademarks of their respective owners.
 
 Islet is licensed under the [MIT License](LICENSE). Third-party components are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

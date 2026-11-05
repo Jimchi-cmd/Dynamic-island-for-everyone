@@ -153,6 +153,8 @@ pub enum Report {
     Timer(Option<crate::timer::Timer>),
     /// Volume, brightness or caps lock changed.
     Hud(Hud),
+    /// Current weather (None when weather is turned off).
+    Weather(Option<crate::weather::Weather>),
 }
 
 /// Why a battery peek is showing.
@@ -195,6 +197,7 @@ pub struct Activities {
     conn: crate::connectivity::Connectivity,
     timer: Option<crate::timer::Timer>,
     hud: Option<(Hud, f64)>,
+    weather: Option<crate::weather::Weather>,
     nav: Option<NavInfo>,
     media: Option<MediaInfo>,
     paused_since: Option<f64>,
@@ -226,6 +229,10 @@ impl Activities {
 
     pub fn connectivity(&self) -> &crate::connectivity::Connectivity {
         &self.conn
+    }
+
+    pub fn weather(&self) -> Option<&crate::weather::Weather> {
+        self.weather.as_ref()
     }
 
     pub fn timer(&self) -> Option<&crate::timer::Timer> {
@@ -315,6 +322,10 @@ impl Activities {
             }
             Report::Hud(h) => {
                 self.hud = Some((h, t + HUD_SECS));
+                true
+            }
+            Report::Weather(w) => {
+                self.weather = w;
                 true
             }
             Report::Laptop(d) => {

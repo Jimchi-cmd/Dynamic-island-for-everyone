@@ -816,6 +816,43 @@ pub fn expanded_clock(pill: Rect, now: &LocalTime, h24: bool, o: f32, engine: &m
     v
 }
 
+pub fn sky_icon(w: &islet_core::weather::Weather) -> Icon {
+    use islet_core::weather::Sky;
+    match (w.sky, w.is_day) {
+        (Sky::Clear, true) => Icon::Sun,
+        (Sky::Clear, false) => Icon::Moon,
+        (Sky::PartlyCloudy, true) => Icon::PartlyCloudy,
+        (Sky::PartlyCloudy, false) | (Sky::Cloudy, _) => Icon::Cloud,
+        (Sky::Fog, _) => Icon::Fog,
+        (Sky::Rain, _) => Icon::Rain,
+        (Sky::Snow, _) => Icon::Snow,
+        (Sky::Storm, _) => Icon::Storm,
+    }
+}
+
+/// Weather in the clock card's top-right corner, with Open-Meteo's credit.
+pub fn clock_weather(pill: Rect, w: &islet_core::weather::Weather, fahrenheit: bool, o: f32) -> Vec<Element> {
+    use islet_core::weather::format_temp;
+    let (right, top) = ((pill.right() - PAD) as f32, pill.y as f32 + (1.0 - o) * 8.0);
+    let temp =
+        TextStyle { size: 30.0, weight: 600, opacity: o, tabular: true, align: Align::Right, ..TextStyle::default() };
+    let small = TextStyle { size: 12.5, opacity: o * 0.6, align: Align::Right, ..TextStyle::default() };
+    let mut v = vec![
+        text(format_temp(w.temp_c, fahrenheit), temp, right, top + 58.0),
+        Element::Icon { icon: sky_icon(w), x: right - 104.0, y: top + 32.0, size: 28.0, color: WHITE, opacity: o },
+    ];
+    if let (Some(h), Some(l)) = (w.high_c, w.low_c) {
+        v.push(text(
+            format!("H {}  L {}", format_temp(h, fahrenheit), format_temp(l, fahrenheit)),
+            small,
+            right,
+            top + 80.0,
+        ));
+    }
+    v.push(text("Open-Meteo", TextStyle { size: 10.0, opacity: o * 0.4, ..small }, right, top + 102.0));
+    v
+}
+
 /// The Wi-Fi and Bluetooth buttons along the bottom of the clock card.
 pub fn clock_chips(pill: Rect) -> [(Rect, Panel); 2] {
     let (x, w) = (pill.x + PAD, pill.w - 2.0 * PAD);

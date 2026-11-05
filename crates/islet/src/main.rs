@@ -123,6 +123,7 @@ fn run() -> platform::Result<()> {
         app.set_prefs(config::load_prefs());
     }
     win.watch_caps_lock(app.prefs().caps_lock_hud);
+    providers.weather(app.prefs().weather.clone());
     let mut alarm_sound = sound::AlarmSound::default();
     trace("providers started");
 
@@ -190,6 +191,8 @@ fn run() -> platform::Result<()> {
                 Control::PrefsChanged if !scripted => {
                     app.set_prefs(config::load_prefs());
                     win.watch_caps_lock(app.prefs().caps_lock_hud);
+                    providers.weather(app.prefs().weather.clone());
+                    providers.weather(app.prefs().weather.clone());
                 }
                 Control::PrefsChanged => {}
             }

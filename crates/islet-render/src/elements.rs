@@ -39,6 +39,13 @@ pub enum Icon {
     Volume(u8),
     Sun,
     CapsLock,
+    Moon,
+    Cloud,
+    PartlyCloudy,
+    Rain,
+    Snow,
+    Storm,
+    Fog,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -322,6 +329,86 @@ impl IconPainter<'_> {
                     self.line((12.0 + 6.8 * c, 12.0 + 6.8 * s), (12.0 + 9.3 * c, 12.0 + 9.3 * s), 2.0);
                 }
             }
+            Icon::Moon => {
+                // A crescent: the big disc minus where a second disc covers it.
+                let (c1, r1, c2, r2) = ((11.0f32, 12.5f32), 8.0f32, (15.5f32, 9.0f32), 6.8f32);
+                let (dx, dy) = (c2.0 - c1.0, c2.1 - c1.1);
+                let d = (dx * dx + dy * dy).sqrt();
+                let a = (r1 * r1 - r2 * r2 + d * d) / (2.0 * d);
+                let h = (r1 * r1 - a * a).max(0.0).sqrt();
+                let (px, py) = (c1.0 + a * dx / d, c1.1 + a * dy / d);
+                let i1 = (px + h * dy / d, py - h * dx / d);
+                let i2 = (px - h * dy / d, py + h * dx / d);
+                let ang = |c: (f32, f32), p: (f32, f32)| (p.1 - c.1).atan2(p.0 - c.0);
+                let tau = std::f32::consts::TAU;
+                // Outer edge: the long way round the big disc, from i1 to i2.
+                let (o1, o2) = (ang(c1, i1), ang(c1, i2));
+                let mut outer = o2 - o1;
+                if outer > 0.0 {
+                    outer -= tau;
+                }
+                // Inner edge: the short way round the cutting disc, back to i1.
+                let (n1, n2) = (ang(c2, i2), ang(c2, i1));
+                let mut inner = n2 - n1;
+                if inner < 0.0 {
+                    inner += tau;
+                }
+                if inner > std::f32::consts::PI {
+                    inner -= tau;
+                }
+                let mut pb = PathBuilder::new();
+                arc(&mut pb, c1.0, c1.1, r1, o1, outer, true);
+                arc(&mut pb, c2.0, c2.1, r2, n1, inner, false);
+                pb.close();
+                self.fill(pb.finish());
+            }
+            Icon::Cloud | Icon::Rain | Icon::Snow | Icon::Storm | Icon::PartlyCloudy | Icon::Fog => {
+                if icon == Icon::PartlyCloudy {
+                    let sun = self.circle(8.0, 8.0, 3.6);
+                    self.fill(sun);
+                    for i in 0..5 {
+                        let a = -2.8 + i as f32 * 0.7;
+                        let (c, s) = (a.cos(), a.sin());
+                        self.line((8.0 + 5.4 * c, 8.0 + 5.4 * s), (8.0 + 7.2 * c, 8.0 + 7.2 * s), 1.6);
+                    }
+                }
+                // A cloud: three bumps on a flat base.
+                let base = if matches!(icon, Icon::Cloud | Icon::PartlyCloudy) { 17.5 } else { 13.5 };
+                let mut pb = PathBuilder::new();
+                pb.move_to(6.5, base);
+                arc(&mut pb, 7.0, base - 3.5, 3.5, 1.57, 3.14, false);
+                arc(&mut pb, 11.5, base - 5.5, 4.8, 3.3, 2.6, false);
+                arc(&mut pb, 17.0, base - 3.8, 3.8, 4.9, 2.95, false);
+                pb.close();
+                let cloud = pb.finish();
+                self.fill(cloud);
+                match icon {
+                    Icon::Rain => {
+                        for x in [8.0, 12.0, 16.0] {
+                            self.line((x, 16.5), (x - 1.2, 20.5), 1.8);
+                        }
+                    }
+                    Icon::Snow => {
+                        for x in [8.0, 12.0, 16.0] {
+                            let flake = self.circle(x, 18.5, 1.3);
+                            self.fill(flake);
+                        }
+                    }
+                    Icon::Storm => self.fill(Self::poly(&[
+                        (12.5, 14.5),
+                        (9.0, 19.0),
+                        (11.5, 19.0),
+                        (10.5, 22.5),
+                        (15.0, 17.5),
+                        (12.5, 17.5),
+                    ])),
+                    Icon::Fog => {
+                        self.line((5.0, 17.0), (19.0, 17.0), 1.8);
+                        self.line((7.0, 20.5), (17.0, 20.5), 1.8);
+                    }
+                    _ => {}
+                }
+            }
             Icon::CapsLock => {
                 let arrow = Self::poly(&[
                     (12.0, 3.5),
@@ -450,7 +537,14 @@ mod tests {
         p.pixels().iter().filter(|c| c.alpha() > 0).count()
     }
 
-    const ALL: [Icon; 28] = [
+    const ALL: [Icon; 35] = [
+        Icon::Moon,
+        Icon::Cloud,
+        Icon::PartlyCloudy,
+        Icon::Rain,
+        Icon::Snow,
+        Icon::Storm,
+        Icon::Fog,
         Icon::Volume(0),
         Icon::Volume(255),
         Icon::Sun,

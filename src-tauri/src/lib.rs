@@ -27,7 +27,11 @@ pub fn allowed(args: &[String]) -> bool {
         ["wifi", "connect", ssid] | ["wifi", "connect", ssid, "--password-stdin"] => !ssid.starts_with('-'),
         ["bt", "connect" | "disconnect", id] => !id.starts_with('-'),
         ["timer", "pause" | "resume" | "stop"] => true,
-        ["prefs", "--json"] => true,
+        ["prefs", "--json"] | ["weather", "off"] => true,
+        ["weather", "search", q, "--json"] => !q.starts_with('-'),
+        ["weather", "set", "--lat", lat, "--lon", lon, "--name", name] => {
+            lat.parse::<f64>().is_ok() && lon.parse::<f64>().is_ok() && !name.starts_with('-')
+        }
         ["set", key, "on" | "off"] => islet_core::prefs::SWITCHES.contains(key),
         ["timer", "start", dur, rest @ ..] => {
             !dur.starts_with('-') && rest.chunks(2).all(|kv| matches!(kv, ["--label", v] if !v.starts_with('-')))

@@ -727,6 +727,9 @@ impl App {
                         out.extend(content::expanded_clock(cr, &now, self.h24, eo, engine));
                     }
                     out.extend(content::clock_chip_elements(cr, self.activities.connectivity(), eo, engine));
+                    if let Some(w) = self.activities.weather() {
+                        out.extend(content::clock_weather(cr, w, self.prefs.fahrenheit, eo));
+                    }
                 }
             }
         }
@@ -1747,6 +1750,38 @@ mod tests {
             let extra = if p == Minimal { MINIMAL_GAP + MINIMAL_CIRCLE } else { 0.0 };
             assert!((w + extra) * 1.03 <= WINDOW.0 && h * 1.03 + TOP_GAP <= WINDOW.1, "{p:?}");
         }
+    }
+
+    /// The clock card with weather, for visual review:
+    /// `ISLET_WEATHER_SHEET=/path/out.png cargo test -p islet weather_sheet`
+    #[test]
+    fn weather_sheet() {
+        let Some(out) = std::env::var_os("ISLET_WEATHER_SHEET") else { return };
+        use islet_core::weather::{Sky, Weather};
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let mut engine = TextEngine::new();
+        let skies = [(Sky::Rain, true), (Sky::PartlyCloudy, true), (Sky::Clear, false), (Sky::Storm, true)];
+        let (cw, ch) = (WINDOW.0 as u32, 180u32);
+        let mut sheet = Pixmap::new(cw * 2, ch * 2).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        for (i, (sky, is_day)) in skies.into_iter().enumerate() {
+            let mut a = App::new(Demo::None, false);
+            a.set_time(NOW, 0.0);
+            let w =
+                Weather { place: "Kampala".into(), temp_c: 24.3, high_c: Some(27.0), low_c: Some(18.0), sky, is_day };
+            a.report(Report::Weather(Some(w)), 0.0);
+            click(&mut a, 0.0);
+            let t = 5.0;
+            let mut cell = Pixmap::new(cw, WINDOW.1 as u32).unwrap();
+            let frame = a.frame(t);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, WINDOW.1 as u32, 1.0);
+            let els = a.elements(t, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            let (x, y) = ((i % 2) as i32 * cw as i32, (i / 2) as i32 * ch as i32);
+            sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+        }
+        sheet.save_png(out).unwrap();
     }
 
     /// HUD screens for visual review:

@@ -8,7 +8,7 @@
 //! ```
 
 use crate::providers::connectivity::{self as conn, ConnectError};
-use crate::{autostart, config, control, net, secrets};
+use crate::{autostart, config, control, net, providers, secrets};
 use control::Control;
 use islet_core::alarm::{self, Alarm};
 use islet_core::nav::{TravelMode, Trip};
@@ -40,6 +40,10 @@ Usage:
                                            join a network (the password is read from stdin)
   islet bt list [--json]                   paired Bluetooth devices
   islet bt connect|disconnect <id>         connect or disconnect one (id from bt list)
+  islet weather                            the weather now (if a place is set)
+  islet weather set <city>                 show weather for a place (Open-Meteo, no key)
+  islet weather search <city> [--json]     find places by name
+  islet weather off                        stop fetching weather
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
                                            notifications, calendar, fahrenheit
   islet prefs [--json]                     the island's settings
@@ -87,6 +91,11 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["timer", "resume"] => send_timer(TimerCommand::Resume),
         ["timer", "stop"] => send_timer(TimerCommand::Stop),
         ["focus", rest @ ..] => parse_focus(rest).and_then(send_timer),
+        ["weather"] => weather_now(),
+        ["weather", "off"] => set_weather(None).map(|()| "Weather is off.".into()),
+        ["weather", "search", rest @ ..] => weather_search(rest),
+        ["weather", "set", "--lat", lat, "--lon", lon, "--name", name] => weather_set_exact(lat, lon, name),
+        ["weather", "set", rest @ ..] if !rest.is_empty() => weather_set_search(rest),
         ["set", key, value] => set_switch(key, value),
         ["prefs"] => Ok(prefs_text(false)),
         ["prefs", "--json"] => Ok(prefs_text(true)),
@@ -226,6 +235,64 @@ fn alarm_edit(verb: &str, id: &str) -> Result<String, String> {
     config::save_alarms(&alarms)?;
     alarms_changed();
     Ok(msg)
+}
+
+fn set_weather(place: Option<islet_core::prefs::Place>) -> Result<(), String> {
+    let mut p = config::load_prefs();
+    p.weather = place;
+    config::save_prefs(&p)?;
+    prefs_changed();
+    Ok(())
+}
+
+fn weather_set_exact(lat: &str, lon: &str, name: &str) -> Result<String, String> {
+    let lat = lat.parse::<f64>().map_err(|_| format!("{lat:?} isn't a latitude"))?;
+    let lon = lon.parse::<f64>().map_err(|_| format!("{lon:?} isn't a longitude"))?;
+    set_weather(Some(islet_core::prefs::Place { name: name.to_string(), lat, lon }))?;
+    Ok(format!("Weather for {name}."))
+}
+
+fn weather_set_search(words: &[&str]) -> Result<String, String> {
+    let q = words.join(" ");
+    let place = providers::weather::search(&q)?.into_iter().next().ok_or_else(|| format!("no place called {q:?}"))?;
+    let name = place.name.clone();
+    set_weather(Some(place))?;
+    Ok(format!("Weather for {name}."))
+}
+
+fn weather_now() -> Result<String, String> {
+    let p = config::load_prefs();
+    let place = p.weather.ok_or("Weather is off. Turn it on with: islet weather set <city>")?;
+    let w = providers::weather::fetch(&place)?;
+    let t = |c| islet_core::weather::format_temp(c, p.fahrenheit);
+    let range = match (w.high_c, w.low_c) {
+        (Some(h), Some(l)) => format!(" (high {}, low {})", t(h), t(l)),
+        _ => String::new(),
+    };
+    Ok(format!(
+        "{}: {}, {}{}. Weather data by Open-Meteo.com",
+        w.place,
+        t(w.temp_c),
+        islet_core::weather::describe(w.sky),
+        range
+    ))
+}
+
+fn weather_search(args: &[&str]) -> Result<String, String> {
+    let json = args.contains(&"--json");
+    let q: Vec<&str> = args.iter().copied().filter(|a| *a != "--json").collect();
+    if q.is_empty() {
+        return Err("search for what? islet weather search Kampala".into());
+    }
+    let places = providers::weather::search(&q.join(" "))?;
+    if json {
+        return Ok(serde_json::to_string(&places).unwrap_or_default());
+    }
+    Ok(if places.is_empty() {
+        "No places found.".into()
+    } else {
+        places.iter().map(|p| format!("{}  ({:.3}, {:.3})", p.name, p.lat, p.lon)).collect::<Vec<_>>().join("\n")
+    })
 }
 
 fn prefs_changed() {
