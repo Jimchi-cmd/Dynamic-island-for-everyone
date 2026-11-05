@@ -22,6 +22,7 @@ Usage:
                                            show live ETA to <destination> (modes: drive,
                                            two-wheeler, walk, bicycle, transit)
   islet nav stop                           stop showing the trip
+  islet places <text> [--json]             destination suggestions (Google Places, your key)
   islet key routes                         store your Google Routes API key in the OS
                                            keychain (reads one line from stdin)
   islet key routes --clear                 remove it
@@ -179,6 +180,7 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
             p.size = (*n).into();
             Ok(format!("Size: {n}."))
         }),
+        ["places", rest @ ..] => places(rest),
         ["displays"] => Ok(crate::platform::displays().join("\n")),
         ["displays", "--json"] => Ok(serde_json::to_string(&crate::platform::displays()).unwrap_or_default()),
         ["look", "display", "primary"] => set_look(|p| {
@@ -209,12 +211,14 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
 pub fn parse_trip(args: &[&str]) -> Result<Trip, String> {
     let mut destination = Vec::new();
     let (mut origin, mut label, mut mode) = (None, String::new(), TravelMode::Drive);
+    let mut place_id = None;
     let mut it = args.iter();
     while let Some(&arg) = it.next() {
         let mut value = |name: &str| it.next().copied().ok_or_else(|| format!("{name} needs a value"));
         match arg {
             "--from" => origin = Some(value("--from")?.to_string()),
             "--label" => label = value("--label")?.to_string(),
+            "--place-id" => place_id = Some(value("--place-id")?.to_string()),
             "--mode" => {
                 let m = value("--mode")?;
                 mode = TravelMode::parse(m).ok_or_else(|| format!("unknown travel mode {m:?}"))?;
@@ -230,7 +234,7 @@ pub fn parse_trip(args: &[&str]) -> Result<Trip, String> {
     let origin = origin
         .filter(|o| !o.trim().is_empty())
         .ok_or("say where from with --from (Islet has no location access; an address or \"lat,lng\" works)")?;
-    Ok(Trip { label, destination, origin, mode })
+    Ok(Trip { label, destination, origin, mode, place_id })
 }
 
 fn start_trip(trip: Trip) -> Result<String, String> {
@@ -502,6 +506,45 @@ fn media_exclude(hide: bool, app: &str) -> Result<String, String> {
 
 fn prefs_changed() {
     let _ = control::send(&Control::PrefsChanged);
+}
+
+/// Destination suggestions from Places Autocomplete (New), billed to the
+/// user's own key (the same one as Routes; Places API (New) must be
+/// enabled for it). Only on request: nothing is cached.
+fn places(args: &[&str]) -> Result<String, String> {
+    let (mut words, mut json, mut session) = (Vec::new(), false, None);
+    let mut it = args.iter();
+    while let Some(&a) = it.next() {
+        match a {
+            "--json" => json = true,
+            "--session" => session = Some(*it.next().ok_or("--session needs a value")?),
+            o if o.starts_with("--") => return Err(format!("unknown option {o}")),
+            w => words.push(w),
+        }
+    }
+    let input = words.join(" ");
+    if input.trim().chars().count() < 3 {
+        return Ok(if json { "[]".into() } else { String::new() });
+    }
+    let key = secrets::routes_key()?;
+    let mut resp = crate::net::agent()
+        .post(islet_core::nav::PLACES_ENDPOINT)
+        .header("X-Goog-Api-Key", &key)
+        .header("X-Goog-FieldMask", islet_core::nav::PLACES_FIELD_MASK)
+        .header("Content-Type", "application/json")
+        .config()
+        .http_status_as_error(false)
+        .build()
+        .send(islet_core::nav::autocomplete_body(&input, session).to_string())
+        .map_err(|e| format!("network: {e}"))?;
+    let body = resp.body_mut().read_to_string().map_err(|e| format!("network: {e}"))?;
+    let list = islet_core::nav::parse_autocomplete(&body)?;
+    if json {
+        return serde_json::to_string(&list).map_err(|e| e.to_string());
+    }
+    let mut lines: Vec<String> = list.iter().map(|p| format!("{}  ({})", p.full, p.place_id)).collect();
+    lines.push("Powered by Google".into());
+    Ok(lines.join("\n"))
 }
 
 fn accent_names() -> String {

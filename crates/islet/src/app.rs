@@ -1958,6 +1958,7 @@ mod tests {
             destination: "Kampala Road".into(),
             origin: "Ntinda".into(),
             mode: TravelMode::Drive,
+            place_id: None,
         };
         let route =
             RouteInfo { duration: 900.0, free_flow: 900.0, distance_m: 5000.0, first_step: None, maneuver: None };
@@ -3099,6 +3100,7 @@ mod tests {
                                 destination: "Plot 5, Kampala Road".into(),
                                 origin: "Ntinda".into(),
                                 mode: TravelMode::Drive,
+                                place_id: None,
                             },
                             route: Some(RouteInfo {
                                 duration: 1530.0,

@@ -159,6 +159,7 @@ mod tests {
             destination: "Kampala Road".into(),
             origin: "Ntinda".into(),
             mode: nav::TravelMode::Drive,
+            place_id: None,
         }
     }
 

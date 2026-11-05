@@ -42,6 +42,10 @@ pub fn allowed(args: &[String]) -> bool {
         ["look", "accent", name] => islet_core::prefs::ACCENTS.iter().any(|(n, _)| n == name),
         ["look", "size", name] => islet_core::prefs::SIZES.iter().any(|(n, _)| n == name),
         ["displays", "--json"] | ["look", "display", "primary"] => true,
+        ["places", q, "--json"] => !q.starts_with('-'),
+        ["places", q, "--json", "--session", tok] => {
+            !q.starts_with('-') && tok.len() <= 64 && tok.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        }
         ["look", "display", name] => !name.starts_with('-'),
         ["look", "offset", px] => px.parse::<u32>().is_ok_and(|v| v <= islet_core::prefs::MAX_OFFSET),
         ["timer", "start", dur, rest @ ..] => {
@@ -62,7 +66,7 @@ pub fn allowed(args: &[String]) -> bool {
             let mut destination = false;
             while let Some(arg) = it.next() {
                 match *arg {
-                    "--from" | "--label" | "--mode" => {
+                    "--from" | "--label" | "--mode" | "--place-id" => {
                         if it.next().is_none() {
                             return false;
                         }

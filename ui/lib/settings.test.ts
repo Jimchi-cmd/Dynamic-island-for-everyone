@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { keyLooksValid, navStartArgs, parseStatus, permissionsFor } from './settings';
 
 describe('navStartArgs', () => {
+  it('passes a picked place ID, and only a safe one', () => {
+    const t = { label: '', destination: 'Garden City', origin: 'Ntinda', mode: 'drive' as const, placeId: 'ChIJ_x-1' };
+    expect(navStartArgs(t)).toContain('--place-id');
+    expect(navStartArgs({ ...t, placeId: 'bad id;rm' })).not.toContain('--place-id');
+  });
+
   it('builds the command line', () => {
     expect(navStartArgs({ label: ' Work ', destination: 'Kampala Road', origin: 'Ntinda', mode: 'drive' })).toEqual([
       'nav', 'start', 'Kampala Road', '--from', 'Ntinda', '--mode', 'drive', '--label', 'Work',

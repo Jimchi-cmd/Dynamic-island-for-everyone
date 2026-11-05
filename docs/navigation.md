@@ -21,7 +21,11 @@ islet key routes
 
 Paste the key and press Enter. Islet stores it in your OS keychain (Keychain on macOS, Credential Manager on Windows, GNOME Keyring or KWallet on Linux) and never writes it to a file. On Linux this uses `secret-tool`; if you don't have it, install your distro's `libsecret-tools` (Debian/Ubuntu) or `libsecret` package.
 
-The Settings app will offer the same thing in a form (Phase 4).
+Settings → Navigation has the same thing as a form.
+
+### Optional: destination suggestions
+
+If you also enable **Places API (New)** for the same key, Settings suggests destinations as you type, and `islet places "garden city"` lists them. A picked suggestion travels as a Google place ID, so the route and the Google Maps hand-off go to exactly that place. Suggestions are requested only while you type (after a short pause, at least three characters), are grouped into one billing session per search, and are never cached. Google bills Autocomplete requests to your project (there's a monthly free allowance); the list shows "Powered by Google" as Google's terms require. Without Places enabled, the destination box works as before.
 
 ## 3. Start a trip
 

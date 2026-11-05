@@ -163,6 +163,7 @@ mod tests {
             destination: "Kampala Road".into(),
             origin: "Ntinda".into(),
             mode: TravelMode::Drive,
+            place_id: None,
         };
         send(&Control::NavStart(trip.clone())).unwrap();
         assert_eq!(rx.recv().unwrap(), Control::NavStart(trip));

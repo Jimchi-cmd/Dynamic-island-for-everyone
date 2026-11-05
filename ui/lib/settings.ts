@@ -8,6 +8,16 @@ export interface Trip {
   destination: string;
   origin: string;
   mode: TravelMode;
+  /** Set when the destination was picked from Google's suggestions. */
+  placeId?: string;
+}
+
+/** A destination suggestion (`islet places … --json`). */
+export interface PlaceSuggestion {
+  placeId: string;
+  main: string;
+  secondary: string;
+  full: string;
 }
 
 export interface Status {
@@ -52,6 +62,7 @@ export function navStartArgs(t: Trip): string[] | { error: string } {
   }
   const args = ['nav', 'start', destination, '--from', origin, '--mode', t.mode];
   if (t.label.trim()) args.push('--label', t.label.trim());
+  if (t.placeId && /^[A-Za-z0-9_-]+$/.test(t.placeId)) args.push('--place-id', t.placeId);
   return args;
 }
 

@@ -68,6 +68,10 @@ pub struct Trip {
     pub origin: String,
     #[serde(default)]
     pub mode: TravelMode,
+    /// Google place ID of the destination, when it was picked from
+    /// suggestions (more exact than the address text).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place_id: Option<String>,
 }
 
 impl Trip {
@@ -83,7 +87,10 @@ impl Trip {
     pub fn request_body(&self) -> serde_json::Value {
         let mut body = serde_json::json!({
             "origin": { "address": self.origin },
-            "destination": { "address": self.destination },
+            "destination": match &self.place_id {
+                Some(id) => serde_json::json!({ "placeId": id }),
+                None => serde_json::json!({ "address": self.destination }),
+            },
             "travelMode": self.mode.api(),
         });
         if self.mode.traffic_aware() {
@@ -201,11 +208,67 @@ fn encode(s: &str) -> String {
 
 /// Google Maps URLs (documented, no key needed): start navigation there.
 pub fn google_maps_url(trip: &Trip) -> String {
+    let place = trip.place_id.as_ref().map_or(String::new(), |id| format!("&destination_place_id={}", encode(id)));
     format!(
-        "https://www.google.com/maps/dir/?api=1&destination={}&travelmode={}&dir_action=navigate",
+        "https://www.google.com/maps/dir/?api=1&destination={}{place}&travelmode={}&dir_action=navigate",
         encode(&trip.destination),
         trip.mode.maps()
     )
+}
+
+/// Places API (New) autocomplete: where suggestions come from.
+pub const PLACES_ENDPOINT: &str = "https://places.googleapis.com/v1/places:autocomplete";
+/// Only the fields the list shows (Places bills by field set).
+pub const PLACES_FIELD_MASK: &str = "suggestions.placePrediction.placeId,suggestions.placePrediction.text,\
+suggestions.placePrediction.structuredFormat";
+
+/// One destination suggestion.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaceSuggestion {
+    pub place_id: String,
+    /// "Garden City Mall"
+    pub main: String,
+    /// "Yusuf Lule Road, Kampala, Uganda"
+    pub secondary: String,
+    /// The whole text, used as the trip's destination.
+    pub full: String,
+}
+
+/// The request body; `session` groups one typing session's requests for billing.
+pub fn autocomplete_body(input: &str, session: Option<&str>) -> serde_json::Value {
+    let mut body = serde_json::json!({ "input": input });
+    if let Some(s) = session {
+        body["sessionToken"] = s.into();
+    }
+    body
+}
+
+pub fn parse_autocomplete(body: &str) -> Result<Vec<PlaceSuggestion>, String> {
+    let v: serde_json::Value = serde_json::from_str(body).map_err(|e| format!("unexpected reply: {e}"))?;
+    if let Some(msg) = v["error"]["message"].as_str() {
+        return Err(msg.to_string());
+    }
+    let text = |x: &serde_json::Value| x["text"].as_str().unwrap_or("").to_string();
+    Ok(v["suggestions"]
+        .as_array()
+        .map(|list| {
+            list.iter()
+                .filter_map(|s| {
+                    let p = &s["placePrediction"];
+                    let id = p["placeId"].as_str()?.to_string();
+                    let full = text(&p["text"]);
+                    let main = text(&p["structuredFormat"]["mainText"]);
+                    Some(PlaceSuggestion {
+                        place_id: id,
+                        main: if main.is_empty() { full.clone() } else { main },
+                        secondary: text(&p["structuredFormat"]["secondaryText"]),
+                        full,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default())
 }
 
 /// Waze deep link (documented): navigate to the destination.
@@ -223,6 +286,7 @@ mod tests {
             destination: "Plot 5, Kampala Road".into(),
             origin: "Ntinda".into(),
             mode: TravelMode::Drive,
+            place_id: None,
         }
     }
 
@@ -285,5 +349,40 @@ mod tests {
         );
         assert_eq!(waze_url(&t), "https://waze.com/ul?q=Plot+5%2C+Kampala+Road&navigate=yes");
         assert_eq!(TravelMode::parse("boda"), Some(TravelMode::TwoWheeler));
+    }
+
+    #[test]
+    fn place_suggestions() {
+        let body = r#"{"suggestions":[
+          {"placePrediction":{"placeId":"ChIJ1","text":{"text":"Garden City Mall, Yusuf Lule Road, Kampala, Uganda"},
+            "structuredFormat":{"mainText":{"text":"Garden City Mall"},"secondaryText":{"text":"Yusuf Lule Road, Kampala, Uganda"}}}},
+          {"queryPrediction":{"text":{"text":"garden city restaurants"}}},
+          {"placePrediction":{"placeId":"ChIJ2","text":{"text":"Gardens"}}}
+        ]}"#;
+        let s = parse_autocomplete(body).unwrap();
+        assert_eq!(s.len(), 2, "query predictions are skipped");
+        assert_eq!(
+            (s[0].main.as_str(), s[0].secondary.as_str()),
+            ("Garden City Mall", "Yusuf Lule Road, Kampala, Uganda")
+        );
+        assert_eq!(s[1].main, "Gardens");
+        assert_eq!(
+            parse_autocomplete(r#"{"error":{"message":"Places API (New) has not been used"}}"#).unwrap_err(),
+            "Places API (New) has not been used"
+        );
+        assert_eq!(parse_autocomplete("{}").unwrap(), vec![]);
+        assert_eq!(autocomplete_body("gar", Some("tok"))["sessionToken"], "tok");
+        assert!(autocomplete_body("gar", None).get("sessionToken").is_none());
+    }
+
+    #[test]
+    fn picked_places_route_by_id() {
+        let t = Trip { place_id: Some("ChIJ1".into()), ..trip() };
+        assert_eq!(t.request_body()["destination"]["placeId"], "ChIJ1");
+        assert!(google_maps_url(&t).contains("destination_place_id=ChIJ1"));
+        assert!(trip().request_body()["destination"].get("placeId").is_none());
+        // Trips saved before place IDs existed still load.
+        let old: Trip = serde_json::from_str(r#"{"destination":"X","origin":"Y"}"#).unwrap();
+        assert_eq!(old.place_id, None);
     }
 }

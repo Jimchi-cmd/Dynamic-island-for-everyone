@@ -1627,6 +1627,7 @@ mod tests {
                 destination: "Kampala Road".into(),
                 origin: "Ntinda".into(),
                 mode: TravelMode::Drive,
+                place_id: None,
             },
             route: Some(RouteInfo {
                 duration: 1530.0,

@@ -4,6 +4,7 @@
   import type { Info, Prefs, UpdateInfo } from './lib/bridge';
   import {
     ACCENTS,
+    type PlaceSuggestion,
     alarmAddArgs,
     DAY_LETTERS,
     describeDays,
@@ -45,6 +46,38 @@
   let key = $state('');
   let keyNote = $state('');
   let trip: Trip = $state({ label: '', destination: '', origin: '', mode: 'drive' });
+
+  // Destination suggestions (Google Places, with the user's own key). Asked
+  // for only while typing, after a pause; one session token per typing session.
+  let places: PlaceSuggestion[] = $state([]);
+  let placesSession = '';
+  let placesTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function destinationTyped() {
+    trip.placeId = undefined;
+    clearTimeout(placesTimer);
+    const q = trip.destination.trim();
+    if (!status?.routesKey || q.length < 3 || q.startsWith('-')) {
+      places = [];
+      return;
+    }
+    if (!placesSession) placesSession = crypto.randomUUID();
+    placesTimer = setTimeout(async () => {
+      try {
+        places = JSON.parse(await api.islet(['places', q, '--json', '--session', placesSession]));
+      } catch {
+        places = []; // e.g. Places API (New) isn't enabled for this key
+      }
+    }, 350);
+  }
+
+  function pickPlace(p: PlaceSuggestion) {
+    trip.destination = p.full;
+    trip.placeId = p.placeId;
+    if (!trip.label.trim()) trip.label = p.main;
+    places = [];
+    placesSession = '';
+  }
   let tripNote = $state('');
 
   // Wi-Fi & Bluetooth
@@ -1033,7 +1066,25 @@
             <p class="ok">Showing the trip to {status.trip.label || status.trip.destination}</p>
           {/if}
           <label for="dest">Destination</label>
-          <input id="dest" bind:value={trip.destination} placeholder="Plot 5, Kampala Road" />
+          <input
+            id="dest"
+            bind:value={trip.destination}
+            oninput={destinationTyped}
+            placeholder="Plot 5, Kampala Road"
+            autocomplete="off"
+            aria-autocomplete="list"
+          />
+          {#if places.length}
+            <div class="places" role="listbox" aria-label="Suggestions">
+              {#each places as p (p.placeId)}
+                <button role="option" aria-selected="false" onclick={() => pickPlace(p)}>
+                  <strong>{p.main}</strong>
+                  {#if p.secondary}<span class="muted small">{p.secondary}</span>{/if}
+                </button>
+              {/each}
+              <p class="muted small attribution">Powered by Google</p>
+            </div>
+          {/if}
           <label for="from">From</label>
           <input id="from" bind:value={trip.origin} placeholder="An address or “lat,lng”" />
           <div class="two">
@@ -1107,6 +1158,21 @@
 {/if}
 
 <style>
+  .places {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 4px 0 8px;
+  }
+  .places button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+  }
+  .places .attribution {
+    margin: 4px 0 0;
+  }
   .swatches {
     display: flex;
     gap: 10px;
