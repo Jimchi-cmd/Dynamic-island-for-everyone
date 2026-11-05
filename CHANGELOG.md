@@ -7,7 +7,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 The first public release.
 
 ### Island
-- Native, webview-free island for macOS, Windows and Linux (X11, and XWayland on Wayland): about 5 MB of RAM, 0 % CPU and zero wakeups when idle.
+- Native, webview-free island for macOS, Windows and Linux (native Wayland on KDE Plasma, sway, Hyprland and other wlroots compositors; X11 and XWayland elsewhere): about 5 MB of RAM, 0 % CPU and zero wakeups when idle.
 - iPhone-style shapes and motion: continuous-corner squircles, spring animations, peek, compact, the split pill with a metaball neck for two activities, the expanded card and a large view. Wraps the notch on MacBooks.
 - Inter bundled for text. San Francisco is used on macOS, from the system.
 

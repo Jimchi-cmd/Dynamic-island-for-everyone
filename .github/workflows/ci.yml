@@ -68,6 +68,19 @@ jobs:
       - run: npm run build # generate_context! needs dist/
       - run: cargo test --workspace
       - run: cargo build --release -p islet -p islet-perf -p islet-mediaremote
+      # Native Wayland: drive the layer-shell surface with a virtual pointer
+      # under a headless wlroots compositor.
+      - name: Wayland backend test (headless sway)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get install -y sway
+          export XDG_RUNTIME_DIR=$(mktemp -d /tmp/xr.XXXX) WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman
+          printf 'output HEADLESS-1 resolution 1280x800\n' > "$RUNNER_TEMP/sway.conf"
+          sway -c "$RUNNER_TEMP/sway.conf" &
+          for i in $(seq 50); do ls "$XDG_RUNTIME_DIR"/wayland-* >/dev/null 2>&1 && break; sleep 0.1; done
+          export WAYLAND_DISPLAY=$(ls "$XDG_RUNTIME_DIR" | grep -m1 '^wayland-[0-9]*$')
+          cargo test -p islet pointer_input_reaches_the_layer_surface -- --nocapture
       # Informational: can the MediaRemote helper read Now Playing on this
       # macOS version? (Nothing plays on CI, so "info=0" is expected.)
       - name: MediaRemote helper probe (macOS)

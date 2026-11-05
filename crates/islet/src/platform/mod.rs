@@ -9,9 +9,13 @@ use std::time::Instant;
 use tiny_skia::Pixmap;
 
 #[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "linux")]
+mod wayland;
+#[cfg(target_os = "linux")]
 mod x11;
 #[cfg(target_os = "linux")]
-pub use self::x11::X11 as Native;
+pub use self::linux::Linux as Native;
 
 #[cfg(target_os = "windows")]
 mod windows;

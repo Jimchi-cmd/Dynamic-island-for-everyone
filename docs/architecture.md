@@ -26,7 +26,8 @@ crates/
       x11.rs      X11 / XWayland (x11rb): ARGB visual, dock window, XShape input region
       windows.rs  Win32 layered window (UpdateLayeredWindow); alpha hit-testing
       macos.rs    non-activating NSPanel above the menu bar; CALayer contents
-      (Phase 1)   wayland.rs: wlr-layer-shell via smithay-client-toolkit (KDE, sway, Hyprland)
+      wayland.rs  native Wayland: wlr-layer-shell overlay via smithay-client-toolkit (KDE, sway, Hyprland)
+      linux.rs    picks Wayland (layer-shell available) or X11 at startup
 src-tauri/        Settings / onboarding app (Tauri 2 + Svelte in ui/), started on demand
 perf/             islet-perf: launches the app and checks it against the budgets
 ```
@@ -50,7 +51,7 @@ Animations are analytic damped springs (`islet-core::spring`), solved from the t
 | Focus | `WM_HINTS.input = false` | `WM_MOUSEACTIVATE → MA_NOACTIVATE` | non-activating panel |
 | Idle wait | `poll(2)` | `MsgWaitForMultipleObjectsEx` | `nextEventMatchingMask:untilDate:` |
 
-Wayland compositors with `wlr-layer-shell` (KDE Plasma, sway, Hyprland and others) get a native layer-shell backend in Phase 1. GNOME does not implement layer-shell, so on GNOME Islet runs through XWayland.
+Wayland compositors with `wlr-layer-shell` (KDE Plasma, sway, Hyprland and others) get the native layer-shell backend (`wayland.rs`: shm buffers, `set_input_region` for click-through, `poll(2)` on the socket plus an eventfd waker). GNOME does not implement layer-shell, so on GNOME Islet runs through XWayland.
 
 ## Process model
 
