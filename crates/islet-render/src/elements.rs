@@ -376,7 +376,7 @@ impl IconPainter<'_> {
                 let base = if matches!(icon, Icon::Cloud | Icon::PartlyCloudy) { 17.5 } else { 13.5 };
                 let mut pb = PathBuilder::new();
                 pb.move_to(6.5, base);
-                arc(&mut pb, 7.0, base - 3.5, 3.5, 1.57, 3.14, false);
+                arc(&mut pb, 7.0, base - 3.5, 3.5, std::f32::consts::FRAC_PI_2, std::f32::consts::PI, false);
                 arc(&mut pb, 11.5, base - 5.5, 4.8, 3.3, 2.6, false);
                 arc(&mut pb, 17.0, base - 3.8, 3.8, 4.9, 2.95, false);
                 pb.close();
