@@ -231,11 +231,21 @@ fn write_outputs(
     Ok(())
 }
 
+const ACTIVE_RUNS: usize = 3;
+
 fn run_mode(a: &Args) -> Result<bool, String> {
     let app = a.app.as_deref().ok_or("--app is required")?;
     let b = Budgets::default();
     let idle = measure(app, "idle", false, a.warmup_secs, a.idle_secs)?;
-    let active = measure(app, "active (expand/collapse loop)", true, a.warmup_secs, a.active_secs)?;
+    // Shared CI runners are noisy (the same build has measured 3.4 % and
+    // 7.5 % on macOS), so the active phase runs three times and the median
+    // run is judged; all three are reported.
+    let mut runs = (0..ACTIVE_RUNS)
+        .map(|_| measure(app, "active (expand/collapse loop)", true, a.warmup_secs, a.active_secs))
+        .collect::<Result<Vec<_>, _>>()?;
+    let all: Vec<String> = runs.iter().map(|r| format!("{:.2} %", r.cpu_pct)).collect();
+    runs.sort_by(|x, y| x.cpu_pct.total_cmp(&y.cpu_pct));
+    let active = runs.swap_remove(runs.len() / 2);
     let checks = vec![
         Check::new("Cold start to visible", idle.cold_start_ms, b.cold_start_ms, "ms"),
         Check::new("Idle RAM (mean, all processes)", idle.ram_mb_mean, b.idle_ram_mb, "MB"),
@@ -250,6 +260,7 @@ fn run_mode(a: &Args) -> Result<bool, String> {
             a.active_secs,
             a.warmup_secs
         ),
+        format!("Active CPU is the median of {ACTIVE_RUNS} runs: {}", all.join(", ")),
         format!("Processes counted: idle {}, active {}", idle.processes, active.processes),
         format!("Idle RAM max {:.1} MB; active RAM mean {:.1} MB", idle.ram_mb_max, active.ram_mb_mean),
         "CPU % is a share of a 2-core reference machine; CI runners are faster than the target laptops.".into(),

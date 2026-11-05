@@ -23,7 +23,7 @@ target/release/islet-perf size target/release/bundle/deb/*.deb --enforce
 
 The harness makes two runs:
 1. **idle**: launch, wait for the `ISLET_VISIBLE` marker (cold start), wait for warm-up, then sample for `--idle-secs`.
-2. **active**: the same with `ISLET_PERF_DEMO=1`, which makes the UI expand and collapse every 1.2 s.
+2. **active**: the same with `ISLET_PERF_DEMO=1`, which makes the UI expand and collapse every 1.2 s. This phase runs three times and the median is judged against the budget, because shared CI runners are noisy (one macOS build measured 3.4 % and 7.5 % on back-to-back runs). All three values are printed.
 
 How it measures:
 - **RAM** is summed over the app and every helper process: WebKitGTK `WebKitWebProcess`/`WebKitNetworkProcess`, WebView2 `msedgewebview2.exe`, and the macOS `com.apple.WebKit.*` XPC services that appear after launch. The counter per OS:
