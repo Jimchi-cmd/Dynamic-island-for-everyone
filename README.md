@@ -13,7 +13,8 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 
 - **The island itself:** iPhone-style continuous corners and spring motion. Hover to peek, click to expand, press and hold for more, scroll to switch between activities. Two activities split into a pill and a bubble joined by a liquid neck. On a notched MacBook it wraps the notch.
 - **Now Playing** from any app: artwork, a live waveform, progress you can drag, and play/pause/skip. Optionally, Spotify playback on your phone or speakers too.
-- **Battery pop-ups** when headphones, earbuds, mice, keyboards or controllers connect, plus low-battery and charger alerts.
+- **Battery pop-ups** when headphones, earbuds, mice, keyboards or controllers connect, plus low-battery alerts.
+- **Charging notification** when you plug in (and "Fully charged" at 100 %), like the iPhone's.
 - **Volume, brightness and caps-lock pop-ups**, like the iPhone's.
 - **Weather** on the clock card, from Open-Meteo (no account or key).
 - **File shelf:** drag files onto the island to keep them one tap away (it keeps shortcuts, never copies).

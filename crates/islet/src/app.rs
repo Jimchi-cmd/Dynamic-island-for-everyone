@@ -748,6 +748,11 @@ impl App {
             Some(Live::Hud(Hud::Brightness(b))) => format!("Brightness {}%", pct(*b)),
             Some(Live::Hud(Hud::CapsLock(on))) => format!("Caps Lock {}", if *on { "on" } else { "off" }),
             Some(Live::Note(n)) => format!("Notification from {}: {}", n.app, n.summary),
+            Some(Live::Battery {
+                device: d,
+                reason:
+                    reason @ (islet_core::activity::PeekReason::ChargerChanged | islet_core::activity::PeekReason::Full),
+            }) => format!("{}, {}%", content::charging_label(d, *reason), d.percent),
             Some(Live::Battery { device: d, .. }) => {
                 format!("{} {}%{}", d.name, d.percent, if d.charging { ", charging" } else { "" })
             }
@@ -2809,6 +2814,78 @@ mod tests {
             let clip = islet_render::clip_mask(&frame, cw, WINDOW.1 as u32, 1.0);
             let els = a.elements(t, &mut engine);
             islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            let (x, y) = ((i % 2) as i32 * cw as i32, (i / 2) as i32 * ch as i32);
+            sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+        }
+        sheet.save_png(out).unwrap();
+    }
+
+    fn laptop(percent: u8, charging: bool) -> islet_core::activity::BatteryDevice {
+        islet_core::activity::BatteryDevice {
+            id: "laptop".into(),
+            name: "Battery".into(),
+            kind: islet_core::activity::DeviceKind::Laptop,
+            percent,
+            charging,
+            parts: vec![],
+        }
+    }
+
+    #[test]
+    fn plugging_in_shows_the_charging_notification() {
+        let mut engine = TextEngine::new();
+        let mut app = App::new(Demo::None, false);
+        app.report(Report::Laptop(laptop(57, false)), 0.0);
+        assert!(app.report(Report::Laptop(laptop(57, true)), 1.0));
+        assert_eq!(app.presentation(), Compact);
+        let shown = texts(&app, 1.5, &mut engine);
+        assert!(shown.iter().any(|s| s == "Charging") && shown.iter().any(|s| s == "57%"), "{shown:?}");
+        assert!(app
+            .elements(1.5, &mut engine)
+            .iter()
+            .any(|e| matches!(e, Element::Icon { icon: islet_render::elements::Icon::Battery(57), .. })));
+        assert_eq!(app.accessibility(1.5).label, "Charging, 57%");
+        // It goes away by itself, and unplugging says so.
+        assert!(app.tick(10.0) || app.presentation() != Compact);
+        app.report(Report::Laptop(laptop(57, false)), 20.0);
+        assert!(texts(&app, 20.5, &mut engine).iter().any(|s| s == "On battery"));
+    }
+
+    /// Charging notifications for visual review:
+    /// `ISLET_CHARGE_SHEET=/path/out.png cargo test -p islet charge_sheet`
+    #[test]
+    fn charge_sheet() {
+        let Some(out) = std::env::var_os("ISLET_CHARGE_SHEET") else { return };
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let mut engine = TextEngine::new();
+        let state = |before: (u8, bool), after: (u8, bool)| {
+            let mut a = App::new(Demo::None, false);
+            a.report(Report::Laptop(laptop(before.0, before.1)), 0.0);
+            a.report(Report::Laptop(laptop(after.0, after.1)), 1.0);
+            a
+        };
+        let mut buds = App::new(Demo::None, false);
+        let b = |charging| islet_core::activity::BatteryDevice {
+            id: "b".into(),
+            name: "Galaxy Buds2".into(),
+            kind: islet_core::activity::DeviceKind::Earbuds,
+            percent: 64,
+            charging,
+            parts: vec![],
+        };
+        buds.report(Report::DeviceConnected(b(false)), -100.0);
+        buds.report(Report::DeviceChanged(b(true)), 0.0);
+        let apps = [state((57, false), (57, true)), state((18, true), (18, false)), state((99, true), (100, true)), buds];
+        let (cw, ch) = (WINDOW.0 as u32, 50u32);
+        let mut sheet = Pixmap::new(cw * 2, ch * 2).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        for (i, a) in apps.iter().enumerate() {
+            let t = 1.6;
+            let mut cell = Pixmap::new(cw, WINDOW.1 as u32).unwrap();
+            let frame = a.frame(t);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let els = a.elements(t, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, None);
             let (x, y) = ((i % 2) as i32 * cw as i32, (i / 2) as i32 * ch as i32);
             sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
         }

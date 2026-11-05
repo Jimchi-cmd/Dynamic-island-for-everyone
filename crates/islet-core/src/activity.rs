@@ -244,6 +244,8 @@ pub enum PeekReason {
     Connected,
     Low,
     ChargerChanged,
+    /// The battery reached 100 % while plugged in.
+    Full,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -275,6 +277,7 @@ pub const MEDIA_LINGER: f64 = 15.0;
 pub const PEEK_CONNECTED: f64 = 3.5;
 pub const PEEK_LOW: f64 = 5.0;
 pub const PEEK_CHARGER: f64 = 3.0;
+pub const PEEK_FULL: f64 = 3.5;
 /// At most one connect peek per device in this many seconds, so a flaky
 /// Bluetooth link can't make the island bounce.
 pub const PEEK_COOLDOWN: f64 = 30.0;
@@ -379,6 +382,7 @@ impl Activities {
             PeekReason::Connected => PEEK_CONNECTED,
             PeekReason::Low => PEEK_LOW,
             PeekReason::ChargerChanged => PEEK_CHARGER,
+            PeekReason::Full => PEEK_FULL,
         };
         self.last_peek.insert(device.id.clone(), t);
         self.peek = Some((device, reason, t + secs));
@@ -413,6 +417,10 @@ impl Activities {
                 let crossed = self.devices.get(&d.id).is_some_and(|old| {
                     !d.charging && LOW_LEVELS.iter().any(|&lvl| old.percent > lvl && d.percent <= lvl)
                 });
+                // Earbuds back in their case, a mouse on its cable: a charging
+                // pop-up (not more than once per cool-down).
+                let started = self.devices.get(&d.id).is_some_and(|old| !old.charging && d.charging)
+                    && self.cooled_down(&d.id, t);
                 self.devices.insert(d.id.clone(), d.clone());
                 if let Some((peeked, _, _)) = &mut self.peek {
                     if peeked.id == d.id {
@@ -421,6 +429,8 @@ impl Activities {
                 }
                 if crossed {
                     self.peek(d, PeekReason::Low, t);
+                } else if started {
+                    self.peek(d, PeekReason::ChargerChanged, t);
                 }
                 true
             }
@@ -505,13 +515,18 @@ impl Activities {
                 let crossed = self.laptop.as_ref().is_some_and(|old| {
                     !d.charging && LOW_LEVELS.iter().any(|&lvl| old.percent > lvl && d.percent <= lvl)
                 });
+                let full = d.charging
+                    && d.percent >= 100
+                    && self.laptop.as_ref().is_some_and(|old| old.charging && old.percent < 100);
                 self.laptop = Some(d.clone());
                 if charger_changed {
                     self.peek(d, PeekReason::ChargerChanged, t);
                 } else if crossed {
                     self.peek(d, PeekReason::Low, t);
+                } else if full {
+                    self.peek(d, PeekReason::Full, t);
                 }
-                charger_changed || crossed
+                charger_changed || crossed || full
             }
         }
     }
@@ -721,5 +736,39 @@ mod tests {
         assert!(a.report(Report::Privacy(Privacy::default()), 2.0));
         assert_eq!(a.privacy().describe(), None);
         assert!(a.live(2.0).is_empty(), "the dots never make the island open");
+    }
+
+    #[test]
+    fn charging_notifications() {
+        let laptop = |percent: u8, charging: bool| BatteryDevice {
+            id: "laptop".into(),
+            name: "Battery".into(),
+            kind: DeviceKind::Laptop,
+            percent,
+            charging,
+            parts: vec![],
+        };
+        let mut a = Activities::new();
+        a.report(Report::Laptop(laptop(98, true)), 0.0);
+        assert!(a.report(Report::Laptop(laptop(100, true)), 10.0));
+        assert!(matches!(&a.live(10.5)[..], [Live::Battery { reason: PeekReason::Full, .. }]));
+        assert!(!a.report(Report::Laptop(laptop(100, true)), 20.0), "only once");
+
+        // A device that starts charging pops up, but not again right away.
+        let buds = |charging: bool| BatteryDevice {
+            id: "buds".into(),
+            name: "Buds".into(),
+            kind: DeviceKind::Earbuds,
+            percent: 50,
+            charging,
+            parts: vec![],
+        };
+        let mut b = Activities::new();
+        b.report(Report::DeviceConnected(buds(false)), 0.0);
+        b.report(Report::DeviceChanged(buds(true)), 100.0);
+        assert!(matches!(&b.live(100.5)[..], [Live::Battery { reason: PeekReason::ChargerChanged, .. }]));
+        b.report(Report::DeviceChanged(buds(false)), 110.0);
+        b.report(Report::DeviceChanged(buds(true)), 115.0);
+        assert!(b.live(120.0).is_empty(), "cool-down");
     }
 }

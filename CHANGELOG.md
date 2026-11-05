@@ -13,7 +13,8 @@ The first public release.
 
 ### Activities
 - **Now Playing** for any app: artwork, title, artist, a live waveform, progress with scrubbing, and controls. Linux uses MPRIS, Windows the system media session, and macOS a MediaRemote helper with a Spotify/Music fallback.
-- **Battery pop-ups** when headphones, earbuds, mice, keyboards or controllers connect, plus low-battery and charger alerts.
+- **Battery pop-ups** when headphones, earbuds, mice, keyboards or controllers connect, plus low-battery alerts.
+- **Charging notification:** plug in and the island shows a green bolt, "Charging", the level and a filling battery; unplugging shows "On battery", reaching 100 % shows "Fully charged", and earbuds or a mouse that start charging get their own pop-up.
 - **Navigation ETA** with live traffic via the Google Routes API (your own key, kept in the OS keychain), adaptive refresh, and hand-off to Google Maps or Waze.
 - **Alarms**: one-time or repeating. When one rings, the island opens with a swinging bell and plays an original chime until you snooze or stop it.
 - **Wi-Fi and Bluetooth** pickers from the clock card: join networks and connect paired devices.

@@ -54,6 +54,8 @@ pub enum Icon {
     Gauge,
     /// A clipboard: a board with a clip at the top.
     Clipboard,
+    /// A horizontal battery filled to this percentage.
+    Battery(u8),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -502,6 +504,14 @@ impl IconPainter<'_> {
                 self.fill(knob);
                 self.fill(clapper);
             }
+            Icon::Battery(percent) => {
+                self.stroke(rounded_rect(1.5, 6.5, 19.0, 11.0, 3.0), 1.5);
+                self.fill(rounded_rect(21.3, 10.0, 1.8, 4.0, 0.9));
+                let w = 15.0 * f32::from(percent.min(100)) / 100.0;
+                if w > 0.5 {
+                    self.fill(rounded_rect(3.5, 8.5, w.max(2.0), 7.0, 1.6));
+                }
+            }
             Icon::Bolt => {
                 let p = Self::poly(&[(13.5, 2.0), (5.0, 13.5), (11.0, 13.5), (10.0, 22.0), (19.0, 10.0), (13.0, 10.0)]);
                 self.fill(p);
@@ -636,7 +646,9 @@ mod tests {
         p.pixels().iter().filter(|c| c.alpha() > 0).count()
     }
 
-    const ALL: [Icon; 41] = [
+    const ALL: [Icon; 43] = [
+        Icon::Battery(0),
+        Icon::Battery(70),
         Icon::Clipboard,
         Icon::Gauge,
         Icon::File,

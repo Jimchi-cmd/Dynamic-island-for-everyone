@@ -1,7 +1,7 @@
 //! What is drawn inside the island for each activity and presentation
 //! (docs/design-spec.md §3). Pure layout: rects in, display list out.
 
-use islet_core::activity::{BatteryDevice, Custom, DeviceKind, Hud, Live, MediaInfo, NavInfo, Note, Part};
+use islet_core::activity::{BatteryDevice, Custom, DeviceKind, Hud, Live, MediaInfo, NavInfo, Note, Part, PeekReason};
 use islet_core::alarm::{self, Alarm};
 use islet_core::clock::{format_date, format_time, LocalTime};
 use islet_core::connectivity::{self, BtState, Connectivity, WifiState};
@@ -362,6 +362,19 @@ pub fn compact_width(live: &Live) -> f64 {
     }
 }
 
+/// What the charging notification says: "Charging", "Fully charged",
+/// "On battery", or "Buds charging" for a device.
+pub fn charging_label(d: &BatteryDevice, reason: PeekReason) -> String {
+    let laptop = d.kind == DeviceKind::Laptop;
+    match (reason, d.charging, laptop) {
+        (PeekReason::Full, _, _) => "Fully charged".into(),
+        (_, true, true) => "Charging".into(),
+        (_, false, true) => "On battery".into(),
+        (_, true, false) => format!("{} charging", d.name),
+        (_, false, false) => d.name.clone(),
+    }
+}
+
 pub fn device_icon(kind: DeviceKind) -> Icon {
     match kind {
         DeviceKind::Headphones => Icon::Headphones,
@@ -518,6 +531,40 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
                 },
                 nav_eta(n, right - 13.0, cy, o),
             ]
+        }
+        Live::Battery { device: d, reason: reason @ (PeekReason::ChargerChanged | PeekReason::Full) } => {
+            // The charging notification: bolt and "Charging" on the left, the
+            // level and a filling battery on the right.
+            let color = level_color(d.percent, d.charging);
+            let label = charging_label(d, *reason);
+            let label_style = TextStyle { size: 14.0, weight: 600, opacity: o, ..TextStyle::default() };
+            let pct_style =
+                TextStyle { size: 14.0, weight: 600, opacity: o, tabular: true, color, align: Align::Right };
+            let mut v = Vec::new();
+            let left = if d.charging {
+                v.push(Element::Icon {
+                    icon: Icon::Bolt,
+                    x: x + 10.0,
+                    y: cy - 10.0,
+                    size: 20.0,
+                    color: GREEN,
+                    opacity: o,
+                });
+                x + 34.0
+            } else {
+                x + 16.0
+            };
+            v.push(text(engine.ellipsize(&label, &label_style, right - left - 90.0), label_style, left, cy + 5.0));
+            v.push(text(format!("{}%", d.percent), pct_style, right - 44.0, cy + 5.0));
+            v.push(Element::Icon {
+                icon: Icon::Battery(d.percent),
+                x: right - 38.0,
+                y: cy - 12.0,
+                size: 24.0,
+                color,
+                opacity: o,
+            });
+            v
         }
         Live::Battery { device: d, .. } => {
             let color = level_color(d.percent, d.charging);
@@ -1537,7 +1584,7 @@ pub fn brighten(c: [u8; 3]) -> [u8; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use islet_core::activity::{MediaCaps, PeekReason};
+    use islet_core::activity::MediaCaps;
 
     fn song() -> MediaInfo {
         MediaInfo {
