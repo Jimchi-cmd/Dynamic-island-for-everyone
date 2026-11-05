@@ -313,8 +313,14 @@ impl Backend for Win32 {
             if trace {
                 eprintln!("ISLET_TRACE drop target done");
             }
-            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
             Ok(me)
+        }
+    }
+
+    fn show(&mut self) {
+        // SAFETY: our own window handle.
+        unsafe {
+            let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
         }
     }
 

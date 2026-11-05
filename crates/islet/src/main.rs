@@ -134,8 +134,10 @@ fn run() -> platform::Result<()> {
     providers::WEB_ARTWORK.store(app.prefs().web_artwork, std::sync::atomic::Ordering::Relaxed);
     providers.spotify(app.prefs().spotify && !scripted);
     let mut alarm_sound = sound::AlarmSound::default();
+    // Windows' screen-reader adapter must exist before the window shows.
     let mut access = a11y::Bridge::new(win.native_handle(), win.waker());
     trace("screen-reader bridge ready");
+    win.show();
     // Describe the island to screen readers once things settle (not on
     // every animation frame), and read the UTC offset once a minute.
     let mut a11y_pending = true;

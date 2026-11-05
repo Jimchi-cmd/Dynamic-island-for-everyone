@@ -109,8 +109,13 @@ impl Waker {
 }
 
 pub trait Backend: Sized {
-    /// Create the window at the top centre of the primary display and show it.
+    /// Create the window at the top centre of the primary display. Some
+    /// backends show it at once; Windows waits for `show`.
     fn create(spec: WindowSpec) -> Result<Self>;
+
+    /// Make the window visible, once everything that must exist before it
+    /// is shown (the Windows screen-reader adapter) is in place.
+    fn show(&mut self) {}
 
     /// Physical px per logical px.
     fn scale(&self) -> f64;
