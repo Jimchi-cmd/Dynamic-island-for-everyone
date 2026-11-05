@@ -39,6 +39,8 @@ pub enum Panel {
     Shelf,
     /// CPU, memory and disk (sampled only while open).
     System,
+    /// Recently copied texts (when clipboard history is on).
+    Clipboard,
 }
 
 /// What a tap on the clock card or a list lands on.
@@ -1101,17 +1103,23 @@ pub fn clock_weather(pill: Rect, w: &islet_core::weather::Weather, fahrenheit: b
 /// The Wi-Fi and Bluetooth buttons along the bottom of the clock card.
 /// The clock card's buttons: Wi-Fi and Bluetooth, plus the shelf when it
 /// has something on it.
-pub fn clock_chips(pill: Rect, shelf: bool) -> Vec<(Rect, Panel)> {
+pub fn clock_chips(pill: Rect, shelf: bool, clipboard: bool) -> Vec<(Rect, Panel)> {
     let (x, w) = (pill.x + PAD, pill.w - 2.0 * PAD);
     let y = pill.y + 122.0;
     let panels: &[Panel] =
         if shelf { &[Panel::Wifi, Panel::Bluetooth, Panel::Shelf] } else { &[Panel::Wifi, Panel::Bluetooth] };
-    // Labelled chips share the row; the system monitor is a round icon at the end.
+    // Labelled chips share the row; clipboard and system monitor are round
+    // icons at the end.
+    let icons: &[Panel] = if clipboard { &[Panel::Clipboard, Panel::System] } else { &[Panel::System] };
     let n = panels.len() as f64;
-    let cw = (w - SYSTEM_CHIP - 10.0 * n) / n;
+    let icons_w = icons.len() as f64 * (SYSTEM_CHIP + 10.0);
+    let cw = (w - icons_w - 10.0 * (n - 1.0)) / n;
     let mut v: Vec<(Rect, Panel)> =
         panels.iter().enumerate().map(|(i, p)| (Rect::new(x + i as f64 * (cw + 10.0), y, cw, 32.0), *p)).collect();
-    v.push((Rect::new(x + w - SYSTEM_CHIP, y, SYSTEM_CHIP, 32.0), Panel::System));
+    for (i, p) in icons.iter().enumerate() {
+        let from_right = (icons.len() - i) as f64;
+        v.push((Rect::new(x + w - from_right * SYSTEM_CHIP - (from_right - 1.0) * 10.0, y, SYSTEM_CHIP, 32.0), *p));
+    }
     v
 }
 
@@ -1121,12 +1129,13 @@ pub fn clock_chip_elements(
     pill: Rect,
     c: &Connectivity,
     shelf: usize,
+    clipboard: bool,
     o: f32,
     engine: &mut TextEngine,
 ) -> Vec<Element> {
     let mut v = Vec::new();
     let style = TextStyle { size: 13.0, weight: 600, opacity: o, ..TextStyle::default() };
-    for (r, panel) in clock_chips(pill, shelf > 0) {
+    for (r, panel) in clock_chips(pill, shelf > 0, clipboard) {
         let (x, y, w, h) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
         let (icon, label, on) = match panel {
             Panel::Wifi => (
@@ -1140,10 +1149,11 @@ pub fn clock_chip_elements(
                 c.connected_device().is_some(),
             ),
             Panel::Shelf => (Icon::Folder, format!("Shelf · {shelf}"), false),
-            Panel::System => {
+            Panel::System | Panel::Clipboard => {
+                let icon = if panel == Panel::System { Icon::Gauge } else { Icon::Clipboard };
                 v.push(Element::Bar { x, y, w, h, color: WHITE, opacity: o * 0.14 });
                 v.push(Element::Icon {
-                    icon: Icon::Gauge,
+                    icon,
                     x: x + w / 2.0 - 9.0,
                     y: y + h / 2.0 - 9.0,
                     size: 18.0,
@@ -1374,6 +1384,34 @@ pub fn expanded_shelf(
     }
     v
 }
+
+/// Clipboard history: newest first; a tap copies an entry again.
+pub fn expanded_clipboard(
+    pill: Rect,
+    history: &islet_core::clipboard::History,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
+    let n = history.len();
+    let status = (n > 0).then(|| format!("{n} item{}", if n == 1 { "" } else { "s" }));
+    let mut v = list_header_elements(pill, Icon::Clipboard, "Clipboard", status.as_deref(), o, engine);
+    let rows = list_rows(pill, n);
+    let style = TextStyle { size: 14.5, weight: 500, opacity: o, ..TextStyle::default() };
+    for (r, item) in rows.iter().zip(history.items()) {
+        let (x, cy, rw) = (r.x as f32, (r.y + r.h / 2.0) as f32, r.w as f32);
+        let line = islet_core::clipboard::preview(item);
+        v.push(text(engine.ellipsize(&line, &style, rw - 20.0), style, x + 10.0, cy + 5.0));
+    }
+    if n == 0 {
+        let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
+        v.push(text("Copy some text to see it here", style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
+    } else {
+        v.extend(list_footer_elements(pill, n, CLIPBOARD_CLEAR, true, o, engine));
+    }
+    v
+}
+
+pub const CLIPBOARD_CLEAR: &str = "Clear history";
 
 /// Height of the system monitor panel.
 pub const SYSTEM_H: f64 = LIST_TOP + 3.0 * METER_H + 14.0;

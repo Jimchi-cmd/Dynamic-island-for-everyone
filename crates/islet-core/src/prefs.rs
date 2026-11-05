@@ -32,6 +32,10 @@ pub struct IslandPrefs {
     pub web_artwork: bool,
     /// Show Spotify Connect playback (needs `islet spotify login`).
     pub spotify: bool,
+    /// Green/orange dots while the camera or microphone is in use.
+    pub privacy_dots: bool,
+    /// Keep the last few copied texts (in memory only).
+    pub clipboard: bool,
 }
 
 impl Default for IslandPrefs {
@@ -47,12 +51,14 @@ impl Default for IslandPrefs {
             media_exclude: Vec::new(),
             web_artwork: false,
             spotify: false,
+            privacy_dots: true,
+            clipboard: false,
         }
     }
 }
 
 /// The switches `islet set <key> on|off` understands.
-pub const SWITCHES: [&str; 8] = [
+pub const SWITCHES: [&str; 10] = [
     "volume-hud",
     "brightness-hud",
     "caps-lock-hud",
@@ -61,6 +67,8 @@ pub const SWITCHES: [&str; 8] = [
     "calendar",
     "web-artwork",
     "spotify",
+    "privacy-dots",
+    "clipboard",
 ];
 
 impl IslandPrefs {
@@ -84,6 +92,8 @@ impl IslandPrefs {
             "calendar" => &mut self.calendar,
             "web-artwork" => &mut self.web_artwork,
             "spotify" => &mut self.spotify,
+            "privacy-dots" => &mut self.privacy_dots,
+            "clipboard" => &mut self.clipboard,
             _ => return Err(format!("unknown setting {key:?} (one of: {})", SWITCHES.join(", "))),
         };
         *slot = on;

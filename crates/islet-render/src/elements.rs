@@ -52,6 +52,8 @@ pub enum Icon {
     Folder,
     /// A dial with a needle (the system monitor).
     Gauge,
+    /// A clipboard: a board with a clip at the top.
+    Clipboard,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -343,6 +345,12 @@ impl IconPainter<'_> {
                 self.line((9.0, 13.0), (16.0, 13.0), 1.6);
                 self.line((9.0, 16.5), (16.0, 16.5), 1.6);
             }
+            Icon::Clipboard => {
+                self.stroke(rounded_rect(5.5, 5.0, 13.0, 16.0, 2.5), 1.8);
+                self.fill(rounded_rect(8.5, 3.0, 7.0, 4.0, 1.5));
+                self.line((8.5, 12.0), (15.5, 12.0), 1.6);
+                self.line((8.5, 15.5), (13.5, 15.5), 1.6);
+            }
             Icon::Gauge => {
                 // A three-quarter dial open at the bottom, needle up-right.
                 let mut pb = PathBuilder::new();
@@ -582,7 +590,8 @@ mod tests {
         p.pixels().iter().filter(|c| c.alpha() > 0).count()
     }
 
-    const ALL: [Icon; 40] = [
+    const ALL: [Icon; 41] = [
+        Icon::Clipboard,
         Icon::Gauge,
         Icon::File,
         Icon::Folder,

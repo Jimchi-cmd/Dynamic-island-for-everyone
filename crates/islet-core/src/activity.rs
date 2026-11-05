@@ -203,6 +203,8 @@ pub enum Report {
     Privacy(Privacy),
     /// A system monitor reading (None when the monitor stops).
     System(Option<crate::sysmon::Stats>),
+    /// Text was copied (clipboard history, when it's on).
+    Clipboard(String),
 }
 
 /// Whether the camera and the microphone are in use, and by which apps
@@ -453,6 +455,8 @@ impl Activities {
                 self.weather = w;
                 true
             }
+            // The island keeps the history (it knows whether it's on).
+            Report::Clipboard(_) => false,
             Report::System(s) => {
                 self.system = s;
                 true

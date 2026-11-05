@@ -188,6 +188,10 @@ pub struct App {
     dragging: bool,
     drag_opened: bool,
     shelf_dirty: bool,
+    /// Clipboard history (in memory only; empty while the feature is off).
+    clip: islet_core::clipboard::History,
+    /// Entries to put back on the clipboard (for main to hand over).
+    clip_out: Vec<String>,
     /// The notifications card was opened from a notification: it stays
     /// until the island closes, even after the peek ends.
     notes_open: bool,
@@ -260,6 +264,8 @@ impl App {
             dragging: false,
             drag_opened: false,
             shelf_dirty: false,
+            clip: Default::default(),
+            clip_out: Vec::new(),
             notes_open: false,
             prefs: IslandPrefs::default(),
             wall: 0.0,
@@ -602,7 +608,7 @@ impl App {
         let cr = self.content_rect(self.pill_rect(t));
         let c = self.activities.connectivity();
         match self.open_content(&self.live(t)) {
-            OpenContent::Clock => content::clock_chips(cr, !self.shelf.is_empty())
+            OpenContent::Clock => content::clock_chips(cr, !self.shelf.is_empty(), self.prefs.clipboard)
                 .into_iter()
                 .find(|(r, _)| r.contains(x, y))
                 .map(|(_, p)| ConnHit::Open(p)),
@@ -612,6 +618,10 @@ impl App {
                     Panel::Bluetooth => (c.bt.devices.len(), content::bt_footer(c)),
                     Panel::Shelf => (self.shelf.len(), None),
                     Panel::System => (0, None),
+                    Panel::Clipboard => {
+                        let n = self.clip.len();
+                        (n, (n > 0).then(|| (content::CLIPBOARD_CLEAR.to_string(), true)))
+                    }
                 };
                 let has_radio = match p {
                     Panel::Wifi => c.wifi.available,
@@ -647,7 +657,7 @@ impl App {
                 match p {
                     Panel::Wifi => self.conn_commands.push(ConnCommand::ScanWifi),
                     Panel::Bluetooth => self.conn_commands.push(ConnCommand::ListBluetooth),
-                    Panel::Shelf | Panel::System => {}
+                    Panel::Shelf | Panel::System | Panel::Clipboard => {}
                 }
             }
             ConnHit::Remove(i) => {
@@ -686,6 +696,12 @@ impl App {
                         self.ui_actions.push(UiAction::Path(item.path.clone()));
                     }
                 }
+                Some(Panel::Clipboard) => {
+                    if let Some(text) = self.clip.get(i).cloned() {
+                        self.clip.push(&text);
+                        self.clip_out.push(text);
+                    }
+                }
                 Some(Panel::System) | None => {}
             },
             ConnHit::Footer => match (self.panel, &c.failure) {
@@ -693,6 +709,7 @@ impl App {
                     self.ui_actions.push(UiAction::Settings(format!("wifi:{ssid}")))
                 }
                 (Some(Panel::Bluetooth), _) => self.ui_actions.push(UiAction::Url(BLUETOOTH_SETTINGS.into())),
+                (Some(Panel::Clipboard), _) => self.clip.clear(),
                 _ => {}
             },
         }
@@ -790,7 +807,7 @@ impl App {
                     }
                 }
                 OpenContent::Clock => {
-                    for (r, p) in content::clock_chips(cr, !self.shelf.is_empty()) {
+                    for (r, p) in content::clock_chips(cr, !self.shelf.is_empty(), self.prefs.clipboard) {
                         let name = match p {
                             Panel::Wifi => {
                                 format!("Wi-Fi{}", c.wifi.current.as_ref().map_or(String::new(), |n| format!(", {n}")))
@@ -803,6 +820,7 @@ impl App {
                             }
                             Panel::Shelf => format!("Shelf, {} items", self.shelf.len()),
                             Panel::System => "System monitor".into(),
+                            Panel::Clipboard => format!("Clipboard history, {} items", self.clip.len()),
                         };
                         buttons.push((name, r));
                     }
@@ -845,6 +863,9 @@ impl App {
                             .collect(),
                         Panel::Shelf => self.shelf.iter().map(|i| format!("Open {}", i.name())).collect(),
                         Panel::System => Vec::new(),
+                        Panel::Clipboard => {
+                            self.clip.items().map(|t| format!("Copy {}", islet_core::clipboard::preview(t))).collect()
+                        }
                     };
                     for (name, r) in names.into_iter().zip(content::list_rows(cr, usize::MAX)) {
                         buttons.push((name, r));
@@ -917,6 +938,18 @@ impl App {
 
     pub fn set_prefs(&mut self, prefs: IslandPrefs) {
         self.prefs = prefs;
+        if !self.prefs.clipboard {
+            // Turning history off forgets it.
+            self.clip.clear();
+            if self.panel == Some(Panel::Clipboard) {
+                self.panel = None;
+            }
+        }
+    }
+
+    /// History entries the user chose to copy again.
+    pub fn take_clipboard_copies(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.clip_out)
     }
 
     pub fn prefs(&self) -> &IslandPrefs {
@@ -930,6 +963,10 @@ impl App {
             Report::Media(Some(m)) if self.prefs.excludes(&m.app_name, &m.source) => Report::Media(None),
             r => r,
         };
+        if let Report::Clipboard(text) = &r {
+            let changed = self.prefs.clipboard && self.clip.push(text);
+            return changed && self.panel == Some(Panel::Clipboard) && self.island.presentation().is_open();
+        }
         if let Report::Calendar(_) = &r {
             let changed = self.activities.report(r, t);
             return self.update_up_next(t) || self.sync_live(t) || changed;
@@ -1084,6 +1121,9 @@ impl App {
                 OpenContent::Panel(Panel::Bluetooth) => {
                     out.extend(content::expanded_bluetooth(cr, self.activities.connectivity(), eo, engine))
                 }
+                OpenContent::Panel(Panel::Clipboard) => {
+                    out.extend(content::expanded_clipboard(cr, &self.clip, eo, engine))
+                }
                 OpenContent::Panel(Panel::System) => {
                     out.extend(content::expanded_system(cr, self.activities.system(), eo, engine))
                 }
@@ -1107,6 +1147,7 @@ impl App {
                         cr,
                         self.activities.connectivity(),
                         self.shelf.len(),
+                        self.prefs.clipboard,
                         eo,
                         engine,
                     ));
@@ -1175,6 +1216,7 @@ impl App {
                                 content::list_height(c.bt.devices.len(), content::bt_footer(c).is_some())
                             }
                             Panel::System => content::SYSTEM_H,
+                            Panel::Clipboard => content::list_height(self.clip.len(), !self.clip.is_empty()),
                             Panel::Shelf => content::list_height(
                                 self.shelf.len(),
                                 content::shelf_footer(self.shelf.len(), self.dragging).is_some(),
@@ -1985,7 +2027,7 @@ mod tests {
 
         // Open the Wi-Fi list.
         let cr = app.content_rect(app.pill_rect(5.0));
-        press(&mut app, content::clock_chips(cr, false)[0].0, 5.0);
+        press(&mut app, content::clock_chips(cr, false, false)[0].0, 5.0);
         assert_eq!(app.take_conn_commands(), [ConnCommand::ScanWifi]);
         let rows = content::list_rows(app.content_rect(app.pill_rect(9.0)), 2);
         assert!(texts(&app, 9.0, &mut engine).iter().any(|s| s == "Cafe"));
@@ -2029,7 +2071,7 @@ mod tests {
             14.0,
         );
         let cr = app.content_rect(app.pill_rect(18.0));
-        press(&mut app, content::clock_chips(cr, false)[1].0, 18.0);
+        press(&mut app, content::clock_chips(cr, false, false)[1].0, 18.0);
         assert_eq!(app.take_conn_commands(), [ConnCommand::ListBluetooth]);
         let rows = content::list_rows(app.content_rect(app.pill_rect(22.0)), 1);
         press(&mut app, rows[0], 22.0);
@@ -2398,11 +2440,45 @@ mod tests {
         app.set_time(NOW, t);
         click(app, t);
         let cr = app.content_rect(app.pill_rect(t + 4.0));
-        let (r, _) = content::clock_chips(cr, false).into_iter().find(|(_, p)| *p == Panel::System).unwrap();
+        let (r, _) = content::clock_chips(cr, false, false).into_iter().find(|(_, p)| *p == Panel::System).unwrap();
         let (x, y) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
         app.handle(Event::PointerMove { x, y }, t + 4.0);
         app.handle(Event::PointerDown { x, y, button: Button::Primary }, t + 4.0);
         app.handle(Event::PointerUp { x, y, button: Button::Primary }, t + 4.05);
+    }
+
+    #[test]
+    fn clipboard_history_is_opt_in() {
+        let mut app = App::new(Demo::None, false);
+        app.report(Report::Clipboard("ignored".into()), 0.0);
+        assert!(app.clip.is_empty(), "off by default");
+        let mut prefs = IslandPrefs { clipboard: true, ..Default::default() };
+        app.set_prefs(prefs.clone());
+        app.report(Report::Clipboard("first".into()), 0.0);
+        app.report(Report::Clipboard("second copy\nwith two lines".into()), 0.0);
+        app.set_time(NOW, 0.0);
+        click(&mut app, 0.0);
+        let cr = app.content_rect(app.pill_rect(5.0));
+        let chips = content::clock_chips(cr, false, true);
+        let (chip, _) = chips.iter().find(|(_, p)| *p == Panel::Clipboard).copied().unwrap();
+        press(&mut app, chip, 5.0);
+        let mut engine = TextEngine::new();
+        let shown = texts(&app, 9.0, &mut engine);
+        assert!(shown.iter().any(|s| s == "second copy …"), "{shown:?}");
+        // Tapping the older entry copies it again (and moves it to the top).
+        let rows = content::list_rows(app.content_rect(app.pill_rect(9.0)), 2);
+        press(&mut app, rows[1], 9.0);
+        assert_eq!(app.take_clipboard_copies(), ["first"]);
+        assert_eq!(app.clip.get(0).map(String::as_str), Some("first"));
+        // Clear history.
+        let footer = content::list_footer(app.content_rect(app.pill_rect(9.0)), 2);
+        press(&mut app, footer, 9.0);
+        assert!(app.clip.is_empty());
+        // Turning it off forgets everything and closes the panel.
+        app.report(Report::Clipboard("third".into()), 10.0);
+        prefs.clipboard = false;
+        app.set_prefs(prefs);
+        assert!(app.clip.is_empty() && app.panel.is_none());
     }
 
     #[test]
@@ -2751,7 +2827,7 @@ mod tests {
             click(&mut a, 0.0);
             if let Some(i) = panel {
                 let cr = a.content_rect(a.pill_rect(5.0));
-                press(&mut a, content::clock_chips(cr, false)[i].0, 5.0);
+                press(&mut a, content::clock_chips(cr, false, false)[i].0, 5.0);
                 if fail {
                     a.report(
                         Report::Connectivity(ConnUpdate::Failed {

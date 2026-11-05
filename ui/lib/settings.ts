@@ -217,6 +217,8 @@ export interface IslandPrefs {
   mediaExclude: string[];
   webArtwork: boolean;
   spotify: boolean;
+  privacyDots: boolean;
+  clipboard: boolean;
 }
 
 /** Each switch's name for `islet set <name> on|off`. */
@@ -229,4 +231,6 @@ export const SWITCH_NAMES: Record<string, string> = {
   calendar: 'calendar',
   webArtwork: 'web-artwork',
   spotify: 'spotify',
+  privacyDots: 'privacy-dots',
+  clipboard: 'clipboard',
 };

@@ -134,6 +134,7 @@ fn run() -> platform::Result<()> {
     providers.notifications(app.prefs().notifications);
     providers::WEB_ARTWORK.store(app.prefs().web_artwork, std::sync::atomic::Ordering::Relaxed);
     providers.spotify(app.prefs().spotify && !scripted);
+    providers.clipboard(app.prefs().clipboard && !scripted);
     let mut alarm_sound = sound::AlarmSound::default();
     // Windows' screen-reader adapter must exist before the window shows.
     let mut access = a11y::Bridge::new(win.native_handle(), win.waker());
@@ -226,9 +227,7 @@ fn run() -> platform::Result<()> {
                     providers.notifications(app.prefs().notifications);
                     providers::WEB_ARTWORK.store(app.prefs().web_artwork, std::sync::atomic::Ordering::Relaxed);
                     providers.spotify(app.prefs().spotify);
-                    providers.weather(app.prefs().weather.clone());
-                    providers.calendar(app.prefs().calendar);
-                    providers.notifications(app.prefs().notifications);
+                    providers.clipboard(app.prefs().clipboard);
                 }
                 Control::PrefsChanged => {}
                 Control::ShelfChanged if !scripted => app.set_shelf(config::load_shelf()),
@@ -254,6 +253,9 @@ fn run() -> platform::Result<()> {
         if app.sysmon_wanted() != sysmon_on {
             sysmon_on = !sysmon_on;
             providers.sysmon(sysmon_on);
+        }
+        for text in app.take_clipboard_copies() {
+            providers.clipboard_copy(text);
         }
         for cmd in app.take_conn_commands() {
             providers.conn(cmd);

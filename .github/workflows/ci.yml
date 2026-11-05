@@ -81,6 +81,10 @@ jobs:
           for i in $(seq 50); do ls "$XDG_RUNTIME_DIR"/wayland-* >/dev/null 2>&1 && break; sleep 0.1; done
           export WAYLAND_DISPLAY=$(ls "$XDG_RUNTIME_DIR" | grep -m1 '^wayland-[0-9]*$')
           cargo test -p islet platform::wayland -- --test-threads=1 --nocapture
+      # X11: file drops (XDND) and clipboard history against a real X server.
+      - name: X11 tests (Xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a cargo test -p islet -- platform::x11 providers::clipboard --test-threads=1 --nocapture
       # Informational: can the MediaRemote helper read Now Playing on this
       # macOS version? (Nothing plays on CI, so "info=0" is expected.)
       - name: MediaRemote helper probe (macOS)

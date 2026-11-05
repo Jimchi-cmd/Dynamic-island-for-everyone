@@ -5,6 +5,7 @@
 
 pub mod art;
 pub mod calendar;
+mod clipboard;
 pub mod connectivity;
 #[cfg(target_os = "linux")]
 mod dbus_util;
@@ -165,6 +166,8 @@ fn describe(r: &Report) -> String {
         Report::CustomEnded(id) => format!("activity {id:?} ended"),
         Report::RemoteMedia(m) => format!("remote media: {:?}", m.as_ref().map(|m| &m.app_name)),
         Report::System(s) => format!("system: {s:?}"),
+        // Never log what was copied.
+        Report::Clipboard(t) => format!("clipboard: {} chars", t.chars().count()),
         Report::Privacy(p) => format!("privacy: camera {:?}, mic {:?}", p.camera, p.mic),
         Report::UpNext(u) => format!("up next: {:?}", u.as_ref().map(|(e, _)| &e.summary)),
     }
@@ -179,6 +182,7 @@ pub struct Providers {
     calendar: Sender<bool>,
     spotify: Sender<spotify::SpotifyMsg>,
     sysmon: Sender<bool>,
+    clipboard: Option<clipboard::Watcher>,
     sink: Sink,
     #[cfg(target_os = "linux")]
     notifications: linux_notifications::Notifications,
@@ -210,6 +214,7 @@ impl Providers {
             calendar,
             spotify,
             sysmon,
+            clipboard: None,
             sink,
             #[cfg(target_os = "linux")]
             notifications: linux_notifications::Notifications::default(),
@@ -241,6 +246,22 @@ impl Providers {
 
     pub fn nav(&self, msg: navigation::NavMsg) {
         let _ = self.nav.send(msg);
+    }
+
+    /// Start or stop watching the clipboard (history is opt-in).
+    pub fn clipboard(&mut self, on: bool) {
+        if on && self.clipboard.is_none() {
+            self.clipboard = clipboard::start(self.sink.clone());
+        } else if !on {
+            self.clipboard = None;
+        }
+    }
+
+    /// Put a history entry back on the clipboard.
+    pub fn clipboard_copy(&self, text: String) {
+        if let Some(w) = &self.clipboard {
+            w.copy(text);
+        }
     }
 
     /// Start or stop the system monitor (it runs only while its panel is open).

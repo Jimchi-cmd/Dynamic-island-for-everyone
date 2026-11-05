@@ -560,6 +560,37 @@
           </form>
         </div>
         <div class="card">
+          <h2>Privacy</h2>
+          <div class="net">
+            <span class="name">Camera and microphone dots</span>
+            <input
+              type="checkbox"
+              class="switch"
+              aria-label="Show camera and microphone dots"
+              checked={islandPrefs?.privacyDots ?? true}
+              disabled={!islandPrefs}
+              onchange={(e) => setSwitch('privacyDots', e.currentTarget.checked)}
+            />
+          </div>
+          <p class="muted small">A green dot while an app uses the camera, an orange one for the microphone.</p>
+          <div class="net">
+            <span class="name">Clipboard history</span>
+            <input
+              type="checkbox"
+              class="switch"
+              aria-label="Keep clipboard history"
+              checked={islandPrefs?.clipboard ?? false}
+              disabled={!islandPrefs}
+              onchange={(e) => setSwitch('clipboard', e.currentTarget.checked)}
+            />
+          </div>
+          <p class="muted small">
+            Keeps the last 20 texts you copy, in memory only: nothing is saved to disk, and the list is gone when Islet
+            quits. Copies that password managers mark as secret are skipped.{#if info?.os === 'macos'} macOS has no
+            clipboard notifications, so while this is on Islet checks the clipboard twice a second.{/if}
+          </p>
+        </div>
+        <div class="card">
           <h2>Spotify on your other devices</h2>
           <p class="muted small">
             Optional. Shows what's playing on your phone or a speaker through Spotify Connect, with controls (controls need
