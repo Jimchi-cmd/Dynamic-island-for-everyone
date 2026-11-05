@@ -6,7 +6,7 @@
 
 use super::Sink;
 use islet_core::activity::Report;
-use islet_core::connectivity::{BtState, ConnCommand, ConnUpdate, WifiState};
+use islet_core::connectivity::{BtState, ConnCommand, ConnUpdate, Radio, WifiState};
 use std::sync::mpsc::{channel, Sender};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -23,6 +23,8 @@ pub trait Backend {
     /// Paired Bluetooth devices.
     fn bluetooth(&mut self) -> BtState;
     fn bt_set(&mut self, id: &str, connect: bool) -> Result<(), String>;
+    /// Turn the Wi-Fi or Bluetooth radio on or off.
+    fn set_power(&mut self, radio: Radio, on: bool) -> Result<(), String>;
 }
 
 #[cfg(target_os = "linux")]
@@ -86,6 +88,17 @@ pub fn run(b: &mut dyn Backend, cmd: ConnCommand, send: &mut dyn FnMut(ConnUpdat
             }
             send(ConnUpdate::Bluetooth(b.bluetooth()));
         }
+        ConnCommand::SetPower(radio, on) => {
+            send(ConnUpdate::Busy(Some(format!("Turning {} {}…", radio.name(), if on { "on" } else { "off" }))));
+            match b.set_power(radio, on) {
+                Ok(()) => send(ConnUpdate::Busy(None)),
+                Err(message) => send(ConnUpdate::Failed { message, needs_password: None }),
+            }
+            match radio {
+                Radio::Wifi => send(ConnUpdate::Wifi(b.wifi(false))),
+                Radio::Bluetooth => send(ConnUpdate::Bluetooth(b.bluetooth())),
+            }
+        }
     }
 }
 
@@ -112,6 +125,7 @@ mod tests {
         current: Option<String>,
         connected: bool,
         can_connect: bool,
+        wifi_off: bool,
     }
 
     impl Backend for Fake {
@@ -125,7 +139,7 @@ mod tests {
             };
             WifiState {
                 available: true,
-                enabled: true,
+                enabled: !self.wifi_off,
                 current: self.current.clone(),
                 networks: vec![net("Home"), net("Cafe")],
                 note: None,
@@ -156,6 +170,27 @@ mod tests {
             self.connected = connect;
             Ok(())
         }
+        fn set_power(&mut self, radio: Radio, on: bool) -> Result<(), String> {
+            match radio {
+                Radio::Wifi => {
+                    self.wifi_off = !on;
+                    Ok(())
+                }
+                Radio::Bluetooth => Err("Turn Bluetooth on or off in System Settings".into()),
+            }
+        }
+    }
+
+    #[test]
+    fn radios_turn_on_and_off() {
+        let mut b = Fake::default();
+        let u = collect(&mut b, ConnCommand::SetPower(Radio::Wifi, false));
+        assert!(
+            matches!(&u[..], [ConnUpdate::Busy(Some(m)), ConnUpdate::Busy(None), ConnUpdate::Wifi(w)] if m == "Turning Wi-Fi off…" && !w.enabled),
+            "{u:?}"
+        );
+        let u = collect(&mut b, ConnCommand::SetPower(Radio::Bluetooth, true));
+        assert!(matches!(&u[1], ConnUpdate::Failed { .. }) && matches!(u.last(), Some(ConnUpdate::Bluetooth(_))));
     }
 
     fn collect(b: &mut Fake, cmd: ConnCommand) -> Vec<ConnUpdate> {

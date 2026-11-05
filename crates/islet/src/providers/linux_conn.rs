@@ -3,7 +3,7 @@
 
 use super::connectivity::{Backend, ConnectError};
 use super::Bus;
-use islet_core::connectivity::{self, BtDevice, BtState, WifiNetwork, WifiState};
+use islet_core::connectivity::{self, BtDevice, BtState, Radio, WifiNetwork, WifiState};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use zbus::blocking::{Connection, Proxy};
@@ -209,6 +209,12 @@ impl Linux {
         }))
     }
 
+    fn adapters(&self, c: &Connection) -> zbus::Result<Vec<OwnedObjectPath>> {
+        let om = Self::proxy(c, BLUEZ, "/", "org.freedesktop.DBus.ObjectManager")?;
+        let objects: HashMap<OwnedObjectPath, Settings> = om.call("GetManagedObjects", &())?;
+        Ok(objects.into_iter().filter(|(_, i)| i.contains_key("org.bluez.Adapter1")).map(|(p, _)| p).collect())
+    }
+
     fn try_bluetooth(&mut self) -> zbus::Result<BtState> {
         let c = self.conn()?;
         let om = Self::proxy(&c, BLUEZ, "/", "org.freedesktop.DBus.ObjectManager")?;
@@ -243,6 +249,24 @@ impl Linux {
         Ok(state)
     }
 
+    /// NetworkManager's `WirelessEnabled`, or every BlueZ adapter's `Powered`.
+    fn try_set_power(&mut self, radio: Radio, on: bool) -> zbus::Result<()> {
+        let c = self.conn()?;
+        match radio {
+            Radio::Wifi => {
+                let props = Self::proxy(&c, NM, NM_PATH, "org.freedesktop.DBus.Properties")?;
+                props.call::<_, _, ()>("Set", &(NM, "WirelessEnabled", Value::from(on)))
+            }
+            Radio::Bluetooth => {
+                for adapter in self.adapters(&c)? {
+                    let props = Self::proxy(&c, BLUEZ, adapter.as_str(), "org.freedesktop.DBus.Properties")?;
+                    props.call::<_, _, ()>("Set", &("org.bluez.Adapter1", "Powered", Value::from(on)))?;
+                }
+                Ok(())
+            }
+        }
+    }
+
     fn try_bt_set(&mut self, id: &str, connect: bool) -> zbus::Result<()> {
         let c = self.conn()?;
         if connect {
@@ -254,6 +278,14 @@ impl Linux {
         }
         let dev = Self::proxy(&c, BLUEZ, id, "org.bluez.Device1")?;
         dev.call::<_, _, ()>(if connect { "Connect" } else { "Disconnect" }, &())
+    }
+}
+
+fn onoff(on: bool) -> &'static str {
+    if on {
+        "on"
+    } else {
+        "off"
     }
 }
 
@@ -287,6 +319,13 @@ impl Backend for Linux {
     fn bluetooth(&mut self) -> BtState {
         self.try_bluetooth()
             .unwrap_or_else(|e| BtState { note: Some(unavailable("Bluetooth (BlueZ)", e)), ..BtState::default() })
+    }
+
+    fn set_power(&mut self, radio: Radio, on: bool) -> Result<(), String> {
+        self.try_set_power(radio, on).map_err(|e| match e {
+            zbus::Error::MethodError(_, Some(msg), _) => format!("Couldn't turn {} {}: {msg}", radio.name(), onoff(on)),
+            e => format!("Couldn't turn {} {}: {e}", radio.name(), onoff(on)),
+        })
     }
 
     fn bt_set(&mut self, id: &str, connect: bool) -> Result<(), String> {

@@ -11,6 +11,7 @@ use crate::providers::connectivity::{self as conn, ConnectError};
 use crate::{autostart, config, control, net, providers, secrets};
 use control::Control;
 use islet_core::alarm::{self, Alarm};
+use islet_core::connectivity::Radio;
 use islet_core::nav::{TravelMode, Trip};
 use islet_core::timer::{self, TimerCommand};
 
@@ -37,9 +38,11 @@ Usage:
                                            a focus session: work and breaks, with a chime
   islet wifi list [--scan] [--json]        nearby Wi-Fi networks
   islet wifi connect <name> [--password-stdin]
+  islet wifi on|off                        turn Wi-Fi on or off
                                            join a network (the password is read from stdin)
   islet bt list [--json]                   paired Bluetooth devices
   islet bt connect|disconnect <id>         connect or disconnect one (id from bt list)
+  islet bt on|off                          turn Bluetooth on or off
   islet weather                            the weather now (if a place is set)
   islet weather set <city>                 show weather for a place (Open-Meteo, no key)
   islet weather search <city> [--json]     find places by name
@@ -97,6 +100,8 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["wifi", "connect", ssid] => wifi_connect(ssid, false),
         ["wifi", "connect", ssid, "--password-stdin"] => wifi_connect(ssid, true),
         ["bt", "list", rest @ ..] => Ok(bt_list(rest.contains(&"--json"))),
+        ["wifi", state @ ("on" | "off")] => set_radio(Radio::Wifi, *state == "on"),
+        ["bt", state @ ("on" | "off")] => set_radio(Radio::Bluetooth, *state == "on"),
         ["bt", verb @ ("connect" | "disconnect"), id] => conn::backend()
             .bt_set(id, *verb == "connect")
             .map(|()| format!("{}ed.", if *verb == "connect" { "Connect" } else { "Disconnect" })),
@@ -571,6 +576,10 @@ fn wifi_connect(ssid: &str, password_stdin: bool) -> Result<String, String> {
         Err(ConnectError::NeedsPassword) => Err(format!("{ssid} needs a password (use --password-stdin)")),
         Err(ConnectError::Failed(e)) => Err(e),
     }
+}
+
+fn set_radio(radio: Radio, on: bool) -> Result<String, String> {
+    conn::backend().set_power(radio, on).map(|()| format!("{} is {}.", radio.name(), if on { "on" } else { "off" }))
 }
 
 fn bt_list(json: bool) -> String {

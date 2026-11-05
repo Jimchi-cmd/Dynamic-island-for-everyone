@@ -5,7 +5,7 @@
 
 use super::connectivity::{Backend, ConnectError};
 use islet_core::activity::DeviceKind;
-use islet_core::connectivity::{self, BtDevice, BtState, WifiNetwork, WifiState};
+use islet_core::connectivity::{self, BtDevice, BtState, Radio, WifiNetwork, WifiState};
 use objc2::rc::Retained;
 use objc2_core_wlan::{CWNetwork, CWSecurity, CWWiFiClient};
 use objc2_foundation::{NSOperationQueue, NSString};
@@ -42,6 +42,18 @@ fn networks(set: &objc2_foundation::NSSet<CWNetwork>) -> Vec<Retained<CWNetwork>
 }
 
 impl Backend for Mac {
+    fn set_power(&mut self, radio: Radio, on: bool) -> Result<(), String> {
+        match radio {
+            // SAFETY: CoreWLAN calls with valid receivers.
+            Radio::Wifi => unsafe {
+                let iface = CWWiFiClient::sharedWiFiClient().interface().ok_or("No Wi-Fi adapter found")?;
+                iface.setPower_error(on).map_err(|e| e.localizedDescription().to_string())
+            },
+            // macOS has no public API for the Bluetooth power switch.
+            Radio::Bluetooth => Err("Turn Bluetooth on or off in System Settings".into()),
+        }
+    }
+
     fn wifi(&mut self, scan: bool) -> WifiState {
         // SAFETY: CoreWLAN calls with valid receivers; results are retained.
         unsafe {

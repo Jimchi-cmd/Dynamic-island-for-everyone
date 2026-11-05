@@ -44,6 +44,8 @@ pub enum Panel {
 /// What a tap on the clock card or a list lands on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnHit {
+    /// The Wi-Fi / Bluetooth on/off switch.
+    Power,
     /// A button on the clock card.
     Open(Panel),
     /// The list header: back to the clock.
@@ -1225,6 +1227,33 @@ fn list_header_elements(
     v
 }
 
+/// The on/off switch at the right of the Wi-Fi and Bluetooth headers.
+pub fn power_switch(pill: Rect) -> Rect {
+    Rect::new(pill.right() - PAD - 40.0, pill.y + 17.0, 40.0, 24.0)
+}
+
+/// The radio's switch (when the computer has that radio) and, left of it,
+/// what is happening ("Searching…").
+fn radio_header(pill: Rect, on: Option<bool>, status: Option<&str>, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let mut v = Vec::new();
+    let sw = power_switch(pill);
+    let mut right = (pill.right() - PAD) as f32;
+    if let Some(on) = on {
+        let (x, y, w, h) = (sw.x as f32, sw.y as f32, sw.w as f32, sw.h as f32);
+        let (track, alpha) = if on { (GREEN, 1.0) } else { (WHITE, 0.22) };
+        v.push(Element::Bar { x, y, w, h, color: track, opacity: o * alpha });
+        let knob = h - 4.0;
+        let kx = if on { x + w - knob - 2.0 } else { x + 2.0 };
+        v.push(Element::Bar { x: kx, y: y + 2.0, w: knob, h: knob, color: WHITE, opacity: o });
+        right = x - 10.0;
+    }
+    if let Some(s) = status {
+        let style = TextStyle { size: 12.5, opacity: o * 0.6, align: Align::Right, ..TextStyle::default() };
+        v.push(text(engine.ellipsize(s, &style, (pill.w * 0.4) as f32), style, right, pill.y as f32 + 34.0));
+    }
+    v
+}
+
 /// What the Wi-Fi list's footer says, and whether it is a Settings button.
 pub fn wifi_footer(c: &Connectivity) -> Option<(String, bool)> {
     match (&c.failure, &c.wifi.note) {
@@ -1246,7 +1275,8 @@ pub fn bt_footer(c: &Connectivity) -> Option<(String, bool)> {
 
 pub fn expanded_wifi(pill: Rect, c: &Connectivity, o: f32, engine: &mut TextEngine) -> Vec<Element> {
     let w: &WifiState = &c.wifi;
-    let mut v = list_header_elements(pill, Icon::Wifi(3), "Wi-Fi", c.busy.as_deref(), o, engine);
+    let mut v = list_header_elements(pill, Icon::Wifi(3), "Wi-Fi", None, o, engine);
+    v.extend(radio_header(pill, w.available.then_some(w.enabled), c.busy.as_deref(), o, engine));
     let rows = list_rows(pill, w.networks.len());
     let name_style = TextStyle { size: 15.0, weight: 600, opacity: o, ..TextStyle::default() };
     for (r, n) in rows.iter().zip(&w.networks) {
@@ -1408,7 +1438,8 @@ pub fn shelf_remove_hit(row: Rect, x: f64) -> bool {
 
 pub fn expanded_bluetooth(pill: Rect, c: &Connectivity, o: f32, engine: &mut TextEngine) -> Vec<Element> {
     let b: &BtState = &c.bt;
-    let mut v = list_header_elements(pill, Icon::Bluetooth, "Bluetooth", c.busy.as_deref(), o, engine);
+    let mut v = list_header_elements(pill, Icon::Bluetooth, "Bluetooth", None, o, engine);
+    v.extend(radio_header(pill, b.available.then_some(b.powered), c.busy.as_deref(), o, engine));
     let rows = list_rows(pill, b.devices.len());
     let name_style = TextStyle { size: 15.0, weight: 600, opacity: o, ..TextStyle::default() };
     let state_style = TextStyle { size: 12.5, opacity: o * 0.6, align: Align::Right, ..TextStyle::default() };

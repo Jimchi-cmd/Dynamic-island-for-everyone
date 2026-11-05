@@ -64,6 +64,23 @@ pub enum ConnCommand {
     },
     ConnectBluetooth(String),
     DisconnectBluetooth(String),
+    /// Turn a radio on or off.
+    SetPower(Radio, bool),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Radio {
+    Wifi,
+    Bluetooth,
+}
+
+impl Radio {
+    pub fn name(self) -> &'static str {
+        match self {
+            Radio::Wifi => "Wi-Fi",
+            Radio::Bluetooth => "Bluetooth",
+        }
+    }
 }
 
 /// Results from the backend.

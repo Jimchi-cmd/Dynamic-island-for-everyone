@@ -7,7 +7,7 @@ use crate::platform::{Button, Event, Key};
 use islet_core::activity::{Activities, Hud, Live, MediaCommand, MediaInfo, NavInfo, Report};
 use islet_core::alarm::{Alarm, AlarmClock, AlarmEvent};
 use islet_core::clock::{secs_to_next_minute, LocalTime};
-use islet_core::connectivity::{ConnCommand, ConnUpdate};
+use islet_core::connectivity::{ConnCommand, ConnUpdate, Radio};
 use islet_core::geometry::Rect;
 use islet_core::island::{
     spring_for, target_size, Island, Presentation, Signal, AUTO_COLLAPSE_SECS, LONG_PRESS_SECS, MINIMAL_CIRCLE,
@@ -613,6 +613,14 @@ impl App {
                     Panel::Shelf => (self.shelf.len(), None),
                     Panel::System => (0, None),
                 };
+                let has_radio = match p {
+                    Panel::Wifi => c.wifi.available,
+                    Panel::Bluetooth => c.bt.available,
+                    _ => false,
+                };
+                if has_radio && content::power_switch(cr).contains(x, y) {
+                    return Some(ConnHit::Power);
+                }
                 if content::list_header(cr).contains(x, y) {
                     return Some(ConnHit::Back);
                 }
@@ -649,6 +657,13 @@ impl App {
                 }
             }
             ConnHit::Back => self.panel = None,
+            ConnHit::Power => match self.panel {
+                Some(Panel::Wifi) => self.conn_commands.push(ConnCommand::SetPower(Radio::Wifi, !c.wifi.enabled)),
+                Some(Panel::Bluetooth) => {
+                    self.conn_commands.push(ConnCommand::SetPower(Radio::Bluetooth, !c.bt.powered))
+                }
+                _ => {}
+            },
             ConnHit::Row(i) => match self.panel {
                 Some(Panel::Wifi) => {
                     if let Some(n) = c.wifi.networks.get(i).filter(|n| !n.active) {
@@ -794,6 +809,15 @@ impl App {
                 }
                 OpenContent::Panel(p) => {
                     buttons.push(("Back".into(), content::list_header(cr)));
+                    let radio = match p {
+                        Panel::Wifi if c.wifi.available => Some(("Wi-Fi", c.wifi.enabled)),
+                        Panel::Bluetooth if c.bt.available => Some(("Bluetooth", c.bt.powered)),
+                        _ => None,
+                    };
+                    if let Some((name, on)) = radio {
+                        let what = if on { "off" } else { "on" };
+                        buttons.push((format!("Turn {name} {what}"), content::power_switch(cr)));
+                    }
                     let names: Vec<String> = match p {
                         Panel::Wifi => c
                             .wifi
@@ -1965,6 +1989,12 @@ mod tests {
         assert_eq!(app.take_conn_commands(), [ConnCommand::ScanWifi]);
         let rows = content::list_rows(app.content_rect(app.pill_rect(9.0)), 2);
         assert!(texts(&app, 9.0, &mut engine).iter().any(|s| s == "Cafe"));
+
+        // The header switch turns Wi-Fi off (and says so to screen readers).
+        assert!(app.accessibility(9.0).buttons.iter().any(|(n, _)| n == "Turn Wi-Fi off"));
+        let switch = content::power_switch(app.content_rect(app.pill_rect(9.0)));
+        press(&mut app, switch, 9.0);
+        assert_eq!(app.take_conn_commands(), [ConnCommand::SetPower(Radio::Wifi, false)]);
 
         // Tap a new secured network: the backend says it needs a password.
         press(&mut app, rows[1], 9.0);

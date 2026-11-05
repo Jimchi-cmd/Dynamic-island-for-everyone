@@ -352,6 +352,7 @@ struct NmState {
     last_scan: i64,
     added: Vec<String>,
     deleted: bool,
+    wifi_off: bool,
 }
 
 type Shared = Arc<Mutex<NmState>>;
@@ -371,7 +372,12 @@ impl FakeNm {
 
     #[zbus(property)]
     fn wireless_enabled(&self) -> bool {
-        true
+        !self.0.lock().unwrap().wifi_off
+    }
+
+    #[zbus(property)]
+    fn set_wireless_enabled(&mut self, on: bool) {
+        self.0.lock().unwrap().wifi_off = !on;
     }
 
     fn activate_connection(&self, _c: OwnedObjectPath, _d: OwnedObjectPath, ap: OwnedObjectPath) -> OwnedObjectPath {
@@ -509,13 +515,18 @@ impl FakeActive {
     }
 }
 
-struct FakeAdapter;
+struct FakeAdapter(bool);
 
 #[zbus::interface(name = "org.bluez.Adapter1")]
 impl FakeAdapter {
     #[zbus(property)]
     fn powered(&self) -> bool {
-        true
+        self.0
+    }
+
+    #[zbus(property)]
+    fn set_powered(&mut self, on: bool) {
+        self.0 = on;
     }
 }
 
@@ -597,7 +608,7 @@ fn wifi_and_bluetooth_through_networkmanager_and_bluez() {
         .unwrap()
         .serve_at("/", zbus::fdo::ObjectManager)
         .unwrap()
-        .serve_at("/org/bluez/hci0", FakeAdapter)
+        .serve_at("/org/bluez/hci0", FakeAdapter(true))
         .unwrap()
         .serve_at(
             "/org/bluez/hci0/dev_AA_BB",
@@ -643,6 +654,18 @@ fn wifi_and_bluetooth_through_networkmanager_and_bluez() {
     assert!(b.bluetooth().devices[0].connected);
     b.bt_set("/org/bluez/hci0/dev_AA_BB", false).unwrap();
     assert!(!b.bluetooth().devices[0].connected);
+
+    // Quick toggles: the radios turn off and back on.
+    use islet_core::connectivity::Radio;
+    b.set_power(Radio::Wifi, false).unwrap();
+    let w = b.wifi(false);
+    assert!(!w.enabled && w.note.as_deref() == Some("Wi-Fi is off"), "{w:?}");
+    b.set_power(Radio::Wifi, true).unwrap();
+    assert!(b.wifi(false).enabled);
+    b.set_power(Radio::Bluetooth, false).unwrap();
+    assert!(!b.bluetooth().powered);
+    b.set_power(Radio::Bluetooth, true).unwrap();
+    assert!(b.bluetooth().powered);
 }
 
 #[test]

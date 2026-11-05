@@ -3,7 +3,7 @@
 //! Bluetooth device, so the island opens Bluetooth settings for that.
 
 use super::connectivity::{Backend, ConnectError};
-use islet_core::connectivity::{self, BtDevice, BtState, WifiNetwork, WifiState};
+use islet_core::connectivity::{self, BtDevice, BtState, Radio, WifiNetwork, WifiState};
 use std::collections::HashSet;
 use windows::core::HSTRING;
 use windows::Devices::Bluetooth::{BluetoothConnectionStatus, BluetoothDevice, BluetoothLEDevice};
@@ -54,7 +54,40 @@ fn available(a: &WiFiAdapter) -> Vec<WiFiAvailableNetwork> {
     a.NetworkReport().and_then(|r| r.AvailableNetworks()).map(|v| v.into_iter().collect()).unwrap_or_default()
 }
 
+/// Turn a radio on or off through Windows.Devices.Radios (the same switch
+/// as the Quick Settings tiles).
+fn set_radio(radio: Radio, on: bool) -> Result<(), String> {
+    use windows::Devices::Radios::{Radio as WinRadio, RadioAccessStatus, RadioKind, RadioState};
+    let access = WinRadio::RequestAccessAsync().and_then(|a| a.join()).map_err(|e| e.message())?;
+    if access != RadioAccessStatus::Allowed {
+        return Err(format!("Windows didn't let Islet switch {}", radio.name()));
+    }
+    let kind = match radio {
+        Radio::Wifi => RadioKind::WiFi,
+        Radio::Bluetooth => RadioKind::Bluetooth,
+    };
+    let radios = WinRadio::GetRadiosAsync().and_then(|a| a.join()).map_err(|e| e.message())?;
+    let mut found = false;
+    for r in radios.into_iter().filter(|r| r.Kind().is_ok_and(|k| k == kind)) {
+        found = true;
+        let state = if on { RadioState::On } else { RadioState::Off };
+        let status = r.SetStateAsync(state).and_then(|a| a.join()).map_err(|e| e.message())?;
+        if status != RadioAccessStatus::Allowed {
+            return Err(format!("Windows didn't let Islet switch {}", radio.name()));
+        }
+    }
+    if found {
+        Ok(())
+    } else {
+        Err(format!("No {} radio found", radio.name()))
+    }
+}
+
 impl Backend for Windows {
+    fn set_power(&mut self, radio: Radio, on: bool) -> Result<(), String> {
+        set_radio(radio, on)
+    }
+
     fn wifi(&mut self, scan: bool) -> WifiState {
         let a = match adapter() {
             Ok(a) => a,
