@@ -28,6 +28,12 @@ The first public release.
 
 - **Screen readers:** the island describes itself and exposes its controls to Orca, Narrator/NVDA and VoiceOver.
 
+- **System monitor** on the clock card (CPU, memory, disk), sampled only while it's open.
+- **Clipboard history** (opt-in, memory only, password-manager copies skipped).
+- **Wi-Fi and Bluetooth switches** in their panels, and `islet wifi|bt on|off`.
+- **Global shortcut** to open and close the island (Settings → Shortcut, `islet hotkey`), and `islet toggle` for Wayland desktops.
+- **Look:** accent colour, island size, gap from the top and the display to use (Settings → Look, `islet look`).
+- **Destination suggestions** from Google Places while you type a trip (your key, Places API (New)).
 - **Camera and microphone dots:** a green dot (camera) or orange dot (microphone) at the right end of the closed island while any app uses them, with the app's name for screen readers (Linux and Windows name the app; macOS doesn't say which).
 
 - **Live activities for scripts and apps:** `islet activity start|update|end` shows your own activity (a build, a download, a delivery) with a progress ring and bar.

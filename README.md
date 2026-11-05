@@ -21,8 +21,13 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 - **Calendar:** what's next, ten minutes before it starts, and today's agenda (Google, Outlook or iCloud via their private iCal link).
 - **Timer and focus sessions:** a countdown ring on the island, or Pomodoro rounds of work and breaks.
 - **Alarms:** one-time or repeating. When one rings, the island opens with a swinging bell and a chime until you snooze or stop it.
-- **Wi-Fi and Bluetooth:** open the island, tap Wi-Fi or Bluetooth on the clock card, and pick a network or a device.
-- **Navigation ETA** with live traffic, arrival time and the first turn, then one tap hands off to Google Maps or Waze. Uses your own free-tier Google key ([setup](docs/navigation.md)).
+- **Wi-Fi and Bluetooth:** open the island, tap Wi-Fi or Bluetooth on the clock card, and pick a network or a device, or switch the radio on or off.
+- **Camera and microphone dots:** a green dot while an app uses the camera, an orange one for the microphone (your screen reader hears which app).
+- **System monitor:** CPU, memory and disk on the clock card, read only while you look at it.
+- **Clipboard history** (opt-in): your last 20 copied texts, one tap to copy again. Kept in memory only; password-manager copies are skipped.
+- **Live activities** for your scripts and apps: `islet activity start build --title Build --progress 40` puts a progress ring on the island.
+- **Make it yours:** accent colour, island size, gap from the top, which display, and a global shortcut to open it.
+- **Navigation ETA** with live traffic, arrival time and the first turn, then one tap hands off to Google Maps or Waze. Destination suggestions as you type. Uses your own free-tier Google key ([setup](docs/navigation.md)).
 - **Settings** for all of the above, with a first-run welcome that explains every permission.
 
 ## Install
@@ -43,6 +48,8 @@ Islet isn't code-signed yet, so Windows SmartScreen and macOS Gatekeeper will wa
 - Islet uses the network only for features you turn on: Spotify Connect (if you link it), your calendar link (every 15 minutes), weather (Open-Meteo, hourly, only the place you chose), the navigation ETA (straight to Google, with your key) and update checks (off by default).
 - Your Google key is kept in the OS keychain, never in a file. Route results are never stored.
 - Wi-Fi and Bluetooth lists load only when you open them.
+- Destination suggestions (Google Places, your key) are requested only while you type in Settings.
+- Clipboard history is off until you turn it on, lives in memory only, and is forgotten when you turn it off or quit.
 
 ## Command line
 
@@ -59,6 +66,9 @@ islet nav start "Kampala Road" --from "Ntinda" --label Work
 islet autostart on
 islet activity start build --title "Build" --progress 40   # your own live activity
 islet activity end build
+islet hotkey Ctrl+Alt+I                             # a shortcut that opens and closes the island
+islet look accent green                             # also: look size large, look offset 12, look display HDMI-1
+islet set clipboard on                              # opt-in clipboard history
 ```
 
 ## Build from source
@@ -77,9 +87,10 @@ Right-click the island to quit.
 
 - **Windows:** apps can't connect Bluetooth devices, so Islet lists them and opens Bluetooth settings. Listing Wi-Fi networks needs Location permission on Windows 11.
 - **macOS:** Now Playing for every app uses a small helper that runs through the system's Perl, because Apple restricted the MediaRemote API in macOS 15.4. If a macOS update breaks it, Islet falls back to Spotify and Apple Music. Wi-Fi names need Location permission.
-- **Linux:** native Wayland on KDE Plasma, sway, Hyprland and other wlroots compositors; on GNOME it runs through XWayland. Dropping files on the shelf works there too. The caps-lock pop-up needs X11 or XWayland, because Wayland only tells the focused app about the keyboard and Islet never takes focus. Web artwork (Spotify covers, for example) is downloaded only if you turn it on in Settings.
+- **Linux:** native Wayland on KDE Plasma, sway, Hyprland and other wlroots compositors; on GNOME it runs through XWayland. Dropping files on the shelf works there too. The caps-lock pop-up and Islet's own global shortcut need X11 or XWayland, because Wayland only tells the focused app about the keyboard and Islet never takes focus; on native Wayland, bind a key to `islet toggle` in your desktop's settings. Clipboard history reads the clipboard through XWayland, which every desktop above runs. The microphone dot needs `pactl` (PulseAudio or PipeWire's pulse server). Web artwork (Spotify covers, for example) is downloaded only if you turn it on in Settings.
 - Notifications on the island are Linux-only: Windows reserves that for packaged Store apps, and macOS doesn't allow it at all.
 - Alarms ring only while the computer is awake and Islet is running.
+- macOS doesn't say which app uses the camera or microphone, so the dot there has no name. It has no public Bluetooth power switch either, so the Bluetooth toggle points to System Settings.
 - No live turn-by-turn from your phone yet. An Android companion is planned.
 
 ## Contributing
