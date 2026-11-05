@@ -2875,7 +2875,8 @@ mod tests {
         };
         buds.report(Report::DeviceConnected(b(false)), -100.0);
         buds.report(Report::DeviceChanged(b(true)), 0.0);
-        let apps = [state((57, false), (57, true)), state((18, true), (18, false)), state((99, true), (100, true)), buds];
+        let apps =
+            [state((57, false), (57, true)), state((18, true), (18, false)), state((99, true), (100, true)), buds];
         let (cw, ch) = (WINDOW.0 as u32, 50u32);
         let mut sheet = Pixmap::new(cw * 2, ch * 2).unwrap();
         sheet.fill(Color::from_rgba8(226, 230, 236, 255));
