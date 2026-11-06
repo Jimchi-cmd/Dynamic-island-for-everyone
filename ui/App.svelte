@@ -670,6 +670,17 @@
             The empty island stays hidden until you move the pointer to the top of the screen. Music, timers, calls for
             attention and other live activities always show.
           </p>
+          <div class="net">
+            <span class="name">Show the time when nothing is playing</span>
+            <input
+              type="checkbox"
+              class="switch"
+              aria-label="Show the time when nothing is playing"
+              checked={islandPrefs?.idleClock ?? true}
+              disabled={!islandPrefs}
+              onchange={(e) => setSwitch('idleClock', e.currentTarget.checked)}
+            />
+          </div>
           <p class="muted small">Accent colour for buttons and switches on the island.</p>
           <div class="swatches" role="radiogroup" aria-label="Accent colour">
             {#each Object.entries(ACCENTS) as [name, hex] (name)}

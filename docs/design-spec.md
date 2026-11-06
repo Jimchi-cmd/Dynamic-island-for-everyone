@@ -30,7 +30,7 @@ All numbers are in **logical px** (1 px = 1 iOS point). They are approximations 
 
 | State | Size (w × h) | Corner radius | Content |
 |---|---|---|---|
-| **Idle** | 126 × 37 | 18.5 (capsule) | nothing |
+| **Idle** | 126 × 37 | 18.5 (capsule) | the time, centred (14 px semibold, tabular; a 12-hour suffix at 11 px, 70 %); fades as the pill grows. Redrawn once a minute, never while hidden. Off: nothing |
 | **Hover peek** (desktop only) | 136 × 39 | capsule | nothing; says "I'm interactive" |
 | **Compact** | 236 × 37 | capsule | leading: 25 × 25 artwork/icon (radius 7) at 6 px inset; trailing: indicator (waveform, timer, ETA) at 10 px inset |
 | **Compact with lyrics** | 340 × 37 | capsule | artwork and waveform as Compact; between them a strip of lyric lines (13.5 px semibold, 26 px apart) sliding left as the song goes on: the line being sung at full white, the others at 38 %, fading out over 14 px at each end. A line that fits is centred; a longer one scrolls across while it's sung. Each slide takes 0.4 s (ease-out, 60 fps); otherwise 30 fps with the waveform |

@@ -72,7 +72,8 @@ Usage:
   islet hotkey [<keys>|off]                the shortcut for that, e.g. Ctrl+Alt+I
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
                                            notifications, calendar, fahrenheit, web-artwork,
-                                           spotify, privacy-dots, clipboard, lyrics, auto-hide
+                                           spotify, privacy-dots, clipboard, lyrics, auto-hide,
+                                           idle-clock
   islet prefs [--json]                     the island's settings
   islet autostart on|off                   start Islet when you log in (or stop doing so)
   islet status [--json]                    is Islet running, and how it is set up

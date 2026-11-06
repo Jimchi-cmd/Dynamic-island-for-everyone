@@ -232,6 +232,7 @@ export interface IslandPrefs {
   clipboard: boolean;
   lyrics: boolean;
   autoHide: boolean;
+  idleClock: boolean;
   hotkey: string;
   accent: string;
   size: string;
@@ -263,4 +264,5 @@ export const SWITCH_NAMES: Record<string, string> = {
   clipboard: 'clipboard',
   lyrics: 'lyrics',
   autoHide: 'auto-hide',
+  idleClock: 'idle-clock',
 };

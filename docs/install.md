@@ -1,5 +1,7 @@
 # Installing Islet
 
+For a fuller walk-through of every step and feature, see the [user manual](manual.md).
+
 Download the file for your computer from the [latest release](https://github.com/Jimchi-cmd/Dynamic-island-for-everyone/releases/latest). Each release lists SHA-256 checksums in `SHA256SUMS` if you want to verify a download:
 
 ```bash

@@ -41,6 +41,8 @@ pub struct IslandPrefs {
     /// Hide the empty island until the pointer is over it. Anything live
     /// (music, a timer, a notification…) still shows.
     pub auto_hide: bool,
+    /// The time on the empty island (when nothing is playing).
+    pub idle_clock: bool,
     /// The global shortcut that opens and closes the island ("" = none),
     /// e.g. "Ctrl+Alt+I".
     pub hotkey: String,
@@ -86,6 +88,7 @@ impl Default for IslandPrefs {
             clipboard: false,
             lyrics: false,
             auto_hide: false,
+            idle_clock: true,
             hotkey: String::new(),
             accent: "blue".into(),
             size: "medium".into(),
@@ -96,7 +99,7 @@ impl Default for IslandPrefs {
 }
 
 /// The switches `islet set <key> on|off` understands.
-pub const SWITCHES: [&str; 12] = [
+pub const SWITCHES: [&str; 13] = [
     "volume-hud",
     "brightness-hud",
     "caps-lock-hud",
@@ -109,6 +112,7 @@ pub const SWITCHES: [&str; 12] = [
     "clipboard",
     "lyrics",
     "auto-hide",
+    "idle-clock",
 ];
 
 impl IslandPrefs {
@@ -146,6 +150,7 @@ impl IslandPrefs {
             "clipboard" => &mut self.clipboard,
             "lyrics" => &mut self.lyrics,
             "auto-hide" => &mut self.auto_hide,
+            "idle-clock" => &mut self.idle_clock,
             _ => return Err(format!("unknown setting {key:?} (one of: {})", SWITCHES.join(", "))),
         })
     }

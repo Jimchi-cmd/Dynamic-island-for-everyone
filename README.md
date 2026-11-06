@@ -11,7 +11,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 
 ## What it does
 
-- **The island itself:** iPhone-style continuous corners and spring motion. Hover to peek, click to expand, press and hold for more, scroll to switch between activities. Two activities split into a pill and a bubble joined by a liquid neck. On a notched MacBook it wraps the notch.
+- **The island itself:** iPhone-style continuous corners and spring motion. When nothing is playing it shows the time. Hover to peek, click to expand, press and hold for more, scroll to switch between activities. Two activities split into a pill and a bubble joined by a liquid neck. On a notched MacBook it wraps the notch.
 - **Now Playing** from any app: artwork, a live waveform, progress you can drag, and play/pause/skip. Optionally, Spotify playback on your phone or speakers too.
 - **Synced lyrics** (opt-in): the lyrics slide through the island as the song plays, with the line being sung lit up and the ones around it dimmed. Two lines on the open card too. From [LRCLIB](https://lrclib.net), a free, open lyrics database.
 - **Battery pop-ups** when headphones, earbuds, mice, keyboards or controllers connect, plus low-battery alerts.
@@ -39,11 +39,13 @@ Get the latest version from [Releases](https://github.com/Jimchi-cmd/Dynamic-isl
 
 | | Download |
 |---|---|
-| Windows 10/11 | `…_x64-setup.exe`, `.msi`, or the portable `.zip` |
+| Windows 10/11 | `…_x64-setup.exe`, `.msi`, the portable `.zip`, or the `.msix` (for notifications) |
 | macOS 11+ (Apple silicon and Intel) | `…_universal.dmg` |
 | Linux | `.deb`, `.rpm` or `.AppImage` |
 
-Islet isn't code-signed yet, so Windows SmartScreen and macOS Gatekeeper will warn the first time. **[docs/install.md](docs/install.md)** walks through getting past each warning safely, plus permissions, updating and uninstalling.
+**New to Islet? Read the [step-by-step manual](docs/manual.md)**: downloading, installing on each system, first start, every feature, and fixes for common problems.
+
+Islet isn't code-signed yet, so browsers, Windows SmartScreen and macOS Gatekeeper may warn the first time. The manual and **[docs/install.md](docs/install.md)** walk through getting past each warning safely, plus permissions, updating and uninstalling.
 
 ## Privacy
 

@@ -837,7 +837,7 @@ impl App {
         let pct = |v: f32| (v * 100.0).round() as i32;
         let label = match live.first() {
             None => match self.clock {
-                Some(now) if self.island.presentation().is_open() => {
+                Some(now) if self.island.presentation().is_open() || self.prefs.idle_clock => {
                     let (time, suffix) = islet_core::clock::format_time(&now, self.h24);
                     format!("Islet. {time}{}", suffix.map_or(String::new(), |s| format!(" {s}")))
                 }
@@ -1279,8 +1279,26 @@ impl App {
     }
 
     fn clock_shown(&self, t: f64) -> bool {
-        (self.expanded_opacity(t) > 0.0 || self.island.presentation().is_open())
-            && matches!(self.open_content(&self.live(t)), OpenContent::Clock)
+        let card = (self.expanded_opacity(t) > 0.0 || self.island.presentation().is_open())
+            && matches!(self.open_content(&self.live(t)), OpenContent::Clock);
+        card || self.idle_clock_opacity(t, &self.live(t)) > 0.0
+    }
+
+    /// The time on the empty pill: on unless switched off, while nothing is
+    /// live, fading as the pill grows into a card (and with the pill when it
+    /// hides until hovered). Not on a notched Mac, where the notch hides it.
+    fn idle_clock_opacity(&self, t: f64, live: &[Live]) -> f32 {
+        if !self.prefs.idle_clock || self.notch.is_some() || self.clock.is_none() || !live.is_empty() {
+            return 0.0;
+        }
+        let p = self.pill_rect(t);
+        let shape = smooth((60.0 - p.h) / 16.0) * smooth((190.0 - p.w) / 40.0);
+        let o = shape as f32 * self.shown.value(t).clamp(0.0, 1.0) as f32;
+        if o < 0.01 {
+            0.0
+        } else {
+            o
+        }
     }
 
     /// Expanded content fades and rises in as the pill grows taller, and out
@@ -1307,7 +1325,11 @@ impl App {
     /// Whether anything is drawn inside the island right now (cheap check, so
     /// fonts are only loaded once there is something to show).
     pub fn has_content(&self, t: f64) -> bool {
-        self.expanded_opacity(t) > 0.0 || self.compact_opacity(t, &self.live(t)) > 0.0 || self.privacy_opacity(t) > 0.0
+        let live = self.live(t);
+        self.expanded_opacity(t) > 0.0
+            || self.compact_opacity(t, &live) > 0.0
+            || self.privacy_opacity(t) > 0.0
+            || self.idle_clock_opacity(t, &live) > 0.0
     }
 
     /// The camera / microphone dot shows while the pill is closed (idle or
@@ -1453,6 +1475,13 @@ impl App {
                 }
                 _ => {}
             }
+        }
+        let io = self.idle_clock_opacity(t, &live);
+        if let (true, Some(now)) = (io > 0.0, self.clock) {
+            // Centred in what the camera / microphone dot leaves free.
+            let room = if self.privacy_shown() { PRIVACY_W } else { 0.0 };
+            let inner = Rect::new(p.x, p.y, (p.w - room).max(1.0), p.h);
+            out.extend(content::idle_clock(inner, &now, self.h24, io, engine));
         }
         let po = self.privacy_opacity(t);
         if po > 0.0 {
@@ -2236,7 +2265,14 @@ mod tests {
         press(&mut list, r, 4.0);
         let cr = list.content_rect(list.pill_rect(8.0));
         press(&mut list, content::clock_chips(cr, false, false)[0].0, 8.0);
+        let mut idle = App::new(Demo::None, false);
+        idle.set_time(NOW, 0.0);
+        let mut idle12 = App::new(Demo::None, false);
+        idle12.set_clock_style(false);
+        idle12.set_time(NOW, 0.0);
         let shots: Vec<(&App, f64, u32)> = vec![
+            (&idle, 1.0, 46),
+            (&idle12, 1.0, 46),
             (&compact, 3.0, 46),
             (&compact, 5.1, 46), // sliding onto the next line
             (&compact, 7.5, 46),
@@ -2516,6 +2552,7 @@ mod tests {
     #[test]
     fn a_ringing_alarm_opens_the_island_and_shows_a_bell() {
         let mut app = App::new(Demo::None, false);
+        app.set_prefs(IslandPrefs { idle_clock: false, ..IslandPrefs::default() });
         let mut engine = TextEngine::new();
         let alarm = Alarm { id: 1, hour: 14, minute: 6, label: "Tea".into(), days: 0, enabled: true };
         app.set_alarms(vec![alarm]);
@@ -2839,11 +2876,37 @@ mod tests {
     #[test]
     fn idle_island_shows_no_clock_and_never_wakes_for_it() {
         let mut app = App::new(Demo::None, false);
+        app.set_prefs(IslandPrefs { idle_clock: false, ..IslandPrefs::default() });
         assert!(!app.set_time(NOW, 0.0), "nothing to redraw while idle");
         let mut engine = TextEngine::new();
         assert!(app.elements(0.0, &mut engine).is_empty());
         assert_eq!(app.next_timer(0.0), None, "zero wakeups when idle");
         assert_eq!(app.frame_interval(0.0), None);
+    }
+
+    #[test]
+    fn the_empty_island_shows_the_time_and_ticks_once_a_minute() {
+        let mut engine = TextEngine::new();
+        let mut app = App::new(Demo::None, false);
+        assert!(app.set_time(NOW, 0.0), "the time is on the empty pill by default");
+        assert_eq!(texts(&app, 0.0, &mut engine), ["14:05"]);
+        let wake = app.next_timer(0.0).expect("it wakes for the next minute");
+        assert!((wake - 18.0).abs() < 1e-6, "{wake}");
+        assert_eq!(app.frame_interval(0.0), None, "and draws nothing in between");
+        assert!(app.accessibility(0.0).label.contains("14:05"));
+        app.set_clock_style(false);
+        assert_eq!(texts(&app, 0.0, &mut engine), ["2:05", "PM"]);
+
+        // Music takes its place; the time comes back when it's gone.
+        app.report(Report::Media(Some(song(true))), 1.0);
+        assert!(!texts(&app, 4.0, &mut engine).iter().any(|s| s.contains(":05")));
+        // Hover-only mode hides it with the pill, and then it doesn't wake.
+        let mut hidden = App::new(Demo::None, false);
+        hidden.set_prefs(IslandPrefs { auto_hide: true, ..IslandPrefs::default() });
+        hidden.set_time(NOW, 0.0);
+        hidden.tick(0.0);
+        assert!(texts(&hidden, 3.0, &mut engine).is_empty());
+        assert_eq!(hidden.next_timer(3.0), None);
     }
 
     #[test]

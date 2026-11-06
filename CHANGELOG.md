@@ -2,13 +2,14 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [0.1.0] - unreleased
+## [0.1.0] - 2026-11-06
 
 The first public release.
 
 ### Island
 - Native, webview-free island for macOS, Windows and Linux (native Wayland on KDE Plasma, sway, Hyprland and other wlroots compositors; X11 and XWayland elsewhere): about 5 MB of RAM, 0 % CPU and zero wakeups when idle.
 - iPhone-style shapes and motion: continuous-corner squircles, spring animations, peek, compact, the split pill with a metaball neck for two activities, the expanded card and a large view. Wraps the notch on MacBooks.
+- **The time on the empty island:** when nothing is playing, the pill shows the current time (12- or 24-hour, as your system is set); switch it off in Settings → Look. It wakes once a minute to change the time, and not at all when hidden.
 - **Hover-only mode** (Settings → Look): the empty island stays hidden until you point at it; music and other live activities always show.
 - **Control Centre from any card:** a "‹ Control Centre" button on every activity's card, and a back button on the Wi-Fi, Bluetooth, shelf, clipboard and system lists.
 - Smooth 60 fps on Windows: frames are timed with a high-resolution waitable timer instead of a millisecond timeout that Windows rounded up to its 15.6 ms tick.

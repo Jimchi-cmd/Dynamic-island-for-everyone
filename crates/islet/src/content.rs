@@ -1643,6 +1643,24 @@ pub fn expanded_bluetooth(
     v
 }
 
+// ---- The time on the empty island --------------------------------------------
+
+/// The time, centred in the empty pill ("14:05", or "2:05 PM").
+pub fn idle_clock(pill: Rect, now: &LocalTime, h24: bool, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let (time, suffix) = format_time(now, h24);
+    let style = TextStyle { size: 14.0, weight: 600, opacity: o, tabular: true, ..TextStyle::default() };
+    let small = TextStyle { size: 11.0, opacity: o * 0.7, ..style };
+    let tw = engine.measure(&time, &style);
+    let sw = suffix.as_ref().map_or(0.0, |s| 3.0 + engine.measure(s, &small));
+    let (cx, baseline) = ((pill.x + pill.w / 2.0) as f32, (pill.y + pill.h / 2.0) as f32 + 5.0);
+    let left = cx - (tw + sw) / 2.0;
+    let mut v = vec![text(time, style, left, baseline)];
+    if let Some(s) = suffix {
+        v.push(text(s, small, left + tw + 3.0, baseline));
+    }
+    v
+}
+
 // ---- Back to Control Centre ------------------------------------------------
 
 /// Height of the strip at the top of an activity card that holds the
