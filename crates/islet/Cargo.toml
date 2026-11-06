@@ -35,7 +35,7 @@ features = ["rustls", "platform-verifier"]
 [target.'cfg(target_os = "linux")'.dependencies]
 accesskit_unix = "0.24"
 # Native Wayland (wlr layer-shell: KDE Plasma, sway, Hyprland…); GNOME uses XWayland.
-smithay-client-toolkit = { version = "0.20", default-features = false }
+smithay-client-toolkit = { version = "0.21", default-features = false }
 wayland-client = "0.31"
 x11rb = { version = "0.13", features = ["shape", "randr", "xkb", "xfixes"] }
 libc = "0.2"
