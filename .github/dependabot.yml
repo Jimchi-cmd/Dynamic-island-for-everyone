@@ -5,12 +5,32 @@ updates:
     schedule: { interval: weekly }
     groups:
       tauri: { patterns: ["tauri*"] }
+      # windows-core and windows-collections must match the windows crate
+      # (the #[implement] macro and WinRT collections share its types), so
+      # they move together, when windows itself moves.
+      windows: { patterns: ["windows", "windows-*"] }
+    ignore:
+      # windows-core/-collections 0.100 need a windows release that doesn't
+      # exist yet (it's at 0.62).
+      - dependency-name: "windows-core"
+        versions: [">=0.63"]
+      - dependency-name: "windows-collections"
+        versions: [">=0.4"]
+      # 0.21 redesigned its delegate macros: the Wayland backend needs a
+      # port first (tracked in docs/roadmap.md).
+      - dependency-name: "smithay-client-toolkit"
+        versions: [">=0.21"]
     commit-message: { prefix: "chore(deps)" }
   - package-ecosystem: npm
     directory: /
     schedule: { interval: weekly }
     groups:
       dev: { dependency-type: development }
+    ignore:
+      # TypeScript 7 (the Go port) has no JavaScript API yet, which
+      # svelte-check and typescript-eslint need.
+      - dependency-name: "typescript"
+        versions: [">=6"]
     commit-message: { prefix: "chore(deps)" }
   - package-ecosystem: github-actions
     directory: /

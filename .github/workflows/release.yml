@@ -70,8 +70,8 @@ jobs:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: npm }
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -205,7 +205,7 @@ jobs:
       - name: Upload the Windows installers for signing
         id: unsigned
         if: matrix.name == 'windows' && env.HAS_SIGNPATH == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: unsigned-windows
           path: |
@@ -264,7 +264,7 @@ jobs:
           sigs=(out/*.sig)
           [ ${#sigs[@]} -gt 0 ] || { echo "::error::signing is configured but no .sig files were produced"; exit 1; }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.name }}
           path: out/*
@@ -282,8 +282,8 @@ jobs:
       HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && vars.ISLET_UPDATER_PUBKEY != '' }}
       TAG: ${{ inputs.tag || github.ref_name }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: release-*
           path: assets

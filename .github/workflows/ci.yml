@@ -18,8 +18,8 @@ jobs:
     name: Lint & unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: npm }
       - uses: dtolnay/rust-toolchain@stable
         with: { components: "clippy, rustfmt" }
@@ -57,8 +57,8 @@ jobs:
             exe: ""
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: npm }
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -205,7 +205,7 @@ jobs:
             if [ -f "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY"; fi
           done
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: islet-${{ matrix.os }}

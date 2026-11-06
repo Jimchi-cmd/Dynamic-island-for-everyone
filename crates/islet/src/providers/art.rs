@@ -27,7 +27,7 @@ fn decode_jpeg(bytes: &[u8]) -> Option<Pixmap> {
     use zune_jpeg::zune_core::colorspace::ColorSpace;
     use zune_jpeg::zune_core::options::DecoderOptions;
     let opts = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGBA);
-    let mut dec = zune_jpeg::JpegDecoder::new_with_options(bytes, opts);
+    let mut dec = zune_jpeg::JpegDecoder::new_with_options(zune_jpeg::zune_core::bytestream::ZCursor::new(bytes), opts);
     let rgba = dec.decode().ok()?;
     let (w, h) = dec.dimensions()?;
     let mut pm = Pixmap::new(w as u32, h as u32)?;
