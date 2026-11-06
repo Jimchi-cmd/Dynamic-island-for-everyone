@@ -724,6 +724,55 @@ mod tests {
     }
 
     #[test]
+    fn an_island_opens_on_the_chosen_monitor() {
+        use super::super::{Backend, WindowSpec};
+        use super::*;
+        use x11rb::protocol::randr::MonitorInfo;
+        if std::env::var_os("DISPLAY").is_none() {
+            eprintln!("skipping: no X display");
+            return;
+        }
+        let Ok((conn, n)) = x11rb::connect(None) else { return };
+        let s = conn.setup().roots[n].clone();
+        let (w, h) = (s.width_in_pixels, s.height_in_pixels);
+        // Split the screen into two monitors, LEFT (primary) and RIGHT.
+        let atom = |name: &str| conn.intern_atom(false, name.as_bytes()).unwrap().reply().unwrap().atom;
+        let (left, right) = (atom("ISLET-LEFT"), atom("ISLET-RIGHT"));
+        let half = w / 2;
+        for (name, x, primary) in [(left, 0, true), (right, half as i16, false)] {
+            let info = MonitorInfo {
+                name,
+                primary,
+                automatic: false,
+                x,
+                y: 0,
+                width: half,
+                height: h,
+                width_in_millimeters: 300,
+                height_in_millimeters: 200,
+                outputs: vec![],
+            };
+            if conn.randr_set_monitor(s.root, info).ok().and_then(|c| c.check().ok()).is_none() {
+                eprintln!("skipping: no RandR 1.5 monitors here");
+                return;
+            }
+        }
+        conn.flush().unwrap();
+        let names = displays();
+        assert!(names.iter().any(|n| n == "ISLET-LEFT") && names.iter().any(|n| n == "ISLET-RIGHT"), "{names:?}");
+        super::super::set_preferred_display(Some("ISLET-RIGHT".into()));
+        let island = X11::create(WindowSpec { width: 420.0, height: 260.0 });
+        super::super::set_preferred_display(None);
+        let island = island.unwrap();
+        assert!(island.pos.0 >= i32::from(half), "on the right monitor: {:?}", island.pos);
+        drop(island);
+        for name in [left, right] {
+            let _ = conn.randr_delete_monitor(s.root, name);
+        }
+        conn.flush().unwrap();
+    }
+
+    #[test]
     fn a_fullscreen_window_hides_the_island() {
         use super::super::{Backend, Event, WindowSpec};
         use super::*;

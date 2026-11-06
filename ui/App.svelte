@@ -720,6 +720,7 @@
                 onchange={(e) => setLook('display', e.currentTarget.value)}
               >
                 <option value="primary">Primary display</option>
+                <option value="all">All displays</option>
                 {#each displays as d (d)}
                   <option value={d}>{d}</option>
                 {/each}

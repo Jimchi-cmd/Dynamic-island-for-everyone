@@ -61,15 +61,23 @@ fn main() {
 
 fn run() -> platform::Result<()> {
     let started = Instant::now();
+    // `--mirror <display>`: a copy of the island on another display, started
+    // by the main island when Settings → Look → Display is "All displays".
+    // It shows what's playing, calls, batteries, downloads and Control
+    // Centre; alarms, timers, the shortcut and the network features stay
+    // with the main island. It follows the main island's settings and quits
+    // with it (its stdin closes).
+    let args: Vec<String> = std::env::args().collect();
+    let mirror = args.iter().position(|a| a == "--mirror").and_then(|i| args.get(i + 1)).cloned();
     // Relaunched by an island that is resizing itself: let it close first.
-    if std::env::var_os("ISLET_RELAUNCH").is_some() {
+    if mirror.is_none() && std::env::var_os("ISLET_RELAUNCH").is_some() {
         let until = Instant::now() + std::time::Duration::from_secs(3);
         while control::send(&Control::Ping).is_ok() && Instant::now() < until {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
     }
     // One island per user: a second launch (login item + Settings) just exits.
-    if control::send(&Control::Ping).is_ok() {
+    if mirror.is_none() && control::send(&Control::Ping).is_ok() {
         println!("Islet is already running.");
         return Ok(());
     }
@@ -108,7 +116,12 @@ fn run() -> platform::Result<()> {
     let k = layout_prefs.size_factor();
     let top = layout_prefs.top_offset();
     let display = layout_prefs.display.clone();
-    platform::set_preferred_display(Some(display.clone()));
+    let all_displays = display == islet_core::prefs::ALL_DISPLAYS;
+    platform::set_preferred_display(match &mirror {
+        Some(name) => Some(name.clone()),
+        None if all_displays => None, // the main island takes the primary display
+        None => Some(display.clone()),
+    });
     let mut win = Native::create(WindowSpec { width: WINDOW.0 * k, height: (WINDOW.1 + top) * k })?;
     trace("window created");
     let new_pixmap = |win: &Native| {
@@ -138,7 +151,23 @@ fn run() -> platform::Result<()> {
     let mut providers = providers::Providers::start(win.waker());
     trace("providers started");
     let (control_tx, control_rx) = std::sync::mpsc::channel::<Control>();
-    control::serve(control_tx, win.waker());
+    if mirror.is_none() {
+        control::serve(control_tx, win.waker());
+    } else {
+        // A mirror hears from the main island on stdin: "prefs" when the
+        // settings change; end of input when it quits.
+        let waker = win.waker();
+        std::thread::spawn(move || {
+            use std::io::BufRead;
+            for line in std::io::stdin().lock().lines().map_while(Result::ok) {
+                if line.trim() == "prefs" && control_tx.send(Control::PrefsChanged).is_ok() {
+                    waker.wake();
+                }
+            }
+            let _ = control_tx.send(Control::Quit);
+            waker.wake();
+        });
+    }
     trace("control channel open");
     let mut nav_card_open = false;
     let mut sysmon_on = false;
@@ -147,9 +176,19 @@ fn run() -> platform::Result<()> {
     let mut lyrics_asked: Option<(String, bool)> = None;
     // Demos and perf runs leave the user's alarms alone.
     let scripted = demo != Demo::None || std::env::var_os("ISLET_DEMO").is_some();
+    let load_prefs = || {
+        let p = config::load_prefs();
+        if mirror.is_some() {
+            mirror_prefs(p)
+        } else {
+            p
+        }
+    };
     if !scripted {
-        app.set_alarms(config::load_alarms());
-        app.set_prefs(config::load_prefs());
+        if mirror.is_none() {
+            app.set_alarms(config::load_alarms());
+        }
+        app.set_prefs(load_prefs());
         app.set_shelf(config::load_shelf());
     }
     win.watch_caps_lock(app.prefs().caps_lock_hud);
@@ -167,6 +206,23 @@ fn run() -> platform::Result<()> {
     let mut access = a11y::Bridge::new(win.native_handle(), win.waker());
     trace("screen-reader bridge ready");
     win.show();
+    // Settings → Look → Display → All displays: an island on each other display.
+    let mut mirrors: Vec<std::process::Child> = Vec::new();
+    if all_displays && mirror.is_none() && !scripted {
+        if let Ok(exe) = std::env::current_exe() {
+            for name in platform::displays().into_iter().skip(1) {
+                let child = std::process::Command::new(&exe)
+                    .args(["--mirror", &name])
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::null())
+                    .spawn();
+                match child {
+                    Ok(c) => mirrors.push(c),
+                    Err(e) => providers::debug_log(&format!("island on {name}: {e}")),
+                }
+            }
+        }
+    }
     // Describe the island to screen readers once things settle (not on
     // every animation frame), and read the UTC offset once a minute.
     let mut a11y_pending = true;
@@ -267,11 +323,21 @@ fn run() -> platform::Result<()> {
                 Control::AlarmSnooze => needs_frame |= app.snooze_alarm(t),
                 Control::Timer(cmd) => needs_frame |= app.timer_command(cmd, t),
                 Control::PrefsChanged if !scripted => {
-                    app.set_prefs(config::load_prefs());
-                    // A new size or gap needs a new window: start afresh.
+                    app.set_prefs(load_prefs());
+                    // The islands on other displays follow.
+                    for m in &mut mirrors {
+                        if let Some(stdin) = m.stdin.as_mut() {
+                            use std::io::Write;
+                            let _ = writeln!(stdin, "prefs");
+                        }
+                    }
+                    // A new size or gap needs a new window: start afresh (a
+                    // mirror is restarted by the main island instead).
                     let p = app.prefs();
-                    if (p.size_factor() - k).abs() > 1e-9 || (p.top_offset() - top).abs() > 1e-9 || p.display != display
-                    {
+                    let moved = (p.size_factor() - k).abs() > 1e-9
+                        || (p.top_offset() - top).abs() > 1e-9
+                        || (mirror.is_none() && p.display != display);
+                    if moved && mirror.is_none() {
                         if let Ok(exe) = std::env::current_exe() {
                             if std::process::Command::new(exe).env("ISLET_RELAUNCH", "1").spawn().is_ok() {
                                 return Ok(());
@@ -418,6 +484,19 @@ fn run() -> platform::Result<()> {
             }
         }
     }
+}
+
+/// What a mirror island (another display) leaves to the main island:
+/// alarms and timers ring there, the shortcut and clipboard are global,
+/// and network features shouldn't run twice.
+fn mirror_prefs(mut p: islet_core::prefs::IslandPrefs) -> islet_core::prefs::IslandPrefs {
+    p.hotkey.clear();
+    p.weather = None;
+    p.calendar = false;
+    p.spotify = false;
+    p.clipboard = false;
+    p.notifications = false;
+    p
 }
 
 /// Windows release builds have no console; let CLI output reach the

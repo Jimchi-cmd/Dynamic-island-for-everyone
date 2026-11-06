@@ -290,7 +290,7 @@ Shows your arrival time with live traffic, and hands off to Google Maps or Waze.
 - **Show the time when nothing is playing:** the time in the empty pill (on by default).
 - **Accent colour:** for buttons and switches on the island.
 - **Size:** small, medium or large.
-- **Display:** which screen the island is on (with more than one).
+- **Display:** which screen the island is on (with more than one), or **All displays** for an island on each. The extra islands show music, calls, batteries, downloads and Control Centre; alarms, timers and the shortcut stay with the main island. Plug in a new screen? Choose the setting again (or restart Islet) to give it an island.
 - **Gap above the island:** move it down from the top edge (0–40 px).
 
 Islet restarts itself to apply a new size, gap or display.

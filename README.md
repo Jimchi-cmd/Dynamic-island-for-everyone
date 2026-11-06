@@ -31,7 +31,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 - **System monitor:** CPU, memory and disk on the clock card, read only while you look at it.
 - **Clipboard history** (opt-in): your last 20 copied texts, one tap to copy again. Kept in memory only; password-manager copies are skipped.
 - **Live activities** for your scripts and apps: `islet activity start build --title Build --progress 40` puts a progress ring on the island.
-- **Make it yours:** accent colour, island size, gap from the top, which display, and a global shortcut to open it. Or hide the empty island until you point at it: anything live (music, timers, pop-ups) still shows.
+- **Make it yours:** accent colour, island size, gap from the top, which display (or every display), and a global shortcut to open it. Or hide the empty island until you point at it: anything live (music, timers, pop-ups) still shows.
 - **Navigation ETA** with live traffic, arrival time and the first turn, then one tap hands off to Google Maps or Waze. Destination suggestions as you type. Uses your own free-tier Google key ([setup](docs/navigation.md)).
 - **Settings** for all of the above, with a first-run welcome that explains every permission.
 

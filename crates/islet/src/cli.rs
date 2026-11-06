@@ -67,7 +67,7 @@ Usage:
   islet look accent <colour>               blue, purple, pink, red, orange, green, teal
   islet look size small|medium|large       the island's size
   islet look offset <px>                   gap above the island, 0–40 px
-  islet look display <name>|primary        which display (names from `islet displays`)
+  islet look display <name>|primary|all    which display (names from `islet displays`), or all
   islet displays [--json]                  connected displays, primary first
   islet hotkey [<keys>|off]                the shortcut for that, e.g. Ctrl+Alt+I
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
@@ -188,6 +188,10 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["places", rest @ ..] => places(rest),
         ["displays"] => Ok(crate::platform::displays().join("\n")),
         ["displays", "--json"] => Ok(serde_json::to_string(&crate::platform::displays()).unwrap_or_default()),
+        ["look", "display", "all"] => set_look(|p| {
+            p.display = islet_core::prefs::ALL_DISPLAYS.into();
+            Ok("An island shows on every display.".into())
+        }),
         ["look", "display", "primary"] => set_look(|p| {
             p.display.clear();
             Ok("The island shows on the primary display.".into())
