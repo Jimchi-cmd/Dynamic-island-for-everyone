@@ -1,0 +1,41 @@
+name: Bug report
+description: Something on the island or in Settings doesn't work as it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead. Screenshots or a short screen recording help a lot.
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows 11, Windows 10, macOS (Apple silicon), macOS (Intel), "Linux: GNOME", "Linux: KDE Plasma", "Linux: other"]
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version and desktop
+      placeholder: e.g. macOS 15.2, Windows 11 24H2, Ubuntu 24.04 (Wayland)
+  - type: input
+    id: version
+    attributes:
+      label: Islet version
+      description: "Settings → About, or `islet --version`."
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Island look or motion, Now Playing, Battery pop-ups, Navigation, Alarms, Wi-Fi or Bluetooth, Settings app, Installer or updates, Performance (RAM/CPU), Other]
+  - type: textarea
+    id: log
+    attributes:
+      label: Debug log
+      description: "Run Islet with `ISLET_DEBUG=1` and attach `islet-debug.log` from your temp folder. Check it first: it can include song titles, device names and trip destinations."
+      render: text

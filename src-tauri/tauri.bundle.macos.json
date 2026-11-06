@@ -1,0 +1,6 @@
+{
+  "bundle": {
+    "externalBin": ["binaries/islet"],
+    "resources": { "binaries/libislet_mediaremote.dylib": "libislet_mediaremote.dylib" }
+  }
+}

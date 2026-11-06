@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Merged into Islet.app's Info.plist by the Tauri bundler. -->
+  <key>NSBluetoothAlwaysUsageDescription</key>
+  <string>Islet shows the battery of connected headphones, mice and keyboards, and lets you connect your Bluetooth devices from the island.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>macOS shares Wi-Fi network names only with apps that have Location access. Islet uses it to list networks you can join; it never reads your location.</string>
+  <key>NSLocationUsageDescription</key>
+  <string>macOS shares Wi-Fi network names only with apps that have Location access. Islet uses it to list networks you can join; it never reads your location.</string>
+  <key>LSUIElement</key>
+  <false/>
+</dict>
+</plist>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Original Islet artwork: a small island (pill) floating above a horizon. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2E3AF2"/>
+      <stop offset="1" stop-color="#12B5A6"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="220" fill="url(#bg)"/>
+  <rect x="262" y="300" width="500" height="150" rx="75" fill="#000"/>
+  <circle cx="687" cy="375" r="34" fill="#12B5A6"/>
+  <rect x="312" y="356" width="200" height="38" rx="19" fill="#fff" opacity="0.92"/>
+  <path d="M192 690 C 340 620, 684 620, 832 690" stroke="#fff" stroke-width="40" stroke-linecap="round" fill="none" opacity="0.85"/>
+</svg>

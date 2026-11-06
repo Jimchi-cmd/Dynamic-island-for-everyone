@@ -1,0 +1,37 @@
+# Third-party licenses
+
+Islet is MIT-licensed (see [LICENSE](LICENSE)). It includes the components below, each under its own license.
+
+## Fonts
+
+- **Inter** (bundled in the island binary), by The Inter Project Authors, under the SIL Open Font License 1.1. The full license is in [`assets/fonts/OFL.txt`](assets/fonts/OFL.txt).
+
+On macOS, Islet uses the system's own San Francisco font from the OS. It is not bundled or redistributed.
+
+## Rust crates
+
+Generated with [cargo-about](https://github.com/EmbarkStudios/cargo-about) by `scripts/third-party-licenses.sh`.
+
+| License | Crates |
+|---|---|
+{{#each overview}}
+| {{{name}}} | {{count}} |
+{{/each}}
+
+Each license text below names the crates that use it.
+
+## License texts
+
+{{#each licenses}}
+### {{{name}}}
+
+Used by: {{#each used_by}}{{crate.name}} {{crate.version}}{{#unless @last}}, {{/unless}}{{/each}}
+
+```
+{{{text}}}
+```
+
+{{/each}}
+## JavaScript (Settings window)
+
+The Settings window bundles Svelte (MIT) and @tauri-apps/api (MIT or Apache-2.0). Everything else in `package.json` is a build-time tool and isn't shipped.

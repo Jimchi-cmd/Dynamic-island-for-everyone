@@ -1,0 +1,9 @@
+{
+  "uuid": "islet@jimchi-cmd.github.io",
+  "name": "Islet",
+  "description": "Companion for the Islet island on GNOME: a global shortcut that opens and closes it, the Caps Lock pop-up, and an option to hide the clock the island sits over. Needs Islet itself (https://github.com/Jimchi-cmd/Dynamic-island-for-everyone).",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "url": "https://github.com/Jimchi-cmd/Dynamic-island-for-everyone",
+  "settings-schema": "org.gnome.shell.extensions.islet",
+  "version-name": "0.1.0"
+}

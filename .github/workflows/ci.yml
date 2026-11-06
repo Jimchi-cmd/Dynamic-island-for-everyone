@@ -1,0 +1,225 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  LINUX_DEPS: libwebkit2gtk-4.1-dev libgtk-3-dev libgtk-layer-shell-dev libayatana-appindicator3-dev librsvg2-dev xvfb dbus-x11 libglib2.0-bin zip
+
+jobs:
+  lint:
+    name: Lint & unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: 22, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: "clippy, rustfmt" }
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
+      - run: npm ci
+      - run: npm run check
+      - run: npm run lint
+      - run: npm test
+      - run: cargo fmt --all --check
+      - run: npm run build # clippy needs dist/ for generate_context!
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  build:
+    name: Build, size & perf (${{ matrix.os }})
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            bundles: deb,rpm,appimage
+            bundle_config: src-tauri/tauri.bundle.json
+            exe: ""
+          - os: windows-latest
+            bundles: msi,nsis
+            bundle_config: src-tauri/tauri.bundle.json
+            exe: .exe
+          # Apple-silicon runners are capacity-limited and jobs often go
+          # unscheduled; the Intel image is reliably available.
+          - os: macos-15-intel
+            bundles: app,dmg
+            bundle_config: src-tauri/tauri.bundle.macos.json
+            exe: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: 22, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
+      - run: npm ci
+      - run: npm run build # generate_context! needs dist/
+      - run: cargo test --workspace
+      - run: cargo build --release -p islet -p islet-perf -p islet-mediaremote
+      # Native Wayland: drive the layer-shell surface with a virtual pointer
+      # under a headless wlroots compositor.
+      - name: Wayland backend test (headless sway)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get install -y sway
+          export XDG_RUNTIME_DIR=$(mktemp -d /tmp/xr.XXXX) WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman
+          printf 'output HEADLESS-1 resolution 1280x800\n' > "$RUNNER_TEMP/sway.conf"
+          sway -c "$RUNNER_TEMP/sway.conf" &
+          for i in $(seq 50); do ls "$XDG_RUNTIME_DIR"/wayland-* >/dev/null 2>&1 && break; sleep 0.1; done
+          export WAYLAND_DISPLAY=$(ls "$XDG_RUNTIME_DIR" | grep -m1 '^wayland-[0-9]*$')
+          cargo test -p islet platform::wayland -- --test-threads=1 --nocapture
+      # X11: file drops (XDND) and clipboard history against a real X server.
+      - name: X11 tests (Xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a cargo test -p islet -- platform::x11 providers::clipboard --test-threads=1 --nocapture
+      # Informational: can the MediaRemote helper read Now Playing on this
+      # macOS version? (Nothing plays on CI, so "info=0" is expected.)
+      - name: MediaRemote helper probe (macOS)
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        shell: bash
+        run: target/release/islet --mediaremote-probe | tee -a "$GITHUB_STEP_SUMMARY"
+      # Informational: where startup time goes (first launch, then a warm one).
+      - name: Startup trace (macOS, Windows)
+        if: runner.os != 'Linux'
+        continue-on-error: true
+        shell: bash
+        run: |
+          for run in cold warm; do
+            echo "--- $run"
+            ISLET_TRACE_STARTUP=1 target/release/islet${{ matrix.exe }} > trace-out.txt 2> trace-err.txt &
+            pid=$!
+            sleep 6
+            target/release/islet${{ matrix.exe }} quit || kill $pid || true
+            sleep 1
+            kill $pid 2>/dev/null || true
+            cat trace-err.txt trace-out.txt
+          done
+      # Linux runners have no display: GUI processes run under Xvfb.
+      - name: Define run_gui helper
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/run_gui.sh" <<'EOF'
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            exec xvfb-run -a -s "-screen 0 1920x1080x24" dbus-run-session -- "$@"
+          fi
+          exec "$@"
+          EOF
+
+      # The island itself: a native, webview-free overlay. Budgets enforced.
+      - name: Perf budgets (native island)
+        shell: bash
+        run: >
+          bash "$RUNNER_TEMP/run_gui.sh" target/release/islet-perf run --app target/release/islet${{ matrix.exe }}
+          --idle-secs 60 --active-secs 20 --json perf-native.json --markdown perf-native.md --enforce
+
+      # Installers: the Settings app with the island as its sidecar.
+      - name: Stage the island for bundling
+        shell: bash
+        run: bash scripts/stage-island.sh
+      - name: Stop Spotlight indexing (macOS dmg builds fail when it holds the image)
+        if: runner.os == 'macOS'
+        run: sudo mdutil -a -i off || true
+      - name: Build installers
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            npx tauri build --bundles ${{ matrix.bundles }} --config ${{ matrix.bundle_config }} && exit 0
+            echo "::warning::bundling failed (attempt $attempt)"
+            sleep 10
+          done
+          exit 1
+
+      # Windows: the MSIX package (identity for reading notifications),
+      # signed with a throwaway test certificate unless one is configured.
+      # Then install it, start it from the Start menu entry, and check it runs.
+      - name: MSIX package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MSIX_PFX_BASE64: ${{ secrets.MSIX_PFX_BASE64 }}
+          MSIX_PFX_PASSWORD: ${{ secrets.MSIX_PFX_PASSWORD }}
+        run: |
+          $ver = node -p "require('./src-tauri/tauri.conf.json').version"
+          # Each CI build gets its own package version (0.1.0.<run>), so a
+          # tester's next download installs over the last one.
+          ./scripts/msix.ps1 -Version $ver -Build $env:GITHUB_RUN_NUMBER -Out out-msix
+      - name: MSIX installs and starts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $cer = Get-ChildItem out-msix/*.cer | Select-Object -First 1
+          if ($cer) { Import-Certificate -FilePath $cer.FullName -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null }
+          Add-AppxPackage -Path (Get-ChildItem out-msix/*.msix | Select-Object -First 1).FullName
+          $pkg = Get-AppxPackage Islet.Island
+          if (-not $pkg) { throw "the package didn't install" }
+          Write-Host "Installed $($pkg.PackageFullName) at $($pkg.InstallLocation)"
+          Start-Process "shell:AppsFolder\$($pkg.PackageFamilyName)!Island"
+          Start-Sleep -Seconds 8
+          $p = Get-Process islet -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "*WindowsApps*" }
+          if (-not $p) { throw "the packaged island didn't start (or exited)" }
+          Write-Host "Packaged island running: pid $($p.Id), $([math]::Round($p.WorkingSet64 / 1MB, 1)) MB"
+          Stop-Process -Id $p.Id
+          Remove-AppxPackage $pkg.PackageFullName
+
+      # Linux: the GNOME Shell extension, loaded in a headless GNOME Shell
+      # and driven with a virtual keyboard.
+      - name: GNOME Shell extension
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get install -y --no-install-recommends gnome-shell gir1.2-adw-1
+          bash scripts/gnome-extension.sh dist-gnome
+          # Log to a file: helpers GNOME Shell starts may outlive the test,
+          # and they mustn't keep this step's output open.
+          rc=0
+          timeout 300 bash scripts/test-gnome-extension.sh > gnome-test.log 2>&1 || rc=$?
+          grep -E "^(GNOME Shell|ok:|FAIL)" gnome-test.log || true
+          [ $rc -eq 0 ] || { tail -50 gnome-test.log; exit $rc; }
+
+      - name: Installer and binary sizes
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(target/release/islet${{ matrix.exe }} target/release/bundle/{deb/*.deb,rpm/*.rpm,appimage/*.AppImage,msi/*.msi,nsis/*.exe,dmg/*.dmg} out-msix/*.msix)
+          target/release/islet-perf size "${files[@]}" --markdown size.md --enforce
+
+      - name: Job summary
+        if: always()
+        shell: bash
+        run: |
+          for f in perf-native.md size.md; do
+            if [ -f "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY"; fi
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: islet-${{ matrix.os }}
+          path: |
+            perf-*.json
+            perf-*.md
+            size.md
+            target/release/islet${{ matrix.exe }}
+            target/release/bundle/**/*.deb
+            target/release/bundle/**/*.rpm
+            target/release/bundle/**/*.msi
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/**/*.dmg
+            out-msix/*
+            dist-gnome/*.zip
+          if-no-files-found: ignore
+          retention-days: 14
