@@ -1,0 +1,41 @@
+name: Publish
+
+# Merging a new version into main publishes it: when the version in
+# src-tauri/tauri.conf.json has no release tag yet, build every installer
+# (release.yml), tag main's commit vX.Y.Z and publish the release with the
+# CHANGELOG notes. Pushes to main that keep a released version do nothing.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: New version?
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: version
+        run: |
+          ver=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if git ls-remote --exit-code --tags origin "refs/tags/v$ver" > /dev/null; then
+            echo "v$ver is already released: nothing to publish."
+          else
+            echo "v$ver isn't released yet: publishing it."
+            echo "tag=v$ver" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    needs: plan
+    if: needs.plan.outputs.tag != ''
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.plan.outputs.tag }}
+      publish: true
+    secrets: inherit
+    permissions:
+      contents: write
