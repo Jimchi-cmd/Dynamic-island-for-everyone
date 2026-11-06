@@ -129,7 +129,7 @@ jobs:
           screencapture -x "$RUNNER_TEMP/before.png" || echo "no screenshot"
           for mode in image iosurface iosurface-flip; do
             cfg=$(mktemp -d)
-            ISLET_CONFIG_DIR="$cfg" ISLET_PERF_DEMO=1 ISLET_FRAME_STATS=1 ISLET_MAC_PRESENT=$mode \
+            ISLET_CONFIG_DIR="$cfg" ISLET_PERF_DEMO=1 ISLET_FRAME_STATS=1 ISLET_MAC_PRESENT=$mode ISLET_SELF_SHOT=3 \
               target/release/islet > "$RUNNER_TEMP/$mode.log" 2>&1 &
             pid=$!
             sleep 5
@@ -138,7 +138,7 @@ jobs:
             cpu=$(ps -o cputime= -p $pid || true)
             kill $pid; wait $pid 2>/dev/null || true
             echo "== $mode: CPU time over 20 s: $cpu"
-            grep ISLET_FRAMES "$RUNNER_TEMP/$mode.log" | tail -3 || true
+            grep -E "ISLET_FRAMES|ISLET_SELF_SHOT" "$RUNNER_TEMP/$mode.log" | tail -4 || true
             python3 scripts/png-probe.py "$RUNNER_TEMP/before.png" "$RUNNER_TEMP/$mode.png" || true
           done
 

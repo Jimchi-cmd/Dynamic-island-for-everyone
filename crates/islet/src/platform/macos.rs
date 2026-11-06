@@ -251,6 +251,9 @@ pub struct Mac {
     present_mode: PresentMode,
     surfaces: Vec<iosurface::Surface>,
     next_surface: usize,
+    /// ISLET_SELF_SHOT=<seconds>: when to capture our own window once and
+    /// report where its opaque pixels are (checks frames show right side up).
+    self_shot: Option<Instant>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -405,6 +408,10 @@ impl Backend for Mac {
             present_mode: PresentMode::from_env(),
             surfaces: Vec::new(),
             next_surface: 0,
+            self_shot: std::env::var("ISLET_SELF_SHOT")
+                .ok()
+                .and_then(|s| s.parse::<f64>().ok())
+                .map(|secs| Instant::now() + std::time::Duration::from_secs_f64(secs)),
         })
     }
 
@@ -519,6 +526,15 @@ impl Backend for Mac {
     }
 
     fn wait(&mut self, deadline: Option<Instant>, out: &mut Vec<Event>) -> Result<()> {
+        if self.self_shot.is_some_and(|at| Instant::now() >= at) {
+            self.self_shot = None;
+            selfshot::report(self.panel.windowNumber() as u32);
+        }
+        // Wake for the capture even when nothing else is scheduled.
+        let deadline = match (deadline, self.self_shot) {
+            (Some(d), Some(s)) => Some(d.min(s)),
+            (d, s) => d.or(s),
+        };
         let until = match deadline {
             None => NSDate::distantFuture(),
             Some(d) => NSDate::dateWithTimeIntervalSinceNow(d.saturating_duration_since(Instant::now()).as_secs_f64()),
@@ -731,6 +747,89 @@ impl Mac {
         unsafe { layer.setContents(Some(&*surface.as_object())) };
         CATransaction::commit();
         Ok(())
+    }
+}
+
+/// Capture our own window as the window server shows it (no permission is
+/// needed for an app's own windows) and print the extent of its opaque
+/// pixels down the centre column: the pill hangs from the top, so the first
+/// opaque row should be near 0. For measuring only.
+mod selfshot {
+    use std::ffi::c_void;
+
+    #[repr(C)]
+    struct Rect {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+    }
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGWindowListCreateImage(bounds: Rect, list: u32, window: u32, image: u32) -> *const c_void;
+        fn CGImageGetWidth(image: *const c_void) -> usize;
+        fn CGImageGetHeight(image: *const c_void) -> usize;
+        fn CGImageGetBytesPerRow(image: *const c_void) -> usize;
+        fn CGImageGetBitsPerPixel(image: *const c_void) -> usize;
+        fn CGImageGetDataProvider(image: *const c_void) -> *const c_void;
+        fn CGDataProviderCopyData(provider: *const c_void) -> *const c_void;
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFDataGetBytePtr(data: *const c_void) -> *const u8;
+        fn CFDataGetLength(data: *const c_void) -> isize;
+        fn CFRelease(cf: *const c_void);
+    }
+
+    pub fn report(window: u32) {
+        const INCLUDING_WINDOW: u32 = 1 << 3;
+        const IGNORE_FRAMING: u32 = 1;
+        let null = Rect { x: f64::INFINITY, y: f64::INFINITY, w: 0.0, h: 0.0 };
+        // SAFETY: CG returns a +1 image (or null) and a +1 data copy, both
+        // released here; reads stay within the data's length.
+        unsafe {
+            let image = CGWindowListCreateImage(null, INCLUDING_WINDOW, window, IGNORE_FRAMING);
+            if image.is_null() {
+                eprintln!("ISLET_SELF_SHOT none");
+                return;
+            }
+            let (w, h, stride, bpp) = (
+                CGImageGetWidth(image),
+                CGImageGetHeight(image),
+                CGImageGetBytesPerRow(image),
+                CGImageGetBitsPerPixel(image),
+            );
+            let data = CGDataProviderCopyData(CGImageGetDataProvider(image));
+            if !data.is_null() && bpp == 32 {
+                let bytes = std::slice::from_raw_parts(CFDataGetBytePtr(data), CFDataGetLength(data) as usize);
+                let x = w / 2;
+                // Opaque and dark (the black pill), in either byte order.
+                let opaque: Vec<usize> = (0..h)
+                    .filter(|y| {
+                        let i = y * stride + x * 4;
+                        bytes.get(i..i + 4).is_some_and(|p| {
+                            let (alpha, rgb) =
+                                if p[3] > p[0].max(p[1]).max(p[2]) { (p[3], &p[..3]) } else { (p[0], &p[1..]) };
+                            alpha > 200 && rgb.iter().all(|&c| c < 60)
+                        })
+                    })
+                    .collect();
+                eprintln!(
+                    "ISLET_SELF_SHOT {w}x{h} dark rows {} first {:?} last {:?}",
+                    opaque.len(),
+                    opaque.first(),
+                    opaque.last()
+                );
+            } else {
+                eprintln!("ISLET_SELF_SHOT {w}x{h} unreadable ({bpp} bits)");
+            }
+            if !data.is_null() {
+                CFRelease(data);
+            }
+            CFRelease(image);
+        }
     }
 }
 
