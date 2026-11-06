@@ -15,7 +15,7 @@ islet-render = { path = "../islet-render" }
 serde_json = "1"
 sha2 = "0.10"
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }
-zune-jpeg = "0.4"
+zune-jpeg = "0.5"
 
 [dev-dependencies]
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }
