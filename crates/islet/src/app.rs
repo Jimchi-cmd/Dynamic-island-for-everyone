@@ -19,6 +19,7 @@ use islet_core::timer::{Timer, TimerCommand, TimerEvent};
 use islet_render::elements::Element;
 use islet_render::text::TextEngine;
 use islet_render::{Circle, PillFrame, Squircle};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Logical window size: the largest state plus spring overshoot (design spec §2).
@@ -56,6 +57,9 @@ const SWITCH_COOLDOWN: f64 = 0.35;
 /// Height of the expanded clock and media cards.
 const CLOCK_H: f64 = 168.0;
 const MEDIA_H: f64 = 160.0;
+/// How quickly the empty island fades in and out when it hides until
+/// hovered (Settings → Look).
+const SHOW_SPRING: Spring = Spring::new(0.22, 1.0);
 
 fn smooth(c: f64) -> f64 {
     let c = c.clamp(0.0, 1.0);
@@ -235,6 +239,13 @@ pub struct App {
     scroll_acc: f64,
     last_switch: f64,
     live_count: usize,
+    /// Synced lyrics for a song (`Track::key`; None: the song has none).
+    lyrics: Option<(String, Option<Arc<islet_core::lyrics::Lyrics>>)>,
+    /// Control Centre (the clock card) was opened from an activity's card.
+    home: bool,
+    /// The island's visibility (1 = shown). Below 1 only while the empty
+    /// island hides until hovered.
+    shown: Animated,
 }
 
 impl App {
@@ -295,6 +306,9 @@ impl App {
             scroll_acc: 0.0,
             last_switch: f64::NEG_INFINITY,
             live_count: 0,
+            lyrics: None,
+            home: false,
+            shown: Animated::new(1.0, SHOW_SPRING),
         };
         app.anim_region = app.target_bounds();
         app
@@ -334,6 +348,22 @@ impl App {
         }
     }
 
+    /// Activity cards start with a "Control Centre" button; their content
+    /// goes below it.
+    fn has_header(content: &OpenContent) -> bool {
+        !matches!(content, OpenContent::Clock | OpenContent::Panel(_) | OpenContent::Alarm(_))
+    }
+
+    /// Where an open card's own content goes (below the notch and header).
+    fn card_rect(&self, t: f64) -> Rect {
+        let cr = self.content_rect(self.pill_rect(t));
+        if Self::has_header(&self.open_content(&self.live(t))) {
+            content::below_header(cr)
+        } else {
+            cr
+        }
+    }
+
     /// Navigation buttons pressed since the last call (open Google Maps,
     /// open Waze, stop).
     pub fn take_nav_actions(&mut self) -> Vec<NavControl> {
@@ -350,7 +380,7 @@ impl App {
         if !self.nav_card_open(t) || self.animating(t) {
             return None;
         }
-        let cr = self.content_rect(self.pill_rect(t));
+        let cr = self.card_rect(t);
         content::nav_controls(cr).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, c)| c)
     }
 
@@ -533,7 +563,7 @@ impl App {
         if !matches!(self.open_content(&self.live(t)), OpenContent::Timer(_)) {
             return None;
         }
-        let cr = self.content_rect(self.pill_rect(t));
+        let cr = self.card_rect(t);
         content::timer_controls(cr).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, c)| c)
     }
 
@@ -619,7 +649,19 @@ impl App {
         }
         let cr = self.content_rect(self.pill_rect(t));
         let c = self.activities.connectivity();
-        match self.open_content(&self.live(t)) {
+        let open = self.open_content(&self.live(t));
+        if Self::has_header(&open) && content::home_button(cr).contains(x, y) {
+            return Some(ConnHit::Home);
+        }
+        if matches!(open, OpenContent::Clock) && self.home && content::return_button(cr).contains(x, y) {
+            return Some(ConnHit::Return);
+        }
+        if let OpenContent::Panel(_) = open {
+            if content::back_button(cr).contains(x, y) {
+                return Some(ConnHit::Back);
+            }
+        }
+        match open {
             OpenContent::Clock => content::clock_chips(cr, !self.shelf.is_empty(), self.prefs.clipboard)
                 .into_iter()
                 .find(|(r, _)| r.contains(x, y))
@@ -679,6 +721,15 @@ impl App {
                 }
             }
             ConnHit::Back => self.panel = None,
+            ConnHit::Home => {
+                self.home = true;
+                self.panel = None;
+                self.control = None;
+                self.scrub = None;
+                // Show the current network and device on the buttons.
+                self.conn_commands.push(ConnCommand::Status);
+            }
+            ConnHit::Return => self.home = false,
             ConnHit::Power => match self.panel {
                 Some(Panel::Wifi) => self.conn_commands.push(ConnCommand::SetPower(Radio::Wifi, !c.wifi.enabled)),
                 Some(Panel::Bluetooth) => {
@@ -788,9 +839,17 @@ impl App {
         let open = self.island.presentation().is_open();
         let mut buttons = Vec::new();
         if open && !self.animating(t) {
-            let cr = self.content_rect(self.pill_rect(t));
+            let outer = self.content_rect(self.pill_rect(t));
+            let cr = self.card_rect(t);
             let c = self.activities.connectivity();
-            match self.open_content(&live) {
+            let shown = self.open_content(&live);
+            if Self::has_header(&shown) {
+                buttons.push(("Control Centre".to_string(), content::home_button(outer)));
+            }
+            if self.home && matches!(shown, OpenContent::Clock) {
+                buttons.push((format!("Back to {}", self.activity_label(&live)), content::return_button(outer)));
+            }
+            match shown {
                 OpenContent::Media(m) => {
                     for (r, ctl) in content::media_controls(cr) {
                         let name = match ctl {
@@ -961,6 +1020,9 @@ impl App {
     pub fn set_prefs(&mut self, prefs: IslandPrefs) {
         content::set_accent(prefs.accent_rgb());
         self.prefs = prefs;
+        if !self.prefs.lyrics {
+            self.lyrics = None;
+        }
         if !self.prefs.clipboard {
             // Turning history off forgets it.
             self.clip.clear();
@@ -968,6 +1030,82 @@ impl App {
                 self.panel = None;
             }
         }
+    }
+
+    /// The song whose lyrics to look up: the one playing, while lyrics are on.
+    pub fn lyrics_wanted(&self) -> Option<islet_core::lyrics::Track> {
+        if !self.prefs.lyrics {
+            return None;
+        }
+        let m = self.activities.media().filter(|m| !m.title.trim().is_empty())?;
+        Some(islet_core::lyrics::Track {
+            title: m.title.clone(),
+            artist: m.artist.clone(),
+            album: m.album.clone(),
+            duration: m.duration.filter(|d| d.is_finite() && *d > 0.0).map(|d| d.round() as u32),
+        })
+    }
+
+    /// Synced lyrics for the song on the island, when lyrics are on and
+    /// the song has them.
+    fn song_lyrics(&self) -> Option<&islet_core::lyrics::Lyrics> {
+        if !self.prefs.lyrics {
+            return None;
+        }
+        let m = self.activities.media()?;
+        let key = format!("{}\u{1f}{}", m.artist.trim().to_lowercase(), m.title.trim().to_lowercase());
+        match &self.lyrics {
+            Some((k, Some(l))) if *k == key && !l.is_empty() => Some(l),
+            _ => None,
+        }
+    }
+
+    /// Lyrics run through the compact pill (not beside a notch: it would
+    /// hide the middle of every line).
+    fn lyrics_in_bar(&self, live: &[Live]) -> bool {
+        self.notch.is_none() && matches!(live.first(), Some(Live::Media(_))) && self.song_lyrics().is_some()
+    }
+
+    /// The name on Control Centre's button back to the activity.
+    fn activity_label(&self, live: &[Live]) -> String {
+        match self.open_content_as(live, false) {
+            OpenContent::Media(_) => "Now Playing".into(),
+            OpenContent::Timer(tm) => tm.title().to_string(),
+            OpenContent::Nav(_) => "Navigation".into(),
+            OpenContent::Notes => "Notifications".into(),
+            OpenContent::Agenda => "Calendar".into(),
+            OpenContent::Battery => "Battery".into(),
+            OpenContent::Custom(c) => c.title.clone(),
+            _ => "Back".into(),
+        }
+    }
+
+    /// Whether the empty island is hidden until hovered: Settings' switch,
+    /// and nothing live, hovered, dragged over or in use (camera dot).
+    fn shown_target(&self) -> f64 {
+        let hide = self.prefs.auto_hide
+            && self.notch.is_none()
+            && self.island.presentation() == Presentation::Idle
+            && !self.dragging
+            && !self.privacy_shown();
+        if hide {
+            0.0
+        } else {
+            1.0
+        }
+    }
+
+    fn update_shown(&mut self, t: f64) -> bool {
+        let v = self.shown_target();
+        if (self.shown.target() - v).abs() < 1e-9 {
+            return false;
+        }
+        if self.reduce_motion {
+            self.shown.snap(v);
+        } else {
+            self.shown.set_target(v, t, SHOW_SPRING);
+        }
+        true
     }
 
     /// History entries the user chose to copy again.
@@ -986,6 +1124,11 @@ impl App {
             Report::Media(Some(m)) if self.prefs.excludes(&m.app_name, &m.source) => Report::Media(None),
             r => r,
         };
+        if let Report::Lyrics(key, l) = r {
+            self.lyrics = Some((key, l));
+            self.sync_live(t);
+            return true;
+        }
         if let Report::Clipboard(text) = &r {
             let changed = self.prefs.clipboard && self.clip.push(text);
             return changed && self.panel == Some(Panel::Clipboard) && self.island.presentation().is_open();
@@ -1047,6 +1190,11 @@ impl App {
     }
 
     fn open_content(&self, live: &[Live]) -> OpenContent<'_> {
+        self.open_content_as(live, self.home)
+    }
+
+    /// What the island opens on; `home`: Control Centre unless an alarm rings.
+    fn open_content_as(&self, live: &[Live], home: bool) -> OpenContent<'_> {
         // A HUD is only a moment's notice: the card shows what is under it.
         let live = match live.first() {
             Some(Live::Hud(_)) => &live[1..],
@@ -1056,6 +1204,8 @@ impl App {
             OpenContent::Alarm(a)
         } else if let Some(p) = self.panel {
             OpenContent::Panel(p)
+        } else if home {
+            OpenContent::Clock
         } else if self.notes_open || matches!(live.first(), Some(Live::Note(_))) {
             OpenContent::Notes
         } else if let Some(Live::Event { .. }) = live.first() {
@@ -1137,12 +1287,20 @@ impl App {
         let eo = self.expanded_opacity(t);
         let cr = self.content_rect(p);
         if eo > 0.0 {
-            match self.open_content(&live) {
+            let open = self.open_content(&live);
+            // Activity cards: "‹ Control Centre" on top, the card below it.
+            let card = if Self::has_header(&open) {
+                out.extend(content::home_button_elements(cr, eo, engine));
+                content::below_header(cr)
+            } else {
+                cr
+            };
+            match open {
                 OpenContent::Alarm(a) => out.extend(content::expanded_alarm(cr, a, self.h24, t, eo, engine)),
-                OpenContent::Timer(tm) => out.extend(content::expanded_timer(cr, tm, t, eo, engine)),
-                OpenContent::Agenda => out.extend(content::expanded_agenda(cr, &self.agenda(), eo, engine)),
-                OpenContent::Custom(c) => out.extend(content::expanded_custom(cr, c, t, eo, engine)),
-                OpenContent::Notes => out.extend(content::expanded_notes(cr, self.activities.notes(), eo, engine)),
+                OpenContent::Timer(tm) => out.extend(content::expanded_timer(card, tm, t, eo, engine)),
+                OpenContent::Agenda => out.extend(content::expanded_agenda(card, &self.agenda(), eo, engine)),
+                OpenContent::Custom(c) => out.extend(content::expanded_custom(card, c, t, eo, engine)),
+                OpenContent::Notes => out.extend(content::expanded_notes(card, self.activities.notes(), eo, engine)),
                 OpenContent::Panel(Panel::Wifi) => {
                     out.extend(content::expanded_wifi(cr, self.activities.connectivity(), eo, engine))
                 }
@@ -1158,10 +1316,16 @@ impl App {
                 OpenContent::Panel(Panel::Shelf) => {
                     out.extend(content::expanded_shelf(cr, &self.shelf, self.dragging, eo, engine))
                 }
-                OpenContent::Media(m) => out.extend(content::expanded_media(cr, m, t, eo, self.scrub, engine)),
-                OpenContent::Nav(n) => out.extend(content::expanded_nav(cr, n, self.clock.as_ref(), eo, engine)),
+                OpenContent::Media(m) => {
+                    out.extend(content::expanded_media(card, m, t, eo, self.scrub, engine));
+                    if let Some(l) = self.song_lyrics() {
+                        let pos = m.position_now(t).unwrap_or(0.0);
+                        out.extend(content::card_lyrics(card, l, pos, eo, engine));
+                    }
+                }
+                OpenContent::Nav(n) => out.extend(content::expanded_nav(card, n, self.clock.as_ref(), eo, engine)),
                 OpenContent::Battery => out.extend(content::expanded_battery(
-                    cr,
+                    card,
                     &self.activities.devices(),
                     self.activities.laptop(),
                     eo,
@@ -1181,6 +1345,10 @@ impl App {
                     ));
                     if let Some(w) = self.activities.weather() {
                         out.extend(content::clock_weather(cr, w, self.prefs.fahrenheit, eo));
+                    }
+                    if self.home {
+                        let label = self.activity_label(&live);
+                        out.extend(content::return_button_elements(cr, &label, eo, engine));
                     }
                 }
             }
@@ -1206,7 +1374,12 @@ impl App {
                     // Leave the right end to the camera / microphone dot.
                     let room = if self.privacy_shown() { PRIVACY_W } else { 0.0 };
                     let inner = Rect::new(p.x, p.y, (p.w - room).max(1.0), p.h);
-                    out.extend(content::compact(inner, first, t, co, engine))
+                    match (first, self.song_lyrics()) {
+                        (Live::Media(m), Some(l)) if self.lyrics_in_bar(&live) => {
+                            out.extend(content::compact_lyrics(inner, m, l, t, co, engine))
+                        }
+                        _ => out.extend(content::compact(inner, first, t, co, engine)),
+                    }
                 }
                 _ => {}
             }
@@ -1225,39 +1398,49 @@ impl App {
         let dims = match p {
             Presentation::Compact => {
                 let room = if self.privacy_shown() { PRIVACY_W } else { 0.0 };
-                (live.first().map_or(w, content::compact_width) + room, h, r)
+                let cw = if self.lyrics_in_bar(&live) {
+                    content::COMPACT_LYRICS_W
+                } else {
+                    live.first().map_or(w, content::compact_width)
+                };
+                (cw + room, h, r)
             }
             Presentation::Expanded => {
-                let h = match self.open_content(&live) {
-                    OpenContent::Alarm(_) => content::ALARM_H,
-                    OpenContent::Timer(_) => content::TIMER_H,
-                    OpenContent::Agenda => content::agenda_height(self.agenda().len()),
-                    OpenContent::Custom(_) => content::CUSTOM_H,
-                    OpenContent::Notes => content::notes_height(self.activities.notes().count()),
-                    OpenContent::Panel(p) => {
-                        let c = self.activities.connectivity();
-                        match p {
-                            Panel::Wifi => {
-                                content::list_height(c.wifi.networks.len(), content::wifi_footer(c).is_some())
+                let open = self.open_content(&live);
+                let header = if Self::has_header(&open) { content::CARD_HEADER_H } else { 0.0 };
+                let h = header
+                    + match open {
+                        OpenContent::Alarm(_) => content::ALARM_H,
+                        OpenContent::Timer(_) => content::TIMER_H,
+                        OpenContent::Agenda => content::agenda_height(self.agenda().len()),
+                        OpenContent::Custom(_) => content::CUSTOM_H,
+                        OpenContent::Notes => content::notes_height(self.activities.notes().count()),
+                        OpenContent::Panel(p) => {
+                            let c = self.activities.connectivity();
+                            match p {
+                                Panel::Wifi => {
+                                    content::list_height(c.wifi.networks.len(), content::wifi_footer(c).is_some())
+                                }
+                                Panel::Bluetooth => {
+                                    content::list_height(c.bt.devices.len(), content::bt_footer(c).is_some())
+                                }
+                                Panel::System => content::SYSTEM_H,
+                                Panel::Clipboard => content::list_height(self.clip.len(), !self.clip.is_empty()),
+                                Panel::Shelf => content::list_height(
+                                    self.shelf.len(),
+                                    content::shelf_footer(self.shelf.len(), self.dragging).is_some(),
+                                ),
                             }
-                            Panel::Bluetooth => {
-                                content::list_height(c.bt.devices.len(), content::bt_footer(c).is_some())
-                            }
-                            Panel::System => content::SYSTEM_H,
-                            Panel::Clipboard => content::list_height(self.clip.len(), !self.clip.is_empty()),
-                            Panel::Shelf => content::list_height(
-                                self.shelf.len(),
-                                content::shelf_footer(self.shelf.len(), self.dragging).is_some(),
-                            ),
                         }
-                    }
-                    OpenContent::Media(_) | OpenContent::Nav(_) => MEDIA_H,
-                    OpenContent::Clock => CLOCK_H,
-                    OpenContent::Battery => {
-                        let rows = self.activities.devices().len() + usize::from(self.activities.laptop().is_some());
-                        content::battery_list_height(rows)
-                    }
-                };
+                        OpenContent::Media(_) if self.song_lyrics().is_some() => MEDIA_H + content::CARD_LYRICS_H,
+                        OpenContent::Media(_) | OpenContent::Nav(_) => MEDIA_H,
+                        OpenContent::Clock => CLOCK_H,
+                        OpenContent::Battery => {
+                            let rows =
+                                self.activities.devices().len() + usize::from(self.activities.laptop().is_some());
+                            content::battery_list_height(rows)
+                        }
+                    };
                 (w, h, r)
             }
             _ => (w, h, r),
@@ -1306,6 +1489,7 @@ impl App {
             self.control = None;
             self.scrub = None;
             self.panel = None;
+            self.home = false;
             self.notes_open = false;
         } else if !from.is_open() && matches!(self.open_content(&self.live(t)), OpenContent::Notes) {
             self.notes_open = true;
@@ -1313,6 +1497,7 @@ impl App {
             // Show the current network and device on the clock card's buttons.
             self.conn_commands.push(ConnCommand::Status);
         }
+        self.update_shown(t);
         true
     }
 
@@ -1366,7 +1551,7 @@ impl App {
         if !matches!(self.open_content(&self.live(t)), OpenContent::Media(_)) {
             return None;
         }
-        let cr = self.content_rect(self.pill_rect(t));
+        let cr = self.card_rect(t);
         content::media_controls(cr).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, c)| c)
     }
 
@@ -1374,7 +1559,7 @@ impl App {
     pub fn handle(&mut self, e: Event, t: f64) -> bool {
         match e {
             Event::PointerMove { x, .. } if self.control == Some(Control::Scrub) => {
-                self.scrub = Some(content::scrub_fraction(self.content_rect(self.pill_rect(t)), x));
+                self.scrub = Some(content::scrub_fraction(self.card_rect(t), x));
                 true
             }
             Event::PointerMove { x, y } => self.pointer_at(x, y, t),
@@ -1400,7 +1585,7 @@ impl App {
                     Some(c) => {
                         self.control = Some(c);
                         if c == Control::Scrub && self.activities.media().is_some_and(|m| m.caps.seek) {
-                            self.scrub = Some(content::scrub_fraction(self.content_rect(self.pill_rect(t)), x));
+                            self.scrub = Some(content::scrub_fraction(self.card_rect(t), x));
                         }
                         true
                     }
@@ -1480,6 +1665,7 @@ impl App {
     pub fn tick(&mut self, t: f64) -> bool {
         let mut changed = self.timer_tick(t);
         changed |= self.sync_live(t);
+        changed |= self.update_shown(t);
         if std::mem::take(&mut self.pending_peek) && !self.island.presentation().is_open() {
             // A focus phase changed: open briefly, then close by itself.
             changed |= self.signal(Signal::Click, t);
@@ -1508,7 +1694,11 @@ impl App {
     }
 
     pub fn animating(&self, t: f64) -> bool {
-        !(self.w.is_settled(t) && self.h.is_settled(t) && self.r.is_settled(t) && self.bubble.is_settled(t))
+        !(self.w.is_settled(t)
+            && self.h.is_settled(t)
+            && self.r.is_settled(t)
+            && self.bubble.is_settled(t)
+            && self.shown.is_settled(t))
     }
 
     /// How often to draw while something moves on its own: 60 fps for the
@@ -1530,6 +1720,11 @@ impl App {
             return Some(WAVE_FRAME);
         }
         let playing = self.activities.media().is_some_and(|m| m.playing);
+        if let (true, Some(l), Some(m)) = (playing, self.song_lyrics(), self.activities.media()) {
+            if islet_core::lyrics::sliding(l, m.position_now(t).unwrap_or(0.0)) && self.has_content(t) {
+                return Some(FRAME);
+            }
+        }
         let compact_wave = matches!(live.first(), Some(Live::Media(_))) && self.compact_opacity(t, &live) > 0.0;
         let card_wave = self.expanded_opacity(t) > 0.0 && matches!(self.open_content(&live), OpenContent::Media(_));
         (playing && (compact_wave || card_wave)).then_some(WAVE_FRAME)
@@ -1663,6 +1858,7 @@ impl App {
             bubble: self.bubble_circle(t),
             highlight: 0.0,
             flat_top: self.notch.is_some(),
+            opacity: self.shown.value(t).clamp(0.0, 1.0) as f32,
         }
     }
 }
@@ -1741,6 +1937,239 @@ mod tests {
     }
 
     const NOW: LocalTime = LocalTime { year: 2026, month: 11, day: 4, weekday: 3, hour: 14, minute: 5, second: 42 };
+
+    fn lyrics() -> Arc<islet_core::lyrics::Lyrics> {
+        Arc::new(islet_core::lyrics::parse_lrc(
+            "[00:29.00]Before the light\n[00:31.00]Hold on to the night\n[00:35.00]Every word you sing\n[00:40.00]Fades into the sky\n",
+        ))
+    }
+
+    fn lyrics_on() -> IslandPrefs {
+        IslandPrefs { lyrics: true, ..IslandPrefs::default() }
+    }
+
+    /// Lyric lines on the strip: (text, opacity).
+    fn strip_lines(app: &App, t: f64, engine: &mut TextEngine) -> Vec<(String, f32)> {
+        app.elements(t, engine)
+            .into_iter()
+            .filter_map(|e| match e {
+                Element::Text(i) if i.window.is_some() => Some((i.text, i.style.opacity)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn synced_lyrics_run_through_the_bar() {
+        let mut engine = TextEngine::new();
+        let mut app = App::new(Demo::None, false);
+        app.report(Report::Media(Some(song(true))), 0.0);
+        assert_eq!(app.lyrics_wanted(), None, "nothing is looked up until lyrics are turned on");
+        app.set_prefs(lyrics_on());
+        let want = app.lyrics_wanted().expect("the playing song");
+        assert_eq!((want.title.as_str(), want.artist.as_str(), want.duration), ("Song", "Artist", Some(180)));
+
+        // Another song's lyrics don't show.
+        app.report(Report::Lyrics("someone\u{1f}else".into(), Some(lyrics())), 1.0);
+        assert!((app.pill_rect(3.0).w - content::COMPACT_MEDIA_W).abs() < 0.5);
+        assert!(strip_lines(&app, 3.0, &mut engine).is_empty());
+
+        // This song's do: the bar widens and the line being sung is lit.
+        app.report(Report::Lyrics(want.key(), Some(lyrics())), 3.0);
+        let t = 6.0; // 36 s into the song: "Every word" is being sung
+        assert!((app.pill_rect(t).w - content::COMPACT_LYRICS_W).abs() < 0.5);
+        let lines = strip_lines(&app, t, &mut engine);
+        let lit = lines.iter().find(|(s, _)| s == "Every word you sing").map(|l| l.1);
+        assert!(lit.is_some_and(|o| o > 0.99), "{lines:?}");
+        let dim = lines.iter().find(|(s, _)| s == "Hold on to the night" || s == "Fades into the sky");
+        assert!(dim.is_some_and(|(_, o)| *o > 0.2 && *o < 0.5), "lines not being sung stay visible, dimmer: {lines:?}");
+        // The strip slides at 60 fps as a new line starts, then calms down.
+        assert_eq!(app.frame_interval(10.0 - islet_core::lyrics::LEAD + 0.1), Some(FRAME));
+        assert_eq!(app.frame_interval(12.0), Some(WAVE_FRAME));
+
+        // Music keeps the island visible even with hover-only on.
+        app.set_prefs(IslandPrefs { auto_hide: true, ..lyrics_on() });
+        app.tick(12.0);
+        assert_eq!(app.frame(13.0).opacity, 1.0);
+
+        // Turning lyrics off forgets them and the bar goes back to normal.
+        app.set_prefs(IslandPrefs::default());
+        app.tick(13.0);
+        assert!((app.pill_rect(16.0).w - content::COMPACT_MEDIA_W).abs() < 0.5);
+        assert_eq!(app.lyrics_wanted(), None);
+    }
+
+    #[test]
+    fn lyrics_on_the_now_playing_card_and_not_beside_a_notch() {
+        let mut engine = TextEngine::new();
+        let mut app = App::new(Demo::None, false);
+        app.set_prefs(lyrics_on());
+        app.report(Report::Media(Some(song(true))), 0.0);
+        let key = app.lyrics_wanted().unwrap().key();
+        app.report(Report::Lyrics(key.clone(), Some(lyrics())), 0.0);
+        click(&mut app, 1.0);
+        let t = 4.0;
+        let want_h = MEDIA_H + content::CARD_HEADER_H + content::CARD_LYRICS_H;
+        assert!((app.pill_rect(t).h - want_h).abs() < 0.01);
+        let shown = texts(&app, t, &mut engine);
+        assert!(shown.iter().any(|s| s == "Hold on to the night") && shown.iter().any(|s| s == "Every word you sing"));
+
+        // Songs without synced lyrics: the plain card.
+        app.report(Report::Lyrics(key, None), 5.0);
+        assert!((app.pill_rect(9.0).h - MEDIA_H - content::CARD_HEADER_H).abs() < 0.01);
+
+        // A notch would hide the middle of each line: no lyrics in the bar.
+        let mut notched = App::new(Demo::None, false);
+        notched.set_notch(Some((200.0, 32.0)), 0.0);
+        notched.set_prefs(lyrics_on());
+        notched.report(Report::Media(Some(song(true))), 0.0);
+        let key = notched.lyrics_wanted().unwrap().key();
+        notched.report(Report::Lyrics(key, Some(lyrics())), 0.0);
+        assert!(strip_lines(&notched, 4.0, &mut engine).is_empty());
+    }
+
+    #[test]
+    fn control_centre_from_an_activity_and_back() {
+        let mut engine = TextEngine::new();
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        app.report(Report::Media(Some(song(true))), 0.0);
+        click(&mut app, 1.0);
+        let t = 4.0;
+        let cr = app.content_rect(app.pill_rect(t));
+        assert!(texts(&app, t, &mut engine).iter().any(|s| s == "Control Centre"));
+
+        // "‹ Control Centre" opens the clock card with Wi-Fi, Bluetooth…
+        press(&mut app, content::home_button(cr), t);
+        assert_eq!(app.take_conn_commands(), [ConnCommand::Status]);
+        let t = 8.0;
+        assert!((app.pill_rect(t).h - CLOCK_H).abs() < 0.01);
+        let shown = texts(&app, t, &mut engine);
+        assert!(shown.iter().any(|s| s == "Wi-Fi") && shown.iter().any(|s| s == "Now Playing"), "{shown:?}");
+
+        // Into the Wi-Fi list; its back button returns to Control Centre.
+        let cr = app.content_rect(app.pill_rect(t));
+        press(&mut app, content::clock_chips(cr, false, false)[0].0, t);
+        let t = 12.0;
+        assert!(texts(&app, t, &mut engine).iter().any(|s| s == "Wi-Fi"));
+        let r = content::back_button(app.content_rect(app.pill_rect(t)));
+        press(&mut app, r, t);
+        let t = 16.0;
+        assert!((app.pill_rect(t).h - CLOCK_H).abs() < 0.01, "back on Control Centre");
+
+        // "Now Playing ›" goes back to the music.
+        assert!(app.accessibility(t).buttons.iter().any(|(n, _)| n == "Back to Now Playing"));
+        let r = content::return_button(app.content_rect(app.pill_rect(t)));
+        press(&mut app, r, t);
+        let t = 20.0;
+        assert!((app.pill_rect(t).h - MEDIA_H - content::CARD_HEADER_H).abs() < 0.01);
+
+        // Control Centre lasts until the island closes.
+        let r = content::home_button(app.content_rect(app.pill_rect(t)));
+        press(&mut app, r, t);
+        app.handle(Event::Key(Key::Escape), 21.0);
+        click(&mut app, 25.0);
+        assert!((app.pill_rect(29.0).h - MEDIA_H - content::CARD_HEADER_H).abs() < 0.01, "reopens on the music");
+    }
+
+    #[test]
+    fn hover_only_island_hides_until_the_pointer_arrives() {
+        let mut app = App::new(Demo::None, false);
+        assert_eq!(app.frame(0.0).opacity, 1.0, "always shown by default");
+        app.set_prefs(IslandPrefs { auto_hide: true, ..IslandPrefs::default() });
+        assert!(app.tick(0.0));
+        assert!(app.frame(2.0).opacity < 0.01);
+        assert!(!app.animating(2.0) && app.frame_interval(2.0).is_none(), "hidden and idle: no wakeups");
+
+        // The hidden island still notices the pointer and slides out.
+        let (x, y) = centre(&app, 2.0);
+        assert!(app.input_region(2.0).contains(x, y));
+        app.handle(Event::PointerMove { x, y }, 2.0);
+        assert_eq!(app.presentation(), Peek);
+        assert!(app.frame(3.0).opacity > 0.99);
+        app.handle(Event::PointerLeave, 3.0);
+        assert!(app.frame(5.0).opacity < 0.01, "and hides again when it leaves");
+
+        // Anything live shows; switching the setting off shows the island.
+        app.report(Report::Hud(Hud::CapsLock(true)), 5.0);
+        assert!(app.frame(6.0).opacity > 0.99);
+        let mut plain = App::new(Demo::None, false);
+        plain.set_prefs(IslandPrefs { auto_hide: true, ..IslandPrefs::default() });
+        plain.tick(0.0);
+        plain.set_prefs(IslandPrefs::default());
+        plain.tick(2.0);
+        assert!(plain.frame(4.0).opacity > 0.99);
+    }
+
+    /// Lyrics, the back buttons and Control Centre for visual review:
+    /// `ISLET_LYRICS_SHEET=/path/out.png cargo test -p islet lyrics_sheet`
+    #[test]
+    fn lyrics_sheet() {
+        let Some(out) = std::env::var_os("ISLET_LYRICS_SHEET") else { return };
+        use islet_core::activity::ArtImage;
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let (aw, ah) = (64u32, 64u32);
+        let mut rgba = Vec::with_capacity((aw * ah * 4) as usize);
+        for y in 0..ah {
+            for x in 0..aw {
+                rgba.extend_from_slice(&[(200 - x * 2) as u8, (60 + y * 2) as u8, 120, 255]);
+            }
+        }
+        let art = ArtImage { width: aw, height: ah, rgba: Arc::new(rgba), dominant: [210, 90, 120] };
+        let m = MediaInfo {
+            art: Some(art),
+            title: "Midnight Signals".into(),
+            artist: "The Placeholders".into(),
+            ..song(true)
+        };
+        let mut engine = TextEngine::new();
+        let base = || {
+            let mut a = App::new(Demo::None, false);
+            a.set_time(NOW, 0.0);
+            a.set_prefs(lyrics_on());
+            a.report(Report::Media(Some(m.clone())), 0.0);
+            let key = a.lyrics_wanted().unwrap().key();
+            a.report(Report::Lyrics(key, Some(lyrics())), 0.0);
+            a
+        };
+        // (app, time, cell height)
+        let compact = base();
+        let mut card = base();
+        click(&mut card, 1.0);
+        let mut home = base();
+        click(&mut home, 1.0);
+        let r = content::home_button(home.content_rect(home.pill_rect(4.0)));
+        press(&mut home, r, 4.0);
+        let mut list = base();
+        click(&mut list, 1.0);
+        let r = content::home_button(list.content_rect(list.pill_rect(4.0)));
+        press(&mut list, r, 4.0);
+        let cr = list.content_rect(list.pill_rect(8.0));
+        press(&mut list, content::clock_chips(cr, false, false)[0].0, 8.0);
+        let shots: Vec<(&App, f64, u32)> = vec![
+            (&compact, 3.0, 46),
+            (&compact, 5.1, 46), // sliding onto the next line
+            (&compact, 7.5, 46),
+            (&card, 6.0, 240),
+            (&home, 9.0, 180),
+            (&list, 12.0, 200),
+        ];
+        let cw = WINDOW.0 as u32;
+        let total: u32 = shots.iter().map(|s| s.2).sum();
+        let mut sheet = Pixmap::new(cw, total).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        let mut y = 0;
+        for (a, t, h) in shots {
+            let mut cell = Pixmap::new(cw, WINDOW.1 as u32).unwrap();
+            islet_render::draw(&mut cell, &a.frame(t), 1.0);
+            let els = a.elements(t, &mut engine);
+            let mask = islet_render::clip_mask(&a.frame(t), cw, WINDOW.1 as u32, 1.0);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, mask.as_ref());
+            sheet.draw_pixmap(0, y as i32, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+            y += h;
+        }
+        sheet.save_png(out).unwrap();
+    }
 
     #[test]
     fn camera_and_microphone_dots() {
@@ -1888,10 +2317,10 @@ mod tests {
         click(&mut app, 1.0);
         assert_eq!(app.presentation(), Expanded);
         let t = 4.0;
-        assert!((app.pill_rect(t).h - MEDIA_H).abs() < 0.01);
+        assert!((app.pill_rect(t).h - MEDIA_H - content::CARD_HEADER_H).abs() < 0.01);
         assert!(texts(&app, t, &mut engine).contains(&"Song".to_string()));
 
-        let controls = content::media_controls(app.pill_rect(t));
+        let controls = content::media_controls(app.card_rect(t));
         let (play, _) = controls.iter().find(|(_, c)| *c == Control::PlayPause).unwrap();
         let (px, py) = (play.x + play.w / 2.0, play.y + play.h / 2.0);
         app.handle(Event::PointerDown { x: px, y: py, button: Button::Primary }, t);
@@ -1972,7 +2401,7 @@ mod tests {
         assert_eq!(app.presentation(), Minimal, "navigation and music together");
         click(&mut app, 1.0);
         assert!(app.nav_card_open(5.0), "the open card is navigation, not music");
-        let (waze, _) = content::nav_controls(app.content_rect(app.pill_rect(5.0)))[1];
+        let (waze, _) = content::nav_controls(app.card_rect(5.0))[1];
         let (x, y) = (waze.x + waze.w / 2.0, waze.y + waze.h / 2.0);
         app.handle(Event::PointerDown { x, y, button: Button::Primary }, 5.0);
         app.handle(Event::PointerUp { x, y, button: Button::Primary }, 5.1);
@@ -2312,8 +2741,8 @@ mod tests {
         assert!(app.a11y_press(None, 1.0), "pressing the island opens it");
         let a = app.accessibility(5.0);
         let names: Vec<&str> = a.buttons.iter().map(|(n, _)| n.as_str()).collect();
-        assert_eq!(names, ["Previous", "Pause", "Next"]);
-        app.a11y_press(Some(1), 5.0);
+        assert_eq!(names, ["Control Centre", "Previous", "Pause", "Next"]);
+        app.a11y_press(Some(2), 5.0);
         assert_eq!(app.take_commands(), [MediaCommand::PlayPause]);
     }
 
@@ -2417,9 +2846,13 @@ mod tests {
         click(&mut app, 5.0);
         let t = 10.0;
         let card = app.pill_rect(t);
-        assert!((card.h - (MEDIA_H + 32.0)).abs() < 0.01, "the card grows by the notch height");
-        let (r, _) = content::media_controls(app.content_rect(card))[0];
-        assert!(r.y >= card.y + 32.0, "controls are below the notch");
+        assert!(
+            (card.h - (MEDIA_H + content::CARD_HEADER_H + 32.0)).abs() < 0.01,
+            "the card grows by the notch height"
+        );
+        let (r, _) = content::media_controls(app.card_rect(t))[0];
+        assert!(r.y >= card.y + 32.0 + content::CARD_HEADER_H, "controls are below the notch and header");
+        assert!(content::home_button(app.content_rect(card)).y >= card.y + 32.0, "so is Control Centre's button");
     }
 
     #[test]

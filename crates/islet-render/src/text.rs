@@ -57,6 +57,18 @@ pub struct TextItem {
     pub style: TextStyle,
     pub x: f32,
     pub baseline: f32,
+    /// Only the part between these x positions shows, fading out over
+    /// `WINDOW_FADE` px at each end (lyrics sliding through the pill).
+    pub window: Option<(f32, f32)>,
+}
+
+/// Width of the fade at each end of a text window, in logical px.
+pub const WINDOW_FADE: f32 = 14.0;
+
+impl TextItem {
+    pub fn new(text: impl Into<String>, style: TextStyle, x: f32, baseline: f32) -> Self {
+        Self { text: text.into(), style, x, baseline, window: None }
+    }
 }
 
 pub struct TextEngine {
@@ -184,6 +196,12 @@ impl TextEngine {
         // Lay out at physical size so glyphs are rasterised crisply.
         let physical = TextStyle { size: style.size * scale, ..style };
         let shaped = self.shaped(&item.text, &physical);
+        let window = item.window.map(|(l, r)| (l * scale, r * scale, WINDOW_FADE * scale));
+        if let Some((l, r, _)) = window {
+            if left * scale > r || (left + width) * scale < l {
+                return;
+            }
+        }
         let origin = (left * scale, item.baseline * scale);
         for (line_y, glyphs) in &shaped.runs {
             for glyph in glyphs {
@@ -191,7 +209,12 @@ impl TextEngine {
                 let Some(image) = self.cache.get_image(&mut self.fonts, pg.cache_key) else { continue };
                 let gx = pg.x + image.placement.left;
                 let gy = (*line_y as i32) + pg.y - image.placement.top;
-                blit(pixmap, image, gx, gy, style.color, opacity, clip);
+                if let Some((l, r, _)) = window {
+                    if (gx as f32) > r || ((gx + image.placement.width as i32) as f32) < l {
+                        continue;
+                    }
+                }
+                blit(pixmap, image, gx, gy, style.color, opacity, clip, window);
             }
         }
     }
@@ -213,6 +236,7 @@ fn system_ui_family(db: &mut fontdb::Database) -> Option<String> {
 }
 
 /// Composite one glyph image over premultiplied RGBA pixels.
+#[allow(clippy::too_many_arguments)]
 fn blit(
     pixmap: &mut Pixmap,
     image: &cosmic_text::SwashImage,
@@ -221,6 +245,7 @@ fn blit(
     color: [u8; 3],
     opacity: f32,
     clip: Option<&Mask>,
+    window: Option<(f32, f32, f32)>,
 ) {
     let (pw, ph) = (pixmap.width() as i32, pixmap.height() as i32);
     let (iw, ih) = (image.placement.width as i32, image.placement.height as i32);
@@ -250,7 +275,11 @@ fn blit(
                 }
             };
             let clip_a = mask.map_or(1.0, |(d, mw)| d[(py * mw + px) as usize] as f32 / 255.0);
-            let a = cov * opacity * clip_a;
+            let fade = window.map_or(1.0, |(l, r, f)| {
+                let c = px as f32 + 0.5;
+                ((c - l) / f).min((r - c) / f).clamp(0.0, 1.0)
+            });
+            let a = cov * opacity * clip_a * fade;
             if a <= 0.0 {
                 continue;
             }
@@ -292,6 +321,7 @@ mod tests {
             style: TextStyle { size: 32.0, weight: 600, tabular: true, ..TextStyle::default() },
             x: 10.0,
             baseline: 45.0,
+            window: None,
         };
         engine.draw(&mut p, &item, 1.0, None);
         let (n, bb) = ink(&p);
@@ -314,7 +344,12 @@ mod tests {
         let mut engine = TextEngine::new();
         let style = TextStyle { size: 20.0, align: Align::Right, ..TextStyle::default() };
         let mut p = Pixmap::new(200, 40).unwrap();
-        engine.draw(&mut p, &TextItem { text: "Islet".into(), style, x: 190.0, baseline: 30.0 }, 1.0, None);
+        engine.draw(
+            &mut p,
+            &TextItem { text: "Islet".into(), style, x: 190.0, baseline: 30.0, window: None },
+            1.0,
+            None,
+        );
         let (_, bb) = ink(&p);
         assert!(bb.unwrap().2 <= 191, "right-aligned text ends at x: {bb:?}");
 
@@ -326,7 +361,7 @@ mod tests {
         let centred = TextStyle { align: Align::Center, ..style };
         engine.draw(
             &mut q,
-            &TextItem { text: "Clipped".into(), style: centred, x: 100.0, baseline: 30.0 },
+            &TextItem { text: "Clipped".into(), style: centred, x: 100.0, baseline: 30.0, window: None },
             1.0,
             Some(&clip),
         );
@@ -339,7 +374,12 @@ mod tests {
         let mut engine = TextEngine::new();
         let mut p = Pixmap::new(100, 40).unwrap();
         let style = TextStyle { opacity: 0.0, ..TextStyle::default() };
-        engine.draw(&mut p, &TextItem { text: "Hidden".into(), style, x: 0.0, baseline: 30.0 }, 1.0, None);
+        engine.draw(
+            &mut p,
+            &TextItem { text: "Hidden".into(), style, x: 0.0, baseline: 30.0, window: None },
+            1.0,
+            None,
+        );
         assert_eq!(ink(&p).0, 0);
     }
 }

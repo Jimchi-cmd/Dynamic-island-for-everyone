@@ -72,7 +72,7 @@ Usage:
   islet hotkey [<keys>|off]                the shortcut for that, e.g. Ctrl+Alt+I
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
                                            notifications, calendar, fahrenheit, web-artwork,
-                                           spotify, privacy-dots, clipboard
+                                           spotify, privacy-dots, clipboard, lyrics, auto-hide
   islet prefs [--json]                     the island's settings
   islet autostart on|off                   start Islet when you log in (or stop doing so)
   islet status [--json]                    is Islet running, and how it is set up
@@ -586,17 +586,12 @@ fn prefs_text(json: bool) -> String {
     if json {
         return serde_json::to_string(&p).unwrap_or_default();
     }
-    let yes = |b: bool| if b { "on" } else { "off" };
-    format!(
-        "volume-hud {}\nbrightness-hud {}\ncaps-lock-hud {}\nnotifications {}\ncalendar {}\nfahrenheit {}\nweather {}",
-        yes(p.volume_hud),
-        yes(p.brightness_hud),
-        yes(p.caps_lock_hud),
-        yes(p.notifications),
-        yes(p.calendar),
-        yes(p.fahrenheit),
-        p.weather.as_ref().map_or("off".to_string(), |w| w.name.clone())
-    )
+    let mut lines: Vec<String> = islet_core::prefs::SWITCHES
+        .iter()
+        .map(|k| format!("{k} {}", if p.switch(k).unwrap_or(false) { "on" } else { "off" }))
+        .collect();
+    lines.push(format!("weather {}", p.weather.as_ref().map_or("off".to_string(), |w| w.name.clone())));
+    lines.join("\n")
 }
 
 fn duration(s: &str) -> Result<f64, String> {

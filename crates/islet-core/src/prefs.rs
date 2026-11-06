@@ -36,6 +36,11 @@ pub struct IslandPrefs {
     pub privacy_dots: bool,
     /// Keep the last few copied texts (in memory only).
     pub clipboard: bool,
+    /// Show synced lyrics for the playing song (fetched from LRCLIB).
+    pub lyrics: bool,
+    /// Hide the empty island until the pointer is over it. Anything live
+    /// (music, a timer, a notification…) still shows.
+    pub auto_hide: bool,
     /// The global shortcut that opens and closes the island ("" = none),
     /// e.g. "Ctrl+Alt+I".
     pub hotkey: String,
@@ -79,6 +84,8 @@ impl Default for IslandPrefs {
             spotify: false,
             privacy_dots: true,
             clipboard: false,
+            lyrics: false,
+            auto_hide: false,
             hotkey: String::new(),
             accent: "blue".into(),
             size: "medium".into(),
@@ -89,7 +96,7 @@ impl Default for IslandPrefs {
 }
 
 /// The switches `islet set <key> on|off` understands.
-pub const SWITCHES: [&str; 10] = [
+pub const SWITCHES: [&str; 12] = [
     "volume-hud",
     "brightness-hud",
     "caps-lock-hud",
@@ -100,6 +107,8 @@ pub const SWITCHES: [&str; 10] = [
     "spotify",
     "privacy-dots",
     "clipboard",
+    "lyrics",
+    "auto-hide",
 ];
 
 impl IslandPrefs {
@@ -114,7 +123,17 @@ impl IslandPrefs {
     }
 
     pub fn set_switch(&mut self, key: &str, on: bool) -> Result<(), String> {
-        let slot = match key {
+        *self.slot(key)? = on;
+        Ok(())
+    }
+
+    /// A switch's state (see `SWITCHES`).
+    pub fn switch(&self, key: &str) -> Option<bool> {
+        self.clone().slot(key).ok().map(|v| *v)
+    }
+
+    fn slot(&mut self, key: &str) -> Result<&mut bool, String> {
+        Ok(match key {
             "volume-hud" => &mut self.volume_hud,
             "brightness-hud" => &mut self.brightness_hud,
             "caps-lock-hud" => &mut self.caps_lock_hud,
@@ -125,10 +144,10 @@ impl IslandPrefs {
             "spotify" => &mut self.spotify,
             "privacy-dots" => &mut self.privacy_dots,
             "clipboard" => &mut self.clipboard,
+            "lyrics" => &mut self.lyrics,
+            "auto-hide" => &mut self.auto_hide,
             _ => return Err(format!("unknown setting {key:?} (one of: {})", SWITCHES.join(", "))),
-        };
-        *slot = on;
-        Ok(())
+        })
     }
 }
 
@@ -177,7 +196,7 @@ mod tests {
     #[test]
     fn private_by_default_and_tolerant_of_old_files() {
         let p: IslandPrefs = serde_json::from_str("{}").unwrap();
-        assert!(p.volume_hud && !p.notifications && p.weather.is_none() && !p.calendar);
+        assert!(p.volume_hud && !p.notifications && p.weather.is_none() && !p.calendar && !p.lyrics && !p.auto_hide);
         let p: IslandPrefs = serde_json::from_str(r#"{"volumeHud":false,"unknownKey":1}"#).unwrap();
         assert!(!p.volume_hud);
     }
@@ -196,6 +215,10 @@ mod tests {
         p.set_switch("caps-lock-hud", false).unwrap();
         assert!(!p.caps_lock_hud);
         assert!(p.set_switch("rocket", true).is_err());
+        assert_eq!(p.switch("caps-lock-hud"), Some(false));
+        assert_eq!(p.switch("rocket"), None);
+        p.set_switch("auto-hide", true).unwrap();
+        assert!(p.auto_hide && SWITCHES.iter().all(|k| p.switch(k).is_some()));
         assert_eq!(parse_on_off("ON"), Some(true));
         assert_eq!(parse_on_off("maybe"), None);
     }

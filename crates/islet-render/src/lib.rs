@@ -24,6 +24,10 @@ pub struct PillFrame {
     /// Square top corners: on a notched MacBook the island hangs from the
     /// top edge, so it reads as the notch growing.
     pub flat_top: bool,
+    /// How visible the island is (1 = fully). Never drawn fully clear:
+    /// Windows hit-tests layered windows by alpha, so a hidden island keeps
+    /// the faintest alpha to still notice the pointer arriving.
+    pub opacity: f32,
 }
 
 impl PillFrame {
@@ -64,7 +68,7 @@ impl PillFrame {
     }
 
     pub fn pill(shape: Squircle) -> Self {
-        Self { shape, bubble: None, highlight: 0.0, flat_top: false }
+        Self { shape, bubble: None, highlight: 0.0, flat_top: false, opacity: 1.0 }
     }
 
     fn outline(&self) -> Option<tiny_skia::Path> {
@@ -107,7 +111,8 @@ pub fn draw(pixmap: &mut Pixmap, frame: &PillFrame, scale: f32) {
     let ts = Transform::from_scale(scale, scale);
     let Some(path) = frame.outline() else { return };
     let mut paint = Paint::default();
-    paint.set_color_rgba8(0, 0, 0, 255);
+    let alpha = (frame.opacity.clamp(0.0, 1.0) * 255.0).round().max(1.0) as u8;
+    paint.set_color_rgba8(0, 0, 0, alpha);
     paint.anti_alias = true;
     pixmap.fill_path(&path, &paint, FillRule::Winding, ts, None);
 
@@ -120,7 +125,7 @@ pub fn draw(pixmap: &mut Pixmap, frame: &PillFrame, scale: f32) {
         }
     }
 
-    if frame.highlight > 0.0 {
+    if frame.highlight > 0.0 && frame.opacity >= 1.0 {
         // A hairline just inside the edge so the pill reads on dark wallpapers.
         let inset = 0.5 / scale;
         let s = frame.shape;
@@ -180,6 +185,11 @@ mod contains_tests {
         assert!(!f.contains_rect(2.0, 2.0, 30.0, 30.0), "a corner");
         assert!(!f.contains_rect(280.0, 70.0, 40.0, 10.0), "past the edge");
         let mut bubbled = f;
+        // A hidden island keeps the faintest alpha, so Windows still sends
+        // it the pointer.
+        let mut pm = tiny_skia::Pixmap::new(300, 160).unwrap();
+        draw(&mut pm, &PillFrame { opacity: 0.0, ..f }, 1.0);
+        assert_eq!(pm.pixel(150, 80).map(|p| p.alpha()), Some(1));
         bubbled.bubble = Some(Circle { x: 320.0, y: 18.0, r: 18.0 });
         assert!(!bubbled.contains_rect(100.0, 60.0, 10.0, 10.0));
     }

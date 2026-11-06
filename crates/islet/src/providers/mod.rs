@@ -26,6 +26,7 @@ mod linux_privacy;
 mod linux_tests;
 #[cfg(target_os = "linux")]
 mod linux_volume;
+pub mod lyrics;
 #[cfg(target_os = "macos")]
 mod macos_battery;
 #[cfg(target_os = "macos")]
@@ -171,6 +172,9 @@ fn describe(r: &Report) -> String {
         // Never log what was copied.
         Report::Clipboard(t) => format!("clipboard: {} chars", t.chars().count()),
         Report::Privacy(p) => format!("privacy: camera {:?}, mic {:?}", p.camera, p.mic),
+        Report::Lyrics(key, l) => {
+            format!("lyrics for {key:?}: {}", l.as_ref().map_or(0, |l| l.lines.len()))
+        }
         Report::UpNext(u) => format!("up next: {:?}", u.as_ref().map(|(e, _)| &e.summary)),
     }
 }
@@ -184,6 +188,7 @@ pub struct Providers {
     calendar: Sender<bool>,
     spotify: Sender<spotify::SpotifyMsg>,
     sysmon: Sender<bool>,
+    lyrics: Sender<Option<islet_core::lyrics::Track>>,
     clipboard: Option<clipboard::Watcher>,
     sink: Sink,
     #[cfg(target_os = "linux")]
@@ -204,6 +209,7 @@ impl Providers {
         let calendar = calendar::start(sink.clone());
         let spotify = spotify::start(sink.clone());
         let sysmon = sysmon::start(sink.clone());
+        let lyrics = lyrics::start(sink.clone());
         let media = if std::env::var("ISLET_DEMO").as_deref() == Ok("media") {
             Some(demo::start(sink.clone()))
         } else {
@@ -218,6 +224,7 @@ impl Providers {
             calendar,
             spotify,
             sysmon,
+            lyrics,
             clipboard: None,
             sink,
             #[cfg(target_os = "linux")]
@@ -282,6 +289,11 @@ impl Providers {
     /// Start or stop the system monitor (it runs only while its panel is open).
     pub fn sysmon(&self, on: bool) {
         let _ = self.sysmon.send(on);
+    }
+
+    /// Look up lyrics for the song that is playing (None: stop).
+    pub fn lyrics(&self, track: Option<islet_core::lyrics::Track>) {
+        let _ = self.lyrics.send(track);
     }
 
     pub fn spotify(&self, on: bool) {

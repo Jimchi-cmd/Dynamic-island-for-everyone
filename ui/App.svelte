@@ -514,7 +514,7 @@
         <h2>Private by default</h2>
         <p class="muted">
           No accounts, no analytics, no telemetry. Islet uses the network only for features you turn on: navigation
-          ETA (with your own Google key) and update checks.
+          ETA (with your own Google key), weather, lyrics and update checks.
         </p>
       </div>
       <div class="actions"><button class="primary" onclick={() => (welcomeStep = 1)}>Continue</button></div>
@@ -612,6 +612,22 @@
         </div>
         <div class="card">
           <h2>Now Playing</h2>
+          <div class="net">
+            <span class="name">Show synced lyrics</span>
+            <input
+              type="checkbox"
+              class="switch"
+              aria-label="Show synced lyrics"
+              checked={islandPrefs?.lyrics ?? false}
+              disabled={!islandPrefs}
+              onchange={(e) => setSwitch('lyrics', e.currentTarget.checked)}
+            />
+          </div>
+          <p class="muted small">
+            The line being sung lights up in the island as the song plays. Lyrics come from LRCLIB (lrclib.net), a free,
+            open lyrics database: when this is on, Islet sends it the title, artist, album and length of the song that's
+            playing, and nothing else. Songs without timed lyrics show none.
+          </p>
           {#if info?.os === 'linux'}
             <div class="net">
               <span class="name">Download web artwork (e.g. Spotify covers)</span>
@@ -639,6 +655,21 @@
         </div>
         <div class="card">
           <h2>Look</h2>
+          <div class="net">
+            <span class="name">Show the island only when I point at it</span>
+            <input
+              type="checkbox"
+              class="switch"
+              aria-label="Show the island only when I point at it"
+              checked={islandPrefs?.autoHide ?? false}
+              disabled={!islandPrefs}
+              onchange={(e) => setSwitch('autoHide', e.currentTarget.checked)}
+            />
+          </div>
+          <p class="muted small">
+            The empty island stays hidden until you move the pointer to the top of the screen. Music, timers, calls for
+            attention and other live activities always show.
+          </p>
           <p class="muted small">Accent colour for buttons and switches on the island.</p>
           <div class="swatches" role="radiogroup" aria-label="Accent colour">
             {#each Object.entries(ACCENTS) as [name, hex] (name)}

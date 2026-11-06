@@ -56,6 +56,11 @@ pub enum Icon {
     Clipboard,
     /// A horizontal battery filled to this percentage.
     Battery(u8),
+    /// A chevron pointing left ("back") or right.
+    Back,
+    Forward,
+    /// Two switches, one on and one off (Control Centre).
+    Controls,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -279,6 +284,21 @@ impl IconPainter<'_> {
                 let p = Self::poly(&[(20.0, 4.0), (12.5, 20.5), (10.8, 13.2), (3.5, 11.5)]);
                 self.fill(p.clone());
                 self.stroke(p, 1.6);
+            }
+            Icon::Back | Icon::Forward => {
+                let mut pb = PathBuilder::new();
+                let (tip, tail) = if icon == Icon::Back { (8.5, 15.0) } else { (15.5, 9.0) };
+                pb.move_to(tail, 5.5);
+                pb.line_to(tip, 12.0);
+                pb.line_to(tail, 18.5);
+                self.stroke(pb.finish(), 2.6);
+            }
+            Icon::Controls => {
+                // Two toggle tracks: the top one on (knob right), the bottom off.
+                self.stroke(rounded_rect(3.5, 4.5, 17.0, 6.5, 3.25), 1.8);
+                self.fill(PathBuilder::from_circle(17.25, 7.75, 2.2));
+                self.stroke(rounded_rect(3.5, 13.0, 17.0, 6.5, 3.25), 1.8);
+                self.fill(PathBuilder::from_circle(6.75, 16.25, 2.2));
             }
             Icon::Close => {
                 self.line((6.5, 6.5), (17.5, 17.5), 2.2);
@@ -537,7 +557,11 @@ fn bounds(el: &Element, text: &mut TextEngine) -> Option<(f32, f32, f32, f32)> {
             };
             // Ascenders and descenders stay within about 1.1 × the size.
             let s = t.style.size;
-            Some((left - 2.0, t.baseline - s * 1.1, w + 4.0, s * 1.5))
+            let (mut l, mut r) = (left - 2.0, left + w + 2.0);
+            if let Some((wl, wr)) = t.window {
+                (l, r) = (l.max(wl), r.min(wr));
+            }
+            Some((l, t.baseline - s * 1.1, (r - l).max(0.0), s * 1.5))
         }
         Element::Bar { x, y, w, h, .. } => Some((*x, *y, w.max(*h), *h)),
         Element::Icon { x, y, size, .. } | Element::Art { x, y, size, .. } => Some((*x, *y, *size, *size)),
@@ -646,7 +670,10 @@ mod tests {
         p.pixels().iter().filter(|c| c.alpha() > 0).count()
     }
 
-    const ALL: [Icon; 43] = [
+    const ALL: [Icon; 46] = [
+        Icon::Back,
+        Icon::Forward,
+        Icon::Controls,
         Icon::Battery(0),
         Icon::Battery(70),
         Icon::Clipboard,

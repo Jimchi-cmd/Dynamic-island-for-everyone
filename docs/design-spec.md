@@ -33,9 +33,14 @@ All numbers are in **logical px** (1 px = 1 iOS point). They are approximations 
 | **Idle** | 126 × 37 | 18.5 (capsule) | nothing |
 | **Hover peek** (desktop only) | 136 × 39 | capsule | nothing; says "I'm interactive" |
 | **Compact** | 236 × 37 | capsule | leading: 25 × 25 artwork/icon (radius 7) at 6 px inset; trailing: indicator (waveform, timer, ETA) at 10 px inset |
+| **Compact with lyrics** | 340 × 37 | capsule | artwork and waveform as Compact; between them a strip of lyric lines (13.5 px semibold, 26 px apart) sliding left as the song goes on: the line being sung at full white, the others at 38 %, fading out over 14 px at each end. A line that fits is centred; a longer one scrolls across while it's sung. Each slide takes 0.4 s (ease-out, 60 fps); otherwise 30 fps with the waveform |
 | **Minimal** (2 activities) | pill 162 × 37 + detached circle Ø 37, 8 px gap | capsule / circle | pill: primary activity's leading view; circle: secondary activity's icon |
 | **Expanded** | 372 × 160 (shorter when the content needs less, min 84) | 44 | the activity's expanded view, 18 px padding |
 | **Large** | 384 × 230 | 48 | full controls (scrubbing, volume, queue) |
+
+Activity cards (Now Playing, timer, navigation, battery, calendar, notifications, script activities) start with a 26 px strip holding a "‹ Control Centre" capsule (24 px tall, 14 % white) at the top left; the card's content sits below it. Control Centre opened that way shows a "Now Playing ›" capsule above the clock to go back; closing the island forgets it. Lists (Wi-Fi, Bluetooth, shelf, clipboard, system) have a round 28 px back button with a chevron. With lyrics on, the Now Playing card is 44 px taller: two centred 15 px lines, the sung one lit, rolling up as each new line starts.
+
+Hover-only mode: the idle island fades out (0.22 s, critically damped) and fades back in as the pointer arrives and it peeks. It keeps an alpha of 1/255, so Windows still hit-tests it; X11, Wayland and macOS use the input region. Anything live keeps it visible.
 
 Spring overshoot is at most 3 % of a change, so Large peaks at about 391 × 236, inside the 420 × 260 window.
 

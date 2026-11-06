@@ -86,3 +86,15 @@ describe('connections', () => {
     expect(signalBars(20)).toBe('▂··');
   });
 });
+
+import { readFileSync } from 'node:fs';
+import { SWITCH_NAMES } from './settings';
+
+describe('switches', () => {
+  it('match the ones the island understands', () => {
+    const rust = readFileSync(new URL('../../crates/islet-core/src/prefs.rs', import.meta.url), 'utf8');
+    const list = rust.match(/pub const SWITCHES: \[&str; \d+\] = \[([^\]]*)\]/)?.[1] ?? '';
+    const names = [...list.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]).sort();
+    expect(Object.values(SWITCH_NAMES).sort()).toEqual(names);
+  });
+});

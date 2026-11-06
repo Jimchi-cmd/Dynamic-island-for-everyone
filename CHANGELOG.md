@@ -9,6 +9,8 @@ The first public release.
 ### Island
 - Native, webview-free island for macOS, Windows and Linux (native Wayland on KDE Plasma, sway, Hyprland and other wlroots compositors; X11 and XWayland elsewhere): about 5 MB of RAM, 0 % CPU and zero wakeups when idle.
 - iPhone-style shapes and motion: continuous-corner squircles, spring animations, peek, compact, the split pill with a metaball neck for two activities, the expanded card and a large view. Wraps the notch on MacBooks.
+- **Hover-only mode** (Settings → Look): the empty island stays hidden until you point at it; music and other live activities always show.
+- **Control Centre from any card:** a "‹ Control Centre" button on every activity's card, and a back button on the Wi-Fi, Bluetooth, shelf, clipboard and system lists.
 - Inter bundled for text. San Francisco is used on macOS, from the system.
 
 ### Activities
@@ -19,6 +21,7 @@ The first public release.
 - **Alarms**: one-time or repeating. When one rings, the island opens with a swinging bell and plays an original chime until you snooze or stop it.
 - **Wi-Fi and Bluetooth** pickers from the clock card: join networks and connect paired devices.
 - **Spotify on your other devices** (optional): playback on your phone or a speaker shows on the island, with controls, using your own Spotify app.
+- **Synced lyrics** (opt-in, from LRCLIB): the lyrics slide through the compact island as the song plays, with the line being sung highlighted and its neighbours dimmed, and two rolling lines on the Now Playing card.
 - **Hide Now Playing** for chosen apps; opt-in **web artwork** on Linux.
 - **File shelf:** drag files onto the island to keep shortcuts to them; tap to open.
 - **Notifications** mirrored on the island (Linux, opt-in), with the latest few one click away.

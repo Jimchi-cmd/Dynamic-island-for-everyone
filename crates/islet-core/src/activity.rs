@@ -205,6 +205,8 @@ pub enum Report {
     System(Option<crate::sysmon::Stats>),
     /// Text was copied (clipboard history, when it's on).
     Clipboard(String),
+    /// Synced lyrics for a song (`Track::key`), or None when it has none.
+    Lyrics(String, Option<std::sync::Arc<crate::lyrics::Lyrics>>),
 }
 
 /// Whether the camera and the microphone are in use, and by which apps
@@ -466,7 +468,7 @@ impl Activities {
                 true
             }
             // The island keeps the history (it knows whether it's on).
-            Report::Clipboard(_) => false,
+            Report::Clipboard(_) | Report::Lyrics(..) => false,
             Report::System(s) => {
                 self.system = s;
                 true

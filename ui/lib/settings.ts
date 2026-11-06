@@ -230,6 +230,8 @@ export interface IslandPrefs {
   spotify: boolean;
   privacyDots: boolean;
   clipboard: boolean;
+  lyrics: boolean;
+  autoHide: boolean;
   hotkey: string;
   accent: string;
   size: string;
@@ -259,4 +261,6 @@ export const SWITCH_NAMES: Record<string, string> = {
   spotify: 'spotify',
   privacyDots: 'privacy-dots',
   clipboard: 'clipboard',
+  lyrics: 'lyrics',
+  autoHide: 'auto-hide',
 };

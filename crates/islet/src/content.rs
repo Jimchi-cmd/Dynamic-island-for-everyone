@@ -6,6 +6,7 @@ use islet_core::alarm::{self, Alarm};
 use islet_core::clock::{format_date, format_time, LocalTime};
 use islet_core::connectivity::{self, BtState, Connectivity, WifiState};
 use islet_core::geometry::Rect;
+use islet_core::lyrics::{self, Lyrics};
 use islet_core::nav;
 use islet_core::timer::{self, Phase, Timer};
 use islet_render::elements::{Element, Icon};
@@ -73,6 +74,10 @@ pub enum ConnHit {
     Footer,
     /// The × on a shelf row.
     Remove(usize),
+    /// "‹ Control Centre" at the top of an activity's card.
+    Home,
+    /// Back from Control Centre to the activity it was opened from.
+    Return,
 }
 
 pub const ROW_H: f64 = 36.0;
@@ -404,7 +409,7 @@ pub fn level_color(percent: u8, charging: bool) -> [u8; 3] {
 }
 
 fn text(s: impl Into<String>, style: TextStyle, x: f32, baseline: f32) -> Element {
-    Element::Text(TextItem { text: s.into(), style, x, baseline })
+    Element::Text(TextItem::new(s, style, x, baseline))
 }
 
 /// "3:07", "1:02:03"
@@ -1246,6 +1251,11 @@ pub fn list_rows(pill: Rect, rows: usize) -> Vec<Rect> {
         .collect()
 }
 
+/// The round back button at the top left of a list.
+pub fn back_button(pill: Rect) -> Rect {
+    Rect::new(pill.x + 14.0, pill.y + 15.0, 28.0, 28.0)
+}
+
 pub fn list_header(pill: Rect) -> Rect {
     Rect::new(pill.x, pill.y, pill.w * 0.6, LIST_TOP - 4.0)
 }
@@ -1288,10 +1298,14 @@ fn list_header_elements(
 ) -> Vec<Element> {
     let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
     let title_style = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
+    // The back button: a round button with a chevron, back to Control Centre.
+    let b = back_button(pill);
+    let (bx, by, bs) = (b.x as f32, b.y as f32, b.w as f32);
     let mut v = vec![
-        text("‹", TextStyle { size: 22.0, opacity: o * 0.7, ..title_style }, x + PAD as f32 - 2.0, y + 35.0),
-        Element::Icon { icon, x: x + PAD as f32 + 14.0, y: y + 19.0, size: 20.0, color: WHITE, opacity: o },
-        text(title, title_style, x + PAD as f32 + 40.0, y + 35.0),
+        Element::Bar { x: bx, y: by, w: bs, h: bs, color: WHITE, opacity: o * 0.16 },
+        Element::Icon { icon: Icon::Back, x: bx + 6.0, y: by + 6.0, size: 16.0, color: WHITE, opacity: o },
+        Element::Icon { icon, x: bx + bs + 10.0, y: y + 19.0, size: 20.0, color: WHITE, opacity: o },
+        text(title, title_style, bx + bs + 36.0, y + 35.0),
     ];
     if let Some(s) = status {
         let style = TextStyle { size: 12.5, opacity: o * 0.6, align: Align::Right, ..TextStyle::default() };
@@ -1567,6 +1581,155 @@ pub fn expanded_bluetooth(pill: Rect, c: &Connectivity, o: f32, engine: &mut Tex
     }
     if let Some((line, button)) = bt_footer(c) {
         v.extend(list_footer_elements(pill, b.devices.len(), &line, button, o, engine));
+    }
+    v
+}
+
+// ---- Back to Control Centre ------------------------------------------------
+
+/// Height of the strip at the top of an activity card that holds the
+/// "Control Centre" button; the card's own content starts below it.
+pub const CARD_HEADER_H: f64 = 26.0;
+
+/// The "‹ Control Centre" button at the top of an activity card.
+pub fn home_button(pill: Rect) -> Rect {
+    Rect::new(pill.x + 28.0, pill.y + 9.0, 132.0, 24.0)
+}
+
+/// A capsule button with a chevron and a label, as wide as its label.
+fn capsule(r: Rect, label: &str, icon: Icon, icon_first: bool, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let style = TextStyle { size: 12.5, weight: 600, opacity: o * 0.9, ..TextStyle::default() };
+    let label = engine.ellipsize(label, &style, r.w as f32 - 34.0);
+    let tw = engine.measure(&label, &style);
+    let (x, y, h) = (r.x as f32, r.y as f32, r.h as f32);
+    let w = tw + 34.0;
+    let (icon_x, text_x) = if icon_first { (x + 7.0, x + 24.0) } else { (x + w - 21.0, x + 11.0) };
+    vec![
+        Element::Bar { x, y, w, h, color: WHITE, opacity: o * 0.14 },
+        Element::Icon { icon, x: icon_x, y: y + h / 2.0 - 7.0, size: 14.0, color: WHITE, opacity: o * 0.9 },
+        text(label, style, text_x, y + h / 2.0 + 4.5),
+    ]
+}
+
+pub fn home_button_elements(pill: Rect, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    capsule(home_button(pill), "Control Centre", Icon::Back, true, o, engine)
+}
+
+/// On Control Centre opened from an activity: the button back to it
+/// ("Now Playing ›"), where the clock card has room above the time.
+pub fn return_button(pill: Rect) -> Rect {
+    Rect::new(pill.x + 24.0, pill.y + 8.0, 170.0, 22.0)
+}
+
+pub fn return_button_elements(pill: Rect, label: &str, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    capsule(return_button(pill), label, Icon::Forward, false, o, engine)
+}
+
+/// The card's area below its header.
+pub fn below_header(pill: Rect) -> Rect {
+    Rect::new(pill.x, pill.y + CARD_HEADER_H, pill.w, (pill.h - CARD_HEADER_H).max(0.0))
+}
+
+// ---- Lyrics ------------------------------------------------------------------
+
+/// The compact pill while lyrics show: wide enough for a line or so.
+pub const COMPACT_LYRICS_W: f64 = 340.0;
+/// Where the Now Playing card's controls end.
+const MEDIA_CONTENT_H: f64 = 152.0;
+/// Extra height of the Now Playing card for two lines of lyrics.
+pub const CARD_LYRICS_H: f64 = 46.0;
+/// Lines that aren't being sung stay readable, just dimmer.
+const LYRIC_DIM: f32 = 0.38;
+
+/// Compact Now Playing with lyrics: art, a strip of lines sliding through
+/// the pill with the one being sung highlighted, and the waveform.
+pub fn compact_lyrics(
+    pill: Rect,
+    m: &MediaInfo,
+    lyrics: &Lyrics,
+    t: f64,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
+    let (x, right) = (pill.x as f32, pill.right() as f32);
+    let cy = (pill.y + pill.h / 2.0) as f32;
+    let tint = m.art.as_ref().map_or(WHITE, |a| brighten(a.dominant));
+    let mut v =
+        vec![Element::Art { x: x + 6.0, y: cy - 12.5, size: 25.0, radius: 7.0, image: m.art.clone(), opacity: o }];
+    v.extend(waveform(right - 31.0, cy, 4, t, m.playing, tint, o));
+    let (left, end) = (x + 38.0, right - 40.0);
+    v.extend(lyric_strip(left, end, cy + 4.5, lyrics, m.position_now(t).unwrap_or(0.0), o, engine));
+    v
+}
+
+/// The lines of the strip that are in view between `left` and `end`.
+fn lyric_strip(
+    left: f32,
+    end: f32,
+    baseline: f32,
+    lyrics: &Lyrics,
+    pos: f64,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
+    let style = TextStyle { size: 13.5, weight: 600, ..TextStyle::default() };
+    let widths: Vec<f32> = (0..lyrics.lines.len()).map(|i| engine.measure(lyrics.text(i), &style)).collect();
+    let room = end - left;
+    let strip = lyrics::strip(lyrics, &widths, room, pos);
+    let starts = lyrics::starts(&widths);
+    let mut v = Vec::new();
+    for (i, (&s, &w)) in starts.iter().zip(&widths).enumerate() {
+        let lx = left + s - strip.scroll;
+        if lx > end || lx + w < left {
+            continue;
+        }
+        let lit = match strip.current {
+            Some(c) if c == i => strip.mix,
+            Some(c) if c == i + 1 => 1.0 - strip.mix,
+            _ => 0.0,
+        };
+        let style = TextStyle { opacity: o * (LYRIC_DIM + (1.0 - LYRIC_DIM) * lit), ..style };
+        let mut item = TextItem::new(lyrics.text(i), style, lx, baseline);
+        item.window = Some((left, end));
+        v.push(Element::Text(item));
+    }
+    v
+}
+
+/// Two lines under the Now Playing controls: the line being sung,
+/// highlighted, and the next one dimmed; they roll up as the song goes on.
+pub fn card_lyrics(pill: Rect, lyrics: &Lyrics, pos: f64, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    const ROW: f32 = 21.0;
+    // Centred, clear of the card's round bottom corners.
+    let (cx, w) = ((pill.x + pill.w / 2.0) as f32, pill.w as f32 - 4.0 * PAD as f32);
+    let top = pill.y as f32 + MEDIA_CONTENT_H as f32;
+    let style = TextStyle { size: 15.0, weight: 600, align: Align::Center, ..TextStyle::default() };
+    let (cur, mix) = match lyrics.current(pos) {
+        Some(i) => (i as f32, ((pos + lyrics::LEAD - lyrics.lines[i].at) / lyrics::SLIDE_SECS).clamp(0.0, 1.0) as f32),
+        None => (-1.0, 1.0),
+    };
+    let ease = 1.0 - (1.0 - mix).powi(3);
+    // Row 0 is the line being sung; it slides up from row 1 as it starts.
+    let scroll = cur - 1.0 + ease;
+    let mut v = Vec::new();
+    let first = (scroll.floor().max(0.0)) as usize;
+    for i in first..(first + 3).min(lyrics.lines.len()) {
+        let row = i as f32 - scroll; // 0 = top row, 1 = bottom row
+        if !(-0.99..=1.99).contains(&row) {
+            continue;
+        }
+        let lit = if i as f32 == cur {
+            ease
+        } else if i as f32 == cur - 1.0 {
+            1.0 - ease
+        } else {
+            0.0
+        };
+        // Rows fade out as they leave the two-row window.
+        let edge = (1.0 - (-row).max(row - 1.0).max(0.0)).clamp(0.0, 1.0);
+        let style = TextStyle { opacity: o * edge * (LYRIC_DIM + (1.0 - LYRIC_DIM) * lit), ..style };
+        let line = engine.ellipsize(lyrics.text(i), &style, w);
+        v.push(text(line, style, cx, top + 18.0 + row * ROW));
     }
     v
 }

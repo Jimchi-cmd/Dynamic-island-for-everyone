@@ -89,7 +89,13 @@ fn expanded_card_with_text_and_controls() {
     let title = TextStyle { size: 16.0, weight: 600, ..TextStyle::default() };
     let elements = vec![
         Element::Art { x: x + 20.0, y: y + 20.0, size: 56.0, radius: 12.0, image: None, opacity: 1.0 },
-        Element::Text(TextItem { text: "Golden Track".into(), style: title, x: x + 88.0, baseline: y + 44.0 }),
+        Element::Text(TextItem {
+            text: "Golden Track".into(),
+            style: title,
+            x: x + 88.0,
+            baseline: y + 44.0,
+            window: None,
+        }),
         Element::Bar { x: x + 20.0, y: y + 90.0, w: 332.0, h: 4.0, color: [255; 3], opacity: 0.2 },
         Element::Bar { x: x + 20.0, y: y + 90.0, w: 120.0, h: 4.0, color: [255; 3], opacity: 1.0 },
         Element::Icon {

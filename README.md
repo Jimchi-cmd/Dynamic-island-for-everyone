@@ -13,6 +13,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 
 - **The island itself:** iPhone-style continuous corners and spring motion. Hover to peek, click to expand, press and hold for more, scroll to switch between activities. Two activities split into a pill and a bubble joined by a liquid neck. On a notched MacBook it wraps the notch.
 - **Now Playing** from any app: artwork, a live waveform, progress you can drag, and play/pause/skip. Optionally, Spotify playback on your phone or speakers too.
+- **Synced lyrics** (opt-in): the lyrics slide through the island as the song plays, with the line being sung lit up and the ones around it dimmed. Two lines on the open card too. From [LRCLIB](https://lrclib.net), a free, open lyrics database.
 - **Battery pop-ups** when headphones, earbuds, mice, keyboards or controllers connect, plus low-battery alerts.
 - **Charging notification** when you plug in (and "Fully charged" at 100 %), like the iPhone's.
 - **Volume, brightness and caps-lock pop-ups**, like the iPhone's.
@@ -23,11 +24,12 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 - **Timer and focus sessions:** a countdown ring on the island, or Pomodoro rounds of work and breaks.
 - **Alarms:** one-time or repeating. When one rings, the island opens with a swinging bell and a chime until you snooze or stop it.
 - **Wi-Fi and Bluetooth:** open the island, tap Wi-Fi or Bluetooth on the clock card, and pick a network or a device, or switch the radio on or off.
+- **Control Centre from anywhere:** every open card (music, a timer, navigation…) has a "‹ Control Centre" button at the top that goes to the clock card with Wi-Fi, Bluetooth, the shelf and the system monitor, and lists have a back button.
 - **Camera and microphone dots:** a green dot while an app uses the camera, an orange one for the microphone (your screen reader hears which app).
 - **System monitor:** CPU, memory and disk on the clock card, read only while you look at it.
 - **Clipboard history** (opt-in): your last 20 copied texts, one tap to copy again. Kept in memory only; password-manager copies are skipped.
 - **Live activities** for your scripts and apps: `islet activity start build --title Build --progress 40` puts a progress ring on the island.
-- **Make it yours:** accent colour, island size, gap from the top, which display, and a global shortcut to open it.
+- **Make it yours:** accent colour, island size, gap from the top, which display, and a global shortcut to open it. Or hide the empty island until you point at it: anything live (music, timers, pop-ups) still shows.
 - **Navigation ETA** with live traffic, arrival time and the first turn, then one tap hands off to Google Maps or Waze. Destination suggestions as you type. Uses your own free-tier Google key ([setup](docs/navigation.md)).
 - **Settings** for all of the above, with a first-run welcome that explains every permission.
 
@@ -46,10 +48,11 @@ Islet isn't code-signed yet, so Windows SmartScreen and macOS Gatekeeper will wa
 ## Privacy
 
 - No accounts, no analytics, no telemetry.
-- Islet uses the network only for features you turn on: Spotify Connect (if you link it), your calendar link (every 15 minutes), weather (Open-Meteo, hourly, only the place you chose), the navigation ETA (straight to Google, with your key) and update checks (off by default).
+- Islet uses the network only for features you turn on: Spotify Connect (if you link it), your calendar link (every 15 minutes), weather (Open-Meteo, hourly, only the place you chose), lyrics (LRCLIB, once per song: its title, artist, album and length), the navigation ETA (straight to Google, with your key) and update checks (off by default).
 - Your Google key is kept in the OS keychain, never in a file. Route results are never stored.
 - Wi-Fi and Bluetooth lists load only when you open them.
 - Destination suggestions (Google Places, your key) are requested only while you type in Settings.
+- Lyrics are kept in memory for the session only.
 - Clipboard history is off until you turn it on, lives in memory only, and is forgotten when you turn it off or quit.
 
 ## Command line
@@ -70,6 +73,8 @@ islet activity end build
 islet hotkey Ctrl+Alt+I                             # a shortcut that opens and closes the island
 islet look accent green                             # also: look size large, look offset 12, look display HDMI-1
 islet set clipboard on                              # opt-in clipboard history
+islet set lyrics on                                 # synced lyrics from LRCLIB
+islet set auto-hide on                              # show the empty island only on hover
 ```
 
 ## Build from source

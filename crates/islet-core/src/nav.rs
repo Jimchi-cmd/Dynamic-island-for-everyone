@@ -194,7 +194,7 @@ pub fn refresh_interval(expanded: bool, remaining: Option<f64>) -> f64 {
     }
 }
 
-fn encode(s: &str) -> String {
+pub(crate) fn encode(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
         match b {

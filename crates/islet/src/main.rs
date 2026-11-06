@@ -142,6 +142,8 @@ fn run() -> platform::Result<()> {
     trace("control channel open");
     let mut nav_card_open = false;
     let mut sysmon_on = false;
+    // The song whose lyrics were last asked for (key, length known).
+    let mut lyrics_asked: Option<(String, bool)> = None;
     // Demos and perf runs leave the user's alarms alone.
     let scripted = demo != Demo::None || std::env::var_os("ISLET_DEMO").is_some();
     if !scripted {
@@ -225,6 +227,13 @@ fn run() -> platform::Result<()> {
                 m.position_at = sampled.saturating_duration_since(epoch).as_secs_f64();
             }
             needs_frame |= app.report(report, t);
+        }
+        // Lyrics (when on): ask once per song, again if its length turns up.
+        let wanted = app.lyrics_wanted();
+        let asked = wanted.as_ref().map(|t| (t.key(), t.duration.is_some()));
+        if asked != lyrics_asked {
+            lyrics_asked = asked;
+            providers.lyrics(wanted);
         }
         let source = app.media_source();
         for cmd in app.take_commands() {
