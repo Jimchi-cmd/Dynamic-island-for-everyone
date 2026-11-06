@@ -2,6 +2,8 @@ name: Release
 
 # Push a tag such as v0.1.0 to build every installer and open a DRAFT
 # release (publishing it is a manual step; see docs/publishing-checklist.md).
+# Or merge a new version into main: publish.yml calls this workflow with
+# that version's tag, and the release is created, tagged and published here.
 # Dry runs (same builds, uploaded as workflow artifacts, no release): run it
 # by hand, or push packaging changes to dev.
 on:
@@ -13,10 +15,20 @@ on:
       - scripts/**
       - src-tauri/tauri*.json
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      tag:
+        description: The release's tag, e.g. v0.1.0 (created on main's commit).
+        type: string
+        required: true
+      publish:
+        description: Publish straight away instead of opening a draft.
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.tag }}
 
 permissions:
   contents: read
@@ -49,6 +61,9 @@ jobs:
       # (docs/signing.md). Without one, the release still builds; Settings
       # then links to the release page instead of updating in place.
       HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && vars.ISLET_UPDATER_PUBKEY != '' }}
+      # The release's tag: pushed (refs/tags/v…) or handed over by publish.yml.
+      TAG: ${{ inputs.tag || github.ref_name }}
+      IS_RELEASE: ${{ inputs.tag != '' || startsWith(github.ref, 'refs/tags/v') }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
@@ -65,9 +80,9 @@ jobs:
       - run: npm ci
 
       - name: Version matches the tag
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.IS_RELEASE == 'true'
         shell: bash
-        run: bash scripts/check-version.sh "$GITHUB_REF_NAME"
+        run: bash scripts/check-version.sh "$TAG"
 
       - name: Updater configuration
         shell: bash
@@ -221,14 +236,15 @@ jobs:
           retention-days: 14
 
   release:
-    name: Draft release
+    name: Release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: inputs.tag != '' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
       HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && vars.ISLET_UPDATER_PUBKEY != '' }}
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
@@ -240,9 +256,9 @@ jobs:
       - name: Update manifest (latest.json)
         if: env.HAS_UPDATER_KEY == 'true'
         run: |
-          echo "See the release notes: https://github.com/${{ github.repository }}/releases/tag/${GITHUB_REF_NAME}" > notes.txt
-          python3 scripts/make-latest-json.py "$GITHUB_REF_NAME" assets \
-            "https://github.com/${{ github.repository }}/releases/download/${GITHUB_REF_NAME}" notes.txt
+          echo "See the release notes: https://github.com/${{ github.repository }}/releases/tag/${TAG}" > notes.txt
+          python3 scripts/make-latest-json.py "$TAG" assets \
+            "https://github.com/${{ github.repository }}/releases/download/${TAG}" notes.txt
 
       - name: Checksums
         working-directory: assets
@@ -250,11 +266,34 @@ jobs:
           sha256sum -- * > SHA256SUMS
           cat SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Release notes (from the CHANGELOG)
+        run: |
+          ver="${TAG#v}"
+          {
+            echo "**New to Islet?** Follow the [step-by-step manual](https://github.com/${{ github.repository }}/blob/main/docs/manual.md) to download, install and set it up."
+            echo
+            awk -v v="$ver" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md
+          } > release-notes.md
+          cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Create the draft release
+        if: ${{ !inputs.publish }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" assets/* \
+          gh release create "$TAG" assets/* \
             --repo "${{ github.repository }}" \
-            --draft --verify-tag --generate-notes \
-            --title "Islet ${GITHUB_REF_NAME#v}"
+            --draft --verify-tag --notes-file release-notes.md \
+            --title "Islet ${TAG#v}"
+
+      # From publish.yml: tag main's commit and publish. (The tag is made with
+      # this job's token, so it doesn't start the tag-push run again.)
+      - name: Tag and publish the release
+        if: ${{ inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" assets/* \
+            --repo "${{ github.repository }}" \
+            --target "$GITHUB_SHA" --latest --notes-file release-notes.md \
+            --title "Islet ${TAG#v}"

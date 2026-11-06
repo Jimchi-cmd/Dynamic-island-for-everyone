@@ -17,7 +17,7 @@ Run through this for every release. The first one is v0.1.0.
 3. [ ] Bump the version in `Cargo.toml` (`workspace.package.version`), `package.json` and `src-tauri/tauri.conf.json`. The tag must match all three, or the release fails.
 4. [ ] Move the `CHANGELOG.md` notes from "unreleased" to the version and date.
 5. [ ] Regenerate third-party licenses: `scripts/third-party-licenses.sh` (needs `cargo install cargo-about --features cli`).
-6. [ ] Merge to `main`, then tag and push:
+6. [ ] Merge to `main`. **That's enough to publish:** the **Publish** workflow sees a version with no tag yet, builds every installer, tags `main` `vX.Y.Z` and publishes the release with the CHANGELOG notes (skip to step 10). To review a draft first instead, tag and push before merging:
 
    ```bash
    git tag v0.1.0
