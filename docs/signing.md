@@ -44,7 +44,28 @@ The release workflow passes them to the Tauri bundler only when they're set. It 
 Choose one:
 
 - **MSIX package:** `scripts/msix.ps1` signs the `.msix` with the certificate in the `MSIX_PFX_BASE64` secret (a base64-encoded `.pfx`) and `MSIX_PFX_PASSWORD`; the package's Publisher becomes the certificate's subject. Without them, CI and releases sign it with a throwaway self-signed certificate (`CN=Islet Test`) and ship its public `.cer`, which testers trust once ([install guide](install.md#installing-the-msix)). The private key is created on the runner and never saved.
-- **[SignPath Foundation](https://signpath.org/)**: free code signing for open-source projects, after approval. Signing runs through their GitHub Action, as a step after "Build installers".
+- **[SignPath Foundation](https://signpath.org/)**: free code signing for open-source projects, after approval. **The release workflow is already wired for it**: once these are set, every release's `.msi` and setup `.exe` are sent to SignPath, come back signed, and (with update signing on) get fresh update signatures:
+
+  | Name | Kind | Value |
+  |---|---|---|
+  | `SIGNPATH_API_TOKEN` | Secret | a CI user's API token from SignPath |
+  | `SIGNPATH_ORGANIZATION_ID` | Variable | your SignPath organization id |
+  | `SIGNPATH_PROJECT_SLUG` | Variable (optional) | the project's slug (default `islet`) |
+  | `SIGNPATH_POLICY_SLUG` | Variable (optional) | the signing policy's slug (default `release-signing`) |
+
+  In SignPath, link the project to this GitHub repository (their "trusted build system" setup) and give it an artifact configuration for a zip holding the installers, for example:
+
+  ```xml
+  <?xml version="1.0" encoding="utf-8"?>
+  <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+    <zip-file>
+      <pe-file path="*-setup.exe"><authenticode-sign /></pe-file>
+      <msi-file path="*.msi"><authenticode-sign /></msi-file>
+    </zip-file>
+  </artifact-configuration>
+  ```
+
+  To apply: [signpath.org/apply](https://signpath.org/) with the repository link. They check that the project is open source and that releases are built by CI from the public code, which this repository does.
 - **[Azure Artifact Signing](https://azure.microsoft.com/products/artifact-signing)** (formerly Trusted Signing): a low monthly fee. Set `bundle.windows.signCommand` in `src-tauri/tauri.bundle.json` to its `signtool` invocation and add the Azure credentials as secrets.
 - A traditional OV or EV certificate from a certificate authority, used through `signCommand` in the same way.
 

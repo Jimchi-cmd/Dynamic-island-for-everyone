@@ -61,6 +61,9 @@ jobs:
       # (docs/signing.md). Without one, the release still builds; Settings
       # then links to the release page instead of updating in place.
       HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && vars.ISLET_UPDATER_PUBKEY != '' }}
+      # Windows code signing through SignPath, once the project is approved
+      # and its token and ids are set (docs/signing.md §3).
+      HAS_SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
       # The release's tag: pushed (refs/tags/v…) or handed over by publish.yml.
       TAG: ${{ inputs.tag || github.ref_name }}
       IS_RELEASE: ${{ inputs.tag != '' || startsWith(github.ref, 'refs/tags/v') }}
@@ -195,6 +198,39 @@ jobs:
               ;;
           esac
           ls -la out
+
+      # Windows code signing (SignPath Foundation, free for open source):
+      # the installers go up as an artifact, come back signed into out/,
+      # and their update signatures are made again over the signed files.
+      - name: Upload the Windows installers for signing
+        id: unsigned
+        if: matrix.name == 'windows' && env.HAS_SIGNPATH == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-windows
+          path: |
+            out/*.msi
+            out/*-setup.exe
+          retention-days: 1
+      - name: Sign the Windows installers (SignPath)
+        if: matrix.name == 'windows' && env.HAS_SIGNPATH == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'islet' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: out
+      - name: Update signatures over the signed installers
+        if: matrix.name == 'windows' && env.HAS_SIGNPATH == 'true' && env.HAS_UPDATER_KEY == 'true'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for f in out/*.msi out/*-setup.exe; do
+            npx tauri signer sign "$f"
+          done
 
       - name: MSIX package (Windows)
         if: matrix.name == 'windows'
