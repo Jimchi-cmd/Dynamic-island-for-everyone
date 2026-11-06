@@ -142,6 +142,7 @@ fn run() -> platform::Result<()> {
     trace("control channel open");
     let mut nav_card_open = false;
     let mut sysmon_on = false;
+    let mut call_on = false;
     // The song whose lyrics were last asked for (key, length known).
     let mut lyrics_asked: Option<(String, bool)> = None;
     // Demos and perf runs leave the user's alarms alone.
@@ -237,6 +238,16 @@ fn run() -> platform::Result<()> {
         }
         if let Some(level) = app.take_volume() {
             providers.set_volume(level);
+        }
+        // A call started: read the microphone's mute switch for its card.
+        if app.call_active() != call_on {
+            call_on = !call_on;
+            if call_on {
+                providers.mic(islet_core::activity::MicCommand::Query);
+            }
+        }
+        for cmd in app.take_mic_commands() {
+            providers.mic(cmd);
         }
         let source = app.media_source();
         for cmd in app.take_commands() {

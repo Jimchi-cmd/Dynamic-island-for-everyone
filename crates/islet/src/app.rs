@@ -4,7 +4,7 @@
 
 use crate::content::{self, AlarmControl, ConnHit, Control, NavControl, Panel, TimerControl, TIMER_ALARM_ID};
 use crate::platform::{Button, Event, Key};
-use islet_core::activity::{Activities, Hud, Live, MediaCommand, MediaInfo, NavInfo, Report};
+use islet_core::activity::{Activities, Call, Hud, Live, MediaCommand, MediaInfo, MicCommand, NavInfo, Report};
 use islet_core::alarm::{Alarm, AlarmClock, AlarmEvent};
 use islet_core::clock::{secs_to_next_minute, LocalTime};
 use islet_core::connectivity::{BtState, ConnCommand, ConnUpdate, Radio, WifiState};
@@ -155,6 +155,7 @@ const LYRICS_STEP: f64 = 0.5;
 enum OpenContent<'a> {
     /// The right-click menu.
     Menu,
+    Call(Call),
     Agenda,
     Custom(&'a islet_core::activity::Custom),
     Notes,
@@ -274,6 +275,11 @@ pub struct App {
     volume: Option<(f32, bool)>,
     volume_out: Option<f32>,
     volume_set_at: f64,
+    /// Microphone requests (mute, read), and the call's second shown.
+    mic_commands: Vec<MicCommand>,
+    call_sec: i64,
+    /// The call card's mute button is being pressed.
+    call_press: bool,
 }
 
 impl App {
@@ -347,6 +353,9 @@ impl App {
             volume: None,
             volume_out: None,
             volume_set_at: f64::NEG_INFINITY,
+            mic_commands: Vec::new(),
+            call_sec: -1,
+            call_press: false,
         };
         app.anim_region = app.target_bounds();
         app
@@ -810,6 +819,33 @@ impl App {
         true
     }
 
+    /// Is (x, y) on the call card's mute button?
+    fn call_mute_at(&self, x: f64, y: f64, t: f64) -> bool {
+        self.island.presentation().is_open()
+            && matches!(self.open_content(&self.live(t)), OpenContent::Call(_))
+            && content::call_mute_button(self.card_rect(t)).contains(x, y)
+    }
+
+    /// Mute or unmute the microphone: shown at once, applied by the OS.
+    fn toggle_mic(&mut self, t: f64) -> bool {
+        let Some(c) = self.activities.call() else { return false };
+        let muted = !c.muted.unwrap_or(false);
+        self.mic_commands.push(MicCommand::Set(muted));
+        self.activities.report(Report::MicMuted(muted), t);
+        true
+    }
+
+    /// Microphone requests for the main loop: read the mute switch when a
+    /// call starts, set it from the mute button.
+    pub fn take_mic_commands(&mut self) -> Vec<MicCommand> {
+        std::mem::take(&mut self.mic_commands)
+    }
+
+    /// Whether a call (the microphone in use) is going on.
+    pub fn call_active(&self) -> bool {
+        self.prefs.calls && self.activities.call().is_some()
+    }
+
     /// The volume slider dragged to x: show it at once and ask for it.
     fn volume_from(&mut self, x: f64, t: f64) -> bool {
         let level = content::volume_fraction(self.card_rect(t), x);
@@ -986,6 +1022,12 @@ impl App {
                 _ => "Islet".to_string(),
             },
             Some(Live::Alarm(a)) => format!("Alarm ringing: {}", a.title()),
+            Some(Live::Call(c)) => format!(
+                "On a call{}, {}{}",
+                if c.app.is_empty() { String::new() } else { format!(" in {}", c.app) },
+                content::format_duration(t - c.since),
+                if c.muted == Some(true) { ", microphone muted" } else { "" }
+            ),
             Some(Live::Hud(Hud::Volume { muted: true, .. })) => "Volume muted".to_string(),
             Some(Live::Hud(Hud::Volume { level, .. })) => format!("Volume {}%", pct(*level)),
             Some(Live::Hud(Hud::Brightness(b))) => format!("Brightness {}%", pct(*b)),
@@ -1042,6 +1084,10 @@ impl App {
                 buttons.push((format!("Back to {}", self.activity_label(&live)), content::return_button(outer)));
             }
             match shown {
+                OpenContent::Call(c) => {
+                    let name = if c.muted == Some(true) { "Unmute microphone" } else { "Mute microphone" };
+                    buttons.push((name.into(), content::call_mute_button(cr)));
+                }
                 OpenContent::Menu => {
                     let items = self.menu_items(t);
                     for (item, r) in items.iter().zip(content::menu_rows(cr, items.len())) {
@@ -1287,6 +1333,7 @@ impl App {
             OpenContent::Agenda => "Calendar".into(),
             OpenContent::Battery => "Battery".into(),
             OpenContent::Custom(c) => c.title.clone(),
+            OpenContent::Call(_) => "Call".into(),
             _ => "Back".into(),
         }
     }
@@ -1409,6 +1456,9 @@ impl App {
 
     fn live(&self, t: f64) -> Vec<Live> {
         let mut v = self.activities.live(t);
+        if !self.prefs.calls {
+            v.retain(|l| !matches!(l, Live::Call(_)));
+        }
         // Pop-ups paused from the menu: brief notices wait, lasting things stay.
         if self.quiet_until.is_some_and(|q| t < q) {
             v.retain(|l| !matches!(l, Live::Hud(_) | Live::Battery { .. } | Live::Note(_) | Live::Event { .. }));
@@ -1465,6 +1515,8 @@ impl App {
             OpenContent::Agenda
         } else if let (Some(Live::Custom(_)), Some(c)) = (live.first(), self.activities.custom().first()) {
             OpenContent::Custom(c)
+        } else if let Some(Live::Call(c)) = live.first() {
+            OpenContent::Call(c.clone())
         } else if let (Some(Live::Timer(_)), Some(tm)) = (live.first(), self.activities.timer()) {
             OpenContent::Timer(tm)
         } else if matches!(live.first(), Some(Live::Battery { .. })) {
@@ -1542,8 +1594,11 @@ impl App {
     }
 
     /// The camera / microphone dot is on (in use, and not switched off).
+    /// A call filling the pill already shows the microphone, in orange.
     fn privacy_shown(&self) -> bool {
-        self.prefs.privacy_dots && self.activities.privacy().active()
+        let call_in_pill =
+            self.prefs.calls && self.activities.privacy().camera.is_none() && self.activities.call().is_some();
+        self.prefs.privacy_dots && self.activities.privacy().active() && !call_in_pill
     }
 
     /// Green for the camera (it takes precedence), orange for the microphone.
@@ -1572,6 +1627,7 @@ impl App {
             };
             match open {
                 OpenContent::Menu => out.extend(content::expanded_menu(cr, &self.menu_items(t), eo, engine)),
+                OpenContent::Call(c) => out.extend(content::expanded_call(card, &c, t, eo, engine)),
                 OpenContent::Alarm(a) => out.extend(content::expanded_alarm(cr, a, self.h24, t, eo, engine)),
                 OpenContent::Timer(tm) => out.extend(content::expanded_timer(card, tm, t, eo, engine)),
                 OpenContent::Agenda => out.extend(content::expanded_agenda(card, &self.agenda(), eo, engine)),
@@ -1719,6 +1775,7 @@ impl App {
                 let h = header
                     + match open {
                         OpenContent::Menu => content::menu_height(self.menu_items(t).len()),
+                        OpenContent::Call(_) => content::CALL_H,
                         OpenContent::Alarm(_) => content::ALARM_H,
                         OpenContent::Timer(_) => content::TIMER_H,
                         OpenContent::Agenda => content::agenda_height(self.agenda().len()),
@@ -1883,6 +1940,10 @@ impl App {
                     self.timer_control = Some(c);
                     return true;
                 }
+                if self.call_mute_at(x, y, t) {
+                    self.call_press = true;
+                    return true;
+                }
                 if let Some(h) = self.conn_hit_at(x, y, t) {
                     self.conn_hit = Some(h);
                     return true;
@@ -1913,6 +1974,12 @@ impl App {
                 }
             }
             Event::PointerUp { x, y, button: Button::Primary } => {
+                if std::mem::take(&mut self.call_press) {
+                    if self.call_mute_at(x, y, t) {
+                        return self.toggle_mic(t);
+                    }
+                    return true;
+                }
                 if let Some(c) = self.timer_control.take() {
                     if self.timer_control_at(x, y, t) != Some(c) {
                         return true;
@@ -2014,6 +2081,15 @@ impl App {
         }
         changed |= self.sync_live(t);
         changed |= self.update_shown(t);
+        // A call on screen shows its length: redraw as each second passes.
+        let sec = match self.live(t).iter().find_map(|l| if let Live::Call(c) = l { Some(c.since) } else { None }) {
+            Some(since) if self.shown.value(t) > 0.01 => (t - since).floor() as i64,
+            _ => -1,
+        };
+        if sec != self.call_sec {
+            self.call_sec = sec;
+            changed = true;
+        }
         if std::mem::take(&mut self.pending_peek) && !self.island.presentation().is_open() {
             // A focus phase changed: open briefly, then close by itself.
             changed |= self.signal(Signal::Click, t);
@@ -2110,6 +2186,13 @@ impl App {
         // The clock wakes the island once a minute, and only while it is shown.
         if let Some(now) = self.clock.filter(|_| self.clock_shown(t)) {
             at(t + secs_to_next_minute(&now));
+        }
+        // A call on screen ticks each second.
+        if let Some(since) = self.live(t).iter().find_map(|l| if let Live::Call(c) = l { Some(c.since) } else { None })
+        {
+            if self.shown.value(t) > 0.01 {
+                at(since + (t - since).floor() + 1.0);
+            }
         }
         // A running timer redraws as each second passes (and ends on time).
         if let Some(tm) = self.timer.as_ref().filter(|tm| tm.running()) {
@@ -2495,6 +2578,44 @@ mod tests {
         assert!(app.live(t + 5.1).iter().any(|l| matches!(l, Live::Hud(_))));
     }
 
+    fn zoom_call() -> Report {
+        Report::Privacy(islet_core::activity::Privacy { camera: None, mic: Some(vec!["Zoom".into()]) })
+    }
+
+    #[test]
+    fn a_call_shows_its_length_and_mutes_the_microphone() {
+        let mut engine = TextEngine::new();
+        let mut app = App::new(Demo::None, false);
+        app.report(zoom_call(), 0.0);
+        app.tick(0.0);
+        assert!(app.call_active());
+        assert_eq!(app.presentation(), Idle, "not for the first moment");
+        app.tick(islet_core::activity::CALL_AFTER);
+        assert_eq!(app.presentation(), Compact);
+        let shown = texts(&app, 65.0, &mut engine);
+        assert!(shown.iter().any(|s| s == "Zoom") && shown.iter().any(|s| s == "1:05"), "{shown:?}");
+        let wake = app.next_timer(65.2).unwrap();
+        assert!((wake - 0.8).abs() < 1e-6, "ticks on the second: {wake}");
+
+        // Open it and mute.
+        click(&mut app, 70.0);
+        let t = 74.0;
+        let r = content::call_mute_button(app.card_rect(t));
+        press(&mut app, r, t);
+        assert_eq!(app.take_mic_commands(), [MicCommand::Set(true)]);
+        assert!(app.accessibility(t + 1.0).buttons.iter().any(|(n, _)| n == "Unmute microphone"));
+        assert!(texts(&app, t + 1.0, &mut engine).iter().any(|s| s.starts_with("Muted")));
+        // The microphone goes off: the call ends.
+        app.report(Report::Privacy(Default::default()), 80.0);
+        assert!(!app.call_active());
+        // Switched off in Settings: no call activity.
+        let mut off = App::new(Demo::None, false);
+        off.set_prefs(IslandPrefs { calls: false, ..IslandPrefs::default() });
+        off.report(zoom_call(), 0.0);
+        off.tick(10.0);
+        assert_eq!(off.presentation(), Idle);
+    }
+
     fn right_click(app: &mut App, t: f64) {
         let (x, y) = centre(app, t);
         app.handle(Event::PointerDown { x, y, button: Button::Secondary }, t);
@@ -2641,7 +2762,16 @@ mod tests {
         let mut menu = base();
         let (mx, my) = centre(&menu, 1.0);
         menu.handle(Event::PointerDown { x: mx, y: my, button: Button::Secondary }, 1.0);
+        let mut call = App::new(Demo::None, false);
+        call.report(zoom_call(), 0.0);
+        call.tick(4.0);
+        let mut call_card = App::new(Demo::None, false);
+        call_card.report(zoom_call(), 0.0);
+        call_card.tick(4.0);
+        click(&mut call_card, 5.0);
         let shots: Vec<(&App, f64, u32)> = vec![
+            (&call, 754.0, 46),
+            (&call_card, 754.0, 150),
             (&menu, 6.0, 250),
             (&idle, 1.0, 46),
             (&idle12, 1.0, 46),
@@ -2684,6 +2814,8 @@ mod tests {
             })
         };
         let mut app = App::new(Demo::None, false);
+        // The dots on their own (with calls on, a call shows the microphone).
+        app.set_prefs(IslandPrefs { calls: false, idle_clock: false, ..IslandPrefs::default() });
         assert!(!app.has_content(0.0));
         let mic = Privacy { camera: None, mic: Some(vec!["Zoom".into()]) };
         assert!(app.report(Report::Privacy(mic), 0.0));

@@ -61,6 +61,8 @@ pub enum Icon {
     Forward,
     /// Two switches, one on and one off (Control Centre).
     Controls,
+    /// A microphone; struck through when muted.
+    Mic(bool),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -314,6 +316,18 @@ impl IconPainter<'_> {
                 pb.line_to(tip, 12.0);
                 pb.line_to(tail, 18.5);
                 self.stroke(pb.finish(), 2.6);
+            }
+            Icon::Mic(muted) => {
+                // A rounded capsule on a stand.
+                self.fill(rounded_rect(9.0, 3.0, 6.0, 11.5, 3.0));
+                let mut pb = PathBuilder::new();
+                arc(&mut pb, 12.0, 10.5, 6.0, 0.0, std::f32::consts::PI, true);
+                self.stroke(pb.finish(), 1.8);
+                self.line((12.0, 16.5), (12.0, 20.0), 1.8);
+                self.line((8.5, 20.5), (15.5, 20.5), 1.8);
+                if muted {
+                    self.line((4.5, 3.5), (19.5, 20.5), 2.0);
+                }
             }
             Icon::Controls => {
                 // Two toggle tracks: the top one on (knob right), the bottom off.
@@ -694,7 +708,9 @@ mod tests {
         p.pixels().iter().filter(|c| c.alpha() > 0).count()
     }
 
-    const ALL: [Icon; 46] = [
+    const ALL: [Icon; 48] = [
+        Icon::Mic(false),
+        Icon::Mic(true),
         Icon::Back,
         Icon::Forward,
         Icon::Controls,

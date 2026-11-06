@@ -783,6 +783,21 @@
           </div>
           <p class="muted small">A green dot while an app uses the camera, an orange one for the microphone.</p>
           <div class="net">
+            <span class="name">Calls (when an app uses the microphone)</span>
+            <input
+              type="checkbox"
+              class="switch"
+              aria-label="Show calls when an app uses the microphone"
+              checked={islandPrefs?.calls ?? true}
+              disabled={!islandPrefs}
+              onchange={(e) => setSwitch('calls', e.currentTarget.checked)}
+            />
+          </div>
+          <p class="muted small">
+            While Zoom, Teams, a browser call or any app has the microphone, the island shows how long the call has
+            been going and a button that mutes your microphone.
+          </p>
+          <div class="net">
             <span class="name">Clipboard history</span>
             <input
               type="checkbox"

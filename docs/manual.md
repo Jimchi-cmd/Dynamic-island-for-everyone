@@ -229,6 +229,8 @@ These appear for a moment by themselves:
 
 ---
 
+**Calls:** when Zoom, Teams, a browser call (Google Meet, for example) or any other app uses your microphone for more than a few seconds, the island shows a microphone, the app's name and how long the call has been going. Open the island and tap the big microphone button to **mute** your microphone (it turns red); tap again to unmute. It disappears when the call ends. Don't want it? Turn off **Settings → General → Privacy → Calls**. (On a Mac the island can't tell which app it is, so it says "Microphone on".)
+
 ## 8. Timer, focus sessions and alarms
 
 **Timer** (Settings → **Timer & focus**)

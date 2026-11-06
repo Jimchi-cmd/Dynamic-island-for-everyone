@@ -1,7 +1,9 @@
 //! What is drawn inside the island for each activity and presentation
 //! (docs/design-spec.md §3). Pure layout: rects in, display list out.
 
-use islet_core::activity::{BatteryDevice, Custom, DeviceKind, Hud, Live, MediaInfo, NavInfo, Note, Part, PeekReason};
+use islet_core::activity::{
+    BatteryDevice, Call, Custom, DeviceKind, Hud, Live, MediaInfo, NavInfo, Note, Part, PeekReason,
+};
 use islet_core::alarm::{self, Alarm};
 use islet_core::clock::{format_date, format_time, LocalTime};
 use islet_core::connectivity::{self, BtState, Connectivity, WifiState};
@@ -396,9 +398,13 @@ pub const COMPACT_BATTERY_W: f64 = 300.0;
 
 pub fn compact_width(live: &Live) -> f64 {
     match live {
-        Live::Media(_) | Live::Navigation(_) | Live::Alarm(_) | Live::Timer(_) | Live::Hud(_) | Live::Event { .. } => {
-            COMPACT_MEDIA_W
-        }
+        Live::Media(_)
+        | Live::Navigation(_)
+        | Live::Alarm(_)
+        | Live::Timer(_)
+        | Live::Hud(_)
+        | Live::Event { .. }
+        | Live::Call(_) => COMPACT_MEDIA_W,
         Live::Note(_) => COMPACT_BATTERY_W,
         Live::Custom(_) => COMPACT_BATTERY_W,
         Live::Battery { .. } => COMPACT_BATTERY_W,
@@ -561,6 +567,19 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
             }];
             v.extend(waveform(right - 31.0, cy, 4, t, m.playing, tint, o));
             v
+        }
+        Live::Call(c) => {
+            let muted = c.muted == Some(true);
+            let color = if muted { RED } else { ORANGE };
+            let style = TextStyle { size: 13.5, weight: 600, opacity: o, ..TextStyle::default() };
+            let time = TextStyle { size: 13.5, weight: 600, opacity: o, color, tabular: true, align: Align::Right };
+            let elapsed = format_duration(t - c.since);
+            let room = (right - x) - 38.0 - engine.measure(&elapsed, &time) - 22.0;
+            vec![
+                Element::Icon { icon: Icon::Mic(muted), x: x + 10.0, y: cy - 10.0, size: 20.0, color, opacity: o },
+                text(engine.ellipsize(call_title(c), &style, room), style, x + 36.0, cy + 4.5),
+                text(elapsed, time, right - 14.0, cy + 4.5),
+            ]
         }
         Live::Navigation(n) => {
             vec![
@@ -760,6 +779,14 @@ pub fn minimal(
                 image: m.art.clone(),
                 opacity: o,
             }),
+            Live::Call(c) => v.push(Element::Icon {
+                icon: Icon::Mic(c.muted == Some(true)),
+                x: b.x - 9.0,
+                y: b.y - 9.0,
+                size: 18.0,
+                color: if c.muted == Some(true) { RED } else { ORANGE },
+                opacity: o,
+            }),
         }
     }
     v
@@ -767,6 +794,11 @@ pub fn minimal(
 
 fn leading(live: &Live, x: f32, cy: f32, o: f32, h24: bool) -> Vec<Element> {
     match live {
+        Live::Call(c) => {
+            let muted = c.muted == Some(true);
+            let color = if muted { RED } else { ORANGE };
+            vec![Element::Icon { icon: Icon::Mic(muted), x: x + 3.0, y: cy - 10.0, size: 20.0, color, opacity: o }]
+        }
         Live::Custom(c) => vec![Element::Ring {
             cx: x + 12.0,
             cy,
@@ -1790,6 +1822,65 @@ pub fn expanded_menu(pill: Rect, items: &[MenuItem], o: f32, engine: &mut TextEn
             v.push(text(d.clone(), detail, right, cy + 4.5));
         }
     }
+    v
+}
+
+// ---- Calls ---------------------------------------------------------------------
+
+/// Height of the call card (below its header).
+pub const CALL_H: f64 = 100.0;
+
+/// What a call is called on the island.
+pub fn call_title(c: &Call) -> &str {
+    if c.app.is_empty() {
+        "Microphone on"
+    } else {
+        &c.app
+    }
+}
+
+/// The round mute button on the call card.
+pub fn call_mute_button(pill: Rect) -> Rect {
+    Rect::new(pill.x + PAD, pill.y + 18.0, 58.0, 58.0)
+}
+
+pub fn expanded_call(pill: Rect, c: &Call, t: f64, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let muted = c.muted == Some(true);
+    let b = call_mute_button(pill);
+    let (bx, by, bs) = (b.x as f32, b.y as f32, b.w as f32);
+    let mut v = vec![
+        Element::Bar {
+            x: bx,
+            y: by,
+            w: bs,
+            h: bs,
+            color: if muted { RED } else { WHITE },
+            opacity: o * if muted { 1.0 } else { 0.16 },
+        },
+        Element::Icon {
+            icon: Icon::Mic(muted),
+            x: bx + bs / 2.0 - 13.0,
+            y: by + bs / 2.0 - 13.0,
+            size: 26.0,
+            color: WHITE,
+            opacity: o,
+        },
+    ];
+    let (x, right) = (bx + bs + 16.0, (pill.right() - PAD) as f32);
+    let elapsed = format_duration(t - c.since);
+    let time =
+        TextStyle { size: 22.0, weight: 600, opacity: o, tabular: true, align: Align::Right, ..TextStyle::default() };
+    let tw = engine.measure(&elapsed, &time);
+    v.push(text(elapsed, time, right, by + 30.0));
+    let title = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
+    v.push(text(engine.ellipsize(call_title(c), &title, right - x - tw - 12.0), title, x, by + 26.0));
+    let status = match c.muted {
+        Some(true) => "Muted · tap the microphone to unmute",
+        Some(false) => "On a call · tap the microphone to mute",
+        None => "On a call",
+    };
+    let small = TextStyle { size: 13.0, opacity: o * 0.65, ..TextStyle::default() };
+    v.push(text(engine.ellipsize(status, &small, right - x), small, x, by + 48.0));
     v
 }
 
