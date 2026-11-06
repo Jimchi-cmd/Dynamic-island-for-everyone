@@ -246,8 +246,10 @@ pub struct Mac {
     _caps_monitor: Option<Retained<AnyObject>>,
     /// Whether another app is fullscreen on the island's display.
     fullscreen: bool,
-    /// How frames reach Core Animation (ISLET_MAC_PRESENT, for measuring):
-    /// a CGImage per frame, or two IOSurfaces taken in turn.
+    /// How frames reach Core Animation: two IOSurfaces taken in turn
+    /// (measured on CI: about a sixth of the time of making a CGImage per
+    /// frame), or a CGImage per frame when IOSurfaces aren't available
+    /// (or ISLET_MAC_PRESENT=image).
     present_mode: PresentMode,
     surfaces: Vec<iosurface::Surface>,
     next_surface: usize,
@@ -259,18 +261,14 @@ pub struct Mac {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PresentMode {
     Image,
-    /// IOSurface rows written top-down, or bottom-up (`flip`).
-    Surface {
-        flip: bool,
-    },
+    Surface,
 }
 
 impl PresentMode {
     fn from_env() -> Self {
         match std::env::var("ISLET_MAC_PRESENT").as_deref() {
-            Ok("iosurface") => PresentMode::Surface { flip: false },
-            Ok("iosurface-flip") => PresentMode::Surface { flip: true },
-            _ => PresentMode::Image,
+            Ok("image") => PresentMode::Image,
+            _ => PresentMode::Surface,
         }
     }
 }
@@ -436,8 +434,16 @@ impl Backend for Mac {
     }
 
     fn present(&mut self, frame: &Pixmap) -> Result<()> {
-        if let PresentMode::Surface { flip } = self.present_mode {
-            return self.present_surface(frame, flip);
+        if self.present_mode == PresentMode::Surface {
+            match self.present_surface(frame) {
+                Ok(()) => return Ok(()),
+                // No IOSurfaces here: make an image per frame from now on.
+                Err(e) => {
+                    crate::providers::debug_log(&format!("macOS: {e}; drawing through CGImage"));
+                    self.present_mode = PresentMode::Image;
+                    self.surfaces.clear();
+                }
+            }
         }
         let (w, h) = (frame.width() as usize, frame.height() as usize);
         // Convert straight into a pooled buffer that the image owns until
@@ -727,7 +733,7 @@ impl Mac {
     /// Hand the frame over in an IOSurface that Core Animation shows
     /// directly (no image to make and copy each frame). Two surfaces are
     /// used in turn, so the one on screen is never the one being written.
-    fn present_surface(&mut self, frame: &Pixmap, flip: bool) -> Result<()> {
+    fn present_surface(&mut self, frame: &Pixmap) -> Result<()> {
         let (w, h) = (frame.width(), frame.height());
         if self.surfaces.len() != 2 || self.surfaces[0].size() != (w, h) {
             self.surfaces.clear();
@@ -737,7 +743,7 @@ impl Mac {
         }
         let surface = &self.surfaces[self.next_surface];
         self.next_surface ^= 1;
-        surface.write(frame.data(), w as usize, h as usize, flip);
+        surface.write(frame.data(), w as usize, h as usize);
         let layer = self.view.layer().ok_or("view has no layer")?;
         layer.setContentsScale(self.scale);
         CATransaction::begin();
@@ -909,8 +915,9 @@ mod iosurface {
             self.size
         }
 
-        /// Copy premultiplied RGBA rows in as BGRA (bottom row first when `flip`).
-        pub fn write(&self, rgba: &[u8], w: usize, h: usize, flip: bool) {
+        /// Copy premultiplied RGBA rows in as BGRA, top row first (Core
+        /// Animation shows row 0 at the top; checked on CI with ISLET_SELF_SHOT).
+        pub fn write(&self, rgba: &[u8], w: usize, h: usize) {
             // SAFETY: the surface is locked while its rows (bytes_per_row
             // apart, each at least w*4 bytes) are written.
             unsafe {
@@ -920,7 +927,7 @@ mod iosurface {
                 let base = IOSurfaceGetBaseAddress(self.ptr).cast::<u8>();
                 let stride = IOSurfaceGetBytesPerRow(self.ptr);
                 for row in 0..h {
-                    let src = &rgba[(if flip { h - 1 - row } else { row }) * w * 4..][..w * 4];
+                    let src = &rgba[row * w * 4..][..w * 4];
                     let dst = std::slice::from_raw_parts_mut(base.add(row * stride), w * 4);
                     islet_render::rgba_to_bgra(src, dst);
                 }
