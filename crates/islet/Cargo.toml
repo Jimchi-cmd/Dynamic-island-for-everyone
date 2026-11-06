@@ -9,7 +9,7 @@ publish = false
 
 [dependencies]
 accesskit = "0.25"
-getrandom = "0.3"
+getrandom = "0.4"
 islet-core = { path = "../islet-core" }
 islet-render = { path = "../islet-render" }
 serde_json = "1"
