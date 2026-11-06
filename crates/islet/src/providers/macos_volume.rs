@@ -26,6 +26,14 @@ extern "C" {
         size: *mut u32,
         data: *mut c_void,
     ) -> i32;
+    pub(super) fn AudioObjectSetPropertyData(
+        object: u32,
+        address: *const Address,
+        qualifier_size: u32,
+        qualifier: *const c_void,
+        size: u32,
+        data: *const c_void,
+    ) -> i32;
     pub(super) fn AudioObjectAddPropertyListener(
         object: u32,
         address: *const Address,
@@ -108,12 +116,30 @@ unsafe extern "C" fn changed(object: u32, _count: u32, _addresses: *const Addres
     0
 }
 
+/// Set the default output's volume (the Now Playing card's slider).
+pub fn set(level: f32) {
+    let Some(device) = get::<u32>(SYSTEM, DEFAULT_OUTPUT, GLOBAL) else { return };
+    let address = Address { selector: MAIN_VOLUME, scope: OUTPUT, element: 0 };
+    // SAFETY: a valid device and an f32 for this property.
+    unsafe {
+        AudioObjectSetPropertyData(
+            device,
+            &address,
+            0,
+            std::ptr::null(),
+            std::mem::size_of::<f32>() as u32,
+            (&level as *const f32).cast(),
+        )
+    };
+}
+
 pub fn start(sink: Sink) {
     let Some(device) = get::<u32>(SYSTEM, DEFAULT_OUTPUT, GLOBAL) else {
         debug_log("volume pop-ups unavailable (no default output device)");
         return;
     };
     let start = read(device).unwrap_or((0.0, false));
+    sink.send(Report::Volume(start.0, start.1));
     let ctx: &'static Ctx = Box::leak(Box::new(Ctx { sink, last: Mutex::new(start), watched: Mutex::new(Vec::new()) }));
     watch(ctx, device);
     let address = Address { selector: DEFAULT_OUTPUT, scope: GLOBAL, element: 0 };

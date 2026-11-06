@@ -26,6 +26,8 @@ The first public release.
 - **Alarms**: one-time or repeating. When one rings, the island opens with a swinging bell and plays an original chime until you snooze or stop it.
 - **Wi-Fi and Bluetooth** pickers from the clock card: join networks and connect paired devices.
 - **Spotify on your other devices** (optional): playback on your phone or a speaker shows on the island, with controls, using your own Spotify app.
+- **Volume slider** on the Now Playing card (the computer's output volume; no pop-up for its own changes).
+- **Your own .lrc lyric files** are used first: beside the song file (Linux players say which file), or in the `lyrics` folder of Islet's settings folder, before asking LRCLIB.
 - **Synced lyrics** (opt-in, from LRCLIB): the lyrics slide through the compact island as the song plays, with the line being sung highlighted and its neighbours dimmed, and two rolling lines on the Now Playing card.
 - **Hide Now Playing** for chosen apps; opt-in **web artwork** on Linux.
 - **File shelf:** drag files onto the island to keep shortcuts to them; tap to open.

@@ -116,6 +116,7 @@ pub fn parse_record(line: &str, art: &mut ArtCache) -> MediaInfo {
         duration: num("duration").filter(|d| *d > 0.0),
         rate: if rate > 0.0 { rate } else { 1.0 },
         art: art.resolve(get("art_id"), get("art")),
+        file: None,
         caps: MediaCaps { play_pause: true, next: true, previous: true, seek: true },
     }
 }

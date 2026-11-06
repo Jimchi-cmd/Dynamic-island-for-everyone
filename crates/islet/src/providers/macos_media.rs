@@ -70,6 +70,7 @@ pub fn parse(app: App, info: &NSDictionary) -> Option<MediaInfo> {
         duration: duration_ms.map(|ms| ms / 1000.0).filter(|d| *d > 0.0),
         rate: 1.0,
         art: None,
+        file: None,
         caps: MediaCaps { play_pause: true, next: true, previous: true, seek: true },
     })
 }

@@ -387,6 +387,8 @@ pub enum Control {
     PlayPause,
     Next,
     Scrub,
+    /// The output volume slider.
+    Volume,
 }
 
 pub const COMPACT_MEDIA_W: f64 = 236.0;
@@ -825,17 +827,43 @@ fn leading(live: &Live, x: f32, cy: f32, o: f32, h24: bool) -> Vec<Element> {
 
 const PAD: f64 = 20.0;
 
+/// Centre of the transport buttons: the card's middle, or left of it when
+/// the volume slider shares the row.
+fn transport_x(pill: Rect, volume: bool) -> f64 {
+    if volume {
+        pill.x + 112.0
+    } else {
+        pill.x + pill.w / 2.0
+    }
+}
+
+/// The volume slider's track (left of it, a speaker icon).
+fn volume_track(pill: Rect) -> (f64, f64) {
+    (pill.x + 236.0, pill.right() - PAD - 6.0)
+}
+
 /// Hit areas of the expanded media card, relative to the pill.
-pub fn media_controls(pill: Rect) -> [(Rect, Control); 4] {
-    let cx = pill.x + pill.w / 2.0;
+pub fn media_controls(pill: Rect, volume: bool) -> Vec<(Rect, Control)> {
+    let cx = transport_x(pill, volume);
     let cy = pill.y + 136.0;
     let button = |dx: f64| Rect::new(cx + dx - 22.0, cy - 22.0, 44.0, 44.0);
-    [
+    let mut v = vec![
         (button(-64.0), Control::Previous),
         (button(0.0), Control::PlayPause),
         (button(64.0), Control::Next),
         (Rect::new(pill.x + PAD, pill.y + 82.0, pill.w - 2.0 * PAD, 22.0), Control::Scrub),
-    ]
+    ];
+    if volume {
+        let (left, right) = volume_track(pill);
+        v.push((Rect::new(left - 10.0, cy - 16.0, right - left + 20.0, 32.0), Control::Volume));
+    }
+    v
+}
+
+/// The volume (0..=1) for a pointer x on the slider.
+pub fn volume_fraction(pill: Rect, x: f64) -> f32 {
+    let (left, right) = volume_track(pill);
+    ((x - left) / (right - left)).clamp(0.0, 1.0) as f32
 }
 
 /// Fraction along the progress bar for a pointer x.
@@ -850,6 +878,7 @@ pub fn expanded_media(
     t: f64,
     o: f32,
     scrub: Option<f64>,
+    volume: Option<(f32, bool)>,
     engine: &mut TextEngine,
 ) -> Vec<Element> {
     let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
@@ -889,9 +918,34 @@ pub fn expanded_media(
         v.push(text(format!("-{}", format_duration(dur - shown)), remaining, x + w - pad, y + 112.0));
     }
 
-    // Transport controls.
-    let cx = x + w / 2.0;
+    // Transport controls, with the volume slider beside them when known.
+    let cx = transport_x(pill, volume.is_some()) as f32;
     let cy = y + 136.0;
+    if let Some((level, muted)) = volume {
+        let (left, right) = volume_track(pill);
+        let (left, right) = (left as f32, right as f32);
+        let waves = if muted || level <= 0.0 { 255 } else { (level * 3.0).ceil().clamp(1.0, 3.0) as u8 };
+        v.push(Element::Icon {
+            icon: Icon::Volume(waves),
+            x: left - 28.0,
+            y: cy - 9.0,
+            size: 18.0,
+            color: WHITE,
+            opacity: o * 0.8,
+        });
+        let shown = if muted { 0.0 } else { level.clamp(0.0, 1.0) };
+        v.push(Element::Bar { x: left, y: cy - 2.0, w: right - left, h: 4.0, color: WHITE, opacity: o * 0.22 });
+        v.push(Element::Bar {
+            x: left,
+            y: cy - 2.0,
+            w: ((right - left) * shown).max(4.0),
+            h: 4.0,
+            color: WHITE,
+            opacity: o * 0.9,
+        });
+        let kx = left + (right - left) * shown;
+        v.push(Element::Bar { x: kx - 7.0, y: cy - 7.0, w: 14.0, h: 14.0, color: WHITE, opacity: o });
+    }
     let dim = |enabled: bool| if enabled { o } else { o * 0.35 };
     let play_icon = if m.playing { Icon::Pause } else { Icon::Play };
     v.push(Element::Icon {
@@ -1951,7 +2005,7 @@ mod tests {
     fn expanded_media_shows_title_times_and_controls() {
         let mut engine = TextEngine::new();
         let pill = Rect::new(24.0, 0.0, 372.0, 160.0);
-        let v = expanded_media(pill, &song(), 0.0, 1.0, None, &mut engine);
+        let v = expanded_media(pill, &song(), 0.0, 1.0, None, None, &mut engine);
         let t = texts(&v);
         assert!(t[0].ends_with('…'), "long title is ellipsised: {}", t[0]);
         assert!(t.contains(&"1:05".to_string()) && t.contains(&"-2:15".to_string()), "{t:?}");
@@ -1969,7 +2023,7 @@ mod tests {
     #[test]
     fn controls_sit_inside_the_card_and_scrub_maps_x() {
         let pill = Rect::new(24.0, 0.0, 372.0, 160.0);
-        for (r, _) in media_controls(pill) {
+        for (r, _) in media_controls(pill, true) {
             assert!(r.x >= pill.x && r.right() <= pill.right() && r.bottom() <= pill.bottom() + 1.0, "{r:?}");
         }
         assert_eq!(scrub_fraction(pill, pill.x), 0.0);

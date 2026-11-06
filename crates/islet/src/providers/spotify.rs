@@ -259,6 +259,7 @@ pub fn parse_player(v: &serde_json::Value) -> Option<(MediaInfo, Option<String>)
         duration: item["duration_ms"].as_f64().map(|ms| ms / 1000.0),
         rate: 1.0,
         art: None,
+        file: None,
         caps: MediaCaps { play_pause: true, next: true, previous: true, seek: true },
     };
     Some((info, art))

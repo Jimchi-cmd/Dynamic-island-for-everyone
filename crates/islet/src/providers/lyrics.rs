@@ -1,5 +1,6 @@
-//! Synced lyrics from LRCLIB, only while the user has lyrics on and only
-//! for the song that is playing. Results (including "this song has none")
+//! Synced lyrics, only while the user has lyrics on and only for the song
+//! that is playing: first from an .lrc file beside the song or in Islet's
+//! `lyrics` folder (no network at all), else from LRCLIB. Results (including "this song has none")
 //! are kept in memory for the session, so replaying a song costs nothing.
 //! The thread sleeps on its channel: no wakeups while nothing changes.
 
@@ -28,6 +29,24 @@ fn call(url: &str) -> Result<(u16, String), String> {
     let status = resp.status().as_u16();
     let body = resp.body_mut().with_config().limit(1 << 20).read_to_string().map_err(|e| format!("network: {e}"))?;
     Ok((status, body))
+}
+
+/// An .lrc beside the song's file, or in the `lyrics` folder of Islet's
+/// settings folder ("Artist - Title.lrc" or "Title.lrc", any case).
+pub fn local(t: &Track) -> Option<Lyrics> {
+    let read = |p: &std::path::Path| {
+        let l = lyrics::parse_lrc(&std::fs::read_to_string(p).ok()?);
+        (!l.is_empty()).then_some(l)
+    };
+    if let Some(l) = t.file.as_deref().and_then(|f| read(&lyrics::beside(f))) {
+        return Some(l);
+    }
+    let dir = islet_core::paths::config_dir()?.join("lyrics");
+    let names = lyrics::local_names(t);
+    let entries: Vec<_> = std::fs::read_dir(&dir).ok()?.flatten().collect();
+    names.iter().find_map(|want| {
+        entries.iter().find(|e| e.file_name().to_string_lossy().to_lowercase() == *want).and_then(|e| read(&e.path()))
+    })
 }
 
 /// Exact match first, then a search with a tidied title.
@@ -70,6 +89,11 @@ fn run(rx: &Receiver<Option<Track>>, sink: &Sink) {
         }
         let Some(track) = want else { continue };
         let key = track.key();
+        // Your own files first (and always: you may have just added one).
+        if let Some(l) = local(&track) {
+            sink.send(Report::Lyrics(key, Some(Arc::new(l))));
+            continue;
+        }
         if let Some(hit) = cache.get(&key) {
             sink.send(Report::Lyrics(key, hit.clone()));
             continue;
@@ -89,5 +113,30 @@ fn run(rx: &Receiver<Option<Track>>, sink: &Sink) {
             // Not remembered: it may work next time the song comes round.
             Err(e) => debug_log(&format!("lyrics: {e}")),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_lrc_beside_the_song_is_used() {
+        let dir = std::env::temp_dir().join(format!("islet-lyrics-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let song = dir.join("Song.flac");
+        std::fs::write(dir.join("Song.lrc"), "[00:01.00]From my own file\n").unwrap();
+        let t = Track {
+            title: "Song".into(),
+            artist: "Me".into(),
+            album: String::new(),
+            duration: None,
+            file: Some(song.to_string_lossy().into_owned()),
+        };
+        let l = local(&t).expect("found beside the song");
+        assert_eq!(l.lines[0].text, "From my own file");
+        let none = Track { file: Some(dir.join("Other.flac").to_string_lossy().into_owned()), ..t };
+        assert!(none.file.as_deref().map(lyrics::beside).is_some_and(|p| !p.exists()));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

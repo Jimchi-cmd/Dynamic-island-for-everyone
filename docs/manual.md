@@ -151,9 +151,10 @@ Islet shows what's playing in any app: Spotify, a browser, Apple Music, VLC and 
 
 **Open the island** for the full player:
 
-1. **Play / pause / previous / next:** the buttons in the middle.
-2. **Jump in the song:** press on the progress bar and drag.
-3. **Control Centre:** the **‹ Control Centre** button at the top left. Control Centre then shows **Now Playing ›** to go back.
+1. **Play / pause / previous / next:** the buttons on the left of the bottom row.
+2. **Volume:** the slider beside them (your computer's volume). Drag it or tap where you want it.
+3. **Jump in the song:** press on the progress bar and drag.
+4. **Control Centre:** the **‹ Control Centre** button at the top left. Control Centre then shows **Now Playing ›** to go back.
 
 ### Synced lyrics
 
@@ -161,7 +162,12 @@ Islet shows what's playing in any app: Spotify, a browser, Apple Music, VLC and 
 2. Turn on **Show synced lyrics**.
 3. Play a song. The pill gets wider and the lyrics slide through it as the song plays: the line being sung is bright, and the lines before and after it are dimmed. Open the island to see two lines under the player too.
 
-Lyrics come from [LRCLIB](https://lrclib.net), a free, open lyrics database. When this is on, Islet sends LRCLIB only the title, artist, album and length of the song that's playing, once per song. Songs without timed lyrics there simply show none. (On a MacBook with a notch, lyrics show only in the open player, because the notch would hide the middle of the line.)
+**Your own lyric files come first.** Islet looks for an `.lrc` file before going online:
+
+- next to the song file, with the same name (`Song.flac` → `Song.lrc`), when the player tells Islet which file it's playing (most Linux players do);
+- in a `lyrics` folder inside Islet's settings folder (`%APPDATA%\Islet\lyrics` on Windows, `~/Library/Application Support/Islet/lyrics` on a Mac, `~/.config/islet/lyrics` on Linux), named `Artist - Title.lrc` or `Title.lrc`.
+
+Otherwise lyrics come from [LRCLIB](https://lrclib.net), a free, open lyrics database. When this is on, Islet sends LRCLIB only the title, artist, album and length of the song that's playing, once per song. Songs without timed lyrics there simply show none. (On a MacBook with a notch, lyrics show only in the open player, because the notch would hide the middle of the line.)
 
 **Lyrics a little early or late?** Right-click the island → **Lyrics timing** → tap **−** to show them sooner or **+** to show them later (half a second per tap, for that song). The same menu turns lyrics on or off.
 

@@ -269,6 +269,11 @@ pub struct App {
     quiet_until: Option<f64>,
     /// Lyrics shown this many seconds later (negative: sooner), per song.
     lyrics_delay: std::collections::HashMap<String, f64>,
+    /// The output volume and mute (for the card's slider), a level the
+    /// slider asked for, and when (its own change shouldn't pop up the HUD).
+    volume: Option<(f32, bool)>,
+    volume_out: Option<f32>,
+    volume_set_at: f64,
 }
 
 impl App {
@@ -339,6 +344,9 @@ impl App {
             hidden_until: None,
             quiet_until: None,
             lyrics_delay: std::collections::HashMap::new(),
+            volume: None,
+            volume_out: None,
+            volume_set_at: f64::NEG_INFINITY,
         };
         app.anim_region = app.target_bounds();
         app
@@ -802,6 +810,20 @@ impl App {
         true
     }
 
+    /// The volume slider dragged to x: show it at once and ask for it.
+    fn volume_from(&mut self, x: f64, t: f64) -> bool {
+        let level = content::volume_fraction(self.card_rect(t), x);
+        self.volume = Some((level, false));
+        self.volume_out = Some(level);
+        self.volume_set_at = t;
+        true
+    }
+
+    /// The level the volume slider asked for since the last call.
+    pub fn take_volume(&mut self) -> Option<f32> {
+        self.volume_out.take()
+    }
+
     /// The playing song's key (`Track::key`).
     fn song_key(&self) -> Option<String> {
         let m = self.activities.media()?;
@@ -1037,13 +1059,13 @@ impl App {
                     }
                 }
                 OpenContent::Media(m) => {
-                    for (r, ctl) in content::media_controls(cr) {
+                    for (r, ctl) in content::media_controls(cr, self.volume.is_some()) {
                         let name = match ctl {
                             Control::Previous => "Previous",
                             Control::PlayPause if m.playing => "Pause",
                             Control::PlayPause => "Play",
                             Control::Next => "Next",
-                            Control::Scrub => continue,
+                            Control::Scrub | Control::Volume => continue,
                         };
                         buttons.push((name.to_string(), r));
                     }
@@ -1232,6 +1254,7 @@ impl App {
             artist: m.artist.clone(),
             album: m.album.clone(),
             duration: m.duration.filter(|d| d.is_finite() && *d > 0.0).map(|d| d.round() as u32),
+            file: m.file.clone(),
         })
     }
 
@@ -1337,6 +1360,17 @@ impl App {
             Report::Media(Some(m)) if self.prefs.excludes(&m.app_name, &m.source) => Report::Media(None),
             r => r,
         };
+        if let Report::Volume(level, muted) = r {
+            self.volume = Some((level, muted));
+            return self.island.presentation().is_open();
+        }
+        if let Report::Hud(Hud::Volume { level, muted }) = &r {
+            self.volume = Some((*level, *muted));
+            // The slider's own change: no pop-up over the card.
+            if t - self.volume_set_at < 1.0 {
+                return self.island.presentation().is_open();
+            }
+        }
         if let Report::Lyrics(key, l) = r {
             self.lyrics = Some((key, l));
             self.sync_live(t);
@@ -1576,7 +1610,7 @@ impl App {
                     engine,
                 )),
                 OpenContent::Media(m) => {
-                    out.extend(content::expanded_media(card, m, t, eo, self.scrub, engine));
+                    out.extend(content::expanded_media(card, m, t, eo, self.scrub, self.volume, engine));
                     if let Some(l) = self.song_lyrics() {
                         let pos = self.lyrics_pos(m, t);
                         out.extend(content::card_lyrics(card, l, pos, eo, engine));
@@ -1831,12 +1865,13 @@ impl App {
             return None;
         }
         let cr = self.card_rect(t);
-        content::media_controls(cr).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, c)| c)
+        content::media_controls(cr, self.volume.is_some()).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, c)| c)
     }
 
     /// Returns true when the event changed what is on screen.
     pub fn handle(&mut self, e: Event, t: f64) -> bool {
         match e {
+            Event::PointerMove { x, .. } if self.control == Some(Control::Volume) => self.volume_from(x, t),
             Event::PointerMove { x, .. } if self.control == Some(Control::Scrub) => {
                 self.scrub = Some(content::scrub_fraction(self.card_rect(t), x));
                 true
@@ -1863,6 +1898,9 @@ impl App {
                 match self.control_at(x, y, t) {
                     Some(c) => {
                         self.control = Some(c);
+                        if c == Control::Volume {
+                            self.volume_from(x, t);
+                        }
                         if c == Control::Scrub && self.activities.media().is_some_and(|m| m.caps.seek) {
                             self.scrub = Some(content::scrub_fraction(self.card_rect(t), x));
                         }
@@ -1907,6 +1945,7 @@ impl App {
                     let scrub = self.scrub.take();
                     let media = self.activities.media();
                     let command = match c {
+                        Control::Volume => None,
                         Control::Scrub => {
                             scrub.zip(media.and_then(|m| m.duration)).map(|(f, d)| MediaCommand::SeekTo(f * d))
                         }
@@ -2431,6 +2470,31 @@ mod tests {
         assert!(plain.frame(4.0).opacity > 0.99);
     }
 
+    #[test]
+    fn the_volume_slider_sets_the_volume_without_a_pop_up() {
+        let mut app = App::new(Demo::None, false);
+        app.report(Report::Media(Some(song(true))), 0.0);
+        app.report(Report::Volume(0.3, false), 0.0);
+        click(&mut app, 1.0);
+        let t = 5.0;
+        let card = app.card_rect(t);
+        let (slider, _) = content::media_controls(card, true).into_iter().find(|(_, c)| *c == Control::Volume).unwrap();
+        let y = slider.y + slider.h / 2.0;
+        app.handle(Event::PointerDown { x: slider.x + 10.0, y, button: Button::Primary }, t);
+        assert_eq!(app.take_volume(), Some(0.0));
+        app.handle(Event::PointerMove { x: slider.right() - 10.0, y }, t + 0.1);
+        assert_eq!(app.take_volume(), Some(1.0));
+        app.handle(Event::PointerUp { x: slider.right() - 10.0, y, button: Button::Primary }, t + 0.2);
+        assert_eq!(app.presentation(), Expanded, "dragging the slider doesn't close the card");
+        assert!(app.take_commands().is_empty());
+        // The system echoes the change: no volume pop-up for it.
+        app.report(Report::Hud(Hud::Volume { level: 1.0, muted: false }), t + 0.3);
+        assert!(!app.live(t + 0.4).iter().any(|l| matches!(l, Live::Hud(_))));
+        // A change from the keyboard later does pop up.
+        app.report(Report::Hud(Hud::Volume { level: 0.8, muted: false }), t + 5.0);
+        assert!(app.live(t + 5.1).iter().any(|l| matches!(l, Live::Hud(_))));
+    }
+
     fn right_click(app: &mut App, t: f64) {
         let (x, y) = centre(app, t);
         app.handle(Event::PointerDown { x, y, button: Button::Secondary }, t);
@@ -2550,6 +2614,7 @@ mod tests {
             a.set_time(NOW, 0.0);
             a.set_prefs(lyrics_on());
             a.report(Report::Media(Some(m.clone())), 0.0);
+            a.report(Report::Volume(0.6, false), 0.0);
             let key = a.lyrics_wanted().unwrap().key();
             a.report(Report::Lyrics(key, Some(lyrics())), 0.0);
             a
@@ -2761,7 +2826,7 @@ mod tests {
         assert!((app.pill_rect(t).h - MEDIA_H - content::CARD_HEADER_H).abs() < 0.01);
         assert!(texts(&app, t, &mut engine).contains(&"Song".to_string()));
 
-        let controls = content::media_controls(app.card_rect(t));
+        let controls = content::media_controls(app.card_rect(t), false);
         let (play, _) = controls.iter().find(|(_, c)| *c == Control::PlayPause).unwrap();
         let (px, py) = (play.x + play.w / 2.0, play.y + play.h / 2.0);
         app.handle(Event::PointerDown { x: px, y: py, button: Button::Primary }, t);
@@ -3318,7 +3383,7 @@ mod tests {
             (card.h - (MEDIA_H + content::CARD_HEADER_H + 32.0)).abs() < 0.01,
             "the card grows by the notch height"
         );
-        let (r, _) = content::media_controls(app.card_rect(t))[0];
+        let (r, _) = content::media_controls(app.card_rect(t), false)[0];
         assert!(r.y >= card.y + 32.0 + content::CARD_HEADER_H, "controls are below the notch and header");
         assert!(content::home_button(app.content_rect(card)).y >= card.y + 32.0, "so is Control Centre's button");
     }

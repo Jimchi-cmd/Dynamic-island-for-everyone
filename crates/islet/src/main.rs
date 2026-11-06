@@ -235,6 +235,9 @@ fn run() -> platform::Result<()> {
             lyrics_asked = asked;
             providers.lyrics(wanted);
         }
+        if let Some(level) = app.take_volume() {
+            providers.set_volume(level);
+        }
         let source = app.media_source();
         for cmd in app.take_commands() {
             providers.command_for(&source, cmd);

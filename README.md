@@ -12,7 +12,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 ## What it does
 
 - **The island itself:** iPhone-style continuous corners and spring motion. When nothing is playing it shows the time. Over a fullscreen video, game or presentation it steps aside, and comes back when you point at the top of the screen. Hover to peek, click to expand, press and hold for more, scroll to switch between activities. Two activities split into a pill and a bubble joined by a liquid neck. On a notched MacBook it wraps the notch.
-- **Now Playing** from any app: artwork, a live waveform, progress you can drag, and play/pause/skip. Optionally, Spotify playback on your phone or speakers too.
+- **Now Playing** from any app: artwork, a live waveform, progress you can drag, play/pause/skip and a volume slider. Optionally, Spotify playback on your phone or speakers too.
 - **Synced lyrics** (opt-in): the lyrics slide through the island as the song plays, with the line being sung lit up and the ones around it dimmed. Two lines on the open card too. From [LRCLIB](https://lrclib.net), a free, open lyrics database.
 - **Battery pop-ups** when headphones, earbuds, mice, keyboards or controllers connect, plus low-battery alerts.
 - **Charging notification** when you plug in (and "Fully charged" at 100 %), like the iPhone's.

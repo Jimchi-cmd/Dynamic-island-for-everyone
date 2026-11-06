@@ -175,6 +175,7 @@ fn describe(r: &Report) -> String {
         Report::Lyrics(key, l) => {
             format!("lyrics for {key:?}: {}", l.as_ref().map_or(0, |l| l.lines.len()))
         }
+        Report::Volume(level, muted) => format!("volume {level:.2} muted={muted}"),
         Report::UpNext(u) => format!("up next: {:?}", u.as_ref().map(|(e, _)| &e.summary)),
     }
 }
@@ -289,6 +290,17 @@ impl Providers {
     /// Start or stop the system monitor (it runs only while its panel is open).
     pub fn sysmon(&self, on: bool) {
         let _ = self.sysmon.send(on);
+    }
+
+    /// Set the output volume (0..=1), from the Now Playing card's slider.
+    pub fn set_volume(&self, level: f32) {
+        let level = level.clamp(0.0, 1.0);
+        #[cfg(target_os = "linux")]
+        linux_volume::set(level);
+        #[cfg(target_os = "windows")]
+        windows_volume::set(level);
+        #[cfg(target_os = "macos")]
+        macos_volume::set(level);
     }
 
     /// Look up lyrics for the song that is playing (None: stop).

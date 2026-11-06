@@ -62,6 +62,7 @@ impl Player {
             duration: Some(duration),
             rate: 1.0,
             art: cover(self.track),
+            file: None,
             caps: MediaCaps { play_pause: true, next: true, previous: true, seek: true },
         }
     }

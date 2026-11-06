@@ -109,6 +109,7 @@ impl Reader {
             duration: (end > 0).then(|| ticks(end)),
             rate: 1.0,
             art,
+            file: None,
             caps: MediaCaps {
                 play_pause: controls.IsPlayPauseToggleEnabled()?
                     || controls.IsPlayEnabled()?

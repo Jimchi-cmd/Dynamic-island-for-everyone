@@ -50,6 +50,9 @@ pub struct MediaInfo {
     pub rate: f64,
     pub art: Option<ArtImage>,
     pub caps: MediaCaps,
+    /// The song's file on this computer, when the player says (Linux
+    /// MPRIS): lyrics may sit beside it as an .lrc file.
+    pub file: Option<String>,
 }
 
 impl MediaInfo {
@@ -207,6 +210,9 @@ pub enum Report {
     Clipboard(String),
     /// Synced lyrics for a song (`Track::key`), or None when it has none.
     Lyrics(String, Option<std::sync::Arc<crate::lyrics::Lyrics>>),
+    /// The output volume (0..=1) and mute, quietly (no pop-up): sent when
+    /// the volume watcher starts, for the Now Playing card's slider.
+    Volume(f32, bool),
 }
 
 /// Whether the camera and the microphone are in use, and by which apps
@@ -468,7 +474,7 @@ impl Activities {
                 true
             }
             // The island keeps the history (it knows whether it's on).
-            Report::Clipboard(_) | Report::Lyrics(..) => false,
+            Report::Clipboard(_) | Report::Lyrics(..) | Report::Volume(..) => false,
             Report::System(s) => {
                 self.system = s;
                 true
