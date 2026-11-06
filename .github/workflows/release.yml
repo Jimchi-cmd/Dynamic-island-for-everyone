@@ -289,15 +289,26 @@ jobs:
           path: assets
           merge-multiple: true
 
+      # Only the installers and their files go on the release: a build can
+      # leave a folder among them (one left `fonts`), which neither the
+      # checksums nor the upload can take.
+      - name: Only the release files
+        run: |
+          mkdir files
+          find assets -maxdepth 1 -type f -exec mv {} files/ \;
+          left=$(find assets -mindepth 1 -maxdepth 1)
+          [ -z "$left" ] || { echo "Left out (not files):"; echo "$left"; }
+          ls -la files
+
       - name: Update manifest (latest.json)
         if: env.HAS_UPDATER_KEY == 'true'
         run: |
           echo "See the release notes: https://github.com/${{ github.repository }}/releases/tag/${TAG}" > notes.txt
-          python3 scripts/make-latest-json.py "$TAG" assets \
+          python3 scripts/make-latest-json.py "$TAG" files \
             "https://github.com/${{ github.repository }}/releases/download/${TAG}" notes.txt
 
       - name: Checksums
-        working-directory: assets
+        working-directory: files
         run: |
           sha256sum -- * > SHA256SUMS
           cat SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
@@ -317,7 +328,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$TAG" assets/* \
+          gh release create "$TAG" files/* \
             --repo "${{ github.repository }}" \
             --draft --verify-tag --notes-file release-notes.md \
             --title "Islet ${TAG#v}"
@@ -329,7 +340,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$TAG" assets/* \
+          gh release create "$TAG" files/* \
             --repo "${{ github.repository }}" \
             --target "$GITHUB_SHA" --latest --notes-file release-notes.md \
             --title "Islet ${TAG#v}"

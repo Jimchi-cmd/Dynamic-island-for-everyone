@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [0.2.0] - 2026-11-06
 
+The first published release: everything in 0.1.0 (below), plus:
+
 ### Added
 - **Out of the way over fullscreen:** when a video, game or presentation goes fullscreen on its display, the island hides (music and all) and shows again while you point at the top of the screen. Alarms and timers still ring through. Windows and X11 follow the fullscreen window; macOS checks when the Space or app changes; on Wayland the island sits on the layer fullscreen windows cover.
 - **Right-click menu** on the island: Islet Settings, hide for an hour, pause pop-ups for an hour, lyrics on or off and their timing for the song, and Quit (right-click used to quit straight away).
@@ -20,7 +22,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [0.1.0] - 2026-11-06
 
-The first public release.
+Built but never published (its release step tripped over a stray folder); its contents ship in 0.2.0.
 
 ### Island
 - Native, webview-free island for macOS, Windows and Linux (native Wayland on KDE Plasma, sway, Hyprland and other wlroots compositors; X11 and XWayland elsewhere): about 5 MB of RAM, 0 % CPU and zero wakeups when idle.
