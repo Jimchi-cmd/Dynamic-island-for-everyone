@@ -228,6 +228,8 @@ fn run() -> platform::Result<()> {
     let mut a11y_pending = true;
     let mut utc = (u8::MAX, 0i64);
 
+    // ISLET_FRAME_STATS=1: average drawing and presenting time per frame (stderr).
+    let mut frame_stats = env_on("ISLET_FRAME_STATS").then(FrameStats::default);
     let mut needs_frame = true;
     let mut first_frame = true;
     let mut last_frame = epoch;
@@ -451,6 +453,7 @@ fn run() -> platform::Result<()> {
         let interval = if needs_frame { Some(FRAME) } else { app.frame_interval(t) };
         if let Some(iv) = interval.filter(|iv| Instant::now() >= last_frame + *iv) {
             let _ = iv;
+            let drawing = Instant::now();
             let scale = (win.scale() * k) as f32;
             let frame = app.frame(t);
             islet_render::draw(&mut pixmap, &frame, scale);
@@ -473,8 +476,12 @@ fn run() -> platform::Result<()> {
             if first_frame {
                 trace("first frame drawn");
             }
+            let presenting = Instant::now();
             win.present(&pixmap)?;
             last_frame = Instant::now();
+            if let Some(s) = &mut frame_stats {
+                s.add(presenting - drawing, last_frame - presenting);
+            }
             needs_frame = false;
             if first_frame {
                 first_frame = false;
@@ -482,6 +489,28 @@ fn run() -> platform::Result<()> {
                 println!("ISLET_VISIBLE {}", started.elapsed().as_millis());
                 let _ = std::io::stdout().flush();
             }
+        }
+    }
+}
+
+/// Time spent per frame drawing it and handing it to the OS, printed every
+/// 120 frames (ISLET_FRAME_STATS=1; for measuring, not for users).
+#[derive(Default)]
+struct FrameStats {
+    frames: u32,
+    draw: Duration,
+    present: Duration,
+}
+
+impl FrameStats {
+    fn add(&mut self, draw: Duration, present: Duration) {
+        self.frames += 1;
+        self.draw += draw;
+        self.present += present;
+        if self.frames == 120 {
+            let ms = |d: Duration| d.as_secs_f64() * 1000.0 / f64::from(self.frames);
+            eprintln!("ISLET_FRAMES n={} draw={:.3}ms present={:.3}ms", self.frames, ms(self.draw), ms(self.present));
+            *self = FrameStats::default();
         }
     }
 }

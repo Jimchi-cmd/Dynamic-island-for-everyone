@@ -246,6 +246,30 @@ pub struct Mac {
     _caps_monitor: Option<Retained<AnyObject>>,
     /// Whether another app is fullscreen on the island's display.
     fullscreen: bool,
+    /// How frames reach Core Animation (ISLET_MAC_PRESENT, for measuring):
+    /// a CGImage per frame, or two IOSurfaces taken in turn.
+    present_mode: PresentMode,
+    surfaces: Vec<iosurface::Surface>,
+    next_surface: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PresentMode {
+    Image,
+    /// IOSurface rows written top-down, or bottom-up (`flip`).
+    Surface {
+        flip: bool,
+    },
+}
+
+impl PresentMode {
+    fn from_env() -> Self {
+        match std::env::var("ISLET_MAC_PRESENT").as_deref() {
+            Ok("iosurface") => PresentMode::Surface { flip: false },
+            Ok("iosurface-flip") => PresentMode::Surface { flip: true },
+            _ => PresentMode::Image,
+        }
+    }
 }
 
 /// The camera notch of `screen`: the gap between the menu-bar areas on
@@ -378,6 +402,9 @@ impl Backend for Mac {
             _monitor: monitor,
             _caps_monitor: caps_monitor,
             fullscreen: false,
+            present_mode: PresentMode::from_env(),
+            surfaces: Vec::new(),
+            next_surface: 0,
         })
     }
 
@@ -402,6 +429,9 @@ impl Backend for Mac {
     }
 
     fn present(&mut self, frame: &Pixmap) -> Result<()> {
+        if let PresentMode::Surface { flip } = self.present_mode {
+            return self.present_surface(frame, flip);
+        }
         let (w, h) = (frame.width() as usize, frame.height() as usize);
         // Convert straight into a pooled buffer that the image owns until
         // Core Graphics lets it go (no per-frame allocation or extra copy).
@@ -673,6 +703,141 @@ mod fullscreen {
             }
             CFRelease(list);
             found
+        }
+    }
+}
+
+impl Mac {
+    /// Hand the frame over in an IOSurface that Core Animation shows
+    /// directly (no image to make and copy each frame). Two surfaces are
+    /// used in turn, so the one on screen is never the one being written.
+    fn present_surface(&mut self, frame: &Pixmap, flip: bool) -> Result<()> {
+        let (w, h) = (frame.width(), frame.height());
+        if self.surfaces.len() != 2 || self.surfaces[0].size() != (w, h) {
+            self.surfaces.clear();
+            for _ in 0..2 {
+                self.surfaces.push(iosurface::Surface::new(w, h).ok_or("IOSurfaceCreate failed")?);
+            }
+        }
+        let surface = &self.surfaces[self.next_surface];
+        self.next_surface ^= 1;
+        surface.write(frame.data(), w as usize, h as usize, flip);
+        let layer = self.view.layer().ok_or("view has no layer")?;
+        layer.setContentsScale(self.scale);
+        CATransaction::begin();
+        CATransaction::setDisableActions(true);
+        // SAFETY: an IOSurfaceRef is toll-free bridged to the IOSurface
+        // class, which `contents` accepts; the layer retains it.
+        unsafe { layer.setContents(Some(&*surface.as_object())) };
+        CATransaction::commit();
+        Ok(())
+    }
+}
+
+/// IOSurfaces: pixel buffers Core Animation can show without copying.
+mod iosurface {
+    use objc2::runtime::AnyObject;
+    use std::ffi::c_void;
+
+    #[link(name = "IOSurface", kind = "framework")]
+    extern "C" {
+        fn IOSurfaceCreate(properties: *const c_void) -> *mut c_void;
+        fn IOSurfaceLock(buffer: *mut c_void, options: u32, seed: *mut u32) -> i32;
+        fn IOSurfaceUnlock(buffer: *mut c_void, options: u32, seed: *mut u32) -> i32;
+        fn IOSurfaceGetBaseAddress(buffer: *mut c_void) -> *mut c_void;
+        fn IOSurfaceGetBytesPerRow(buffer: *mut c_void) -> usize;
+        static kIOSurfaceWidth: *const c_void;
+        static kIOSurfaceHeight: *const c_void;
+        static kIOSurfaceBytesPerElement: *const c_void;
+        static kIOSurfacePixelFormat: *const c_void;
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFDictionaryCreateMutable(
+            allocator: *const c_void,
+            capacity: isize,
+            keys: *const u8,
+            values: *const u8,
+        ) -> *mut c_void;
+        fn CFDictionarySetValue(dict: *mut c_void, key: *const c_void, value: *const c_void);
+        fn CFNumberCreate(allocator: *const c_void, kind: isize, value: *const c_void) -> *const c_void;
+        fn CFRelease(cf: *const c_void);
+        static kCFTypeDictionaryKeyCallBacks: u8;
+        static kCFTypeDictionaryValueCallBacks: u8;
+    }
+
+    const SINT32: isize = 3;
+    /// 'BGRA': premultiplied B, G, R, A bytes.
+    const BGRA: i32 = 0x4247_5241;
+
+    pub struct Surface {
+        ptr: *mut c_void,
+        size: (u32, u32),
+    }
+
+    impl Surface {
+        pub fn new(w: u32, h: u32) -> Option<Self> {
+            // SAFETY: a CF dictionary of CF numbers built and released here;
+            // IOSurfaceCreate returns a +1 reference (or null), released on drop.
+            unsafe {
+                let dict = CFDictionaryCreateMutable(
+                    std::ptr::null(),
+                    0,
+                    &kCFTypeDictionaryKeyCallBacks,
+                    &kCFTypeDictionaryValueCallBacks,
+                );
+                if dict.is_null() {
+                    return None;
+                }
+                for (key, value) in [
+                    (kIOSurfaceWidth, w as i32),
+                    (kIOSurfaceHeight, h as i32),
+                    (kIOSurfaceBytesPerElement, 4),
+                    (kIOSurfacePixelFormat, BGRA),
+                ] {
+                    let n = CFNumberCreate(std::ptr::null(), SINT32, (&value as *const i32).cast());
+                    CFDictionarySetValue(dict, key, n);
+                    CFRelease(n);
+                }
+                let ptr = IOSurfaceCreate(dict);
+                CFRelease(dict);
+                (!ptr.is_null()).then_some(Surface { ptr, size: (w, h) })
+            }
+        }
+
+        pub fn size(&self) -> (u32, u32) {
+            self.size
+        }
+
+        /// Copy premultiplied RGBA rows in as BGRA (bottom row first when `flip`).
+        pub fn write(&self, rgba: &[u8], w: usize, h: usize, flip: bool) {
+            // SAFETY: the surface is locked while its rows (bytes_per_row
+            // apart, each at least w*4 bytes) are written.
+            unsafe {
+                if IOSurfaceLock(self.ptr, 0, std::ptr::null_mut()) != 0 {
+                    return;
+                }
+                let base = IOSurfaceGetBaseAddress(self.ptr).cast::<u8>();
+                let stride = IOSurfaceGetBytesPerRow(self.ptr);
+                for row in 0..h {
+                    let src = &rgba[(if flip { h - 1 - row } else { row }) * w * 4..][..w * 4];
+                    let dst = std::slice::from_raw_parts_mut(base.add(row * stride), w * 4);
+                    islet_render::rgba_to_bgra(src, dst);
+                }
+                IOSurfaceUnlock(self.ptr, 0, std::ptr::null_mut());
+            }
+        }
+
+        pub fn as_object(&self) -> *const AnyObject {
+            self.ptr as *const AnyObject
+        }
+    }
+
+    impl Drop for Surface {
+        fn drop(&mut self) {
+            // SAFETY: our +1 reference from IOSurfaceCreate.
+            unsafe { CFRelease(self.ptr) };
         }
     }
 }
