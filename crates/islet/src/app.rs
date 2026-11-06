@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// Logical window size: the largest state plus spring overshoot (design spec §2).
-pub const WINDOW: (f64, f64) = (420.0, 300.0);
+pub const WINDOW: (f64, f64) = (420.0, 260.0);
 /// Gap between the screen's top edge and the pill.
 pub const TOP_GAP: f64 = 0.0;
 const SMOOTHING: f32 = 0.6;
@@ -246,6 +246,10 @@ pub struct App {
     /// The island's visibility (1 = shown). Below 1 only while the empty
     /// island hides until hovered.
     shown: Animated,
+    /// How far the open list is scrolled, and scroll gathered towards the
+    /// next row.
+    list_scroll: usize,
+    list_acc: f64,
 }
 
 impl App {
@@ -309,6 +313,8 @@ impl App {
             lyrics: None,
             home: false,
             shown: Animated::new(1.0, SHOW_SPRING),
+            list_scroll: 0,
+            list_acc: 0.0,
         };
         app.anim_region = app.target_bounds();
         app
@@ -667,16 +673,9 @@ impl App {
                 .find(|(r, _)| r.contains(x, y))
                 .map(|(_, p)| ConnHit::Open(p)),
             OpenContent::Panel(p) => {
-                let (rows, footer) = match p {
-                    Panel::Wifi => (c.wifi.networks.len(), content::wifi_footer(c)),
-                    Panel::Bluetooth => (c.bt.devices.len(), content::bt_footer(c)),
-                    Panel::Shelf => (self.shelf.len(), None),
-                    Panel::System => (0, None),
-                    Panel::Clipboard => {
-                        let n = self.clip.len();
-                        (n, (n > 0).then(|| (content::CLIPBOARD_CLEAR.to_string(), true)))
-                    }
-                };
+                let (total, footer) = self.panel_list(p);
+                let scroll = self.scroll_of(p);
+                let rows = content::shown_rows(total, scroll, footer.is_some());
                 let has_radio = match p {
                     Panel::Wifi => c.wifi.available,
                     Panel::Bluetooth => c.bt.available,
@@ -691,9 +690,9 @@ impl App {
                 let list = content::list_rows(cr, rows);
                 if let Some(i) = list.iter().position(|r| r.contains(x, y)) {
                     if p == Panel::Shelf && content::shelf_remove_hit(list[i], x) {
-                        return Some(ConnHit::Remove(i));
+                        return Some(ConnHit::Remove(i + scroll));
                     }
-                    return Some(ConnHit::Row(i));
+                    return Some(ConnHit::Row(i + scroll));
                 }
                 (footer.is_some_and(|(_, button)| button) && content::list_footer(cr, rows).contains(x, y))
                     .then_some(ConnHit::Footer)
@@ -702,11 +701,49 @@ impl App {
         }
     }
 
+    /// A list panel's length and its footer (line, is a button).
+    fn panel_list(&self, p: Panel) -> (usize, Option<(String, bool)>) {
+        let c = self.activities.connectivity();
+        match p {
+            Panel::Wifi => (c.wifi.networks.len(), content::wifi_footer(c)),
+            Panel::Bluetooth => (c.bt.devices.len(), content::bt_footer(c)),
+            Panel::Shelf => (self.shelf.len(), content::shelf_footer(self.shelf.len(), self.dragging)),
+            Panel::System => (0, None),
+            Panel::Clipboard => {
+                let n = self.clip.len();
+                (n, (n > 0).then(|| (content::CLIPBOARD_CLEAR.to_string(), true)))
+            }
+        }
+    }
+
+    /// How far the open list is scrolled (kept in range as it changes).
+    fn scroll_of(&self, p: Panel) -> usize {
+        let (total, footer) = self.panel_list(p);
+        self.list_scroll.min(content::max_scroll(total, footer.is_some()))
+    }
+
+    /// Scrolling over an open list moves it a row at a time.
+    fn scroll_list(&mut self, p: Panel, dy: f64) -> bool {
+        self.list_acc += dy;
+        if self.list_acc.abs() < 1.0 {
+            return false;
+        }
+        let down = self.list_acc > 0.0;
+        self.list_acc = 0.0;
+        let (total, footer) = self.panel_list(p);
+        let max = content::max_scroll(total, footer.is_some());
+        let now = self.scroll_of(p);
+        let next = if down { (now + 1).min(max) } else { now.saturating_sub(1) };
+        self.list_scroll = next;
+        next != now
+    }
+
     fn conn_act(&mut self, hit: ConnHit, t: f64) -> bool {
         let c = self.activities.connectivity().clone();
         match hit {
             ConnHit::Open(p) => {
                 self.panel = Some(p);
+                self.list_scroll = 0;
                 self.activities.report(Report::Connectivity(ConnUpdate::ClearFailure), t);
                 match p {
                     Panel::Wifi => self.conn_commands.push(ConnCommand::ScanWifi),
@@ -720,7 +757,10 @@ impl App {
                     self.shelf_dirty = true;
                 }
             }
-            ConnHit::Back => self.panel = None,
+            ConnHit::Back => {
+                self.panel = None;
+                self.list_scroll = 0;
+            }
             ConnHit::Home => {
                 self.home = true;
                 self.panel = None;
@@ -953,7 +993,10 @@ impl App {
                             self.clip.items().map(|t| format!("Copy {}", islet_core::clipboard::preview(t))).collect()
                         }
                     };
-                    for (name, r) in names.into_iter().zip(content::list_rows(cr, usize::MAX)) {
+                    let (total, footer) = self.panel_list(p);
+                    let scroll = self.scroll_of(p);
+                    let rows = content::list_rows(cr, content::shown_rows(total, scroll, footer.is_some()));
+                    for (name, r) in names.into_iter().skip(scroll).zip(rows) {
                         buttons.push((name, r));
                     }
                 }
@@ -1311,21 +1354,38 @@ impl App {
                 OpenContent::Agenda => out.extend(content::expanded_agenda(card, &self.agenda(), eo, engine)),
                 OpenContent::Custom(c) => out.extend(content::expanded_custom(card, c, t, eo, engine)),
                 OpenContent::Notes => out.extend(content::expanded_notes(card, self.activities.notes(), eo, engine)),
-                OpenContent::Panel(Panel::Wifi) => {
-                    out.extend(content::expanded_wifi(cr, self.activities.connectivity(), eo, engine))
-                }
-                OpenContent::Panel(Panel::Bluetooth) => {
-                    out.extend(content::expanded_bluetooth(cr, self.activities.connectivity(), eo, engine))
-                }
-                OpenContent::Panel(Panel::Clipboard) => {
-                    out.extend(content::expanded_clipboard(cr, &self.clip, eo, engine))
-                }
+                OpenContent::Panel(Panel::Wifi) => out.extend(content::expanded_wifi(
+                    cr,
+                    self.activities.connectivity(),
+                    self.scroll_of(Panel::Wifi),
+                    eo,
+                    engine,
+                )),
+                OpenContent::Panel(Panel::Bluetooth) => out.extend(content::expanded_bluetooth(
+                    cr,
+                    self.activities.connectivity(),
+                    self.scroll_of(Panel::Bluetooth),
+                    eo,
+                    engine,
+                )),
+                OpenContent::Panel(Panel::Clipboard) => out.extend(content::expanded_clipboard(
+                    cr,
+                    &self.clip,
+                    self.scroll_of(Panel::Clipboard),
+                    eo,
+                    engine,
+                )),
                 OpenContent::Panel(Panel::System) => {
                     out.extend(content::expanded_system(cr, self.activities.system(), eo, engine))
                 }
-                OpenContent::Panel(Panel::Shelf) => {
-                    out.extend(content::expanded_shelf(cr, &self.shelf, self.dragging, eo, engine))
-                }
+                OpenContent::Panel(Panel::Shelf) => out.extend(content::expanded_shelf(
+                    cr,
+                    &self.shelf,
+                    self.dragging,
+                    self.scroll_of(Panel::Shelf),
+                    eo,
+                    engine,
+                )),
                 OpenContent::Media(m) => {
                     out.extend(content::expanded_media(card, m, t, eo, self.scrub, engine));
                     if let Some(l) = self.song_lyrics() {
@@ -1499,6 +1559,7 @@ impl App {
             self.control = None;
             self.scrub = None;
             self.panel = None;
+            self.list_scroll = 0;
             self.home = false;
             self.notes_open = false;
         } else if !from.is_open() && matches!(self.open_content(&self.live(t)), OpenContent::Notes) {
@@ -1665,6 +1726,12 @@ impl App {
             Event::DragOver { x, y } => self.drag_over(x, y, t),
             Event::A11yPress(button) => self.a11y_press(button, t),
             Event::DragLeave => self.drag_over(f64::NAN, f64::NAN, t),
+            Event::Scroll { dy, .. }
+                if self.hovered && self.island.presentation().is_open() && self.panel.is_some() =>
+            {
+                let p = self.panel.unwrap_or(Panel::Wifi);
+                self.scroll_list(p, dy)
+            }
             Event::Scroll { dx, dy } if self.hovered => self.scroll(dx, dy, t),
             Event::Redraw | Event::ScaleChanged(_) => true,
             _ => false,
@@ -2922,10 +2989,22 @@ mod tests {
         let cr = app.content_rect(app.pill_rect(5.0));
         press(&mut app, content::clock_chips(cr, false, false)[1].0, 5.0);
         app.take_conn_commands();
-        // The list with five devices and its footer fits the window.
+        // Five devices and the footer: four rows show, the card fits the
+        // window, and scrolling reaches the fifth.
         let card = app.pill_rect(9.0);
         assert!(card.bottom() + 1.0 <= WINDOW.1, "{card:?}");
-        assert!(content::list_footer(app.content_rect(card), 5).bottom() <= card.bottom() - 10.0);
+        assert!(content::list_footer(app.content_rect(card), 4).bottom() <= card.bottom() - 10.0);
+        let mut engine = TextEngine::new();
+        assert!(!texts(&app, 9.0, &mut engine).iter().any(|s| s == "Device 4"));
+        assert!(app.handle(Event::PointerMove { x: card.x + 60.0, y: card.y + 100.0 }, 9.0) || app.hovered);
+        assert!(app.handle(Event::Scroll { dx: 0.0, dy: 1.0 }, 9.0));
+        assert!(!app.handle(Event::Scroll { dx: 0.0, dy: 1.0 }, 9.1), "already at the end");
+        let shown = texts(&app, 9.2, &mut engine);
+        assert!(shown.iter().any(|s| s == "Device 4") && !shown.iter().any(|s| s == "Device 0"));
+        // A tap on the last row picks the fifth device.
+        let last = content::list_rows(app.content_rect(card), 4)[3];
+        assert_eq!(app.conn_hit_at(last.x + 20.0, last.y + 10.0, 9.2), Some(ConnHit::Row(4)));
+        app.handle(Event::Scroll { dx: 0.0, dy: -1.0 }, 9.3);
 
         // A tap a little beside the switch still counts, and it flips at once.
         let sw = content::power_switch(app.content_rect(card));
@@ -3585,9 +3664,16 @@ mod tests {
                 BtDevice { id: "1".into(), name: "Galaxy Buds2".into(), kind: DeviceKind::Earbuds, connected: true },
                 BtDevice { id: "2".into(), name: "MX Master 3".into(), kind: DeviceKind::Mouse, connected: false },
                 BtDevice { id: "3".into(), name: "Keychron K2".into(), kind: DeviceKind::Keyboard, connected: false },
+                BtDevice {
+                    id: "4".into(),
+                    name: "DualSense Wireless Controller".into(),
+                    kind: DeviceKind::Gamepad,
+                    connected: false,
+                },
+                BtDevice { id: "5".into(), name: "Watch".into(), kind: DeviceKind::Phone, connected: false },
             ],
-            can_connect: true,
-            note: None,
+            can_connect: false,
+            note: Some("Windows connects Bluetooth devices in its own settings".into()),
         };
         let make = |panel: Option<usize>, fail: bool| {
             let mut a = App::new(Demo::None, false);

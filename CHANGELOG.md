@@ -12,7 +12,7 @@ The first public release.
 - **Hover-only mode** (Settings → Look): the empty island stays hidden until you point at it; music and other live activities always show.
 - **Control Centre from any card:** a "‹ Control Centre" button on every activity's card, and a back button on the Wi-Fi, Bluetooth, shelf, clipboard and system lists.
 - Smooth 60 fps on Windows: frames are timed with a high-resolution waitable timer instead of a millisecond timeout that Windows rounded up to its 15.6 ms tick.
-- Buttons respond while a card is still settling, so a quick tap on "Control Centre" no longer closes the island; the Wi-Fi and Bluetooth switches flip as soon as you tap them, follow the radio's real state on Windows, and have a bigger tap area; long device lists fit the window.
+- Buttons respond while a card is still settling, so a quick tap on "Control Centre" no longer closes the island; the Wi-Fi and Bluetooth switches flip as soon as you tap them, follow the radio's real state on Windows, and have a bigger tap area; lists show four rows above a footer button (five without) and scroll for more, so they're never cut off. The waveform and other upright bars are drawn thin instead of as blobs.
 - Inter bundled for text. San Francisco is used on macOS, from the system.
 
 ### Activities

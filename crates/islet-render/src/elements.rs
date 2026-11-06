@@ -563,7 +563,7 @@ fn bounds(el: &Element, text: &mut TextEngine) -> Option<(f32, f32, f32, f32)> {
             }
             Some((l, t.baseline - s * 1.1, (r - l).max(0.0), s * 1.5))
         }
-        Element::Bar { x, y, w, h, .. } => Some((*x, *y, w.max(*h), *h)),
+        Element::Bar { x, y, w, h, .. } => Some((*x, *y, *w, *h)),
         Element::Icon { x, y, size, .. } | Element::Art { x, y, size, .. } => Some((*x, *y, *size, *size)),
         Element::Ring { cx, cy, r, width, .. } => {
             let e = r + width / 2.0;
@@ -597,7 +597,9 @@ pub fn draw_elements_in(
         match el {
             Element::Text(item) => text.draw(pm, item, scale, clip),
             Element::Bar { x, y, w, h, color, opacity } => {
-                if let Some(p) = rounded_rect(*x, *y, w.max(*h), *h, h / 2.0) {
+                // Fully rounded along its short side: a capsule lying down
+                // (progress) or standing up (waveform, scroll bar).
+                if let Some(p) = rounded_rect(*x, *y, *w, *h, w.min(*h) / 2.0) {
                     pm.fill_path(&p, &paint(*color, *opacity), FillRule::Winding, base, clip);
                 }
             }

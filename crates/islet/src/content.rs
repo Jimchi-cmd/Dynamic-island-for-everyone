@@ -82,6 +82,38 @@ pub enum ConnHit {
 
 pub const ROW_H: f64 = 36.0;
 pub const MAX_ROWS: usize = 5;
+
+/// Rows a list shows at once: one fewer when a footer line or button sits
+/// under it, so the card always fits the window. Longer lists scroll.
+pub fn max_rows(footer: bool) -> usize {
+    if footer {
+        MAX_ROWS - 1
+    } else {
+        MAX_ROWS
+    }
+}
+
+/// How many rows are on screen for a list of `total` scrolled by `offset`.
+pub fn shown_rows(total: usize, offset: usize, footer: bool) -> usize {
+    total.saturating_sub(offset).min(max_rows(footer))
+}
+
+/// The furthest a list of `total` can scroll.
+pub fn max_scroll(total: usize, footer: bool) -> usize {
+    total.saturating_sub(max_rows(footer))
+}
+
+/// A thin scroll bar at the right edge while a list has more rows than fit.
+fn scroll_bar(pill: Rect, total: usize, offset: usize, footer: bool, o: f32) -> Option<Element> {
+    let shown = max_rows(footer);
+    if total <= shown {
+        return None;
+    }
+    let track = shown as f32 * ROW_H as f32 - 8.0;
+    let h = (track * shown as f32 / total as f32).max(18.0);
+    let y = (pill.y + LIST_TOP) as f32 + 4.0 + (track - h) * offset as f32 / (total - shown) as f32;
+    Some(Element::Bar { x: (pill.right() - 11.0) as f32, y, w: 3.0, h, color: WHITE, opacity: o * 0.3 })
+}
 const LIST_TOP: f64 = 52.0;
 
 fn hud_icon(h: &Hud) -> Icon {
@@ -1242,7 +1274,7 @@ pub fn clock_chip_elements(
 
 /// Height of a Wi-Fi or Bluetooth list with `rows` entries.
 pub fn list_height(rows: usize, footer: bool) -> f64 {
-    LIST_TOP + rows.clamp(1, MAX_ROWS) as f64 * ROW_H + if footer { 52.0 } else { 14.0 }
+    LIST_TOP + rows.clamp(1, max_rows(footer)) as f64 * ROW_H + if footer { 52.0 } else { 14.0 }
 }
 
 pub fn list_rows(pill: Rect, rows: usize) -> Vec<Rect> {
@@ -1367,13 +1399,16 @@ pub fn bt_footer(c: &Connectivity) -> Option<(String, bool)> {
     }
 }
 
-pub fn expanded_wifi(pill: Rect, c: &Connectivity, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+pub fn expanded_wifi(pill: Rect, c: &Connectivity, scroll: usize, o: f32, engine: &mut TextEngine) -> Vec<Element> {
     let w: &WifiState = &c.wifi;
     let mut v = list_header_elements(pill, Icon::Wifi(3), "Wi-Fi", None, o, engine);
     v.extend(radio_header(pill, w.available.then_some(w.enabled), c.busy.as_deref(), o, engine));
-    let rows = list_rows(pill, w.networks.len());
+    let footer = wifi_footer(c);
+    let shown = shown_rows(w.networks.len(), scroll, footer.is_some());
+    let rows = list_rows(pill, shown);
+    v.extend(scroll_bar(pill, w.networks.len(), scroll, footer.is_some(), o));
     let name_style = TextStyle { size: 15.0, weight: 600, opacity: o, ..TextStyle::default() };
-    for (r, n) in rows.iter().zip(&w.networks) {
+    for (r, n) in rows.iter().zip(w.networks.iter().skip(scroll)) {
         let (x, cy, rw) = (r.x as f32, (r.y + r.h / 2.0) as f32, r.w as f32);
         v.push(Element::Icon {
             icon: Icon::Wifi(connectivity::bars(n.strength)),
@@ -1421,8 +1456,8 @@ pub fn expanded_wifi(pill: Rect, c: &Connectivity, o: f32, engine: &mut TextEngi
         };
         v.push(text(msg, style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
     }
-    if let Some((line, button)) = wifi_footer(c) {
-        v.extend(list_footer_elements(pill, w.networks.len(), &line, button, o, engine));
+    if let Some((line, button)) = footer {
+        v.extend(list_footer_elements(pill, shown, &line, button, o, engine));
     }
     v
 }
@@ -1432,15 +1467,19 @@ pub fn expanded_shelf(
     pill: Rect,
     items: &[islet_core::shelf::ShelfItem],
     dragging: bool,
+    scroll: usize,
     o: f32,
     engine: &mut TextEngine,
 ) -> Vec<Element> {
     let status =
         (!items.is_empty()).then(|| format!("{} item{}", items.len(), if items.len() == 1 { "" } else { "s" }));
     let mut v = list_header_elements(pill, Icon::Folder, "Shelf", status.as_deref(), o, engine);
-    let rows = list_rows(pill, items.len());
+    let footer = shelf_footer(items.len(), dragging);
+    let shown = shown_rows(items.len(), scroll, footer.is_some());
+    let rows = list_rows(pill, shown);
+    v.extend(scroll_bar(pill, items.len(), scroll, footer.is_some(), o));
     let name_style = TextStyle { size: 15.0, weight: 600, opacity: o, ..TextStyle::default() };
-    for (r, item) in rows.iter().zip(items) {
+    for (r, item) in rows.iter().zip(items.iter().skip(scroll)) {
         let (x, cy, rw) = (r.x as f32, (r.y + r.h / 2.0) as f32, r.w as f32);
         let icon = if item.dir { Icon::Folder } else { Icon::File };
         v.push(Element::Icon { icon, x: x + 10.0, y: cy - 10.0, size: 20.0, color: WHITE, opacity: o });
@@ -1463,8 +1502,8 @@ pub fn expanded_shelf(
             (pill.y + LIST_TOP) as f32 + 23.0,
         ));
     }
-    if let Some((line, button)) = shelf_footer(items.len(), dragging) {
-        v.extend(list_footer_elements(pill, items.len(), &line, button, o, engine));
+    if let Some((line, button)) = footer {
+        v.extend(list_footer_elements(pill, shown, &line, button, o, engine));
     }
     v
 }
@@ -1473,15 +1512,18 @@ pub fn expanded_shelf(
 pub fn expanded_clipboard(
     pill: Rect,
     history: &islet_core::clipboard::History,
+    scroll: usize,
     o: f32,
     engine: &mut TextEngine,
 ) -> Vec<Element> {
     let n = history.len();
     let status = (n > 0).then(|| format!("{n} item{}", if n == 1 { "" } else { "s" }));
     let mut v = list_header_elements(pill, Icon::Clipboard, "Clipboard", status.as_deref(), o, engine);
-    let rows = list_rows(pill, n);
+    let shown = shown_rows(n, scroll, n > 0);
+    let rows = list_rows(pill, shown);
+    v.extend(scroll_bar(pill, n, scroll, n > 0, o));
     let style = TextStyle { size: 14.5, weight: 500, opacity: o, ..TextStyle::default() };
-    for (r, item) in rows.iter().zip(history.items()) {
+    for (r, item) in rows.iter().zip(history.items().skip(scroll)) {
         let (x, cy, rw) = (r.x as f32, (r.y + r.h / 2.0) as f32, r.w as f32);
         let line = islet_core::clipboard::preview(item);
         v.push(text(engine.ellipsize(&line, &style, rw - 20.0), style, x + 10.0, cy + 5.0));
@@ -1490,7 +1532,7 @@ pub fn expanded_clipboard(
         let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
         v.push(text("Copy some text to see it here", style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
     } else {
-        v.extend(list_footer_elements(pill, n, CLIPBOARD_CLEAR, true, o, engine));
+        v.extend(list_footer_elements(pill, shown, CLIPBOARD_CLEAR, true, o, engine));
     }
     v
 }
@@ -1558,14 +1600,23 @@ pub fn shelf_remove_hit(row: Rect, x: f64) -> bool {
     x >= row.right() - 40.0
 }
 
-pub fn expanded_bluetooth(pill: Rect, c: &Connectivity, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+pub fn expanded_bluetooth(
+    pill: Rect,
+    c: &Connectivity,
+    scroll: usize,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
     let b: &BtState = &c.bt;
     let mut v = list_header_elements(pill, Icon::Bluetooth, "Bluetooth", None, o, engine);
     v.extend(radio_header(pill, b.available.then_some(b.powered), c.busy.as_deref(), o, engine));
-    let rows = list_rows(pill, b.devices.len());
+    let footer = bt_footer(c);
+    let shown = shown_rows(b.devices.len(), scroll, footer.is_some());
+    let rows = list_rows(pill, shown);
+    v.extend(scroll_bar(pill, b.devices.len(), scroll, footer.is_some(), o));
     let name_style = TextStyle { size: 15.0, weight: 600, opacity: o, ..TextStyle::default() };
     let state_style = TextStyle { size: 12.5, opacity: o * 0.6, align: Align::Right, ..TextStyle::default() };
-    for (r, d) in rows.iter().zip(&b.devices) {
+    for (r, d) in rows.iter().zip(b.devices.iter().skip(scroll)) {
         let (x, cy, rw) = (r.x as f32, (r.y + r.h / 2.0) as f32, r.w as f32);
         v.push(Element::Icon {
             icon: device_icon(d.kind),
@@ -1586,8 +1637,8 @@ pub fn expanded_bluetooth(pill: Rect, c: &Connectivity, o: f32, engine: &mut Tex
         let msg = if b.available { "No paired devices" } else { "Bluetooth isn't available" };
         v.push(text(msg, style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
     }
-    if let Some((line, button)) = bt_footer(c) {
-        v.extend(list_footer_elements(pill, b.devices.len(), &line, button, o, engine));
+    if let Some((line, button)) = footer {
+        v.extend(list_footer_elements(pill, shown, &line, button, o, engine));
     }
     v
 }
