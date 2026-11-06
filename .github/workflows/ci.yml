@@ -154,7 +154,9 @@ jobs:
           MSIX_PFX_PASSWORD: ${{ secrets.MSIX_PFX_PASSWORD }}
         run: |
           $ver = node -p "require('./src-tauri/tauri.conf.json').version"
-          ./scripts/msix.ps1 -Version $ver -Out out-msix
+          # Each CI build gets its own package version (0.1.0.<run>), so a
+          # tester's next download installs over the last one.
+          ./scripts/msix.ps1 -Version $ver -Build $env:GITHUB_RUN_NUMBER -Out out-msix
       - name: MSIX installs and starts
         if: runner.os == 'Windows'
         shell: pwsh

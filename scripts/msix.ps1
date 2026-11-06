@@ -10,6 +10,10 @@
 # Nothing secret is written to the output folder.
 param(
   [Parameter(Mandatory = $true)][string]$Version,
+  # Test builds: a build number for the fourth part of the package version,
+  # so each build installs over the last one instead of being refused as
+  # "the same identity with different contents" (0x80073CFB).
+  [int]$Build = 0,
   [string]$Out = "out",
   [string]$Bin = "target/release"
 )
@@ -47,6 +51,7 @@ try {
   # MSIX versions have four numbers: 0.1.0 -> 0.1.0.0.
   $parts = ($Version -split '[-+]')[0].Split('.')
   while ($parts.Count -lt 4) { $parts += "0" }
+  if ($Build -gt 0) { $parts[3] = [string][Math]::Min($Build, 65535) }
   $ver = ($parts[0..3] -join '.')
 
   $manifest = Get-Content "packaging/msix/AppxManifest.xml" -Raw
@@ -56,7 +61,8 @@ try {
   Copy-Item (Join-Path $Bin "islet.exe"), (Join-Path $Bin "islet-settings.exe") $stage
   Copy-Item "LICENSE" (Join-Path $stage "LICENSE.txt")
 
-  $msix = Join-Path $Out "Islet_${Version}_x64.msix"
+  $name = if ($Build -gt 0) { $ver } else { $Version }
+  $msix = Join-Path $Out "Islet_${name}_x64.msix"
   & $makeappx pack /o /d $stage /p $msix
   if ($LASTEXITCODE -ne 0) { throw "makeappx failed" }
   & $signtool sign /fd SHA256 /f $pfx /p $password $msix
