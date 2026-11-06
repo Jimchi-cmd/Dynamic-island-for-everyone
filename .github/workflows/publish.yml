@@ -18,7 +18,7 @@ jobs:
     outputs:
       tag: ${{ steps.version.outputs.tag }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - id: version
         run: |
           ver=$(node -p "require('./src-tauri/tauri.conf.json').version")
