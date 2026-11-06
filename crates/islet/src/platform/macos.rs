@@ -20,7 +20,7 @@ use objc2_app_kit::{
     NSEvent, NSEventMask, NSEventModifierFlags, NSEventType, NSPanel, NSPasteboardTypeFileURL, NSResponder, NSScreen,
     NSStatusWindowLevel, NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindowCollectionBehavior, NSWindowStyleMask,
 };
-use objc2_core_foundation::{CFData, CFRetained};
+use objc2_core_foundation::CFRetained;
 use objc2_core_graphics::{
     kCGColorSpaceSRGB, CGBitmapInfo, CGColorRenderingIntent, CGColorSpace, CGDataProvider, CGImage, CGImageAlphaInfo,
     CGImageByteOrderInfo,
@@ -238,9 +238,6 @@ pub struct Mac {
     panel: Retained<NSPanel>,
     view: Retained<IsletView>,
     color_space: CFRetained<CGColorSpace>,
-    /// The frame in Core Animation's native layout (premultiplied BGRA,
-    /// little-endian), so it can use the pixels without converting them.
-    bgra: Vec<u8>,
     scale: f64,
     size: (u32, u32),
     notch: Option<(f64, f64)>,
@@ -375,7 +372,6 @@ impl Backend for Mac {
             panel,
             view,
             color_space,
-            bgra: Vec::new(),
             scale,
             size,
             notch,
@@ -407,10 +403,16 @@ impl Backend for Mac {
 
     fn present(&mut self, frame: &Pixmap) -> Result<()> {
         let (w, h) = (frame.width() as usize, frame.height() as usize);
-        self.bgra.resize(frame.data().len(), 0);
-        islet_render::rgba_to_bgra(frame.data(), &mut self.bgra);
-        let data = CFData::from_bytes(&self.bgra);
-        let provider = CGDataProvider::with_cf_data(Some(&data)).ok_or("CGDataProvider failed")?;
+        // Convert straight into a pooled buffer that the image owns until
+        // Core Graphics lets it go (no per-frame allocation or extra copy).
+        let mut buf = take_buffer(frame.data().len());
+        islet_render::rgba_to_bgra(frame.data(), &mut buf);
+        let size = buf.len();
+        let data = Box::into_raw(buf) as *mut u8;
+        // SAFETY: `data` is a leaked Box<[u8]> of `size` bytes, handed to the
+        // provider, which gives it back to `give_back` exactly once.
+        let provider = unsafe { CGDataProvider::with_data(std::ptr::null_mut(), data.cast(), size, Some(give_back)) }
+            .ok_or("CGDataProvider failed")?;
         // Premultiplied B,G,R,A bytes = 32-bit little-endian ARGB words.
         let info = CGBitmapInfo(CGImageAlphaInfo::PremultipliedFirst.0 | CGImageByteOrderInfo::Order32Little.0);
         // SAFETY: the provider holds exactly w*h*4 bytes with the given layout.
@@ -509,6 +511,32 @@ impl Backend for Mac {
             }
         }
         Ok(())
+    }
+}
+
+/// Frame buffers waiting to be reused (a couple are in flight at once).
+static FRAMES: std::sync::Mutex<Vec<Box<[u8]>>> = std::sync::Mutex::new(Vec::new());
+
+/// A buffer of exactly `len` bytes: a pooled one when the size matches.
+fn take_buffer(len: usize) -> Box<[u8]> {
+    let mut pool = FRAMES.lock().unwrap_or_else(|e| e.into_inner());
+    match pool.iter().position(|b| b.len() == len) {
+        Some(i) => pool.swap_remove(i),
+        None => vec![0u8; len].into_boxed_slice(),
+    }
+}
+
+/// Core Graphics is done with a frame's pixels: keep the buffer for the next frame.
+unsafe extern "C-unwind" fn give_back(
+    _info: *mut std::ffi::c_void,
+    data: std::ptr::NonNull<std::ffi::c_void>,
+    size: usize,
+) {
+    // SAFETY: `data` and `size` are the Box<[u8]> leaked in `present`.
+    let buf = unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(data.as_ptr().cast::<u8>(), size)) };
+    let mut pool = FRAMES.lock().unwrap_or_else(|e| e.into_inner());
+    if pool.len() < 3 {
+        pool.push(buf);
     }
 }
 
