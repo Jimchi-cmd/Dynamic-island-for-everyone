@@ -6,7 +6,7 @@
 //! - `ISLET_DEMO=media`: a scripted music + battery session (no OS services)
 //! - `ISLET_REDUCE_MOTION=1`: snap instead of animating
 //!
-//! Right-click the island to quit (until the context menu exists).
+//! Right-click the island for its menu (Settings, hide, pause pop-ups, quit).
 //! `islet --help` lists the commands (navigation, API key).
 
 // Hide the console window on Windows release builds.
@@ -310,6 +310,14 @@ fn run() -> platform::Result<()> {
                 UiAction::Url(url) => navigation::open_url(&url),
                 UiAction::Settings(page) => open_settings(&page),
                 UiAction::Path(path) => open_path(&path),
+                // From the island's menu: save it like `islet set` would.
+                UiAction::SetSwitch(key, on) if !scripted => {
+                    let mut prefs = config::load_prefs();
+                    if prefs.set_switch(key, on).is_ok() && config::save_prefs(&prefs).is_ok() {
+                        app.set_prefs(prefs);
+                    }
+                }
+                UiAction::SetSwitch(..) => {}
             }
         }
         let open = app.nav_card_open(t);

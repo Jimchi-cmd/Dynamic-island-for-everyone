@@ -78,6 +78,10 @@ pub enum ConnHit {
     Home,
     /// Back from Control Centre to the activity it was opened from.
     Return,
+    /// A row of the right-click menu.
+    Menu(usize),
+    /// Lyrics timing: earlier (−1) or later (+1).
+    LyricsShift(i8),
 }
 
 pub const ROW_H: f64 = 36.0;
@@ -1643,6 +1647,98 @@ pub fn expanded_bluetooth(
     v
 }
 
+// ---- The right-click menu -----------------------------------------------------
+
+/// What a menu row does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuAction {
+    Settings,
+    /// Hide the island for an hour (or show it again).
+    Hide,
+    /// Pause pop-ups for an hour (or resume them).
+    Quiet,
+    /// Turn lyrics on or off.
+    Lyrics,
+    /// Lyrics timing: − / + buttons at the row's right.
+    LyricsTiming,
+    Quit,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MenuItem {
+    pub action: MenuAction,
+    pub icon: Icon,
+    pub label: String,
+    /// Greyed text at the right ("1 h", "+0.5 s").
+    pub detail: Option<String>,
+    /// A switch at the right, on or off.
+    pub switch: Option<bool>,
+}
+
+const MENU_TOP: f64 = 14.0;
+const MENU_ROW: f64 = 34.0;
+
+pub fn menu_height(rows: usize) -> f64 {
+    MENU_TOP + rows as f64 * MENU_ROW + 12.0
+}
+
+pub fn menu_rows(pill: Rect, rows: usize) -> Vec<Rect> {
+    (0..rows)
+        .map(|i| Rect::new(pill.x + 14.0, pill.y + MENU_TOP + i as f64 * MENU_ROW, pill.w - 28.0, MENU_ROW))
+        .collect()
+}
+
+/// The − and + buttons of the lyrics-timing row.
+pub fn menu_stepper(row: Rect) -> (Rect, Rect) {
+    let cy = row.y + row.h / 2.0;
+    let plus = Rect::new(row.right() - 40.0, cy - 13.0, 34.0, 26.0);
+    let minus = Rect::new(plus.x - 92.0, cy - 13.0, 34.0, 26.0);
+    (minus, plus)
+}
+
+pub fn expanded_menu(pill: Rect, items: &[MenuItem], o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let label = TextStyle { size: 14.5, weight: 600, opacity: o, ..TextStyle::default() };
+    let detail = TextStyle { size: 12.5, opacity: o * 0.6, align: Align::Right, ..TextStyle::default() };
+    let mut v = Vec::new();
+    for (r, item) in menu_rows(pill, items.len()).into_iter().zip(items) {
+        let (x, cy, w) = (r.x as f32, (r.y + r.h / 2.0) as f32, r.w as f32);
+        let color = if item.action == MenuAction::Quit { RED } else { WHITE };
+        v.push(Element::Icon { icon: item.icon, x: x + 6.0, y: cy - 9.0, size: 18.0, color, opacity: o * 0.9 });
+        let text_style = TextStyle { color, ..label };
+        v.push(text(engine.ellipsize(&item.label, &text_style, w - 150.0), text_style, x + 34.0, cy + 5.0));
+        let mut right = x + w - 6.0;
+        if let Some(on) = item.switch {
+            let (sw, sh) = (36.0, 22.0);
+            let sx = right - sw;
+            let (track, alpha) = if on { (GREEN, 1.0) } else { (WHITE, 0.22) };
+            v.push(Element::Bar { x: sx, y: cy - sh / 2.0, w: sw, h: sh, color: track, opacity: o * alpha });
+            let knob = sh - 4.0;
+            let kx = if on { sx + sw - knob - 2.0 } else { sx + 2.0 };
+            v.push(Element::Bar { x: kx, y: cy - knob / 2.0, w: knob, h: knob, color: WHITE, opacity: o });
+            right = sx - 10.0;
+        }
+        if item.action == MenuAction::LyricsTiming {
+            let (minus, plus) = menu_stepper(r);
+            for (b, sign) in [(minus, "−"), (plus, "+")] {
+                let (bx, by, bw, bh) = (b.x as f32, b.y as f32, b.w as f32, b.h as f32);
+                v.push(Element::Bar { x: bx, y: by, w: bw, h: bh, color: WHITE, opacity: o * 0.16 });
+                let style =
+                    TextStyle { size: 17.0, weight: 600, opacity: o, align: Align::Center, ..TextStyle::default() };
+                v.push(text(sign, style, bx + bw / 2.0, by + bh / 2.0 + 6.0));
+            }
+            if let Some(d) = &item.detail {
+                let style = TextStyle { align: Align::Center, opacity: o * 0.8, tabular: true, ..detail };
+                v.push(text(d.clone(), style, ((minus.right() + plus.x) / 2.0) as f32, cy + 4.5));
+            }
+            continue;
+        }
+        if let Some(d) = &item.detail {
+            v.push(text(d.clone(), detail, right, cy + 4.5));
+        }
+    }
+    v
+}
+
 // ---- The time on the empty island --------------------------------------------
 
 /// The time, centred in the empty pill ("14:05", or "2:05 PM").
@@ -1723,6 +1819,7 @@ pub fn compact_lyrics(
     pill: Rect,
     m: &MediaInfo,
     lyrics: &Lyrics,
+    pos: f64,
     t: f64,
     o: f32,
     engine: &mut TextEngine,
@@ -1734,7 +1831,7 @@ pub fn compact_lyrics(
         vec![Element::Art { x: x + 6.0, y: cy - 12.5, size: 25.0, radius: 7.0, image: m.art.clone(), opacity: o }];
     v.extend(waveform(right - 31.0, cy, 4, t, m.playing, tint, o));
     let (left, end) = (x + 38.0, right - 40.0);
-    v.extend(lyric_strip(left, end, cy + 4.5, lyrics, m.position_now(t).unwrap_or(0.0), o, engine));
+    v.extend(lyric_strip(left, end, cy + 4.5, lyrics, pos, o, engine));
     v
 }
 

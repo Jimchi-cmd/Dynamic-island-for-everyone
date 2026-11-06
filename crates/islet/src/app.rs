@@ -139,13 +139,22 @@ pub enum UiAction {
     Path(String),
     /// Islet Settings at a page ("wifi:Home": join Home with a password).
     Settings(String),
+    /// Turn a setting on or off and save it (`islet set <key> on|off`).
+    SetSwitch(&'static str, bool),
 }
 
 /// Windows has no public API to connect Bluetooth devices: its settings do.
 const BLUETOOTH_SETTINGS: &str = "ms-settings:bluetooth";
 
+/// How long "Hide for an hour" and "Pause pop-ups" last.
+const QUIET_SECS: f64 = 3600.0;
+/// One tap of the lyrics-timing buttons.
+const LYRICS_STEP: f64 = 0.5;
+
 /// What an open island shows.
 enum OpenContent<'a> {
+    /// The right-click menu.
+    Menu,
     Agenda,
     Custom(&'a islet_core::activity::Custom),
     Notes,
@@ -253,6 +262,13 @@ pub struct App {
     /// An app is fullscreen on the island's display: the island hides
     /// until the pointer comes to it.
     fullscreen: bool,
+    /// The right-click menu is open; the island is hidden (until hovered)
+    /// or pop-ups are paused until these times.
+    menu: bool,
+    hidden_until: Option<f64>,
+    quiet_until: Option<f64>,
+    /// Lyrics shown this many seconds later (negative: sooner), per song.
+    lyrics_delay: std::collections::HashMap<String, f64>,
 }
 
 impl App {
@@ -319,6 +335,10 @@ impl App {
             list_scroll: 0,
             list_acc: 0.0,
             fullscreen: false,
+            menu: false,
+            hidden_until: None,
+            quiet_until: None,
+            lyrics_delay: std::collections::HashMap::new(),
         };
         app.anim_region = app.target_bounds();
         app
@@ -361,7 +381,7 @@ impl App {
     /// Activity cards start with a "Control Centre" button; their content
     /// goes below it.
     fn has_header(content: &OpenContent) -> bool {
-        !matches!(content, OpenContent::Clock | OpenContent::Panel(_) | OpenContent::Alarm(_))
+        !matches!(content, OpenContent::Clock | OpenContent::Panel(_) | OpenContent::Alarm(_) | OpenContent::Menu)
     }
 
     /// Where an open card's own content goes (below the notch and header).
@@ -671,6 +691,22 @@ impl App {
                 return Some(ConnHit::Back);
             }
         }
+        if let OpenContent::Menu = open {
+            let items = self.menu_items(t);
+            let rows = content::menu_rows(cr, items.len());
+            let i = rows.iter().position(|r| r.contains(x, y))?;
+            if items[i].action == content::MenuAction::LyricsTiming {
+                let (minus, plus) = content::menu_stepper(rows[i]);
+                return if minus.contains(x, y) {
+                    Some(ConnHit::LyricsShift(-1))
+                } else if plus.contains(x, y) {
+                    Some(ConnHit::LyricsShift(1))
+                } else {
+                    None
+                };
+            }
+            return Some(ConnHit::Menu(i));
+        }
         match open {
             OpenContent::Clock => content::clock_chips(cr, !self.shelf.is_empty(), self.prefs.clipboard)
                 .into_iter()
@@ -703,6 +739,79 @@ impl App {
             }
             _ => None,
         }
+    }
+
+    /// The right-click menu's rows, as they stand now.
+    fn menu_items(&self, t: f64) -> Vec<content::MenuItem> {
+        use content::{MenuAction, MenuItem};
+        use islet_render::elements::Icon;
+        let left = |until: f64| format!("{} min left", ((until - t) / 60.0).ceil().max(1.0) as i64);
+        let item =
+            |action, icon, label: &str| MenuItem { action, icon, label: label.into(), detail: None, switch: None };
+        let mut v = vec![item(MenuAction::Settings, Icon::Controls, "Islet Settings")];
+        v.push(match self.hidden_until {
+            Some(h) => {
+                MenuItem { detail: Some(left(h)), ..item(MenuAction::Hide, Icon::Moon, "Show the island again") }
+            }
+            None => item(MenuAction::Hide, Icon::Moon, "Hide for an hour"),
+        });
+        v.push(match self.quiet_until.filter(|q| t < *q) {
+            Some(q) => MenuItem { detail: Some(left(q)), ..item(MenuAction::Quiet, Icon::Bell(0), "Resume pop-ups") },
+            None => item(MenuAction::Quiet, Icon::Bell(0), "Pause pop-ups for an hour"),
+        });
+        v.push(MenuItem { switch: Some(self.prefs.lyrics), ..item(MenuAction::Lyrics, Icon::Music, "Lyrics") });
+        if self.song_lyrics().is_some() {
+            let d = self.song_key().and_then(|k| self.lyrics_delay.get(&k).copied()).unwrap_or(0.0);
+            let detail = if d == 0.0 { "On time".to_string() } else { format!("{d:+.1} s") };
+            v.push(MenuItem { detail: Some(detail), ..item(MenuAction::LyricsTiming, Icon::Music, "Lyrics timing") });
+        }
+        v.push(item(MenuAction::Quit, Icon::Close, "Quit Islet"));
+        v
+    }
+
+    fn menu_act(&mut self, i: usize, t: f64) -> bool {
+        use content::MenuAction;
+        let Some(item) = self.menu_items(t).into_iter().nth(i) else { return false };
+        match item.action {
+            MenuAction::Settings => {
+                self.ui_actions.push(UiAction::Settings("general".into()));
+                self.menu = false;
+                self.signal(Signal::Escape, t);
+            }
+            MenuAction::Hide => {
+                self.hidden_until = if self.hidden_until.is_some() { None } else { Some(t + QUIET_SECS) };
+                self.menu = false;
+                self.signal(Signal::Escape, t);
+                self.update_shown(t);
+            }
+            MenuAction::Quiet => {
+                self.quiet_until = if self.quiet_until.is_some_and(|q| t < q) { None } else { Some(t + QUIET_SECS) };
+            }
+            MenuAction::Lyrics => {
+                let on = !self.prefs.lyrics;
+                self.prefs.lyrics = on;
+                if !on {
+                    self.lyrics = None;
+                }
+                self.ui_actions.push(UiAction::SetSwitch("lyrics", on));
+            }
+            MenuAction::LyricsTiming => {}
+            MenuAction::Quit => self.quit = true,
+        }
+        self.sync_live(t);
+        true
+    }
+
+    /// The playing song's key (`Track::key`).
+    fn song_key(&self) -> Option<String> {
+        let m = self.activities.media()?;
+        Some(format!("{}\u{1f}{}", m.artist.trim().to_lowercase(), m.title.trim().to_lowercase()))
+    }
+
+    /// Where the song is for its lyrics: the position, nudged by the timing set in the menu.
+    fn lyrics_pos(&self, m: &MediaInfo, t: f64) -> f64 {
+        let delay = self.song_key().and_then(|k| self.lyrics_delay.get(&k).copied()).unwrap_or(0.0);
+        m.position_now(t).unwrap_or(0.0) - delay
     }
 
     /// A list panel's length and its footer (line, is a button).
@@ -774,6 +883,13 @@ impl App {
                 self.conn_commands.push(ConnCommand::Status);
             }
             ConnHit::Return => self.home = false,
+            ConnHit::Menu(i) => return self.menu_act(i, t),
+            ConnHit::LyricsShift(dir) => {
+                if let Some(key) = self.song_key() {
+                    let d = self.lyrics_delay.entry(key).or_insert(0.0);
+                    *d = ((*d + f64::from(dir) * LYRICS_STEP) * 2.0).round() / 2.0;
+                }
+            }
             // The switch flips at once; the radio's real state follows (and
             // flips it back, with a message, if the OS says no).
             ConnHit::Power => match self.panel {
@@ -904,6 +1020,22 @@ impl App {
                 buttons.push((format!("Back to {}", self.activity_label(&live)), content::return_button(outer)));
             }
             match shown {
+                OpenContent::Menu => {
+                    let items = self.menu_items(t);
+                    for (item, r) in items.iter().zip(content::menu_rows(cr, items.len())) {
+                        if item.action == content::MenuAction::LyricsTiming {
+                            let (minus, plus) = content::menu_stepper(r);
+                            buttons.push(("Lyrics sooner".into(), minus));
+                            buttons.push(("Lyrics later".into(), plus));
+                            continue;
+                        }
+                        let state = match item.switch {
+                            Some(on) => format!(", {}", if on { "on" } else { "off" }),
+                            None => String::new(),
+                        };
+                        buttons.push((format!("{}{state}", item.label), r));
+                    }
+                }
                 OpenContent::Media(m) => {
                     for (r, ctl) in content::media_controls(cr) {
                         let name = match ctl {
@@ -1109,8 +1241,7 @@ impl App {
         if !self.prefs.lyrics {
             return None;
         }
-        let m = self.activities.media()?;
-        let key = format!("{}\u{1f}{}", m.artist.trim().to_lowercase(), m.title.trim().to_lowercase());
+        let key = self.song_key()?;
         match &self.lyrics {
             Some((k, Some(l))) if *k == key && !l.is_empty() => Some(l),
             _ => None,
@@ -1145,7 +1276,7 @@ impl App {
             && self.island.presentation() == Presentation::Idle
             && !self.dragging
             && !self.privacy_shown();
-        if hide || self.hidden_for_fullscreen() {
+        if hide || self.hidden_for_fullscreen() || self.hidden_for_now() {
             0.0
         } else {
             1.0
@@ -1158,6 +1289,18 @@ impl App {
     /// ringing alarm or timer.
     fn hidden_for_fullscreen(&self) -> bool {
         self.fullscreen
+            && !self.hovered
+            && !self.dragging
+            && !self.island.presentation().is_open()
+            && self.activities.alarm().is_none()
+            && !self.timer_ringing
+    }
+
+    /// "Hide for an hour" from the menu: like fullscreen, it still shows
+    /// while pointed at, while open, and for alarms. (The deadline is
+    /// checked by `tick`.)
+    fn hidden_for_now(&self) -> bool {
+        self.hidden_until.is_some()
             && !self.hovered
             && !self.dragging
             && !self.island.presentation().is_open()
@@ -1232,6 +1375,10 @@ impl App {
 
     fn live(&self, t: f64) -> Vec<Live> {
         let mut v = self.activities.live(t);
+        // Pop-ups paused from the menu: brief notices wait, lasting things stay.
+        if self.quiet_until.is_some_and(|q| t < q) {
+            v.retain(|l| !matches!(l, Live::Hud(_) | Live::Battery { .. } | Live::Note(_) | Live::Event { .. }));
+        }
         if v.len() > 1 {
             let n = self.rotation % v.len();
             v.rotate_left(n);
@@ -1272,6 +1419,8 @@ impl App {
         };
         if let (Some(Live::Alarm(_)), Some(a)) = (live.first(), self.activities.alarm()) {
             OpenContent::Alarm(a)
+        } else if self.menu {
+            OpenContent::Menu
         } else if let Some(p) = self.panel {
             OpenContent::Panel(p)
         } else if home {
@@ -1388,6 +1537,7 @@ impl App {
                 cr
             };
             match open {
+                OpenContent::Menu => out.extend(content::expanded_menu(cr, &self.menu_items(t), eo, engine)),
                 OpenContent::Alarm(a) => out.extend(content::expanded_alarm(cr, a, self.h24, t, eo, engine)),
                 OpenContent::Timer(tm) => out.extend(content::expanded_timer(card, tm, t, eo, engine)),
                 OpenContent::Agenda => out.extend(content::expanded_agenda(card, &self.agenda(), eo, engine)),
@@ -1428,7 +1578,7 @@ impl App {
                 OpenContent::Media(m) => {
                     out.extend(content::expanded_media(card, m, t, eo, self.scrub, engine));
                     if let Some(l) = self.song_lyrics() {
-                        let pos = m.position_now(t).unwrap_or(0.0);
+                        let pos = self.lyrics_pos(m, t);
                         out.extend(content::card_lyrics(card, l, pos, eo, engine));
                     }
                 }
@@ -1485,7 +1635,7 @@ impl App {
                     let inner = Rect::new(p.x, p.y, (p.w - room).max(1.0), p.h);
                     match (first, self.song_lyrics()) {
                         (Live::Media(m), Some(l)) if self.lyrics_in_bar(&live) => {
-                            out.extend(content::compact_lyrics(inner, m, l, t, co, engine))
+                            out.extend(content::compact_lyrics(inner, m, l, self.lyrics_pos(m, t), t, co, engine))
                         }
                         _ => out.extend(content::compact(inner, first, t, co, engine)),
                     }
@@ -1534,6 +1684,7 @@ impl App {
                 let header = if Self::has_header(&open) { content::CARD_HEADER_H } else { 0.0 };
                 let h = header
                     + match open {
+                        OpenContent::Menu => content::menu_height(self.menu_items(t).len()),
                         OpenContent::Alarm(_) => content::ALARM_H,
                         OpenContent::Timer(_) => content::TIMER_H,
                         OpenContent::Agenda => content::agenda_height(self.agenda().len()),
@@ -1615,6 +1766,7 @@ impl App {
             self.panel = None;
             self.list_scroll = 0;
             self.home = false;
+            self.menu = false;
             self.notes_open = false;
         } else if !from.is_open() && matches!(self.open_content(&self.live(t)), OpenContent::Notes) {
             self.notes_open = true;
@@ -1771,10 +1923,22 @@ impl App {
                     _ => false,
                 }
             }
-            // Until the context menu exists: right-click the island to quit.
+            // Right-click: the menu (Settings, hide, pause pop-ups, lyrics, quit).
             Event::PointerDown { x, y, button: Button::Secondary } if self.hit(x, y, t) => {
-                self.quit = true;
-                false
+                self.press = None;
+                if self.menu && self.island.presentation().is_open() {
+                    self.menu = false;
+                    return self.signal(Signal::Escape, t);
+                }
+                self.menu = true;
+                self.panel = None;
+                self.home = false;
+                if self.island.presentation().is_open() {
+                    self.sync_live(t);
+                    true
+                } else {
+                    self.signal(Signal::Click, t)
+                }
             }
             Event::Key(Key::Escape) => self.signal(Signal::Escape, t),
             Event::Hotkey => self.toggle(t),
@@ -1801,6 +1965,14 @@ impl App {
     /// Advance timers. Returns true if anything changed.
     pub fn tick(&mut self, t: f64) -> bool {
         let mut changed = self.timer_tick(t);
+        if self.hidden_until.is_some_and(|h| t >= h) {
+            self.hidden_until = None;
+            changed = true;
+        }
+        if self.quiet_until.is_some_and(|q| t >= q) {
+            self.quiet_until = None;
+            changed = true;
+        }
         changed |= self.sync_live(t);
         changed |= self.update_shown(t);
         if std::mem::take(&mut self.pending_peek) && !self.island.presentation().is_open() {
@@ -1865,7 +2037,7 @@ impl App {
         // Lyrics glide at 60 fps while they move: sliding to the next line,
         // or scrolling across one too long for the bar (about 7 px a letter).
         if let (true, Some(l), Some(m)) = (playing, self.song_lyrics(), self.activities.media()) {
-            let pos = m.position_now(t).unwrap_or(0.0);
+            let pos = self.lyrics_pos(m, t);
             let long = self.lyrics_in_bar(&live)
                 && l.current(pos)
                     .is_some_and(|i| l.text(i).chars().count() as f64 * 7.0 > content::COMPACT_LYRICS_W - 90.0);
@@ -1919,6 +2091,9 @@ impl App {
                     at(t + rem.rem_euclid(60.0) + 0.05);
                 }
             }
+        }
+        for deadline in [self.hidden_until, self.quiet_until].into_iter().flatten() {
+            at(deadline);
         }
         // Alarms are checked each minute, only while one is set.
         if let Some(secs) = self.clock.and_then(|now| self.alarms.next_check(&now)) {
@@ -2256,6 +2431,66 @@ mod tests {
         assert!(plain.frame(4.0).opacity > 0.99);
     }
 
+    fn right_click(app: &mut App, t: f64) {
+        let (x, y) = centre(app, t);
+        app.handle(Event::PointerDown { x, y, button: Button::Secondary }, t);
+    }
+
+    fn menu_row(app: &App, t: f64, action: content::MenuAction) -> Rect {
+        let items = app.menu_items(t);
+        let i = items.iter().position(|m| m.action == action).expect("in the menu");
+        content::menu_rows(app.content_rect(app.pill_rect(t)), items.len())[i]
+    }
+
+    #[test]
+    fn the_menu_hides_the_island_pauses_pop_ups_and_times_lyrics() {
+        use content::MenuAction;
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        // Hide for an hour: gone (even the clock), back when pointed at,
+        // and by itself after the hour.
+        right_click(&mut app, 0.0);
+        let r = menu_row(&app, 4.0, MenuAction::Hide);
+        press(&mut app, r, 4.0);
+        assert_eq!(app.presentation(), Idle);
+        assert!(app.frame(6.0).opacity < 0.01);
+        assert!(app.next_timer(6.0).is_some_and(|s| s <= QUIET_SECS));
+        app.tick(5.0 + QUIET_SECS);
+        assert!(app.frame(5.0 + QUIET_SECS + 2.0).opacity > 0.99, "back after the hour");
+
+        // Pause pop-ups: a volume change or a headset doesn't pop up.
+        let t = 4000.0;
+        right_click(&mut app, t);
+        let r = menu_row(&app, t + 4.0, MenuAction::Quiet);
+        press(&mut app, r, t + 4.0);
+        app.handle(Event::Key(Key::Escape), t + 5.0);
+        app.report(Report::Hud(Hud::Volume { level: 0.5, muted: false }), t + 9.0);
+        app.report(Report::DeviceConnected(buds()), t + 9.0);
+        assert!(app.live(t + 9.5).is_empty(), "quiet");
+        assert_eq!(app.presentation(), Idle);
+
+        // Lyrics: the switch, and timing for this song.
+        app.report(Report::Media(Some(song(true))), t + 10.0);
+        right_click(&mut app, t + 11.0);
+        let r = menu_row(&app, t + 15.0, MenuAction::Lyrics);
+        press(&mut app, r, t + 15.0);
+        assert!(app.prefs.lyrics);
+        assert_eq!(app.take_ui_actions(), [UiAction::SetSwitch("lyrics", true)]);
+        let key = app.lyrics_wanted().unwrap().key();
+        app.report(Report::Lyrics(key, Some(lyrics())), t + 15.0);
+        let row = menu_row(&app, t + 19.0, MenuAction::LyricsTiming);
+        let (_, plus) = content::menu_stepper(row);
+        press(&mut app, plus, t + 19.0);
+        press(&mut app, plus, t + 19.5);
+        let m = app.activities.media().unwrap().clone();
+        assert!((app.lyrics_pos(&m, t + 20.0) - (m.position_now(t + 20.0).unwrap() - 1.0)).abs() < 1e-9);
+        let item = app.menu_items(t + 20.0).into_iter().find(|m| m.action == MenuAction::LyricsTiming).unwrap();
+        assert_eq!(item.detail.as_deref(), Some("+1.0 s"));
+        // Right-click again closes the menu.
+        right_click(&mut app, t + 21.0);
+        assert!(!app.menu);
+    }
+
     #[test]
     fn a_fullscreen_video_hides_the_island_until_the_pointer_comes() {
         let mut engine = TextEngine::new();
@@ -2338,7 +2573,11 @@ mod tests {
         let mut idle12 = App::new(Demo::None, false);
         idle12.set_clock_style(false);
         idle12.set_time(NOW, 0.0);
+        let mut menu = base();
+        let (mx, my) = centre(&menu, 1.0);
+        menu.handle(Event::PointerDown { x: mx, y: my, button: Button::Secondary }, 1.0);
         let shots: Vec<(&App, f64, u32)> = vec![
+            (&menu, 6.0, 250),
             (&idle, 1.0, 46),
             (&idle12, 1.0, 46),
             (&compact, 3.0, 46),
@@ -2467,13 +2706,21 @@ mod tests {
     }
 
     #[test]
-    fn escape_collapses_and_right_click_quits() {
+    fn escape_collapses_and_right_click_opens_the_menu() {
         let mut app = App::new(Demo::None, false);
         click(&mut app, 0.0);
         app.handle(Event::Key(Key::Escape), 1.0);
         assert_eq!(app.presentation(), Idle);
         let (x, y) = centre(&app, 6.0);
         app.handle(Event::PointerDown { x, y, button: Button::Secondary }, 6.0);
+        assert!(!app.wants_quit(), "right-click no longer quits by accident");
+        assert_eq!(app.presentation(), Expanded);
+        let mut engine = TextEngine::new();
+        let shown = texts(&app, 10.0, &mut engine);
+        assert!(shown.iter().any(|s| s == "Quit Islet") && shown.iter().any(|s| s == "Islet Settings"), "{shown:?}");
+        // "Quit Islet" quits.
+        let rows = content::menu_rows(app.content_rect(app.pill_rect(10.0)), app.menu_items(10.0).len());
+        press(&mut app, *rows.last().unwrap(), 10.0);
         assert!(app.wants_quit());
     }
 

@@ -128,7 +128,8 @@ You can close the Settings window; the island keeps running. Open **Islet Settin
 | Close it | Click it again, press **Esc**, click anywhere else, or move away (it closes by itself after 5 seconds) |
 | Open the biggest view | Press and hold |
 | Switch between two things at once (music and a timer, say) | Scroll over the island |
-| Quit Islet | Right-click the island |
+| Open the menu (Settings, hide for an hour, pause pop-ups, lyrics, quit) | Right-click the island |
+| Quit Islet | Right-click the island → **Quit Islet** |
 
 What it shows on its own:
 
@@ -161,6 +162,8 @@ Islet shows what's playing in any app: Spotify, a browser, Apple Music, VLC and 
 3. Play a song. The pill gets wider and the lyrics slide through it as the song plays: the line being sung is bright, and the lines before and after it are dimmed. Open the island to see two lines under the player too.
 
 Lyrics come from [LRCLIB](https://lrclib.net), a free, open lyrics database. When this is on, Islet sends LRCLIB only the title, artist, album and length of the song that's playing, once per song. Songs without timed lyrics there simply show none. (On a MacBook with a notch, lyrics show only in the open player, because the notch would hide the middle of the line.)
+
+**Lyrics a little early or late?** Right-click the island → **Lyrics timing** → tap **−** to show them sooner or **+** to show them later (half a second per tap, for that song). The same menu turns lyrics on or off.
 
 ### More music options (Settings → General → Now Playing)
 
@@ -288,6 +291,11 @@ Islet restarts itself to apply a new size, gap or display.
 
 ---
 
+**The right-click menu** also has:
+
+- **Hide for an hour:** the island disappears (point at the top of the screen to see it anyway). Choose **Show the island again** to undo.
+- **Pause pop-ups for an hour:** no volume, battery, notification or calendar pop-ups; music, timers and alarms carry on. **Resume pop-ups** undoes it.
+
 ## 12. Privacy settings
 
 Islet has no accounts, no analytics and no telemetry. It uses the internet only for features you turn on:
@@ -335,7 +343,7 @@ islet --help                       # everything else
 **Uninstall:**
 
 - **Windows:** Settings → Apps → Installed apps → **Islet** → **⋯** → **Uninstall**. (To remove the test certificate too: run `certlm.msc` → Trusted People → Certificates → delete "Islet Test".)
-- **Mac:** right-click the island to quit, then drag Islet from Applications to the Bin.
+- **Mac:** right-click the island → **Quit Islet**, then drag Islet from Applications to the Bin.
 - **Linux:** `sudo apt remove islet`, `sudo dnf remove islet`, or delete the AppImage.
 
 Your settings stay in `%APPDATA%\Islet` (Windows), `~/Library/Application Support/Islet` (Mac) or `~/.config/islet` (Linux); delete that folder to remove them too.

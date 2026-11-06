@@ -93,7 +93,7 @@ It runs Islet's command line (`islet toggle`, `islet caps-lock on|off`), so the 
 ## Uninstalling
 
 - **Windows:** Settings → Apps → Islet → Uninstall.
-- **macOS:** quit Islet (right-click the island), then drag Islet from Applications to the Bin.
+- **macOS:** quit Islet (right-click the island → **Quit Islet**), then drag Islet from Applications to the Bin.
 - **Linux:** `sudo apt remove islet` or `sudo dnf remove islet`, or delete the AppImage.
 
 Your settings live in `%APPDATA%\Islet`, `~/Library/Application Support/Islet` or `~/.config/islet`. Delete that folder to remove them, and turn off **Start at login** first (or run `islet autostart off`). The Google key stays in your keychain until you remove it (`islet key routes --clear`).

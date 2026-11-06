@@ -89,7 +89,7 @@ ISLET_DEMO=media cargo run --release -p islet      # a scripted music + battery 
 npm ci && npm run tauri dev                        # Settings
 ```
 
-Right-click the island to quit.
+Right-click the island for its menu: Islet Settings, hide it for an hour, pause pop-ups for an hour, lyrics on or off and their timing, and Quit.
 
 ## Known limitations
 
