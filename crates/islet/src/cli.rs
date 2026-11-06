@@ -53,7 +53,7 @@ Usage:
                                            OS keychain and turn calendar on
   islet calendar on|off|clear              show events or not; clear removes the link
   islet activity start|update <id> --title <text> [--subtitle <text>] [--progress 0-100]
-                                 [--color #rrggbb]
+                                 [--color #rrggbb] [--open <file or link>]
                                            show your own live activity (a build, a download…)
   islet activity end <id>                  remove it
   islet shelf [--json]                     files on the shelf (drop files on the island to add)
@@ -72,7 +72,7 @@ Usage:
   islet hotkey [<keys>|off]                the shortcut for that, e.g. Ctrl+Alt+I
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
                                            notifications, calendar, fahrenheit, web-artwork,
-                                           spotify, privacy-dots, clipboard, lyrics, auto-hide, calls,
+                                           spotify, privacy-dots, clipboard, lyrics, auto-hide, calls, downloads,
                                            idle-clock
   islet prefs [--json]                     the island's settings
   islet autostart on|off                   start Islet when you log in (or stop doing so)
@@ -460,6 +460,7 @@ pub fn parse_activity(id: &str, args: &[&str]) -> Result<islet_core::activity::C
         subtitle: String::new(),
         progress: None,
         color: None,
+        open: None,
     };
     let mut it = args.iter();
     while let Some(&arg) = it.next() {
@@ -467,6 +468,7 @@ pub fn parse_activity(id: &str, args: &[&str]) -> Result<islet_core::activity::C
         match arg {
             "--title" => c.title = value("--title")?.into(),
             "--subtitle" => c.subtitle = value("--subtitle")?.into(),
+            "--open" => c.open = Some(value("--open")?.into()),
             "--progress" => {
                 let v = value("--progress")?;
                 let p: f32 =

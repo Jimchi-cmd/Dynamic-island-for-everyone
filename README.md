@@ -25,6 +25,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 - **Alarms:** one-time or repeating. When one rings, the island opens with a swinging bell and a chime until you snooze or stop it.
 - **Wi-Fi and Bluetooth:** open the island, tap Wi-Fi or Bluetooth on the clock card, and pick a network or a device, or switch the radio on or off.
 - **Control Centre from anywhere:** every open card (music, a timer, navigation…) has a "‹ Control Centre" button at the top that goes to the clock card with Wi-Fi, Bluetooth, the shelf and the system monitor, and lists have a back button.
+- **Downloads** (opt-in): what your browser is downloading, with its size and speed, then "Downloaded": tap to open it.
 - **Calls:** while Zoom, Teams, a browser call or any app has the microphone, the island shows how long the call has run, with a button that mutes your microphone.
 - **Camera and microphone dots:** a green dot while an app uses the camera, an orange one for the microphone (your screen reader hears which app).
 - **System monitor:** CPU, memory and disk on the clock card, read only while you look at it.

@@ -234,6 +234,7 @@ export interface IslandPrefs {
   autoHide: boolean;
   idleClock: boolean;
   calls: boolean;
+  downloads: boolean;
   hotkey: string;
   accent: string;
   size: string;
@@ -267,4 +268,5 @@ export const SWITCH_NAMES: Record<string, string> = {
   autoHide: 'auto-hide',
   idleClock: 'idle-clock',
   calls: 'calls',
+  downloads: 'downloads',
 };

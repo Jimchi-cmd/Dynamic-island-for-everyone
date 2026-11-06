@@ -161,6 +161,7 @@ fn run() -> platform::Result<()> {
     providers::WEB_ARTWORK.store(app.prefs().web_artwork, std::sync::atomic::Ordering::Relaxed);
     providers.spotify(app.prefs().spotify && !scripted);
     providers.clipboard(app.prefs().clipboard && !scripted);
+    providers.downloads(app.prefs().downloads && !scripted);
     let mut alarm_sound = sound::AlarmSound::default();
     // Windows' screen-reader adapter must exist before the window shows.
     let mut access = a11y::Bridge::new(win.native_handle(), win.waker());
@@ -285,6 +286,7 @@ fn run() -> platform::Result<()> {
                     providers::WEB_ARTWORK.store(app.prefs().web_artwork, std::sync::atomic::Ordering::Relaxed);
                     providers.spotify(app.prefs().spotify);
                     providers.clipboard(app.prefs().clipboard);
+                    providers.downloads(app.prefs().downloads);
                 }
                 Control::PrefsChanged => {}
                 Control::ShelfChanged if !scripted => app.set_shelf(config::load_shelf()),

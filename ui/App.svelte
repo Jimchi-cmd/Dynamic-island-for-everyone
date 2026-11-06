@@ -798,6 +798,22 @@
             been going and a button that mutes your microphone.
           </p>
           <div class="net">
+            <span class="name">Downloads in progress</span>
+            <input
+              type="checkbox"
+              class="switch"
+              aria-label="Show downloads in progress"
+              checked={islandPrefs?.downloads ?? false}
+              disabled={!islandPrefs}
+              onchange={(e) => setSwitch('downloads', e.currentTarget.checked)}
+            />
+          </div>
+          <p class="muted small">
+            Shows what your browser is downloading (from your Downloads folder), then "Downloaded": tap it to open the
+            file. Only file names and sizes are read, on this computer.{#if info?.os === 'macos'} macOS asks once
+            whether Islet may see your Downloads folder.{/if}
+          </p>
+          <div class="net">
             <span class="name">Clipboard history</span>
             <input
               type="checkbox"

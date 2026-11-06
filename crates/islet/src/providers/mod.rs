@@ -10,6 +10,7 @@ pub mod connectivity;
 #[cfg(target_os = "linux")]
 mod dbus_util;
 mod demo;
+pub mod downloads;
 #[cfg(target_os = "linux")]
 mod linux_battery;
 #[cfg(target_os = "linux")]
@@ -194,6 +195,7 @@ pub struct Providers {
     lyrics: Sender<Option<islet_core::lyrics::Track>>,
     mic: Sender<islet_core::activity::MicCommand>,
     clipboard: Option<clipboard::Watcher>,
+    downloads: Option<downloads::Watcher>,
     sink: Sink,
     #[cfg(target_os = "linux")]
     notifications: linux_notifications::Notifications,
@@ -232,6 +234,7 @@ impl Providers {
             lyrics,
             mic,
             clipboard: None,
+            downloads: None,
             sink,
             #[cfg(target_os = "linux")]
             notifications: linux_notifications::Notifications::default(),
@@ -282,6 +285,15 @@ impl Providers {
             self.clipboard = clipboard::start(self.sink.clone());
         } else if !on {
             self.clipboard = None;
+        }
+    }
+
+    /// Start or stop watching the Downloads folder (opt-in).
+    pub fn downloads(&mut self, on: bool) {
+        if on && self.downloads.is_none() {
+            self.downloads = downloads::start(self.sink.clone());
+        } else if !on && self.downloads.take().is_some() {
+            self.sink.send(Report::CustomEnded(islet_core::downloads::ACTIVITY_ID.into()));
         }
     }
 

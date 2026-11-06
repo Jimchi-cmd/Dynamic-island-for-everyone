@@ -136,6 +136,9 @@ pub struct Custom {
     /// Accent colour (RGB), default blue.
     #[serde(default)]
     pub color: Option<[u8; 3]>,
+    /// A file or link that tapping the open card opens (a finished download).
+    #[serde(default)]
+    pub open: Option<String>,
 }
 
 /// At most this many script activities at once.

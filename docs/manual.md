@@ -231,6 +231,8 @@ These appear for a moment by themselves:
 
 **Calls:** when Zoom, Teams, a browser call (Google Meet, for example) or any other app uses your microphone for more than a few seconds, the island shows a microphone, the app's name and how long the call has been going. Open the island and tap the big microphone button to **mute** your microphone (it turns red); tap again to unmute. It disappears when the call ends. Don't want it? Turn off **Settings → General → Privacy → Calls**. (On a Mac the island can't tell which app it is, so it says "Microphone on".)
 
+**Downloads** (off until you turn it on in **Settings → General → Privacy → Downloads in progress**): while your browser downloads a file, the island shows its name, how much has arrived and the speed. When it's done it says **Downloaded**; open the island and tap the card to open the file. It works with Chrome, Edge, Brave, Firefox and Safari saving to your Downloads folder.
+
 ## 8. Timer, focus sessions and alarms
 
 **Timer** (Settings → **Timer & focus**)

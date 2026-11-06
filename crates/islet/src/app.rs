@@ -2025,7 +2025,17 @@ impl App {
                     return true;
                 }
                 match self.press.take() {
-                    Some(p) if !p.long_fired => self.signal(Signal::Click, t),
+                    Some(p) if !p.long_fired => {
+                        // A finished download (or a script's link): tapping its card opens it.
+                        if self.island.presentation().is_open() {
+                            if let OpenContent::Custom(c) = self.open_content(&self.live(t)) {
+                                if let Some(target) = c.open.clone() {
+                                    self.ui_actions.push(UiAction::Path(target));
+                                }
+                            }
+                        }
+                        self.signal(Signal::Click, t)
+                    }
                     _ => false,
                 }
             }
@@ -2826,8 +2836,14 @@ mod tests {
         // The camera wins the colour; a compact activity makes room for it.
         let both = Privacy { camera: Some(vec![]), mic: Some(vec!["Zoom".into()]) };
         app.report(Report::Privacy(both), 1.0);
-        let job =
-            Custom { id: "b".into(), title: "Build".into(), subtitle: String::new(), progress: Some(0.5), color: None };
+        let job = Custom {
+            id: "b".into(),
+            title: "Build".into(),
+            subtitle: String::new(),
+            progress: Some(0.5),
+            color: None,
+            open: None,
+        };
         app.report(Report::Custom(job), 1.0);
         assert_eq!(app.presentation(), Compact);
         let w = app.pill_rect(5.0).w;
@@ -3898,8 +3914,14 @@ mod tests {
         idle.report(Report::Privacy(Privacy { camera: None, mic: Some(vec![]) }), 0.0);
         let mut compact = App::new(Demo::None, false);
         compact.report(Report::Privacy(Privacy { camera: Some(vec![]), mic: None }), 0.0);
-        let job =
-            Custom { id: "b".into(), title: "Build".into(), subtitle: String::new(), progress: Some(0.6), color: None };
+        let job = Custom {
+            id: "b".into(),
+            title: "Build".into(),
+            subtitle: String::new(),
+            progress: Some(0.6),
+            color: None,
+            open: None,
+        };
         compact.report(Report::Custom(job), 0.0);
         let apps = [(clock, 4.0), (system, 9.0), (idle, 4.0), (compact, 4.0)];
         let (cw, ch) = (WINDOW.0 as u32, 240u32);

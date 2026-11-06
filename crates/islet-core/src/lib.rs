@@ -7,6 +7,7 @@ pub mod calendar;
 pub mod clipboard;
 pub mod clock;
 pub mod connectivity;
+pub mod downloads;
 pub mod geometry;
 pub mod hotkey;
 pub mod island;
