@@ -11,6 +11,8 @@ The first public release.
 - iPhone-style shapes and motion: continuous-corner squircles, spring animations, peek, compact, the split pill with a metaball neck for two activities, the expanded card and a large view. Wraps the notch on MacBooks.
 - **Hover-only mode** (Settings → Look): the empty island stays hidden until you point at it; music and other live activities always show.
 - **Control Centre from any card:** a "‹ Control Centre" button on every activity's card, and a back button on the Wi-Fi, Bluetooth, shelf, clipboard and system lists.
+- Smooth 60 fps on Windows: frames are timed with a high-resolution waitable timer instead of a millisecond timeout that Windows rounded up to its 15.6 ms tick.
+- Buttons respond while a card is still settling, so a quick tap on "Control Centre" no longer closes the island; the Wi-Fi and Bluetooth switches flip as soon as you tap them, follow the radio's real state on Windows, and have a bigger tap area; long device lists fit the window.
 - Inter bundled for text. San Francisco is used on macOS, from the system.
 
 ### Activities

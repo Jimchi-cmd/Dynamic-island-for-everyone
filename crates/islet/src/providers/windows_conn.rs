@@ -54,6 +54,20 @@ fn available(a: &WiFiAdapter) -> Vec<WiFiAvailableNetwork> {
     a.NetworkReport().and_then(|r| r.AvailableNetworks()).map(|v| v.into_iter().collect()).unwrap_or_default()
 }
 
+/// Whether the computer's radio of this kind is on (None: there is none,
+/// or Windows won't say).
+fn radio_on(radio: Radio) -> Option<bool> {
+    use windows::Devices::Radios::{Radio as WinRadio, RadioKind, RadioState};
+    let kind = match radio {
+        Radio::Wifi => RadioKind::WiFi,
+        Radio::Bluetooth => RadioKind::Bluetooth,
+    };
+    let radios = WinRadio::GetRadiosAsync().and_then(|a| a.join()).ok()?;
+    let states: Vec<RadioState> =
+        radios.into_iter().filter(|r| r.Kind().is_ok_and(|k| k == kind)).filter_map(|r| r.State().ok()).collect();
+    (!states.is_empty()).then(|| states.contains(&RadioState::On))
+}
+
 /// Turn a radio on or off through Windows.Devices.Radios (the same switch
 /// as the Quick Settings tiles).
 fn set_radio(radio: Radio, on: bool) -> Result<(), String> {
@@ -89,6 +103,10 @@ impl Backend for Windows {
     }
 
     fn wifi(&mut self, scan: bool) -> WifiState {
+        // Wi-Fi switched off: say so (the switch shows off) rather than scan.
+        if radio_on(Radio::Wifi) == Some(false) {
+            return WifiState { available: true, enabled: false, ..WifiState::default() };
+        }
         let a = match adapter() {
             Ok(a) => a,
             Err(note) => return WifiState { available: note == ACCESS_NOTE, note: Some(note), ..WifiState::default() },
@@ -192,9 +210,16 @@ impl Backend for Windows {
             }
         }
         connectivity::sort_devices(&mut devices);
+        let radio = radio_on(Radio::Bluetooth);
+        let powered = radio.unwrap_or(true);
+        if !powered {
+            for d in &mut devices {
+                d.connected = false;
+            }
+        }
         BtState {
-            available: true,
-            powered: true,
+            available: radio.is_some() || !devices.is_empty(),
+            powered,
             devices,
             can_connect: false,
             note: Some("Windows connects Bluetooth devices in its own settings".into()),

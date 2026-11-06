@@ -22,7 +22,7 @@ All numbers are in **logical px** (1 px = 1 iOS point). They are approximations 
 |---|---|
 | Horizontal | centred on the chosen display |
 | Top gap | **0 px** by default (flush, as if emerging from the bezel); "Floating" option: 8 px |
-| Overlay window | 420 × 260, sized to contain the largest state plus spring overshoot |
+| Overlay window | 420 × 300, sized to contain the largest state (a five-row device list with its footer, 284 px) plus spring overshoot |
 | Notched MacBook | the idle island *is* the notch: width = notch width, height = menu-bar height, top corners square. Compact and expanded states grow out of it sideways and downwards with the same black, so the notch appears to expand |
 | Fullscreen apps and games | hidden (the next notification only peeks) |
 
@@ -42,7 +42,7 @@ Activity cards (Now Playing, timer, navigation, battery, calendar, notifications
 
 Hover-only mode: the idle island fades out (0.22 s, critically damped) and fades back in as the pointer arrives and it peeks. It keeps an alpha of 1/255, so Windows still hit-tests it; X11, Wayland and macOS use the input region. Anything live keeps it visible.
 
-Spring overshoot is at most 3 % of a change, so Large peaks at about 391 × 236, inside the 420 × 260 window.
+Spring overshoot is at most 3 % of a change, so Large peaks at about 391 × 236, inside the 420 × 300 window.
 
 ### Content inside the pill
 

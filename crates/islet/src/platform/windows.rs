@@ -6,7 +6,10 @@
 //!   pixels fall through to the window below (no input region needed);
 //! - `WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`: above other
 //!   windows, not in the taskbar or Alt-Tab, never steals focus;
-//! - the loop sleeps in `MsgWaitForMultipleObjectsEx`: zero wakeups idle.
+//! - the loop sleeps in `MsgWaitForMultipleObjectsEx`: zero wakeups idle;
+//!   while animating it wakes on a high-resolution waitable timer, because
+//!   a plain millisecond timeout is rounded up to Windows' 15.6 ms tick,
+//!   which turns 60 fps into about 32 (the island felt laggy).
 
 use super::{Backend, Button, Event, Key, Result, Waker, WindowSpec};
 use islet_core::geometry::{top_center, Rect};
@@ -190,6 +193,22 @@ pub struct Win32 {
     size: (u32, u32),
     pos: POINT,
     scale: f64,
+    /// Wakes the loop for the next frame (high resolution where Windows has it).
+    timer: windows::Win32::Foundation::HANDLE,
+}
+
+/// A waitable timer that keeps time to well under a millisecond (Windows 10
+/// 1803+); an ordinary one before that.
+fn frame_timer() -> windows::Win32::Foundation::HANDLE {
+    use windows::Win32::System::Threading::{
+        CreateWaitableTimerExW, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS,
+    };
+    // SAFETY: no attributes or name; the handle is closed on drop.
+    unsafe {
+        CreateWaitableTimerExW(None, None, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS.0)
+            .or_else(|_| CreateWaitableTimerExW(None, None, 0, TIMER_ALL_ACCESS.0))
+            .unwrap_or_default()
+    }
 }
 
 fn we<E: std::fmt::Display>(e: E) -> String {
@@ -337,6 +356,7 @@ impl Backend for Win32 {
                 size: (1, 1),
                 pos: POINT::default(),
                 scale: 1.0,
+                timer: frame_timer(),
             };
             me.configure()?;
             // Accept dropped files for the shelf (OLE needs a single-threaded
@@ -481,15 +501,33 @@ impl Backend for Win32 {
     }
 
     fn wait(&mut self, deadline: Option<Instant>, out: &mut Vec<Event>) -> Result<()> {
-        let timeout = match deadline {
-            None => INFINITE,
-            Some(d) => {
-                d.saturating_duration_since(Instant::now()).as_micros().div_ceil(1000).min(u32::MAX as u128 - 1) as u32
-            }
-        };
-        // SAFETY: standard message pump on the thread that owns the window.
+        use windows::Win32::System::Threading::SetWaitableTimer;
+        let wait = deadline.map(|d| d.saturating_duration_since(Instant::now()));
+        let timer = [self.timer];
+        // SAFETY: standard message pump on the thread that owns the window;
+        // the timer handle lives as long as `self`.
         unsafe {
-            MsgWaitForMultipleObjectsEx(None, timeout, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+            match wait {
+                // Nothing scheduled: sleep until a message arrives.
+                None => {
+                    MsgWaitForMultipleObjectsEx(None, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+                }
+                Some(w) if w.is_zero() => {}
+                Some(w) if !self.timer.is_invalid() => {
+                    // Relative due time, in 100 ns units (negative = relative).
+                    let due = -((w.as_nanos() / 100).clamp(1, i64::MAX as u128) as i64);
+                    if SetWaitableTimer(self.timer, &due, 0, None, None, false).is_ok() {
+                        MsgWaitForMultipleObjectsEx(Some(&timer), INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+                    } else {
+                        let ms = w.as_micros().div_ceil(1000).min(u32::MAX as u128 - 1) as u32;
+                        MsgWaitForMultipleObjectsEx(None, ms, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+                    }
+                }
+                Some(w) => {
+                    let ms = w.as_micros().div_ceil(1000).min(u32::MAX as u128 - 1) as u32;
+                    MsgWaitForMultipleObjectsEx(None, ms, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+                }
+            }
             let mut msg = MSG::default();
             while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
                 if msg.message == WM_QUIT {
@@ -518,6 +556,9 @@ impl Drop for Win32 {
             let _ = DeleteObject(self.dib.into());
             let _ = DeleteDC(self.mem_dc);
             let _ = DestroyWindow(self.hwnd);
+            if !self.timer.is_invalid() {
+                let _ = windows::Win32::Foundation::CloseHandle(self.timer);
+            }
         }
     }
 }

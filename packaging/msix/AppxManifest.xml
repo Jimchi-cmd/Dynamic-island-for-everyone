@@ -49,5 +49,12 @@
   <Capabilities>
     <uap3:Capability Name="userNotificationListener" />
     <rescap:Capability Name="runFullTrust" />
+    <!-- Wi-Fi and Bluetooth on the island: switch the radios, list and join
+         networks (Windows asks for Location for that), and read whether
+         paired devices are connected. -->
+    <DeviceCapability Name="radios" />
+    <DeviceCapability Name="wiFiControl" />
+    <DeviceCapability Name="location" />
+    <DeviceCapability Name="bluetooth" />
   </Capabilities>
 </Package>

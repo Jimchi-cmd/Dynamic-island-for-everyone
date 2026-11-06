@@ -7,7 +7,7 @@ use crate::platform::{Button, Event, Key};
 use islet_core::activity::{Activities, Hud, Live, MediaCommand, MediaInfo, NavInfo, Report};
 use islet_core::alarm::{Alarm, AlarmClock, AlarmEvent};
 use islet_core::clock::{secs_to_next_minute, LocalTime};
-use islet_core::connectivity::{ConnCommand, ConnUpdate, Radio};
+use islet_core::connectivity::{BtState, ConnCommand, ConnUpdate, Radio, WifiState};
 use islet_core::geometry::Rect;
 use islet_core::island::{
     spring_for, target_size, Island, Presentation, Signal, AUTO_COLLAPSE_SECS, LONG_PRESS_SECS, MINIMAL_CIRCLE,
@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// Logical window size: the largest state plus spring overshoot (design spec §2).
-pub const WINDOW: (f64, f64) = (420.0, 260.0);
+pub const WINDOW: (f64, f64) = (420.0, 300.0);
 /// Gap between the screen's top edge and the pill.
 pub const TOP_GAP: f64 = 0.0;
 const SMOOTHING: f32 = 0.6;
@@ -356,7 +356,7 @@ impl App {
 
     /// Where an open card's own content goes (below the notch and header).
     fn card_rect(&self, t: f64) -> Rect {
-        let cr = self.content_rect(self.pill_rect(t));
+        let cr = self.content_rect(self.settled_pill());
         if Self::has_header(&self.open_content(&self.live(t))) {
             content::below_header(cr)
         } else {
@@ -377,7 +377,7 @@ impl App {
 
     /// The navigation button under (x, y) on an open navigation card.
     fn nav_control_at(&self, x: f64, y: f64, t: f64) -> Option<NavControl> {
-        if !self.nav_card_open(t) || self.animating(t) {
+        if !self.nav_card_open(t) {
             return None;
         }
         let cr = self.card_rect(t);
@@ -557,7 +557,7 @@ impl App {
 
     /// The Pause/Stop button under (x, y) on an open timer card.
     fn timer_control_at(&self, x: f64, y: f64, t: f64) -> Option<TimerControl> {
-        if !self.island.presentation().is_open() || self.animating(t) {
+        if !self.island.presentation().is_open() {
             return None;
         }
         if !matches!(self.open_content(&self.live(t)), OpenContent::Timer(_)) {
@@ -569,13 +569,13 @@ impl App {
 
     /// The Snooze/Stop button under (x, y) on an open alarm card.
     fn alarm_control_at(&self, x: f64, y: f64, t: f64) -> Option<AlarmControl> {
-        if !self.island.presentation().is_open() || self.animating(t) {
+        if !self.island.presentation().is_open() {
             return None;
         }
         if !matches!(self.open_content(&self.live(t)), OpenContent::Alarm(_)) {
             return None;
         }
-        let cr = self.content_rect(self.pill_rect(t));
+        let cr = self.content_rect(self.settled_pill());
         content::alarm_controls(cr).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, c)| c)
     }
 
@@ -644,10 +644,10 @@ impl App {
 
     /// The clock-card button or list entry under (x, y).
     fn conn_hit_at(&self, x: f64, y: f64, t: f64) -> Option<ConnHit> {
-        if !self.island.presentation().is_open() || self.animating(t) {
+        if !self.island.presentation().is_open() {
             return None;
         }
-        let cr = self.content_rect(self.pill_rect(t));
+        let cr = self.content_rect(self.settled_pill());
         let c = self.activities.connectivity();
         let open = self.open_content(&self.live(t));
         if Self::has_header(&open) && content::home_button(cr).contains(x, y) {
@@ -682,7 +682,7 @@ impl App {
                     Panel::Bluetooth => c.bt.available,
                     _ => false,
                 };
-                if has_radio && content::power_switch(cr).contains(x, y) {
+                if has_radio && content::power_switch_hit(cr).contains(x, y) {
                     return Some(ConnHit::Power);
                 }
                 if content::list_header(cr).contains(x, y) {
@@ -730,10 +730,20 @@ impl App {
                 self.conn_commands.push(ConnCommand::Status);
             }
             ConnHit::Return => self.home = false,
+            // The switch flips at once; the radio's real state follows (and
+            // flips it back, with a message, if the OS says no).
             ConnHit::Power => match self.panel {
-                Some(Panel::Wifi) => self.conn_commands.push(ConnCommand::SetPower(Radio::Wifi, !c.wifi.enabled)),
+                Some(Panel::Wifi) => {
+                    let on = !c.wifi.enabled;
+                    self.conn_commands.push(ConnCommand::SetPower(Radio::Wifi, on));
+                    let wifi = WifiState { enabled: on, ..c.wifi.clone() };
+                    self.activities.report(Report::Connectivity(ConnUpdate::Wifi(wifi)), t);
+                }
                 Some(Panel::Bluetooth) => {
-                    self.conn_commands.push(ConnCommand::SetPower(Radio::Bluetooth, !c.bt.powered))
+                    let on = !c.bt.powered;
+                    self.conn_commands.push(ConnCommand::SetPower(Radio::Bluetooth, on));
+                    let bt = BtState { powered: on, ..c.bt.clone() };
+                    self.activities.report(Report::Connectivity(ConnUpdate::Bluetooth(bt)), t);
                 }
                 _ => {}
             },
@@ -1545,7 +1555,7 @@ impl App {
 
     /// The media control under (x, y) on an open "Now Playing" card.
     fn control_at(&self, x: f64, y: f64, t: f64) -> Option<Control> {
-        if !self.island.presentation().is_open() || self.animating(t) {
+        if !self.island.presentation().is_open() {
             return None;
         }
         if !matches!(self.open_content(&self.live(t)), OpenContent::Media(_)) {
@@ -1720,8 +1730,14 @@ impl App {
             return Some(WAVE_FRAME);
         }
         let playing = self.activities.media().is_some_and(|m| m.playing);
+        // Lyrics glide at 60 fps while they move: sliding to the next line,
+        // or scrolling across one too long for the bar (about 7 px a letter).
         if let (true, Some(l), Some(m)) = (playing, self.song_lyrics(), self.activities.media()) {
-            if islet_core::lyrics::sliding(l, m.position_now(t).unwrap_or(0.0)) && self.has_content(t) {
+            let pos = m.position_now(t).unwrap_or(0.0);
+            let long = self.lyrics_in_bar(&live)
+                && l.current(pos)
+                    .is_some_and(|i| l.text(i).chars().count() as f64 * 7.0 > content::COMPACT_LYRICS_W - 90.0);
+            if (islet_core::lyrics::sliding(l, pos) || long) && self.has_content(t) {
                 return Some(FRAME);
             }
         }
@@ -1781,6 +1797,13 @@ impl App {
 
     fn pill_at(&self, w: f64, h: f64) -> Rect {
         Rect::new((WINDOW.0 - w) / 2.0, self.top, w, h)
+    }
+
+    /// Where the pill is heading. Buttons are hit-tested here, so a tap
+    /// lands on its button while the card is still settling instead of
+    /// counting as a tap on the card (which closes it).
+    fn settled_pill(&self) -> Rect {
+        self.pill_at(self.w.target().max(0.0), self.h.target().max(0.0))
     }
 
     pub fn pill_rect(&self, t: f64) -> Rect {
@@ -2863,6 +2886,69 @@ mod tests {
             let extra = if p == Minimal { MINIMAL_GAP + MINIMAL_CIRCLE } else { 0.0 };
             assert!((w + extra) * 1.03 <= WINDOW.0 && h * 1.03 + TOP_GAP <= WINDOW.1, "{p:?}");
         }
+        // The tallest cards: a full device list with its footer, and Now
+        // Playing with its header and lyrics; the widest bar: lyrics.
+        let tallest = [
+            content::list_height(content::MAX_ROWS, true),
+            MEDIA_H + content::CARD_HEADER_H + content::CARD_LYRICS_H,
+            CLOCK_H,
+        ];
+        for h in tallest {
+            assert!(h + (h - 37.0) * 0.03 <= WINDOW.1, "a {h} px card is cut off");
+        }
+        assert!(content::COMPACT_LYRICS_W * 1.03 <= WINDOW.0);
+    }
+
+    fn bt_list(powered: bool) -> Report {
+        use islet_core::connectivity::{BtDevice, BtState};
+        let devices = (0..5)
+            .map(|i| BtDevice {
+                id: format!("d{i}"),
+                name: format!("Device {i}"),
+                kind: DeviceKind::Mouse,
+                connected: false,
+            })
+            .collect();
+        let bt = BtState { available: true, powered, devices, can_connect: false, note: Some("note".into()) };
+        Report::Connectivity(ConnUpdate::Bluetooth(bt))
+    }
+
+    #[test]
+    fn the_radio_switch_flips_at_once_and_follows_the_real_state() {
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        app.report(bt_list(true), 0.0);
+        click(&mut app, 0.0);
+        let cr = app.content_rect(app.pill_rect(5.0));
+        press(&mut app, content::clock_chips(cr, false, false)[1].0, 5.0);
+        app.take_conn_commands();
+        // The list with five devices and its footer fits the window.
+        let card = app.pill_rect(9.0);
+        assert!(card.bottom() + 1.0 <= WINDOW.1, "{card:?}");
+        assert!(content::list_footer(app.content_rect(card), 5).bottom() <= card.bottom() - 10.0);
+
+        // A tap a little beside the switch still counts, and it flips at once.
+        let sw = content::power_switch(app.content_rect(card));
+        press(&mut app, Rect::new(sw.x - 8.0, sw.y - 6.0, 4.0, 4.0), 9.0);
+        assert_eq!(app.take_conn_commands(), [ConnCommand::SetPower(Radio::Bluetooth, false)]);
+        assert!(!app.activities.connectivity().bt.powered, "off straight away");
+        // The OS refused: the real state puts it back.
+        app.report(bt_list(true), 9.5);
+        assert!(app.activities.connectivity().bt.powered);
+    }
+
+    #[test]
+    fn buttons_work_while_the_card_is_still_settling() {
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        app.report(Report::Media(Some(song(true))), 0.0);
+        click(&mut app, 1.0);
+        let t = 1.35; // the card is still growing
+        assert!(app.animating(t));
+        let r = content::home_button(app.content_rect(app.settled_pill()));
+        press(&mut app, r, t);
+        assert_eq!(app.presentation(), Expanded, "the tap didn't close the island");
+        assert!((app.pill_rect(t + 4.0).h - CLOCK_H).abs() < 0.01, "it opened Control Centre");
     }
 
     /// Shelf views for visual review:
@@ -2924,6 +3010,62 @@ mod tests {
     }
 
     /// Where a frame's time goes during expand/collapse at 2× (Retina):
+    /// Per-frame cost with music and a long song's lyrics, in the bar and on
+    /// the card: `cargo test --release -p islet lyrics_frame_cost -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn lyrics_frame_cost() {
+        use std::time::Instant;
+        let scale = 2.0f32;
+        let mut engine = TextEngine::new();
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        app.set_prefs(lyrics_on());
+        app.report(Report::Media(Some(MediaInfo { position: Some(0.0), duration: Some(240.0), ..song(true) })), 0.0);
+        let lrc: String = (0..80)
+            .map(|i| format!("[{:02}:{:02}.00]This is lyric line number {i} of the song\n", i * 3 / 60, i * 3 % 60))
+            .collect();
+        let key = app.lyrics_wanted().unwrap().key();
+        app.report(Report::Lyrics(key, Some(Arc::new(islet_core::lyrics::parse_lrc(&lrc)))), 0.0);
+        let (w, h) = ((WINDOW.0 * 2.0) as u32, (WINDOW.1 * 2.0) as u32);
+        let mut pixmap = tiny_skia::Pixmap::new(w, h).unwrap();
+        let mut out = vec![0u8; (w * h * 4) as usize];
+        for (name, open) in [("bar", false), ("card", true)] {
+            if open {
+                click(&mut app, 30.0);
+            }
+            let (mut els_t, mut paint_t, mut n) = (0.0, 0.0, 0);
+            for i in 0..600 {
+                let t = 31.0 + i as f64 / 60.0;
+                let frame = app.frame(t);
+                islet_render::draw(&mut pixmap, &frame, scale);
+                let a = Instant::now();
+                let els = app.elements(t, &mut engine);
+                let clip = islet_render::elements::needs_clip(&frame, &els, &mut engine)
+                    .then(|| islet_render::clip_mask(&frame, w, h, scale))
+                    .flatten();
+                let b = Instant::now();
+                islet_render::elements::draw_elements_in(
+                    &mut pixmap,
+                    &els,
+                    &mut engine,
+                    scale,
+                    clip.as_ref(),
+                    Some(&frame),
+                );
+                islet_render::rgba_to_bgra(pixmap.data(), &mut out);
+                paint_t += b.elapsed().as_secs_f64();
+                els_t += (b - a).as_secs_f64();
+                n += 1;
+            }
+            eprintln!(
+                "{name}: layout {:.3} ms, paint {:.3} ms per frame",
+                els_t * 1e3 / n as f64,
+                paint_t * 1e3 / n as f64
+            );
+        }
+    }
+
     /// `cargo test --release -p islet frame_cost -- --ignored --nocapture`
     #[test]
     #[ignore]

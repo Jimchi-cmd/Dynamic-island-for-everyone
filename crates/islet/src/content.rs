@@ -1242,7 +1242,7 @@ pub fn clock_chip_elements(
 
 /// Height of a Wi-Fi or Bluetooth list with `rows` entries.
 pub fn list_height(rows: usize, footer: bool) -> f64 {
-    LIST_TOP + rows.clamp(1, MAX_ROWS) as f64 * ROW_H + if footer { 46.0 } else { 14.0 }
+    LIST_TOP + rows.clamp(1, MAX_ROWS) as f64 * ROW_H + if footer { 52.0 } else { 14.0 }
 }
 
 pub fn list_rows(pill: Rect, rows: usize) -> Vec<Rect> {
@@ -1261,8 +1261,9 @@ pub fn list_header(pill: Rect) -> Rect {
 }
 
 pub fn list_footer(pill: Rect, rows: usize) -> Rect {
+    // Inset so the card's round bottom corners never cut the button.
     let y = pill.y + LIST_TOP + rows.clamp(1, MAX_ROWS) as f64 * ROW_H + 6.0;
-    Rect::new(pill.x + PAD, y, pill.w - 2.0 * PAD, 30.0)
+    Rect::new(pill.x + PAD + 18.0, y, pill.w - 2.0 * (PAD + 18.0), 30.0)
 }
 
 /// A footer line: a status or note, or a button when it leads to Settings.
@@ -1317,6 +1318,12 @@ fn list_header_elements(
 /// The on/off switch at the right of the Wi-Fi and Bluetooth headers.
 pub fn power_switch(pill: Rect) -> Rect {
     Rect::new(pill.right() - PAD - 40.0, pill.y + 17.0, 40.0, 24.0)
+}
+
+/// Where a tap counts as on the switch: generously around it.
+pub fn power_switch_hit(pill: Rect) -> Rect {
+    let r = power_switch(pill);
+    Rect::new(r.x - 14.0, r.y - 10.0, r.w + 26.0, r.h + 20.0)
 }
 
 /// The radio's switch (when the computer has that radio) and, left of it,
