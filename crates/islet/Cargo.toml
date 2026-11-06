@@ -52,7 +52,7 @@ accesskit_windows = "0.35"
 keyring = { version = "3", default-features = false, features = ["windows-native"] }
 windows-collections = "0.3"
 # The #[implement] macro (COM callbacks) refers to windows_core directly.
-windows-core = "0.62"
+windows-core = "0.100"
 windows = { version = "0.62", features = [
   "Devices_Bluetooth",
   "Devices_Enumeration",
