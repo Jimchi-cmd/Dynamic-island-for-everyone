@@ -136,6 +136,8 @@ What it shows on its own:
 - **One thing going on** (music, a timer, navigation): the pill widens, with a picture on the left and a live indicator on the right.
 - **Two things:** the pill plus a small bubble beside it. Scroll to swap them.
 
+**Fullscreen videos and games:** when something goes fullscreen (a YouTube video, a game, a slideshow), the island hides so it's not in the way, even with music playing. Move the pointer to the top centre of the screen to bring it back; it hides again when you move away. A ringing alarm or timer still shows. (On Linux with native Wayland the island simply stays behind the fullscreen window.)
+
 When you open the island with nothing going on, you get **Control Centre**: the time, the date, the weather (if set), and buttons for Wi-Fi, Bluetooth and more.
 
 ---

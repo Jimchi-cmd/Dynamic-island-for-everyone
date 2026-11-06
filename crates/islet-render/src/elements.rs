@@ -104,6 +104,28 @@ pub enum Element {
     },
 }
 
+impl Element {
+    /// The same element, `k` times as opaque (the whole island fading).
+    pub fn faded(self, k: f32) -> Element {
+        match self {
+            Element::Text(mut t) => {
+                t.style.opacity *= k;
+                Element::Text(t)
+            }
+            Element::Art { x, y, size, radius, image, opacity } => {
+                Element::Art { x, y, size, radius, image, opacity: opacity * k }
+            }
+            Element::Icon { icon, x, y, size, color, opacity } => {
+                Element::Icon { icon, x, y, size, color, opacity: opacity * k }
+            }
+            Element::Ring { cx, cy, r, width, fraction, color, opacity } => {
+                Element::Ring { cx, cy, r, width, fraction, color, opacity: opacity * k }
+            }
+            Element::Bar { x, y, w, h, color, opacity } => Element::Bar { x, y, w, h, color, opacity: opacity * k },
+        }
+    }
+}
+
 fn paint(color: [u8; 3], opacity: f32) -> Paint<'static> {
     let mut p = Paint::default();
     p.set_color(Color::from_rgba8(color[0], color[1], color[2], (opacity.clamp(0.0, 1.0) * 255.0).round() as u8));

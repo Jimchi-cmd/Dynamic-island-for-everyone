@@ -107,6 +107,9 @@ pub enum Event {
     A11yPress(Option<usize>),
     /// The global shortcut was pressed (open or close the island).
     Hotkey,
+    /// An app went fullscreen on the island's display (a video, a game,
+    /// a presentation), or stopped being fullscreen.
+    Fullscreen(bool),
     /// The OS lost our pixels (expose); present the last frame again.
     Redraw,
     ScaleChanged(f64),

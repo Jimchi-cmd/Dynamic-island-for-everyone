@@ -247,6 +247,8 @@ pub struct Mac {
     /// Keeps the global mouse monitor registered.
     _monitor: Option<Retained<AnyObject>>,
     _caps_monitor: Option<Retained<AnyObject>>,
+    /// Whether another app is fullscreen on the island's display.
+    fullscreen: bool,
 }
 
 /// The camera notch of `screen`: the gap between the menu-bar areas on
@@ -379,7 +381,12 @@ impl Backend for Mac {
             notch,
             _monitor: monitor,
             _caps_monitor: caps_monitor,
+            fullscreen: false,
         })
+    }
+
+    fn show(&mut self) {
+        fullscreen::start();
     }
 
     fn scale(&self) -> f64 {
@@ -494,7 +501,151 @@ impl Backend for Mac {
             next = self.app.nextEventMatchingMask_untilDate_inMode_dequeue(NSEventMask::Any, Some(&now), mode, true);
         }
         out.extend(QUEUE.with(|q| std::mem::take(&mut *q.borrow_mut())));
+        if fullscreen::take_dirty() {
+            let now = self.panel.screen().is_some_and(|s| fullscreen::active(&s));
+            if now != self.fullscreen {
+                self.fullscreen = now;
+                out.push(Event::Fullscreen(now));
+            }
+        }
         Ok(())
+    }
+}
+
+/// Is another app fullscreen on the island's display? A fullscreen video
+/// or app gets its own Space, so the island re-checks when the active
+/// Space changes or another app comes to the front (no polling): it looks
+/// for another app's ordinary window covering the whole display.
+mod fullscreen {
+    use block2::RcBlock;
+    use objc2::rc::Retained;
+    use objc2::runtime::{AnyObject, ProtocolObject};
+    use objc2::{class, msg_send};
+    use objc2_app_kit::NSScreen;
+    use objc2_foundation::{NSNotification, NSNotificationCenter, NSObjectProtocol, NSOperationQueue, NSString};
+    use std::cell::Cell;
+    use std::ffi::c_void;
+    use std::ptr::NonNull;
+
+    thread_local! {
+        static DIRTY: Cell<bool> = const { Cell::new(true) };
+    }
+
+    #[repr(C)]
+    #[derive(Default, Clone, Copy)]
+    struct Rect {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+    }
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGWindowListCopyWindowInfo(option: u32, relative_to: u32) -> *const c_void;
+        fn CGRectMakeWithDictionaryRepresentation(dict: *const c_void, rect: *mut Rect) -> bool;
+        fn CGDisplayBounds(display: u32) -> Rect;
+        static kCGWindowLayer: *const c_void;
+        static kCGWindowBounds: *const c_void;
+        static kCGWindowOwnerPID: *const c_void;
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFArrayGetCount(array: *const c_void) -> isize;
+        fn CFArrayGetValueAtIndex(array: *const c_void, i: isize) -> *const c_void;
+        fn CFDictionaryGetValue(dict: *const c_void, key: *const c_void) -> *const c_void;
+        fn CFNumberGetValue(number: *const c_void, kind: isize, out: *mut c_void) -> u8;
+        fn CFRelease(cf: *const c_void);
+    }
+
+    const ON_SCREEN_ONLY: u32 = 1;
+    const EXCLUDE_DESKTOP: u32 = 16;
+    const SINT32: isize = 3;
+
+    /// Re-check on Space changes and app switches (call once, on the main thread).
+    pub fn start() {
+        // SAFETY: NSWorkspace is a class with these methods; the observers
+        // stay registered for the process lifetime (kept alive below).
+        unsafe {
+            let ws: *mut AnyObject = msg_send![class!(NSWorkspace), sharedWorkspace];
+            if ws.is_null() {
+                return;
+            }
+            let center: Retained<NSNotificationCenter> = msg_send![ws, notificationCenter];
+            let queue = NSOperationQueue::mainQueue();
+            let mut observers: Vec<Retained<ProtocolObject<dyn NSObjectProtocol>>> = Vec::new();
+            for name in ["NSWorkspaceActiveSpaceDidChangeNotification", "NSWorkspaceDidActivateApplicationNotification"]
+            {
+                let block = RcBlock::new(|_note: NonNull<NSNotification>| DIRTY.with(|d| d.set(true)));
+                observers.push(center.addObserverForName_object_queue_usingBlock(
+                    Some(&NSString::from_str(name)),
+                    None,
+                    Some(&queue),
+                    &block,
+                ));
+            }
+            std::mem::forget(observers);
+        }
+    }
+
+    pub fn take_dirty() -> bool {
+        DIRTY.with(|d| d.replace(false))
+    }
+
+    fn display_id(screen: &NSScreen) -> Option<u32> {
+        // SAFETY: deviceDescription is an NSDictionary; NSScreenNumber an NSNumber.
+        unsafe {
+            let desc: *mut AnyObject = msg_send![screen, deviceDescription];
+            if desc.is_null() {
+                return None;
+            }
+            let key = NSString::from_str("NSScreenNumber");
+            let num: *mut AnyObject = msg_send![desc, objectForKey: &*key];
+            if num.is_null() {
+                return None;
+            }
+            let id: u32 = msg_send![num, unsignedIntValue];
+            Some(id)
+        }
+    }
+
+    pub fn active(screen: &NSScreen) -> bool {
+        let Some(display) = display_id(screen) else { return false };
+        let own = std::process::id() as i32;
+        // SAFETY: Core Graphics returns a +1 CFArray of CFDictionaries (or
+        // null), released below; values are read with their documented types.
+        unsafe {
+            let bounds = CGDisplayBounds(display);
+            let list = CGWindowListCopyWindowInfo(ON_SCREEN_ONLY | EXCLUDE_DESKTOP, 0);
+            if list.is_null() {
+                return false;
+            }
+            let mut found = false;
+            for i in 0..CFArrayGetCount(list) {
+                let w = CFArrayGetValueAtIndex(list, i);
+                let number = |key: *const c_void| {
+                    let v = CFDictionaryGetValue(w, key);
+                    let mut n = 0i32;
+                    (!v.is_null() && CFNumberGetValue(v, SINT32, (&mut n as *mut i32).cast()) != 0).then_some(n)
+                };
+                if number(kCGWindowLayer) != Some(0) || number(kCGWindowOwnerPID) == Some(own) {
+                    continue;
+                }
+                let mut r = Rect::default();
+                let dict = CFDictionaryGetValue(w, kCGWindowBounds);
+                if dict.is_null() || !CGRectMakeWithDictionaryRepresentation(dict, &mut r) {
+                    continue;
+                }
+                let near = |a: f64, b: f64| (a - b).abs() <= 1.0;
+                if near(r.x, bounds.x) && near(r.y, bounds.y) && near(r.w, bounds.w) && near(r.h, bounds.h) {
+                    found = true;
+                    break;
+                }
+            }
+            CFRelease(list);
+            found
+        }
     }
 }
 

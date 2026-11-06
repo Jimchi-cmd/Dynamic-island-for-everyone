@@ -110,7 +110,7 @@ impl Wayland {
                 .outputs()
                 .find(|o| probe.outputs.info(o).and_then(|i| i.name).as_deref() == Some(name.as_str()))
         });
-        let layer = layer_shell.create_layer_surface(&qh, surface, Layer::Overlay, Some("islet"), output.as_ref());
+        let layer = layer_shell.create_layer_surface(&qh, surface, Layer::Top, Some("islet"), output.as_ref());
         layer.set_anchor(anchor);
         layer.set_size(spec.width as u32, spec.height as u32);
         // Sit at the very top edge, over panels, like the iPhone's island.

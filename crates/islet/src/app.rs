@@ -250,6 +250,9 @@ pub struct App {
     /// next row.
     list_scroll: usize,
     list_acc: f64,
+    /// An app is fullscreen on the island's display: the island hides
+    /// until the pointer comes to it.
+    fullscreen: bool,
 }
 
 impl App {
@@ -315,6 +318,7 @@ impl App {
             shown: Animated::new(1.0, SHOW_SPRING),
             list_scroll: 0,
             list_acc: 0.0,
+            fullscreen: false,
         };
         app.anim_region = app.target_bounds();
         app
@@ -1141,11 +1145,24 @@ impl App {
             && self.island.presentation() == Presentation::Idle
             && !self.dragging
             && !self.privacy_shown();
-        if hide {
+        if hide || self.hidden_for_fullscreen() {
             0.0
         } else {
             1.0
         }
+    }
+
+    /// Over a fullscreen video or game the whole island steps aside, music
+    /// and all, until the pointer comes to the top of the screen. It still
+    /// shows when it's opened, when files are dragged to it, and for a
+    /// ringing alarm or timer.
+    fn hidden_for_fullscreen(&self) -> bool {
+        self.fullscreen
+            && !self.hovered
+            && !self.dragging
+            && !self.island.presentation().is_open()
+            && self.activities.alarm().is_none()
+            && !self.timer_ringing
     }
 
     fn update_shown(&mut self, t: f64) -> bool {
@@ -1293,8 +1310,8 @@ impl App {
         }
         let p = self.pill_rect(t);
         let shape = smooth((60.0 - p.h) / 16.0) * smooth((190.0 - p.w) / 40.0);
-        let o = shape as f32 * self.shown.value(t).clamp(0.0, 1.0) as f32;
-        if o < 0.01 {
+        let o = shape as f32;
+        if o < 0.01 || self.shown.value(t) < 0.01 {
             0.0
         } else {
             o
@@ -1487,6 +1504,14 @@ impl App {
         if po > 0.0 {
             out.push(self.privacy_dot(p, po));
         }
+        // The island fading out (hover-only, fullscreen): its content too.
+        let shown = self.shown.value(t).clamp(0.0, 1.0) as f32;
+        if shown < 0.01 {
+            return Vec::new();
+        }
+        if shown < 0.999 {
+            out = out.into_iter().map(|e| e.faded(shown)).collect();
+        }
         out
     }
 
@@ -1631,7 +1656,7 @@ impl App {
             return false;
         }
         self.hovered = inside;
-        if inside {
+        let changed = if inside {
             self.left_open_at = None;
             self.signal(Signal::PointerEnter, t)
         } else {
@@ -1640,7 +1665,9 @@ impl App {
             }
             self.press = None;
             self.signal(Signal::PointerLeave, t)
-        }
+        };
+        // A hidden island (fullscreen video) shows while the pointer is on it.
+        self.update_shown(t) || changed
     }
 
     /// The media control under (x, y) on an open "Now Playing" card.
@@ -1751,6 +1778,10 @@ impl App {
             }
             Event::Key(Key::Escape) => self.signal(Signal::Escape, t),
             Event::Hotkey => self.toggle(t),
+            Event::Fullscreen(on) => {
+                self.fullscreen = on;
+                self.update_shown(t)
+            }
             Event::CapsLock(on) => self.report(Report::Hud(Hud::CapsLock(on)), t),
             Event::DragOver { x, y } => self.drag_over(x, y, t),
             Event::A11yPress(button) => self.a11y_press(button, t),
@@ -1812,6 +1843,11 @@ impl App {
     pub fn frame_interval(&self, t: f64) -> Option<Duration> {
         if self.animating(t) {
             return Some(FRAME);
+        }
+        // Hidden (over a fullscreen video, say): a waveform nobody sees
+        // mustn't keep waking the computer.
+        if self.shown.value(t) < 0.01 {
+            return None;
         }
         let live = self.live(t);
         // An activity without a known amount animates its ring while shown.
@@ -2218,6 +2254,38 @@ mod tests {
         plain.set_prefs(IslandPrefs::default());
         plain.tick(2.0);
         assert!(plain.frame(4.0).opacity > 0.99);
+    }
+
+    #[test]
+    fn a_fullscreen_video_hides_the_island_until_the_pointer_comes() {
+        let mut engine = TextEngine::new();
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        app.report(Report::Media(Some(song(true))), 0.0);
+        assert_eq!(app.presentation(), Compact);
+        assert!(app.handle(Event::Fullscreen(true), 2.0));
+        assert!(app.frame(4.0).opacity < 0.01, "music and all step aside");
+        assert!(app.elements(4.0, &mut engine).is_empty());
+        assert_eq!(app.frame_interval(4.0), None, "a hidden waveform doesn't wake the computer");
+
+        // Pointing at the top brings it back; leaving hides it again.
+        let (x, y) = centre(&app, 4.0);
+        assert!(app.handle(Event::PointerMove { x, y }, 4.0));
+        assert!(app.frame(5.0).opacity > 0.99 && !app.elements(5.0, &mut engine).is_empty());
+        app.handle(Event::PointerLeave, 5.0);
+        assert!(app.frame(7.0).opacity < 0.01);
+
+        // A ringing alarm still shows; leaving fullscreen shows everything.
+        app.report(
+            Report::Alarm(Some(Alarm { id: 9, hour: 7, minute: 0, label: "Up".into(), days: 0, enabled: true })),
+            7.0,
+        );
+        app.tick(7.0);
+        assert!(app.frame(9.0).opacity > 0.99, "an alarm is never hidden");
+        app.report(Report::Alarm(None), 9.0);
+        app.tick(9.0);
+        app.handle(Event::Fullscreen(false), 9.0);
+        assert!(app.frame(11.0).opacity > 0.99);
     }
 
     /// Lyrics, the back buttons and Control Centre for visual review:
