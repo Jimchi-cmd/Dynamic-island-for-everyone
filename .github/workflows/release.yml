@@ -213,7 +213,7 @@ jobs:
           sigs=(out/*.sig)
           [ ${#sigs[@]} -gt 0 ] || { echo "::error::signing is configured but no .sig files were produced"; exit 1; }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.name }}
           path: out/*
