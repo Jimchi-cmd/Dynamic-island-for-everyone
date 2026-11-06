@@ -10,6 +10,7 @@ pub mod connectivity;
 #[cfg(target_os = "linux")]
 mod dbus_util;
 mod demo;
+pub mod downloads;
 #[cfg(target_os = "linux")]
 mod linux_battery;
 #[cfg(target_os = "linux")]
@@ -39,6 +40,7 @@ pub mod macos_mediaremote;
 mod macos_privacy;
 #[cfg(target_os = "macos")]
 mod macos_volume;
+pub mod mic;
 pub mod navigation;
 pub mod spotify;
 mod sysmon;
@@ -175,6 +177,8 @@ fn describe(r: &Report) -> String {
         Report::Lyrics(key, l) => {
             format!("lyrics for {key:?}: {}", l.as_ref().map_or(0, |l| l.lines.len()))
         }
+        Report::Volume(level, muted) => format!("volume {level:.2} muted={muted}"),
+        Report::MicMuted(m) => format!("microphone muted={m}"),
         Report::UpNext(u) => format!("up next: {:?}", u.as_ref().map(|(e, _)| &e.summary)),
     }
 }
@@ -189,7 +193,9 @@ pub struct Providers {
     spotify: Sender<spotify::SpotifyMsg>,
     sysmon: Sender<bool>,
     lyrics: Sender<Option<islet_core::lyrics::Track>>,
+    mic: Sender<islet_core::activity::MicCommand>,
     clipboard: Option<clipboard::Watcher>,
+    downloads: Option<downloads::Watcher>,
     sink: Sink,
     #[cfg(target_os = "linux")]
     notifications: linux_notifications::Notifications,
@@ -210,6 +216,7 @@ impl Providers {
         let spotify = spotify::start(sink.clone());
         let sysmon = sysmon::start(sink.clone());
         let lyrics = lyrics::start(sink.clone());
+        let mic = mic::start(sink.clone());
         let media = if std::env::var("ISLET_DEMO").as_deref() == Ok("media") {
             Some(demo::start(sink.clone()))
         } else {
@@ -225,7 +232,9 @@ impl Providers {
             spotify,
             sysmon,
             lyrics,
+            mic,
             clipboard: None,
+            downloads: None,
             sink,
             #[cfg(target_os = "linux")]
             notifications: linux_notifications::Notifications::default(),
@@ -279,6 +288,15 @@ impl Providers {
         }
     }
 
+    /// Start or stop watching the Downloads folder (opt-in).
+    pub fn downloads(&mut self, on: bool) {
+        if on && self.downloads.is_none() {
+            self.downloads = downloads::start(self.sink.clone());
+        } else if !on && self.downloads.take().is_some() {
+            self.sink.send(Report::CustomEnded(islet_core::downloads::ACTIVITY_ID.into()));
+        }
+    }
+
     /// Put a history entry back on the clipboard.
     pub fn clipboard_copy(&self, text: String) {
         if let Some(w) = &self.clipboard {
@@ -289,6 +307,22 @@ impl Providers {
     /// Start or stop the system monitor (it runs only while its panel is open).
     pub fn sysmon(&self, on: bool) {
         let _ = self.sysmon.send(on);
+    }
+
+    /// Read or set the microphone's mute switch (the call card).
+    pub fn mic(&self, cmd: islet_core::activity::MicCommand) {
+        let _ = self.mic.send(cmd);
+    }
+
+    /// Set the output volume (0..=1), from the Now Playing card's slider.
+    pub fn set_volume(&self, level: f32) {
+        let level = level.clamp(0.0, 1.0);
+        #[cfg(target_os = "linux")]
+        linux_volume::set(level);
+        #[cfg(target_os = "windows")]
+        windows_volume::set(level);
+        #[cfg(target_os = "macos")]
+        macos_volume::set(level);
     }
 
     /// Look up lyrics for the song that is playing (None: stop).

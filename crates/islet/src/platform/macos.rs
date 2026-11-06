@@ -20,7 +20,7 @@ use objc2_app_kit::{
     NSEvent, NSEventMask, NSEventModifierFlags, NSEventType, NSPanel, NSPasteboardTypeFileURL, NSResponder, NSScreen,
     NSStatusWindowLevel, NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindowCollectionBehavior, NSWindowStyleMask,
 };
-use objc2_core_foundation::{CFData, CFRetained};
+use objc2_core_foundation::CFRetained;
 use objc2_core_graphics::{
     kCGColorSpaceSRGB, CGBitmapInfo, CGColorRenderingIntent, CGColorSpace, CGDataProvider, CGImage, CGImageAlphaInfo,
     CGImageByteOrderInfo,
@@ -238,15 +238,39 @@ pub struct Mac {
     panel: Retained<NSPanel>,
     view: Retained<IsletView>,
     color_space: CFRetained<CGColorSpace>,
-    /// The frame in Core Animation's native layout (premultiplied BGRA,
-    /// little-endian), so it can use the pixels without converting them.
-    bgra: Vec<u8>,
     scale: f64,
     size: (u32, u32),
     notch: Option<(f64, f64)>,
     /// Keeps the global mouse monitor registered.
     _monitor: Option<Retained<AnyObject>>,
     _caps_monitor: Option<Retained<AnyObject>>,
+    /// Whether another app is fullscreen on the island's display.
+    fullscreen: bool,
+    /// How frames reach Core Animation: two IOSurfaces taken in turn
+    /// (measured on CI: about a sixth of the time of making a CGImage per
+    /// frame), or a CGImage per frame when IOSurfaces aren't available
+    /// (or ISLET_MAC_PRESENT=image).
+    present_mode: PresentMode,
+    surfaces: Vec<iosurface::Surface>,
+    next_surface: usize,
+    /// ISLET_SELF_SHOT=<seconds>: when to capture our own window once and
+    /// report where its opaque pixels are (checks frames show right side up).
+    self_shot: Option<Instant>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PresentMode {
+    Image,
+    Surface,
+}
+
+impl PresentMode {
+    fn from_env() -> Self {
+        match std::env::var("ISLET_MAC_PRESENT").as_deref() {
+            Ok("image") => PresentMode::Image,
+            _ => PresentMode::Surface,
+        }
+    }
 }
 
 /// The camera notch of `screen`: the gap between the menu-bar areas on
@@ -373,13 +397,24 @@ impl Backend for Mac {
             panel,
             view,
             color_space,
-            bgra: Vec::new(),
             scale,
             size,
             notch,
             _monitor: monitor,
             _caps_monitor: caps_monitor,
+            fullscreen: false,
+            present_mode: PresentMode::from_env(),
+            surfaces: Vec::new(),
+            next_surface: 0,
+            self_shot: std::env::var("ISLET_SELF_SHOT")
+                .ok()
+                .and_then(|s| s.parse::<f64>().ok())
+                .map(|secs| Instant::now() + std::time::Duration::from_secs_f64(secs)),
         })
+    }
+
+    fn show(&mut self) {
+        fullscreen::start();
     }
 
     fn scale(&self) -> f64 {
@@ -399,11 +434,28 @@ impl Backend for Mac {
     }
 
     fn present(&mut self, frame: &Pixmap) -> Result<()> {
+        if self.present_mode == PresentMode::Surface {
+            match self.present_surface(frame) {
+                Ok(()) => return Ok(()),
+                // No IOSurfaces here: make an image per frame from now on.
+                Err(e) => {
+                    crate::providers::debug_log(&format!("macOS: {e}; drawing through CGImage"));
+                    self.present_mode = PresentMode::Image;
+                    self.surfaces.clear();
+                }
+            }
+        }
         let (w, h) = (frame.width() as usize, frame.height() as usize);
-        self.bgra.resize(frame.data().len(), 0);
-        islet_render::rgba_to_bgra(frame.data(), &mut self.bgra);
-        let data = CFData::from_bytes(&self.bgra);
-        let provider = CGDataProvider::with_cf_data(Some(&data)).ok_or("CGDataProvider failed")?;
+        // Convert straight into a pooled buffer that the image owns until
+        // Core Graphics lets it go (no per-frame allocation or extra copy).
+        let mut buf = take_buffer(frame.data().len());
+        islet_render::rgba_to_bgra(frame.data(), &mut buf);
+        let size = buf.len();
+        let data = Box::into_raw(buf) as *mut u8;
+        // SAFETY: `data` is a leaked Box<[u8]> of `size` bytes, handed to the
+        // provider, which gives it back to `give_back` exactly once.
+        let provider = unsafe { CGDataProvider::with_data(std::ptr::null_mut(), data.cast(), size, Some(give_back)) }
+            .ok_or("CGDataProvider failed")?;
         // Premultiplied B,G,R,A bytes = 32-bit little-endian ARGB words.
         let info = CGBitmapInfo(CGImageAlphaInfo::PremultipliedFirst.0 | CGImageByteOrderInfo::Order32Little.0);
         // SAFETY: the provider holds exactly w*h*4 bytes with the given layout.
@@ -480,6 +532,15 @@ impl Backend for Mac {
     }
 
     fn wait(&mut self, deadline: Option<Instant>, out: &mut Vec<Event>) -> Result<()> {
+        if self.self_shot.is_some_and(|at| Instant::now() >= at) {
+            self.self_shot = None;
+            selfshot::report(self.panel.windowNumber() as u32);
+        }
+        // Wake for the capture even when nothing else is scheduled.
+        let deadline = match (deadline, self.self_shot) {
+            (Some(d), Some(s)) => Some(d.min(s)),
+            (d, s) => d.or(s),
+        };
         let until = match deadline {
             None => NSDate::distantFuture(),
             Some(d) => NSDate::dateWithTimeIntervalSinceNow(d.saturating_duration_since(Instant::now()).as_secs_f64()),
@@ -494,7 +555,396 @@ impl Backend for Mac {
             next = self.app.nextEventMatchingMask_untilDate_inMode_dequeue(NSEventMask::Any, Some(&now), mode, true);
         }
         out.extend(QUEUE.with(|q| std::mem::take(&mut *q.borrow_mut())));
+        if fullscreen::take_dirty() {
+            let now = self.panel.screen().is_some_and(|s| fullscreen::active(&s));
+            if now != self.fullscreen {
+                self.fullscreen = now;
+                out.push(Event::Fullscreen(now));
+            }
+        }
         Ok(())
+    }
+}
+
+/// Frame buffers waiting to be reused (a couple are in flight at once).
+static FRAMES: std::sync::Mutex<Vec<Box<[u8]>>> = std::sync::Mutex::new(Vec::new());
+
+/// A buffer of exactly `len` bytes: a pooled one when the size matches.
+fn take_buffer(len: usize) -> Box<[u8]> {
+    let mut pool = FRAMES.lock().unwrap_or_else(|e| e.into_inner());
+    match pool.iter().position(|b| b.len() == len) {
+        Some(i) => pool.swap_remove(i),
+        None => vec![0u8; len].into_boxed_slice(),
+    }
+}
+
+/// Core Graphics is done with a frame's pixels: keep the buffer for the next frame.
+unsafe extern "C-unwind" fn give_back(
+    _info: *mut std::ffi::c_void,
+    data: std::ptr::NonNull<std::ffi::c_void>,
+    size: usize,
+) {
+    // SAFETY: `data` and `size` are the Box<[u8]> leaked in `present`.
+    let buf = unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(data.as_ptr().cast::<u8>(), size)) };
+    let mut pool = FRAMES.lock().unwrap_or_else(|e| e.into_inner());
+    if pool.len() < 3 {
+        pool.push(buf);
+    }
+}
+
+/// Is another app fullscreen on the island's display? A fullscreen video
+/// or app gets its own Space, so the island re-checks when the active
+/// Space changes or another app comes to the front (no polling): it looks
+/// for another app's ordinary window covering the whole display.
+mod fullscreen {
+    use block2::RcBlock;
+    use objc2::rc::Retained;
+    use objc2::runtime::{AnyObject, ProtocolObject};
+    use objc2::{class, msg_send};
+    use objc2_app_kit::NSScreen;
+    use objc2_foundation::{NSNotification, NSNotificationCenter, NSObjectProtocol, NSOperationQueue, NSString};
+    use std::cell::Cell;
+    use std::ffi::c_void;
+    use std::ptr::NonNull;
+
+    thread_local! {
+        static DIRTY: Cell<bool> = const { Cell::new(true) };
+    }
+
+    #[repr(C)]
+    #[derive(Default, Clone, Copy)]
+    struct Rect {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+    }
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGWindowListCopyWindowInfo(option: u32, relative_to: u32) -> *const c_void;
+        fn CGRectMakeWithDictionaryRepresentation(dict: *const c_void, rect: *mut Rect) -> bool;
+        fn CGDisplayBounds(display: u32) -> Rect;
+        static kCGWindowLayer: *const c_void;
+        static kCGWindowBounds: *const c_void;
+        static kCGWindowOwnerPID: *const c_void;
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFArrayGetCount(array: *const c_void) -> isize;
+        fn CFArrayGetValueAtIndex(array: *const c_void, i: isize) -> *const c_void;
+        fn CFDictionaryGetValue(dict: *const c_void, key: *const c_void) -> *const c_void;
+        fn CFNumberGetValue(number: *const c_void, kind: isize, out: *mut c_void) -> u8;
+        fn CFRelease(cf: *const c_void);
+    }
+
+    const ON_SCREEN_ONLY: u32 = 1;
+    const EXCLUDE_DESKTOP: u32 = 16;
+    const SINT32: isize = 3;
+
+    /// Re-check on Space changes and app switches (call once, on the main thread).
+    pub fn start() {
+        // SAFETY: NSWorkspace is a class with these methods; the observers
+        // stay registered for the process lifetime (kept alive below).
+        unsafe {
+            let ws: *mut AnyObject = msg_send![class!(NSWorkspace), sharedWorkspace];
+            if ws.is_null() {
+                return;
+            }
+            let center: Retained<NSNotificationCenter> = msg_send![ws, notificationCenter];
+            let queue = NSOperationQueue::mainQueue();
+            let mut observers: Vec<Retained<ProtocolObject<dyn NSObjectProtocol>>> = Vec::new();
+            for name in ["NSWorkspaceActiveSpaceDidChangeNotification", "NSWorkspaceDidActivateApplicationNotification"]
+            {
+                let block = RcBlock::new(|_note: NonNull<NSNotification>| DIRTY.with(|d| d.set(true)));
+                observers.push(center.addObserverForName_object_queue_usingBlock(
+                    Some(&NSString::from_str(name)),
+                    None,
+                    Some(&queue),
+                    &block,
+                ));
+            }
+            std::mem::forget(observers);
+        }
+    }
+
+    pub fn take_dirty() -> bool {
+        DIRTY.with(|d| d.replace(false))
+    }
+
+    fn display_id(screen: &NSScreen) -> Option<u32> {
+        // SAFETY: deviceDescription is an NSDictionary; NSScreenNumber an NSNumber.
+        unsafe {
+            let desc: *mut AnyObject = msg_send![screen, deviceDescription];
+            if desc.is_null() {
+                return None;
+            }
+            let key = NSString::from_str("NSScreenNumber");
+            let num: *mut AnyObject = msg_send![desc, objectForKey: &*key];
+            if num.is_null() {
+                return None;
+            }
+            let id: u32 = msg_send![num, unsignedIntValue];
+            Some(id)
+        }
+    }
+
+    pub fn active(screen: &NSScreen) -> bool {
+        let Some(display) = display_id(screen) else { return false };
+        let own = std::process::id() as i32;
+        // SAFETY: Core Graphics returns a +1 CFArray of CFDictionaries (or
+        // null), released below; values are read with their documented types.
+        unsafe {
+            let bounds = CGDisplayBounds(display);
+            let list = CGWindowListCopyWindowInfo(ON_SCREEN_ONLY | EXCLUDE_DESKTOP, 0);
+            if list.is_null() {
+                return false;
+            }
+            let mut found = false;
+            for i in 0..CFArrayGetCount(list) {
+                let w = CFArrayGetValueAtIndex(list, i);
+                let number = |key: *const c_void| {
+                    let v = CFDictionaryGetValue(w, key);
+                    let mut n = 0i32;
+                    (!v.is_null() && CFNumberGetValue(v, SINT32, (&mut n as *mut i32).cast()) != 0).then_some(n)
+                };
+                if number(kCGWindowLayer) != Some(0) || number(kCGWindowOwnerPID) == Some(own) {
+                    continue;
+                }
+                let mut r = Rect::default();
+                let dict = CFDictionaryGetValue(w, kCGWindowBounds);
+                if dict.is_null() || !CGRectMakeWithDictionaryRepresentation(dict, &mut r) {
+                    continue;
+                }
+                let near = |a: f64, b: f64| (a - b).abs() <= 1.0;
+                if near(r.x, bounds.x) && near(r.y, bounds.y) && near(r.w, bounds.w) && near(r.h, bounds.h) {
+                    found = true;
+                    break;
+                }
+            }
+            CFRelease(list);
+            found
+        }
+    }
+}
+
+impl Mac {
+    /// Hand the frame over in an IOSurface that Core Animation shows
+    /// directly (no image to make and copy each frame). Two surfaces are
+    /// used in turn, so the one on screen is never the one being written.
+    fn present_surface(&mut self, frame: &Pixmap) -> Result<()> {
+        let (w, h) = (frame.width(), frame.height());
+        if self.surfaces.len() != 2 || self.surfaces[0].size() != (w, h) {
+            self.surfaces.clear();
+            for _ in 0..2 {
+                self.surfaces.push(iosurface::Surface::new(w, h).ok_or("IOSurfaceCreate failed")?);
+            }
+        }
+        let surface = &self.surfaces[self.next_surface];
+        self.next_surface ^= 1;
+        surface.write(frame.data(), w as usize, h as usize);
+        let layer = self.view.layer().ok_or("view has no layer")?;
+        layer.setContentsScale(self.scale);
+        CATransaction::begin();
+        CATransaction::setDisableActions(true);
+        // SAFETY: an IOSurfaceRef is toll-free bridged to the IOSurface
+        // class, which `contents` accepts; the layer retains it.
+        unsafe { layer.setContents(Some(&*surface.as_object())) };
+        CATransaction::commit();
+        Ok(())
+    }
+}
+
+/// Capture our own window as the window server shows it (no permission is
+/// needed for an app's own windows) and print the extent of its opaque
+/// pixels down the centre column: the pill hangs from the top, so the first
+/// opaque row should be near 0. For measuring only.
+mod selfshot {
+    use std::ffi::c_void;
+
+    #[repr(C)]
+    struct Rect {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+    }
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGWindowListCreateImage(bounds: Rect, list: u32, window: u32, image: u32) -> *const c_void;
+        fn CGImageGetWidth(image: *const c_void) -> usize;
+        fn CGImageGetHeight(image: *const c_void) -> usize;
+        fn CGImageGetBytesPerRow(image: *const c_void) -> usize;
+        fn CGImageGetBitsPerPixel(image: *const c_void) -> usize;
+        fn CGImageGetDataProvider(image: *const c_void) -> *const c_void;
+        fn CGDataProviderCopyData(provider: *const c_void) -> *const c_void;
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFDataGetBytePtr(data: *const c_void) -> *const u8;
+        fn CFDataGetLength(data: *const c_void) -> isize;
+        fn CFRelease(cf: *const c_void);
+    }
+
+    pub fn report(window: u32) {
+        const INCLUDING_WINDOW: u32 = 1 << 3;
+        const IGNORE_FRAMING: u32 = 1;
+        let null = Rect { x: f64::INFINITY, y: f64::INFINITY, w: 0.0, h: 0.0 };
+        // SAFETY: CG returns a +1 image (or null) and a +1 data copy, both
+        // released here; reads stay within the data's length.
+        unsafe {
+            let image = CGWindowListCreateImage(null, INCLUDING_WINDOW, window, IGNORE_FRAMING);
+            if image.is_null() {
+                eprintln!("ISLET_SELF_SHOT none");
+                return;
+            }
+            let (w, h, stride, bpp) = (
+                CGImageGetWidth(image),
+                CGImageGetHeight(image),
+                CGImageGetBytesPerRow(image),
+                CGImageGetBitsPerPixel(image),
+            );
+            let data = CGDataProviderCopyData(CGImageGetDataProvider(image));
+            if !data.is_null() && bpp == 32 {
+                let bytes = std::slice::from_raw_parts(CFDataGetBytePtr(data), CFDataGetLength(data) as usize);
+                let x = w / 2;
+                // Opaque and dark (the black pill), in either byte order.
+                let opaque: Vec<usize> = (0..h)
+                    .filter(|y| {
+                        let i = y * stride + x * 4;
+                        bytes.get(i..i + 4).is_some_and(|p| {
+                            let (alpha, rgb) =
+                                if p[3] > p[0].max(p[1]).max(p[2]) { (p[3], &p[..3]) } else { (p[0], &p[1..]) };
+                            alpha > 200 && rgb.iter().all(|&c| c < 60)
+                        })
+                    })
+                    .collect();
+                eprintln!(
+                    "ISLET_SELF_SHOT {w}x{h} dark rows {} first {:?} last {:?}",
+                    opaque.len(),
+                    opaque.first(),
+                    opaque.last()
+                );
+            } else {
+                eprintln!("ISLET_SELF_SHOT {w}x{h} unreadable ({bpp} bits)");
+            }
+            if !data.is_null() {
+                CFRelease(data);
+            }
+            CFRelease(image);
+        }
+    }
+}
+
+/// IOSurfaces: pixel buffers Core Animation can show without copying.
+mod iosurface {
+    use objc2::runtime::AnyObject;
+    use std::ffi::c_void;
+
+    #[link(name = "IOSurface", kind = "framework")]
+    extern "C" {
+        fn IOSurfaceCreate(properties: *const c_void) -> *mut c_void;
+        fn IOSurfaceLock(buffer: *mut c_void, options: u32, seed: *mut u32) -> i32;
+        fn IOSurfaceUnlock(buffer: *mut c_void, options: u32, seed: *mut u32) -> i32;
+        fn IOSurfaceGetBaseAddress(buffer: *mut c_void) -> *mut c_void;
+        fn IOSurfaceGetBytesPerRow(buffer: *mut c_void) -> usize;
+        static kIOSurfaceWidth: *const c_void;
+        static kIOSurfaceHeight: *const c_void;
+        static kIOSurfaceBytesPerElement: *const c_void;
+        static kIOSurfacePixelFormat: *const c_void;
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFDictionaryCreateMutable(
+            allocator: *const c_void,
+            capacity: isize,
+            keys: *const u8,
+            values: *const u8,
+        ) -> *mut c_void;
+        fn CFDictionarySetValue(dict: *mut c_void, key: *const c_void, value: *const c_void);
+        fn CFNumberCreate(allocator: *const c_void, kind: isize, value: *const c_void) -> *const c_void;
+        fn CFRelease(cf: *const c_void);
+        static kCFTypeDictionaryKeyCallBacks: u8;
+        static kCFTypeDictionaryValueCallBacks: u8;
+    }
+
+    const SINT32: isize = 3;
+    /// 'BGRA': premultiplied B, G, R, A bytes.
+    const BGRA: i32 = 0x4247_5241;
+
+    pub struct Surface {
+        ptr: *mut c_void,
+        size: (u32, u32),
+    }
+
+    impl Surface {
+        pub fn new(w: u32, h: u32) -> Option<Self> {
+            // SAFETY: a CF dictionary of CF numbers built and released here;
+            // IOSurfaceCreate returns a +1 reference (or null), released on drop.
+            unsafe {
+                let dict = CFDictionaryCreateMutable(
+                    std::ptr::null(),
+                    0,
+                    &kCFTypeDictionaryKeyCallBacks,
+                    &kCFTypeDictionaryValueCallBacks,
+                );
+                if dict.is_null() {
+                    return None;
+                }
+                for (key, value) in [
+                    (kIOSurfaceWidth, w as i32),
+                    (kIOSurfaceHeight, h as i32),
+                    (kIOSurfaceBytesPerElement, 4),
+                    (kIOSurfacePixelFormat, BGRA),
+                ] {
+                    let n = CFNumberCreate(std::ptr::null(), SINT32, (&value as *const i32).cast());
+                    CFDictionarySetValue(dict, key, n);
+                    CFRelease(n);
+                }
+                let ptr = IOSurfaceCreate(dict);
+                CFRelease(dict);
+                (!ptr.is_null()).then_some(Surface { ptr, size: (w, h) })
+            }
+        }
+
+        pub fn size(&self) -> (u32, u32) {
+            self.size
+        }
+
+        /// Copy premultiplied RGBA rows in as BGRA, top row first (Core
+        /// Animation shows row 0 at the top; checked on CI with ISLET_SELF_SHOT).
+        pub fn write(&self, rgba: &[u8], w: usize, h: usize) {
+            // SAFETY: the surface is locked while its rows (bytes_per_row
+            // apart, each at least w*4 bytes) are written.
+            unsafe {
+                if IOSurfaceLock(self.ptr, 0, std::ptr::null_mut()) != 0 {
+                    return;
+                }
+                let base = IOSurfaceGetBaseAddress(self.ptr).cast::<u8>();
+                let stride = IOSurfaceGetBytesPerRow(self.ptr);
+                for row in 0..h {
+                    let src = &rgba[row * w * 4..][..w * 4];
+                    let dst = std::slice::from_raw_parts_mut(base.add(row * stride), w * 4);
+                    islet_render::rgba_to_bgra(src, dst);
+                }
+                IOSurfaceUnlock(self.ptr, 0, std::ptr::null_mut());
+            }
+        }
+
+        pub fn as_object(&self) -> *const AnyObject {
+            self.ptr as *const AnyObject
+        }
+    }
+
+    impl Drop for Surface {
+        fn drop(&mut self) {
+            // SAFETY: our +1 reference from IOSurfaceCreate.
+            unsafe { CFRelease(self.ptr) };
+        }
     }
 }
 

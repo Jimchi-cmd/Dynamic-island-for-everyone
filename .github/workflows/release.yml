@@ -61,14 +61,17 @@ jobs:
       # (docs/signing.md). Without one, the release still builds; Settings
       # then links to the release page instead of updating in place.
       HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && vars.ISLET_UPDATER_PUBKEY != '' }}
+      # Windows code signing through SignPath, once the project is approved
+      # and its token and ids are set (docs/signing.md §3).
+      HAS_SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
       # The release's tag: pushed (refs/tags/v…) or handed over by publish.yml.
       TAG: ${{ inputs.tag || github.ref_name }}
       IS_RELEASE: ${{ inputs.tag != '' || startsWith(github.ref, 'refs/tags/v') }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: npm }
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -196,6 +199,39 @@ jobs:
           esac
           ls -la out
 
+      # Windows code signing (SignPath Foundation, free for open source):
+      # the installers go up as an artifact, come back signed into out/,
+      # and their update signatures are made again over the signed files.
+      - name: Upload the Windows installers for signing
+        id: unsigned
+        if: matrix.name == 'windows' && env.HAS_SIGNPATH == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-windows
+          path: |
+            out/*.msi
+            out/*-setup.exe
+          retention-days: 1
+      - name: Sign the Windows installers (SignPath)
+        if: matrix.name == 'windows' && env.HAS_SIGNPATH == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'islet' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: out
+      - name: Update signatures over the signed installers
+        if: matrix.name == 'windows' && env.HAS_SIGNPATH == 'true' && env.HAS_UPDATER_KEY == 'true'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for f in out/*.msi out/*-setup.exe; do
+            npx tauri signer sign "$f"
+          done
+
       - name: MSIX package (Windows)
         if: matrix.name == 'windows'
         shell: pwsh
@@ -228,7 +264,7 @@ jobs:
           sigs=(out/*.sig)
           [ ${#sigs[@]} -gt 0 ] || { echo "::error::signing is configured but no .sig files were produced"; exit 1; }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.name }}
           path: out/*
@@ -246,22 +282,33 @@ jobs:
       HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' && vars.ISLET_UPDATER_PUBKEY != '' }}
       TAG: ${{ inputs.tag || github.ref_name }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: release-*
           path: assets
           merge-multiple: true
 
+      # Only the installers and their files go on the release: a build can
+      # leave a folder among them (one left `fonts`), which neither the
+      # checksums nor the upload can take.
+      - name: Only the release files
+        run: |
+          mkdir files
+          find assets -maxdepth 1 -type f -exec mv {} files/ \;
+          left=$(find assets -mindepth 1 -maxdepth 1)
+          [ -z "$left" ] || { echo "Left out (not files):"; echo "$left"; }
+          ls -la files
+
       - name: Update manifest (latest.json)
         if: env.HAS_UPDATER_KEY == 'true'
         run: |
           echo "See the release notes: https://github.com/${{ github.repository }}/releases/tag/${TAG}" > notes.txt
-          python3 scripts/make-latest-json.py "$TAG" assets \
+          python3 scripts/make-latest-json.py "$TAG" files \
             "https://github.com/${{ github.repository }}/releases/download/${TAG}" notes.txt
 
       - name: Checksums
-        working-directory: assets
+        working-directory: files
         run: |
           sha256sum -- * > SHA256SUMS
           cat SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
@@ -281,7 +328,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$TAG" assets/* \
+          gh release create "$TAG" files/* \
             --repo "${{ github.repository }}" \
             --draft --verify-tag --notes-file release-notes.md \
             --title "Islet ${TAG#v}"
@@ -293,7 +340,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$TAG" assets/* \
+          gh release create "$TAG" files/* \
             --repo "${{ github.repository }}" \
             --target "$GITHUB_SHA" --latest --notes-file release-notes.md \
             --title "Islet ${TAG#v}"

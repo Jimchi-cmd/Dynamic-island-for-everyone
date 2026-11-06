@@ -1,7 +1,9 @@
 //! What is drawn inside the island for each activity and presentation
 //! (docs/design-spec.md §3). Pure layout: rects in, display list out.
 
-use islet_core::activity::{BatteryDevice, Custom, DeviceKind, Hud, Live, MediaInfo, NavInfo, Note, Part, PeekReason};
+use islet_core::activity::{
+    BatteryDevice, Call, Custom, DeviceKind, Hud, Live, MediaInfo, NavInfo, Note, Part, PeekReason,
+};
 use islet_core::alarm::{self, Alarm};
 use islet_core::clock::{format_date, format_time, LocalTime};
 use islet_core::connectivity::{self, BtState, Connectivity, WifiState};
@@ -78,6 +80,10 @@ pub enum ConnHit {
     Home,
     /// Back from Control Centre to the activity it was opened from.
     Return,
+    /// A row of the right-click menu.
+    Menu(usize),
+    /// Lyrics timing: earlier (−1) or later (+1).
+    LyricsShift(i8),
 }
 
 pub const ROW_H: f64 = 36.0;
@@ -383,6 +389,8 @@ pub enum Control {
     PlayPause,
     Next,
     Scrub,
+    /// The output volume slider.
+    Volume,
 }
 
 pub const COMPACT_MEDIA_W: f64 = 236.0;
@@ -390,9 +398,13 @@ pub const COMPACT_BATTERY_W: f64 = 300.0;
 
 pub fn compact_width(live: &Live) -> f64 {
     match live {
-        Live::Media(_) | Live::Navigation(_) | Live::Alarm(_) | Live::Timer(_) | Live::Hud(_) | Live::Event { .. } => {
-            COMPACT_MEDIA_W
-        }
+        Live::Media(_)
+        | Live::Navigation(_)
+        | Live::Alarm(_)
+        | Live::Timer(_)
+        | Live::Hud(_)
+        | Live::Event { .. }
+        | Live::Call(_) => COMPACT_MEDIA_W,
         Live::Note(_) => COMPACT_BATTERY_W,
         Live::Custom(_) => COMPACT_BATTERY_W,
         Live::Battery { .. } => COMPACT_BATTERY_W,
@@ -555,6 +567,19 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
             }];
             v.extend(waveform(right - 31.0, cy, 4, t, m.playing, tint, o));
             v
+        }
+        Live::Call(c) => {
+            let muted = c.muted == Some(true);
+            let color = if muted { RED } else { ORANGE };
+            let style = TextStyle { size: 13.5, weight: 600, opacity: o, ..TextStyle::default() };
+            let time = TextStyle { size: 13.5, weight: 600, opacity: o, color, tabular: true, align: Align::Right };
+            let elapsed = format_duration(t - c.since);
+            let room = (right - x) - 38.0 - engine.measure(&elapsed, &time) - 22.0;
+            vec![
+                Element::Icon { icon: Icon::Mic(muted), x: x + 10.0, y: cy - 10.0, size: 20.0, color, opacity: o },
+                text(engine.ellipsize(call_title(c), &style, room), style, x + 36.0, cy + 4.5),
+                text(elapsed, time, right - 14.0, cy + 4.5),
+            ]
         }
         Live::Navigation(n) => {
             vec![
@@ -754,6 +779,14 @@ pub fn minimal(
                 image: m.art.clone(),
                 opacity: o,
             }),
+            Live::Call(c) => v.push(Element::Icon {
+                icon: Icon::Mic(c.muted == Some(true)),
+                x: b.x - 9.0,
+                y: b.y - 9.0,
+                size: 18.0,
+                color: if c.muted == Some(true) { RED } else { ORANGE },
+                opacity: o,
+            }),
         }
     }
     v
@@ -761,6 +794,11 @@ pub fn minimal(
 
 fn leading(live: &Live, x: f32, cy: f32, o: f32, h24: bool) -> Vec<Element> {
     match live {
+        Live::Call(c) => {
+            let muted = c.muted == Some(true);
+            let color = if muted { RED } else { ORANGE };
+            vec![Element::Icon { icon: Icon::Mic(muted), x: x + 3.0, y: cy - 10.0, size: 20.0, color, opacity: o }]
+        }
         Live::Custom(c) => vec![Element::Ring {
             cx: x + 12.0,
             cy,
@@ -821,17 +859,43 @@ fn leading(live: &Live, x: f32, cy: f32, o: f32, h24: bool) -> Vec<Element> {
 
 const PAD: f64 = 20.0;
 
+/// Centre of the transport buttons: the card's middle, or left of it when
+/// the volume slider shares the row.
+fn transport_x(pill: Rect, volume: bool) -> f64 {
+    if volume {
+        pill.x + 112.0
+    } else {
+        pill.x + pill.w / 2.0
+    }
+}
+
+/// The volume slider's track (left of it, a speaker icon).
+fn volume_track(pill: Rect) -> (f64, f64) {
+    (pill.x + 236.0, pill.right() - PAD - 6.0)
+}
+
 /// Hit areas of the expanded media card, relative to the pill.
-pub fn media_controls(pill: Rect) -> [(Rect, Control); 4] {
-    let cx = pill.x + pill.w / 2.0;
+pub fn media_controls(pill: Rect, volume: bool) -> Vec<(Rect, Control)> {
+    let cx = transport_x(pill, volume);
     let cy = pill.y + 136.0;
     let button = |dx: f64| Rect::new(cx + dx - 22.0, cy - 22.0, 44.0, 44.0);
-    [
+    let mut v = vec![
         (button(-64.0), Control::Previous),
         (button(0.0), Control::PlayPause),
         (button(64.0), Control::Next),
         (Rect::new(pill.x + PAD, pill.y + 82.0, pill.w - 2.0 * PAD, 22.0), Control::Scrub),
-    ]
+    ];
+    if volume {
+        let (left, right) = volume_track(pill);
+        v.push((Rect::new(left - 10.0, cy - 16.0, right - left + 20.0, 32.0), Control::Volume));
+    }
+    v
+}
+
+/// The volume (0..=1) for a pointer x on the slider.
+pub fn volume_fraction(pill: Rect, x: f64) -> f32 {
+    let (left, right) = volume_track(pill);
+    ((x - left) / (right - left)).clamp(0.0, 1.0) as f32
 }
 
 /// Fraction along the progress bar for a pointer x.
@@ -846,6 +910,7 @@ pub fn expanded_media(
     t: f64,
     o: f32,
     scrub: Option<f64>,
+    volume: Option<(f32, bool)>,
     engine: &mut TextEngine,
 ) -> Vec<Element> {
     let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
@@ -885,9 +950,34 @@ pub fn expanded_media(
         v.push(text(format!("-{}", format_duration(dur - shown)), remaining, x + w - pad, y + 112.0));
     }
 
-    // Transport controls.
-    let cx = x + w / 2.0;
+    // Transport controls, with the volume slider beside them when known.
+    let cx = transport_x(pill, volume.is_some()) as f32;
     let cy = y + 136.0;
+    if let Some((level, muted)) = volume {
+        let (left, right) = volume_track(pill);
+        let (left, right) = (left as f32, right as f32);
+        let waves = if muted || level <= 0.0 { 255 } else { (level * 3.0).ceil().clamp(1.0, 3.0) as u8 };
+        v.push(Element::Icon {
+            icon: Icon::Volume(waves),
+            x: left - 28.0,
+            y: cy - 9.0,
+            size: 18.0,
+            color: WHITE,
+            opacity: o * 0.8,
+        });
+        let shown = if muted { 0.0 } else { level.clamp(0.0, 1.0) };
+        v.push(Element::Bar { x: left, y: cy - 2.0, w: right - left, h: 4.0, color: WHITE, opacity: o * 0.22 });
+        v.push(Element::Bar {
+            x: left,
+            y: cy - 2.0,
+            w: ((right - left) * shown).max(4.0),
+            h: 4.0,
+            color: WHITE,
+            opacity: o * 0.9,
+        });
+        let kx = left + (right - left) * shown;
+        v.push(Element::Bar { x: kx - 7.0, y: cy - 7.0, w: 14.0, h: 14.0, color: WHITE, opacity: o });
+    }
     let dim = |enabled: bool| if enabled { o } else { o * 0.35 };
     let play_icon = if m.playing { Icon::Pause } else { Icon::Play };
     v.push(Element::Icon {
@@ -1643,6 +1733,157 @@ pub fn expanded_bluetooth(
     v
 }
 
+// ---- The right-click menu -----------------------------------------------------
+
+/// What a menu row does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuAction {
+    Settings,
+    /// Hide the island for an hour (or show it again).
+    Hide,
+    /// Pause pop-ups for an hour (or resume them).
+    Quiet,
+    /// Turn lyrics on or off.
+    Lyrics,
+    /// Lyrics timing: − / + buttons at the row's right.
+    LyricsTiming,
+    Quit,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MenuItem {
+    pub action: MenuAction,
+    pub icon: Icon,
+    pub label: String,
+    /// Greyed text at the right ("1 h", "+0.5 s").
+    pub detail: Option<String>,
+    /// A switch at the right, on or off.
+    pub switch: Option<bool>,
+}
+
+const MENU_TOP: f64 = 14.0;
+const MENU_ROW: f64 = 34.0;
+
+pub fn menu_height(rows: usize) -> f64 {
+    MENU_TOP + rows as f64 * MENU_ROW + 12.0
+}
+
+pub fn menu_rows(pill: Rect, rows: usize) -> Vec<Rect> {
+    (0..rows)
+        .map(|i| Rect::new(pill.x + 14.0, pill.y + MENU_TOP + i as f64 * MENU_ROW, pill.w - 28.0, MENU_ROW))
+        .collect()
+}
+
+/// The − and + buttons of the lyrics-timing row.
+pub fn menu_stepper(row: Rect) -> (Rect, Rect) {
+    let cy = row.y + row.h / 2.0;
+    let plus = Rect::new(row.right() - 40.0, cy - 13.0, 34.0, 26.0);
+    let minus = Rect::new(plus.x - 92.0, cy - 13.0, 34.0, 26.0);
+    (minus, plus)
+}
+
+pub fn expanded_menu(pill: Rect, items: &[MenuItem], o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let label = TextStyle { size: 14.5, weight: 600, opacity: o, ..TextStyle::default() };
+    let detail = TextStyle { size: 12.5, opacity: o * 0.6, align: Align::Right, ..TextStyle::default() };
+    let mut v = Vec::new();
+    for (r, item) in menu_rows(pill, items.len()).into_iter().zip(items) {
+        let (x, cy, w) = (r.x as f32, (r.y + r.h / 2.0) as f32, r.w as f32);
+        let color = if item.action == MenuAction::Quit { RED } else { WHITE };
+        v.push(Element::Icon { icon: item.icon, x: x + 6.0, y: cy - 9.0, size: 18.0, color, opacity: o * 0.9 });
+        let text_style = TextStyle { color, ..label };
+        v.push(text(engine.ellipsize(&item.label, &text_style, w - 150.0), text_style, x + 34.0, cy + 5.0));
+        let mut right = x + w - 6.0;
+        if let Some(on) = item.switch {
+            let (sw, sh) = (36.0, 22.0);
+            let sx = right - sw;
+            let (track, alpha) = if on { (GREEN, 1.0) } else { (WHITE, 0.22) };
+            v.push(Element::Bar { x: sx, y: cy - sh / 2.0, w: sw, h: sh, color: track, opacity: o * alpha });
+            let knob = sh - 4.0;
+            let kx = if on { sx + sw - knob - 2.0 } else { sx + 2.0 };
+            v.push(Element::Bar { x: kx, y: cy - knob / 2.0, w: knob, h: knob, color: WHITE, opacity: o });
+            right = sx - 10.0;
+        }
+        if item.action == MenuAction::LyricsTiming {
+            let (minus, plus) = menu_stepper(r);
+            for (b, sign) in [(minus, "−"), (plus, "+")] {
+                let (bx, by, bw, bh) = (b.x as f32, b.y as f32, b.w as f32, b.h as f32);
+                v.push(Element::Bar { x: bx, y: by, w: bw, h: bh, color: WHITE, opacity: o * 0.16 });
+                let style =
+                    TextStyle { size: 17.0, weight: 600, opacity: o, align: Align::Center, ..TextStyle::default() };
+                v.push(text(sign, style, bx + bw / 2.0, by + bh / 2.0 + 6.0));
+            }
+            if let Some(d) = &item.detail {
+                let style = TextStyle { align: Align::Center, opacity: o * 0.8, tabular: true, ..detail };
+                v.push(text(d.clone(), style, ((minus.right() + plus.x) / 2.0) as f32, cy + 4.5));
+            }
+            continue;
+        }
+        if let Some(d) = &item.detail {
+            v.push(text(d.clone(), detail, right, cy + 4.5));
+        }
+    }
+    v
+}
+
+// ---- Calls ---------------------------------------------------------------------
+
+/// Height of the call card (below its header).
+pub const CALL_H: f64 = 100.0;
+
+/// What a call is called on the island.
+pub fn call_title(c: &Call) -> &str {
+    if c.app.is_empty() {
+        "Microphone on"
+    } else {
+        &c.app
+    }
+}
+
+/// The round mute button on the call card.
+pub fn call_mute_button(pill: Rect) -> Rect {
+    Rect::new(pill.x + PAD, pill.y + 18.0, 58.0, 58.0)
+}
+
+pub fn expanded_call(pill: Rect, c: &Call, t: f64, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let muted = c.muted == Some(true);
+    let b = call_mute_button(pill);
+    let (bx, by, bs) = (b.x as f32, b.y as f32, b.w as f32);
+    let mut v = vec![
+        Element::Bar {
+            x: bx,
+            y: by,
+            w: bs,
+            h: bs,
+            color: if muted { RED } else { WHITE },
+            opacity: o * if muted { 1.0 } else { 0.16 },
+        },
+        Element::Icon {
+            icon: Icon::Mic(muted),
+            x: bx + bs / 2.0 - 13.0,
+            y: by + bs / 2.0 - 13.0,
+            size: 26.0,
+            color: WHITE,
+            opacity: o,
+        },
+    ];
+    let (x, right) = (bx + bs + 16.0, (pill.right() - PAD) as f32);
+    let elapsed = format_duration(t - c.since);
+    let time =
+        TextStyle { size: 22.0, weight: 600, opacity: o, tabular: true, align: Align::Right, ..TextStyle::default() };
+    let tw = engine.measure(&elapsed, &time);
+    v.push(text(elapsed, time, right, by + 30.0));
+    let title = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
+    v.push(text(engine.ellipsize(call_title(c), &title, right - x - tw - 12.0), title, x, by + 26.0));
+    let status = match c.muted {
+        Some(true) => "Muted · tap the microphone to unmute",
+        Some(false) => "On a call · tap the microphone to mute",
+        None => "On a call",
+    };
+    let small = TextStyle { size: 13.0, opacity: o * 0.65, ..TextStyle::default() };
+    v.push(text(engine.ellipsize(status, &small, right - x), small, x, by + 48.0));
+    v
+}
+
 // ---- The time on the empty island --------------------------------------------
 
 /// The time, centred in the empty pill ("14:05", or "2:05 PM").
@@ -1723,6 +1964,7 @@ pub fn compact_lyrics(
     pill: Rect,
     m: &MediaInfo,
     lyrics: &Lyrics,
+    pos: f64,
     t: f64,
     o: f32,
     engine: &mut TextEngine,
@@ -1734,7 +1976,7 @@ pub fn compact_lyrics(
         vec![Element::Art { x: x + 6.0, y: cy - 12.5, size: 25.0, radius: 7.0, image: m.art.clone(), opacity: o }];
     v.extend(waveform(right - 31.0, cy, 4, t, m.playing, tint, o));
     let (left, end) = (x + 38.0, right - 40.0);
-    v.extend(lyric_strip(left, end, cy + 4.5, lyrics, m.position_now(t).unwrap_or(0.0), o, engine));
+    v.extend(lyric_strip(left, end, cy + 4.5, lyrics, pos, o, engine));
     v
 }
 
@@ -1854,7 +2096,7 @@ mod tests {
     fn expanded_media_shows_title_times_and_controls() {
         let mut engine = TextEngine::new();
         let pill = Rect::new(24.0, 0.0, 372.0, 160.0);
-        let v = expanded_media(pill, &song(), 0.0, 1.0, None, &mut engine);
+        let v = expanded_media(pill, &song(), 0.0, 1.0, None, None, &mut engine);
         let t = texts(&v);
         assert!(t[0].ends_with('…'), "long title is ellipsised: {}", t[0]);
         assert!(t.contains(&"1:05".to_string()) && t.contains(&"-2:15".to_string()), "{t:?}");
@@ -1872,7 +2114,7 @@ mod tests {
     #[test]
     fn controls_sit_inside_the_card_and_scrub_maps_x() {
         let pill = Rect::new(24.0, 0.0, 372.0, 160.0);
-        for (r, _) in media_controls(pill) {
+        for (r, _) in media_controls(pill, true) {
             assert!(r.x >= pill.x && r.right() <= pill.right() && r.bottom() <= pill.bottom() + 1.0, "{r:?}");
         }
         assert_eq!(scrub_fraction(pill, pill.x), 0.0);

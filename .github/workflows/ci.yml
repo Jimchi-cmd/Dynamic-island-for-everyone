@@ -18,8 +18,8 @@ jobs:
     name: Lint & unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: npm }
       - uses: dtolnay/rust-toolchain@stable
         with: { components: "clippy, rustfmt" }
@@ -57,8 +57,8 @@ jobs:
             exe: ""
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with: { node-version: 22, cache: npm }
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -118,6 +118,27 @@ jobs:
           fi
           exec "$@"
           EOF
+
+      # macOS: frames must show right side up (the pill at the top of the
+      # window). Islet captures its own window as the window server shows
+      # it and reports where the dark pill pixels are.
+      - name: macOS frames show right side up
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cfg=$(mktemp -d)
+          ISLET_CONFIG_DIR="$cfg" ISLET_PERF_DEMO=1 ISLET_FRAME_STATS=1 ISLET_SELF_SHOT=3 \
+            target/release/islet > "$RUNNER_TEMP/islet.log" 2>&1 &
+          pid=$!
+          sleep 8
+          kill $pid; wait $pid 2>/dev/null || true
+          grep -E "ISLET_FRAMES|ISLET_SELF_SHOT" "$RUNNER_TEMP/islet.log" || true
+          shot=$(grep ISLET_SELF_SHOT "$RUNNER_TEMP/islet.log" || true)
+          case "$shot" in
+            *"first Some(0)"*) echo "the island is drawn at the top" ;;
+            *"dark rows"*) echo "::error::the island isn't at the top of its window: $shot"; exit 1 ;;
+            *) echo "::warning::couldn't capture the window to check ($shot)" ;;
+          esac
 
       # The island itself: a native, webview-free overlay. Budgets enforced.
       - name: Perf budgets (native island)
@@ -205,7 +226,7 @@ jobs:
             if [ -f "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY"; fi
           done
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: islet-${{ matrix.os }}

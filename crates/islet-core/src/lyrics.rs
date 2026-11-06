@@ -135,6 +135,8 @@ pub struct Track {
     pub album: String,
     /// Whole seconds, when the player says.
     pub duration: Option<u32>,
+    /// The song's file, when the player says (an .lrc may sit beside it).
+    pub file: Option<String>,
 }
 
 impl Track {
@@ -142,6 +144,34 @@ impl Track {
     pub fn key(&self) -> String {
         format!("{}\u{1f}{}", self.artist.trim().to_lowercase(), self.title.trim().to_lowercase())
     }
+}
+
+// ---- Local .lrc files ------------------------------------------------------
+
+/// Characters file names can't hold on some systems.
+fn file_safe(s: &str) -> String {
+    s.chars()
+        .filter(|c| !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+        .collect::<String>()
+        .trim()
+        .to_lowercase()
+}
+
+/// File names (lower case) in Islet's lyrics folder that hold this song's
+/// lyrics: "Artist - Title.lrc", or just "Title.lrc".
+pub fn local_names(t: &Track) -> Vec<String> {
+    let (artist, title) = (file_safe(&t.artist), file_safe(&t.title));
+    let mut v = Vec::new();
+    if !artist.is_empty() {
+        v.push(format!("{artist} - {title}.lrc"));
+    }
+    v.push(format!("{title}.lrc"));
+    v
+}
+
+/// The .lrc next to the song's file ("Song.flac" → "Song.lrc").
+pub fn beside(file: &str) -> std::path::PathBuf {
+    std::path::Path::new(file).with_extension("lrc")
 }
 
 const API: &str = "https://lrclib.net/api";
@@ -358,7 +388,7 @@ mod tests {
     }
 
     fn track(duration: Option<u32>) -> Track {
-        Track { title: "Hey & Ho".into(), artist: "The Band".into(), album: "".into(), duration }
+        Track { title: "Hey & Ho".into(), artist: "The Band".into(), album: "".into(), duration, file: None }
     }
 
     #[test]
@@ -378,6 +408,13 @@ mod tests {
         assert_eq!(clean_title("Song (Part 2)"), "Song (Part 2)");
         assert_eq!(clean_title("Live - Forever"), "Live - Forever", "only decorations go");
         assert_eq!(track(None).key(), Track { title: " hey & ho".into(), ..track(Some(3)) }.key());
+    }
+
+    #[test]
+    fn local_file_names() {
+        let t = Track { title: "What? / Why".into(), artist: "AC/DC".into(), ..track(None) };
+        assert_eq!(local_names(&t), ["acdc - what  why.lrc", "what  why.lrc"]);
+        assert_eq!(beside("/music/a/Song.flac"), std::path::PathBuf::from("/music/a/Song.lrc"));
     }
 
     #[test]

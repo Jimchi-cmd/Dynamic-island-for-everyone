@@ -13,9 +13,9 @@ getrandom = "0.3"
 islet-core = { path = "../islet-core" }
 islet-render = { path = "../islet-render" }
 serde_json = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }
-zune-jpeg = "0.4"
+zune-jpeg = "0.5"
 
 [dev-dependencies]
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }
@@ -95,6 +95,7 @@ windows = { version = "0.62", features = [
   "Win32_UI_HiDpi",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Accessibility",
 ] }
 
 [target.'cfg(target_os = "macos")'.dependencies]

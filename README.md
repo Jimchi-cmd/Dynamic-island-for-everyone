@@ -11,8 +11,8 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 
 ## What it does
 
-- **The island itself:** iPhone-style continuous corners and spring motion. When nothing is playing it shows the time. Hover to peek, click to expand, press and hold for more, scroll to switch between activities. Two activities split into a pill and a bubble joined by a liquid neck. On a notched MacBook it wraps the notch.
-- **Now Playing** from any app: artwork, a live waveform, progress you can drag, and play/pause/skip. Optionally, Spotify playback on your phone or speakers too.
+- **The island itself:** iPhone-style continuous corners and spring motion. When nothing is playing it shows the time. Over a fullscreen video, game or presentation it steps aside, and comes back when you point at the top of the screen. Hover to peek, click to expand, press and hold for more, scroll to switch between activities. Two activities split into a pill and a bubble joined by a liquid neck. On a notched MacBook it wraps the notch.
+- **Now Playing** from any app: artwork, a live waveform, progress you can drag, play/pause/skip and a volume slider. Optionally, Spotify playback on your phone or speakers too.
 - **Synced lyrics** (opt-in): the lyrics slide through the island as the song plays, with the line being sung lit up and the ones around it dimmed. Two lines on the open card too. From [LRCLIB](https://lrclib.net), a free, open lyrics database.
 - **Battery pop-ups** when headphones, earbuds, mice, keyboards or controllers connect, plus low-battery alerts.
 - **Charging notification** when you plug in (and "Fully charged" at 100 %), like the iPhone's.
@@ -25,11 +25,13 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 - **Alarms:** one-time or repeating. When one rings, the island opens with a swinging bell and a chime until you snooze or stop it.
 - **Wi-Fi and Bluetooth:** open the island, tap Wi-Fi or Bluetooth on the clock card, and pick a network or a device, or switch the radio on or off.
 - **Control Centre from anywhere:** every open card (music, a timer, navigation…) has a "‹ Control Centre" button at the top that goes to the clock card with Wi-Fi, Bluetooth, the shelf and the system monitor, and lists have a back button.
+- **Downloads** (opt-in): what your browser is downloading, with its size and speed, then "Downloaded": tap to open it.
+- **Calls:** while Zoom, Teams, a browser call or any app has the microphone, the island shows how long the call has run, with a button that mutes your microphone.
 - **Camera and microphone dots:** a green dot while an app uses the camera, an orange one for the microphone (your screen reader hears which app).
 - **System monitor:** CPU, memory and disk on the clock card, read only while you look at it.
 - **Clipboard history** (opt-in): your last 20 copied texts, one tap to copy again. Kept in memory only; password-manager copies are skipped.
 - **Live activities** for your scripts and apps: `islet activity start build --title Build --progress 40` puts a progress ring on the island.
-- **Make it yours:** accent colour, island size, gap from the top, which display, and a global shortcut to open it. Or hide the empty island until you point at it: anything live (music, timers, pop-ups) still shows.
+- **Make it yours:** accent colour, island size, gap from the top, which display (or every display), and a global shortcut to open it. Or hide the empty island until you point at it: anything live (music, timers, pop-ups) still shows.
 - **Navigation ETA** with live traffic, arrival time and the first turn, then one tap hands off to Google Maps or Waze. Destination suggestions as you type. Uses your own free-tier Google key ([setup](docs/navigation.md)).
 - **Settings** for all of the above, with a first-run welcome that explains every permission.
 
@@ -89,13 +91,13 @@ ISLET_DEMO=media cargo run --release -p islet      # a scripted music + battery 
 npm ci && npm run tauri dev                        # Settings
 ```
 
-Right-click the island to quit.
+Right-click the island for its menu: Islet Settings, hide it for an hour, pause pop-ups for an hour, lyrics on or off and their timing, and Quit.
 
 ## Known limitations
 
 - **Windows:** apps can't connect Bluetooth devices, so Islet lists them and opens Bluetooth settings. Listing Wi-Fi networks needs Location permission on Windows 11.
 - **macOS:** Now Playing for every app uses a small helper that runs through the system's Perl, because Apple restricted the MediaRemote API in macOS 15.4. If a macOS update breaks it, Islet falls back to Spotify and Apple Music. Wi-Fi names need Location permission.
-- **Linux:** native Wayland on KDE Plasma, sway, Hyprland and other wlroots compositors; on GNOME it runs through XWayland. Dropping files on the shelf works there too. The caps-lock pop-up and Islet's own global shortcut need X11 or XWayland, because Wayland only tells the focused app about the keyboard and Islet never takes focus; on native Wayland, bind a key to `islet toggle` in your desktop's settings. Clipboard history reads the clipboard through XWayland, which every desktop above runs. The microphone dot needs `pactl` (PulseAudio or PipeWire's pulse server). Web artwork (Spotify covers, for example) is downloaded only if you turn it on in Settings.
+- **Linux:** native Wayland on KDE Plasma, sway, Hyprland and other wlroots compositors; on GNOME it runs through XWayland. Dropping files on the shelf works there too. The caps-lock pop-up and Islet's own global shortcut need X11 or XWayland, because Wayland only tells the focused app about the keyboard and Islet never takes focus; on native Wayland, bind a key to `islet toggle` in your desktop's settings. Clipboard history reads the clipboard through XWayland, which every desktop above runs. The microphone dot needs `pactl` (PulseAudio or PipeWire's pulse server). Web artwork (Spotify covers, for example) is downloaded only if you turn it on in Settings. Over fullscreen windows on native Wayland the island stays behind them (Wayland doesn't tell other apps what's fullscreen), so pointing at the top doesn't bring it back there.
 - Notifications on the island work on Linux and with the Windows **MSIX** package (Windows allows it only for packaged apps); macOS doesn't allow it at all. The MSIX is signed with a test certificate for now ([how to install it](docs/install.md#installing-the-msix)).
 - On GNOME, the shortcut and the Caps Lock pop-up need the small [GNOME Shell extension](docs/install.md#gnome-shell-extension-gnome-4550).
 - Alarms ring only while the computer is awake and Islet is running.

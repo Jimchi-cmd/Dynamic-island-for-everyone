@@ -50,6 +50,9 @@ pub struct MediaInfo {
     pub rate: f64,
     pub art: Option<ArtImage>,
     pub caps: MediaCaps,
+    /// The song's file on this computer, when the player says (Linux
+    /// MPRIS): lyrics may sit beside it as an .lrc file.
+    pub file: Option<String>,
 }
 
 impl MediaInfo {
@@ -133,6 +136,9 @@ pub struct Custom {
     /// Accent colour (RGB), default blue.
     #[serde(default)]
     pub color: Option<[u8; 3]>,
+    /// A file or link that tapping the open card opens (a finished download).
+    #[serde(default)]
+    pub open: Option<String>,
 }
 
 /// At most this many script activities at once.
@@ -207,6 +213,11 @@ pub enum Report {
     Clipboard(String),
     /// Synced lyrics for a song (`Track::key`), or None when it has none.
     Lyrics(String, Option<std::sync::Arc<crate::lyrics::Lyrics>>),
+    /// The output volume (0..=1) and mute, quietly (no pop-up): sent when
+    /// the volume watcher starts, for the Now Playing card's slider.
+    Volume(f32, bool),
+    /// The microphone's mute switch (read, or just toggled from the island).
+    MicMuted(bool),
 }
 
 /// Whether the camera and the microphone are in use, and by which apps
@@ -272,6 +283,52 @@ pub enum Live {
     },
     Navigation(NavInfo),
     Media(MediaInfo),
+    /// The microphone is in use: a call (Zoom, Teams, Meet in a browser…).
+    Call(Call),
+}
+
+/// A call in progress, as far as the island can tell: an app has had the
+/// microphone for a few seconds.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Call {
+    /// The app using the microphone ("" when the OS doesn't say: macOS).
+    pub app: String,
+    /// When the microphone came on (app clock).
+    pub since: f64,
+    /// The microphone's mute switch, once read.
+    pub muted: Option<bool>,
+}
+
+/// Requests for the microphone's mute switch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MicCommand {
+    /// Read whether it's muted (a call just started).
+    Query,
+    /// Mute or unmute it.
+    Set(bool),
+}
+
+/// The microphone must be on this long before it counts as a call, so a
+/// voice assistant's moment or a level check doesn't pop up.
+pub const CALL_AFTER: f64 = 3.0;
+
+/// Apps that make calls: preferred when several use the microphone.
+const CALL_APPS: [&str; 12] = [
+    "zoom", "teams", "webex", "slack", "discord", "skype", "facetime", "whatsapp", "signal", "telegram", "meet",
+    "jitsi",
+];
+
+/// The app to name for a call: a known call app if one is using the
+/// microphone, else the first one.
+pub fn call_app(apps: &[String]) -> String {
+    apps.iter()
+        .find(|a| {
+            let a = a.to_lowercase();
+            CALL_APPS.iter().any(|c| a.contains(c))
+        })
+        .or_else(|| apps.first())
+        .cloned()
+        .unwrap_or_default()
 }
 
 /// Seconds a paused session stays on the island before it goes away.
@@ -299,6 +356,8 @@ pub struct Activities {
     remote: Option<MediaInfo>,
     custom: Vec<Custom>,
     privacy: Privacy,
+    /// The microphone has been on since then (a call, once it lasts).
+    call: Option<Call>,
     system: Option<crate::sysmon::Stats>,
     note_until: f64,
     nav: Option<NavInfo>,
@@ -357,6 +416,11 @@ impl Activities {
 
     pub fn system(&self) -> Option<&crate::sysmon::Stats> {
         self.system.as_ref()
+    }
+
+    /// The call in progress (the microphone is on), shown or not yet.
+    pub fn call(&self) -> Option<&Call> {
+        self.call.as_ref()
     }
 
     pub fn privacy(&self) -> &Privacy {
@@ -468,16 +532,28 @@ impl Activities {
                 true
             }
             // The island keeps the history (it knows whether it's on).
-            Report::Clipboard(_) | Report::Lyrics(..) => false,
+            Report::Clipboard(_) | Report::Lyrics(..) | Report::Volume(..) => false,
             Report::System(s) => {
                 self.system = s;
                 true
             }
             Report::Privacy(p) => {
                 let changed = self.privacy != p;
+                self.call = match (&p.mic, self.call.take()) {
+                    (Some(apps), Some(c)) => Some(Call { app: call_app(apps), ..c }),
+                    (Some(apps), None) => Some(Call { app: call_app(apps), since: t, muted: None }),
+                    (None, _) => None,
+                };
                 self.privacy = p;
                 changed
             }
+            Report::MicMuted(m) => match &mut self.call {
+                Some(c) if c.muted != Some(m) => {
+                    c.muted = Some(m);
+                    true
+                }
+                _ => false,
+            },
             Report::Calendar(c) => {
                 self.calendar = c.unwrap_or_default();
                 true
@@ -555,6 +631,9 @@ impl Activities {
                 out.push(Live::Battery { device: d.clone(), reason: *reason });
             }
         }
+        if let Some(c) = self.call.as_ref().filter(|c| t - c.since >= CALL_AFTER) {
+            out.push(Live::Call(c.clone()));
+        }
         if let Some(tm) = &self.timer {
             out.push(Live::Timer(tm.clone()));
         }
@@ -594,6 +673,12 @@ impl Activities {
         let linger_end = match (&self.media, self.paused_since) {
             (Some(m), Some(p)) if !m.playing => Some(p + MEDIA_LINGER).filter(|&e| e > t),
             _ => None,
+        };
+        // A call shows once the microphone has been on for a moment.
+        let call_start = self.call.as_ref().map(|c| c.since + CALL_AFTER).filter(|&s| s > t);
+        let linger_end = match (linger_end, call_start) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
         };
         match (peek_end, linger_end) {
             (Some(a), Some(b)) => Some(a.min(b)),
@@ -721,6 +806,26 @@ mod tests {
         let live = a.live(2.0);
         assert!(matches!(live[..], [Live::Battery { .. }, Live::Media(_)]));
         assert_eq!(a.next_change(2.0), Some(1.0 + PEEK_CONNECTED));
+    }
+
+    #[test]
+    fn a_call_shows_once_the_microphone_stays_on() {
+        let mut a = Activities::new();
+        let mic = |apps: &[&str]| {
+            Report::Privacy(Privacy { camera: None, mic: Some(apps.iter().map(|s| s.to_string()).collect()) })
+        };
+        a.report(mic(&["Firefox", "Zoom"]), 10.0);
+        assert!(a.live(11.0).is_empty(), "not for a moment's use");
+        assert_eq!(a.next_change(11.0), Some(10.0 + CALL_AFTER));
+        let live = a.live(14.0);
+        assert!(matches!(&live[..], [Live::Call(Call { app, since, muted: None })] if app == "Zoom" && *since == 10.0));
+        a.report(Report::MicMuted(true), 15.0);
+        assert!(matches!(&a.live(15.0)[..], [Live::Call(Call { muted: Some(true), .. })]));
+        a.report(mic(&["Firefox"]), 20.0);
+        assert!(matches!(&a.live(20.0)[..], [Live::Call(c)] if c.app == "Firefox" && c.since == 10.0), "the same call");
+        a.report(Report::Privacy(Privacy::default()), 30.0);
+        assert!(a.live(30.0).is_empty(), "the microphone went off: the call ended");
+        assert_eq!(call_app(&[]), "");
     }
 
     #[test]

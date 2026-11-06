@@ -4,7 +4,7 @@
 
 use crate::content::{self, AlarmControl, ConnHit, Control, NavControl, Panel, TimerControl, TIMER_ALARM_ID};
 use crate::platform::{Button, Event, Key};
-use islet_core::activity::{Activities, Hud, Live, MediaCommand, MediaInfo, NavInfo, Report};
+use islet_core::activity::{Activities, Call, Hud, Live, MediaCommand, MediaInfo, MicCommand, NavInfo, Report};
 use islet_core::alarm::{Alarm, AlarmClock, AlarmEvent};
 use islet_core::clock::{secs_to_next_minute, LocalTime};
 use islet_core::connectivity::{BtState, ConnCommand, ConnUpdate, Radio, WifiState};
@@ -139,13 +139,23 @@ pub enum UiAction {
     Path(String),
     /// Islet Settings at a page ("wifi:Home": join Home with a password).
     Settings(String),
+    /// Turn a setting on or off and save it (`islet set <key> on|off`).
+    SetSwitch(&'static str, bool),
 }
 
 /// Windows has no public API to connect Bluetooth devices: its settings do.
 const BLUETOOTH_SETTINGS: &str = "ms-settings:bluetooth";
 
+/// How long "Hide for an hour" and "Pause pop-ups" last.
+const QUIET_SECS: f64 = 3600.0;
+/// One tap of the lyrics-timing buttons.
+const LYRICS_STEP: f64 = 0.5;
+
 /// What an open island shows.
 enum OpenContent<'a> {
+    /// The right-click menu.
+    Menu,
+    Call(Call),
     Agenda,
     Custom(&'a islet_core::activity::Custom),
     Notes,
@@ -250,6 +260,26 @@ pub struct App {
     /// next row.
     list_scroll: usize,
     list_acc: f64,
+    /// An app is fullscreen on the island's display: the island hides
+    /// until the pointer comes to it.
+    fullscreen: bool,
+    /// The right-click menu is open; the island is hidden (until hovered)
+    /// or pop-ups are paused until these times.
+    menu: bool,
+    hidden_until: Option<f64>,
+    quiet_until: Option<f64>,
+    /// Lyrics shown this many seconds later (negative: sooner), per song.
+    lyrics_delay: std::collections::HashMap<String, f64>,
+    /// The output volume and mute (for the card's slider), a level the
+    /// slider asked for, and when (its own change shouldn't pop up the HUD).
+    volume: Option<(f32, bool)>,
+    volume_out: Option<f32>,
+    volume_set_at: f64,
+    /// Microphone requests (mute, read), and the call's second shown.
+    mic_commands: Vec<MicCommand>,
+    call_sec: i64,
+    /// The call card's mute button is being pressed.
+    call_press: bool,
 }
 
 impl App {
@@ -315,6 +345,17 @@ impl App {
             shown: Animated::new(1.0, SHOW_SPRING),
             list_scroll: 0,
             list_acc: 0.0,
+            fullscreen: false,
+            menu: false,
+            hidden_until: None,
+            quiet_until: None,
+            lyrics_delay: std::collections::HashMap::new(),
+            volume: None,
+            volume_out: None,
+            volume_set_at: f64::NEG_INFINITY,
+            mic_commands: Vec::new(),
+            call_sec: -1,
+            call_press: false,
         };
         app.anim_region = app.target_bounds();
         app
@@ -357,7 +398,7 @@ impl App {
     /// Activity cards start with a "Control Centre" button; their content
     /// goes below it.
     fn has_header(content: &OpenContent) -> bool {
-        !matches!(content, OpenContent::Clock | OpenContent::Panel(_) | OpenContent::Alarm(_))
+        !matches!(content, OpenContent::Clock | OpenContent::Panel(_) | OpenContent::Alarm(_) | OpenContent::Menu)
     }
 
     /// Where an open card's own content goes (below the notch and header).
@@ -667,6 +708,22 @@ impl App {
                 return Some(ConnHit::Back);
             }
         }
+        if let OpenContent::Menu = open {
+            let items = self.menu_items(t);
+            let rows = content::menu_rows(cr, items.len());
+            let i = rows.iter().position(|r| r.contains(x, y))?;
+            if items[i].action == content::MenuAction::LyricsTiming {
+                let (minus, plus) = content::menu_stepper(rows[i]);
+                return if minus.contains(x, y) {
+                    Some(ConnHit::LyricsShift(-1))
+                } else if plus.contains(x, y) {
+                    Some(ConnHit::LyricsShift(1))
+                } else {
+                    None
+                };
+            }
+            return Some(ConnHit::Menu(i));
+        }
         match open {
             OpenContent::Clock => content::clock_chips(cr, !self.shelf.is_empty(), self.prefs.clipboard)
                 .into_iter()
@@ -699,6 +756,120 @@ impl App {
             }
             _ => None,
         }
+    }
+
+    /// The right-click menu's rows, as they stand now.
+    fn menu_items(&self, t: f64) -> Vec<content::MenuItem> {
+        use content::{MenuAction, MenuItem};
+        use islet_render::elements::Icon;
+        let left = |until: f64| format!("{} min left", ((until - t) / 60.0).ceil().max(1.0) as i64);
+        let item =
+            |action, icon, label: &str| MenuItem { action, icon, label: label.into(), detail: None, switch: None };
+        let mut v = vec![item(MenuAction::Settings, Icon::Controls, "Islet Settings")];
+        v.push(match self.hidden_until {
+            Some(h) => {
+                MenuItem { detail: Some(left(h)), ..item(MenuAction::Hide, Icon::Moon, "Show the island again") }
+            }
+            None => item(MenuAction::Hide, Icon::Moon, "Hide for an hour"),
+        });
+        v.push(match self.quiet_until.filter(|q| t < *q) {
+            Some(q) => MenuItem { detail: Some(left(q)), ..item(MenuAction::Quiet, Icon::Bell(0), "Resume pop-ups") },
+            None => item(MenuAction::Quiet, Icon::Bell(0), "Pause pop-ups for an hour"),
+        });
+        v.push(MenuItem { switch: Some(self.prefs.lyrics), ..item(MenuAction::Lyrics, Icon::Music, "Lyrics") });
+        if self.song_lyrics().is_some() {
+            let d = self.song_key().and_then(|k| self.lyrics_delay.get(&k).copied()).unwrap_or(0.0);
+            let detail = if d == 0.0 { "On time".to_string() } else { format!("{d:+.1} s") };
+            v.push(MenuItem { detail: Some(detail), ..item(MenuAction::LyricsTiming, Icon::Music, "Lyrics timing") });
+        }
+        v.push(item(MenuAction::Quit, Icon::Close, "Quit Islet"));
+        v
+    }
+
+    fn menu_act(&mut self, i: usize, t: f64) -> bool {
+        use content::MenuAction;
+        let Some(item) = self.menu_items(t).into_iter().nth(i) else { return false };
+        match item.action {
+            MenuAction::Settings => {
+                self.ui_actions.push(UiAction::Settings("general".into()));
+                self.menu = false;
+                self.signal(Signal::Escape, t);
+            }
+            MenuAction::Hide => {
+                self.hidden_until = if self.hidden_until.is_some() { None } else { Some(t + QUIET_SECS) };
+                self.menu = false;
+                self.signal(Signal::Escape, t);
+                self.update_shown(t);
+            }
+            MenuAction::Quiet => {
+                self.quiet_until = if self.quiet_until.is_some_and(|q| t < q) { None } else { Some(t + QUIET_SECS) };
+            }
+            MenuAction::Lyrics => {
+                let on = !self.prefs.lyrics;
+                self.prefs.lyrics = on;
+                if !on {
+                    self.lyrics = None;
+                }
+                self.ui_actions.push(UiAction::SetSwitch("lyrics", on));
+            }
+            MenuAction::LyricsTiming => {}
+            MenuAction::Quit => self.quit = true,
+        }
+        self.sync_live(t);
+        true
+    }
+
+    /// Is (x, y) on the call card's mute button?
+    fn call_mute_at(&self, x: f64, y: f64, t: f64) -> bool {
+        self.island.presentation().is_open()
+            && matches!(self.open_content(&self.live(t)), OpenContent::Call(_))
+            && content::call_mute_button(self.card_rect(t)).contains(x, y)
+    }
+
+    /// Mute or unmute the microphone: shown at once, applied by the OS.
+    fn toggle_mic(&mut self, t: f64) -> bool {
+        let Some(c) = self.activities.call() else { return false };
+        let muted = !c.muted.unwrap_or(false);
+        self.mic_commands.push(MicCommand::Set(muted));
+        self.activities.report(Report::MicMuted(muted), t);
+        true
+    }
+
+    /// Microphone requests for the main loop: read the mute switch when a
+    /// call starts, set it from the mute button.
+    pub fn take_mic_commands(&mut self) -> Vec<MicCommand> {
+        std::mem::take(&mut self.mic_commands)
+    }
+
+    /// Whether a call (the microphone in use) is going on.
+    pub fn call_active(&self) -> bool {
+        self.prefs.calls && self.activities.call().is_some()
+    }
+
+    /// The volume slider dragged to x: show it at once and ask for it.
+    fn volume_from(&mut self, x: f64, t: f64) -> bool {
+        let level = content::volume_fraction(self.card_rect(t), x);
+        self.volume = Some((level, false));
+        self.volume_out = Some(level);
+        self.volume_set_at = t;
+        true
+    }
+
+    /// The level the volume slider asked for since the last call.
+    pub fn take_volume(&mut self) -> Option<f32> {
+        self.volume_out.take()
+    }
+
+    /// The playing song's key (`Track::key`).
+    fn song_key(&self) -> Option<String> {
+        let m = self.activities.media()?;
+        Some(format!("{}\u{1f}{}", m.artist.trim().to_lowercase(), m.title.trim().to_lowercase()))
+    }
+
+    /// Where the song is for its lyrics: the position, nudged by the timing set in the menu.
+    fn lyrics_pos(&self, m: &MediaInfo, t: f64) -> f64 {
+        let delay = self.song_key().and_then(|k| self.lyrics_delay.get(&k).copied()).unwrap_or(0.0);
+        m.position_now(t).unwrap_or(0.0) - delay
     }
 
     /// A list panel's length and its footer (line, is a button).
@@ -770,6 +941,13 @@ impl App {
                 self.conn_commands.push(ConnCommand::Status);
             }
             ConnHit::Return => self.home = false,
+            ConnHit::Menu(i) => return self.menu_act(i, t),
+            ConnHit::LyricsShift(dir) => {
+                if let Some(key) = self.song_key() {
+                    let d = self.lyrics_delay.entry(key).or_insert(0.0);
+                    *d = ((*d + f64::from(dir) * LYRICS_STEP) * 2.0).round() / 2.0;
+                }
+            }
             // The switch flips at once; the radio's real state follows (and
             // flips it back, with a message, if the OS says no).
             ConnHit::Power => match self.panel {
@@ -844,6 +1022,12 @@ impl App {
                 _ => "Islet".to_string(),
             },
             Some(Live::Alarm(a)) => format!("Alarm ringing: {}", a.title()),
+            Some(Live::Call(c)) => format!(
+                "On a call{}, {}{}",
+                if c.app.is_empty() { String::new() } else { format!(" in {}", c.app) },
+                content::format_duration(t - c.since),
+                if c.muted == Some(true) { ", microphone muted" } else { "" }
+            ),
             Some(Live::Hud(Hud::Volume { muted: true, .. })) => "Volume muted".to_string(),
             Some(Live::Hud(Hud::Volume { level, .. })) => format!("Volume {}%", pct(*level)),
             Some(Live::Hud(Hud::Brightness(b))) => format!("Brightness {}%", pct(*b)),
@@ -900,14 +1084,34 @@ impl App {
                 buttons.push((format!("Back to {}", self.activity_label(&live)), content::return_button(outer)));
             }
             match shown {
+                OpenContent::Call(c) => {
+                    let name = if c.muted == Some(true) { "Unmute microphone" } else { "Mute microphone" };
+                    buttons.push((name.into(), content::call_mute_button(cr)));
+                }
+                OpenContent::Menu => {
+                    let items = self.menu_items(t);
+                    for (item, r) in items.iter().zip(content::menu_rows(cr, items.len())) {
+                        if item.action == content::MenuAction::LyricsTiming {
+                            let (minus, plus) = content::menu_stepper(r);
+                            buttons.push(("Lyrics sooner".into(), minus));
+                            buttons.push(("Lyrics later".into(), plus));
+                            continue;
+                        }
+                        let state = match item.switch {
+                            Some(on) => format!(", {}", if on { "on" } else { "off" }),
+                            None => String::new(),
+                        };
+                        buttons.push((format!("{}{state}", item.label), r));
+                    }
+                }
                 OpenContent::Media(m) => {
-                    for (r, ctl) in content::media_controls(cr) {
+                    for (r, ctl) in content::media_controls(cr, self.volume.is_some()) {
                         let name = match ctl {
                             Control::Previous => "Previous",
                             Control::PlayPause if m.playing => "Pause",
                             Control::PlayPause => "Play",
                             Control::Next => "Next",
-                            Control::Scrub => continue,
+                            Control::Scrub | Control::Volume => continue,
                         };
                         buttons.push((name.to_string(), r));
                     }
@@ -1096,6 +1300,7 @@ impl App {
             artist: m.artist.clone(),
             album: m.album.clone(),
             duration: m.duration.filter(|d| d.is_finite() && *d > 0.0).map(|d| d.round() as u32),
+            file: m.file.clone(),
         })
     }
 
@@ -1105,8 +1310,7 @@ impl App {
         if !self.prefs.lyrics {
             return None;
         }
-        let m = self.activities.media()?;
-        let key = format!("{}\u{1f}{}", m.artist.trim().to_lowercase(), m.title.trim().to_lowercase());
+        let key = self.song_key()?;
         match &self.lyrics {
             Some((k, Some(l))) if *k == key && !l.is_empty() => Some(l),
             _ => None,
@@ -1129,6 +1333,7 @@ impl App {
             OpenContent::Agenda => "Calendar".into(),
             OpenContent::Battery => "Battery".into(),
             OpenContent::Custom(c) => c.title.clone(),
+            OpenContent::Call(_) => "Call".into(),
             _ => "Back".into(),
         }
     }
@@ -1141,11 +1346,36 @@ impl App {
             && self.island.presentation() == Presentation::Idle
             && !self.dragging
             && !self.privacy_shown();
-        if hide {
+        if hide || self.hidden_for_fullscreen() || self.hidden_for_now() {
             0.0
         } else {
             1.0
         }
+    }
+
+    /// Over a fullscreen video or game the whole island steps aside, music
+    /// and all, until the pointer comes to the top of the screen. It still
+    /// shows when it's opened, when files are dragged to it, and for a
+    /// ringing alarm or timer.
+    fn hidden_for_fullscreen(&self) -> bool {
+        self.fullscreen
+            && !self.hovered
+            && !self.dragging
+            && !self.island.presentation().is_open()
+            && self.activities.alarm().is_none()
+            && !self.timer_ringing
+    }
+
+    /// "Hide for an hour" from the menu: like fullscreen, it still shows
+    /// while pointed at, while open, and for alarms. (The deadline is
+    /// checked by `tick`.)
+    fn hidden_for_now(&self) -> bool {
+        self.hidden_until.is_some()
+            && !self.hovered
+            && !self.dragging
+            && !self.island.presentation().is_open()
+            && self.activities.alarm().is_none()
+            && !self.timer_ringing
     }
 
     fn update_shown(&mut self, t: f64) -> bool {
@@ -1177,6 +1407,17 @@ impl App {
             Report::Media(Some(m)) if self.prefs.excludes(&m.app_name, &m.source) => Report::Media(None),
             r => r,
         };
+        if let Report::Volume(level, muted) = r {
+            self.volume = Some((level, muted));
+            return self.island.presentation().is_open();
+        }
+        if let Report::Hud(Hud::Volume { level, muted }) = &r {
+            self.volume = Some((*level, *muted));
+            // The slider's own change: no pop-up over the card.
+            if t - self.volume_set_at < 1.0 {
+                return self.island.presentation().is_open();
+            }
+        }
         if let Report::Lyrics(key, l) = r {
             self.lyrics = Some((key, l));
             self.sync_live(t);
@@ -1215,6 +1456,13 @@ impl App {
 
     fn live(&self, t: f64) -> Vec<Live> {
         let mut v = self.activities.live(t);
+        if !self.prefs.calls {
+            v.retain(|l| !matches!(l, Live::Call(_)));
+        }
+        // Pop-ups paused from the menu: brief notices wait, lasting things stay.
+        if self.quiet_until.is_some_and(|q| t < q) {
+            v.retain(|l| !matches!(l, Live::Hud(_) | Live::Battery { .. } | Live::Note(_) | Live::Event { .. }));
+        }
         if v.len() > 1 {
             let n = self.rotation % v.len();
             v.rotate_left(n);
@@ -1255,6 +1503,8 @@ impl App {
         };
         if let (Some(Live::Alarm(_)), Some(a)) = (live.first(), self.activities.alarm()) {
             OpenContent::Alarm(a)
+        } else if self.menu {
+            OpenContent::Menu
         } else if let Some(p) = self.panel {
             OpenContent::Panel(p)
         } else if home {
@@ -1265,6 +1515,8 @@ impl App {
             OpenContent::Agenda
         } else if let (Some(Live::Custom(_)), Some(c)) = (live.first(), self.activities.custom().first()) {
             OpenContent::Custom(c)
+        } else if let Some(Live::Call(c)) = live.first() {
+            OpenContent::Call(c.clone())
         } else if let (Some(Live::Timer(_)), Some(tm)) = (live.first(), self.activities.timer()) {
             OpenContent::Timer(tm)
         } else if matches!(live.first(), Some(Live::Battery { .. })) {
@@ -1293,8 +1545,8 @@ impl App {
         }
         let p = self.pill_rect(t);
         let shape = smooth((60.0 - p.h) / 16.0) * smooth((190.0 - p.w) / 40.0);
-        let o = shape as f32 * self.shown.value(t).clamp(0.0, 1.0) as f32;
-        if o < 0.01 {
+        let o = shape as f32;
+        if o < 0.01 || self.shown.value(t) < 0.01 {
             0.0
         } else {
             o
@@ -1342,8 +1594,11 @@ impl App {
     }
 
     /// The camera / microphone dot is on (in use, and not switched off).
+    /// A call filling the pill already shows the microphone, in orange.
     fn privacy_shown(&self) -> bool {
-        self.prefs.privacy_dots && self.activities.privacy().active()
+        let call_in_pill =
+            self.prefs.calls && self.activities.privacy().camera.is_none() && self.activities.call().is_some();
+        self.prefs.privacy_dots && self.activities.privacy().active() && !call_in_pill
     }
 
     /// Green for the camera (it takes precedence), orange for the microphone.
@@ -1371,6 +1626,8 @@ impl App {
                 cr
             };
             match open {
+                OpenContent::Menu => out.extend(content::expanded_menu(cr, &self.menu_items(t), eo, engine)),
+                OpenContent::Call(c) => out.extend(content::expanded_call(card, &c, t, eo, engine)),
                 OpenContent::Alarm(a) => out.extend(content::expanded_alarm(cr, a, self.h24, t, eo, engine)),
                 OpenContent::Timer(tm) => out.extend(content::expanded_timer(card, tm, t, eo, engine)),
                 OpenContent::Agenda => out.extend(content::expanded_agenda(card, &self.agenda(), eo, engine)),
@@ -1409,9 +1666,9 @@ impl App {
                     engine,
                 )),
                 OpenContent::Media(m) => {
-                    out.extend(content::expanded_media(card, m, t, eo, self.scrub, engine));
+                    out.extend(content::expanded_media(card, m, t, eo, self.scrub, self.volume, engine));
                     if let Some(l) = self.song_lyrics() {
-                        let pos = m.position_now(t).unwrap_or(0.0);
+                        let pos = self.lyrics_pos(m, t);
                         out.extend(content::card_lyrics(card, l, pos, eo, engine));
                     }
                 }
@@ -1468,7 +1725,7 @@ impl App {
                     let inner = Rect::new(p.x, p.y, (p.w - room).max(1.0), p.h);
                     match (first, self.song_lyrics()) {
                         (Live::Media(m), Some(l)) if self.lyrics_in_bar(&live) => {
-                            out.extend(content::compact_lyrics(inner, m, l, t, co, engine))
+                            out.extend(content::compact_lyrics(inner, m, l, self.lyrics_pos(m, t), t, co, engine))
                         }
                         _ => out.extend(content::compact(inner, first, t, co, engine)),
                     }
@@ -1486,6 +1743,14 @@ impl App {
         let po = self.privacy_opacity(t);
         if po > 0.0 {
             out.push(self.privacy_dot(p, po));
+        }
+        // The island fading out (hover-only, fullscreen): its content too.
+        let shown = self.shown.value(t).clamp(0.0, 1.0) as f32;
+        if shown < 0.01 {
+            return Vec::new();
+        }
+        if shown < 0.999 {
+            out = out.into_iter().map(|e| e.faded(shown)).collect();
         }
         out
     }
@@ -1509,6 +1774,8 @@ impl App {
                 let header = if Self::has_header(&open) { content::CARD_HEADER_H } else { 0.0 };
                 let h = header
                     + match open {
+                        OpenContent::Menu => content::menu_height(self.menu_items(t).len()),
+                        OpenContent::Call(_) => content::CALL_H,
                         OpenContent::Alarm(_) => content::ALARM_H,
                         OpenContent::Timer(_) => content::TIMER_H,
                         OpenContent::Agenda => content::agenda_height(self.agenda().len()),
@@ -1590,6 +1857,7 @@ impl App {
             self.panel = None;
             self.list_scroll = 0;
             self.home = false;
+            self.menu = false;
             self.notes_open = false;
         } else if !from.is_open() && matches!(self.open_content(&self.live(t)), OpenContent::Notes) {
             self.notes_open = true;
@@ -1631,7 +1899,7 @@ impl App {
             return false;
         }
         self.hovered = inside;
-        if inside {
+        let changed = if inside {
             self.left_open_at = None;
             self.signal(Signal::PointerEnter, t)
         } else {
@@ -1640,7 +1908,9 @@ impl App {
             }
             self.press = None;
             self.signal(Signal::PointerLeave, t)
-        }
+        };
+        // A hidden island (fullscreen video) shows while the pointer is on it.
+        self.update_shown(t) || changed
     }
 
     /// The media control under (x, y) on an open "Now Playing" card.
@@ -1652,12 +1922,13 @@ impl App {
             return None;
         }
         let cr = self.card_rect(t);
-        content::media_controls(cr).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, c)| c)
+        content::media_controls(cr, self.volume.is_some()).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, c)| c)
     }
 
     /// Returns true when the event changed what is on screen.
     pub fn handle(&mut self, e: Event, t: f64) -> bool {
         match e {
+            Event::PointerMove { x, .. } if self.control == Some(Control::Volume) => self.volume_from(x, t),
             Event::PointerMove { x, .. } if self.control == Some(Control::Scrub) => {
                 self.scrub = Some(content::scrub_fraction(self.card_rect(t), x));
                 true
@@ -1667,6 +1938,10 @@ impl App {
             Event::PointerDown { x, y, button: Button::Primary } if self.hit(x, y, t) => {
                 if let Some(c) = self.timer_control_at(x, y, t) {
                     self.timer_control = Some(c);
+                    return true;
+                }
+                if self.call_mute_at(x, y, t) {
+                    self.call_press = true;
                     return true;
                 }
                 if let Some(h) = self.conn_hit_at(x, y, t) {
@@ -1684,6 +1959,9 @@ impl App {
                 match self.control_at(x, y, t) {
                     Some(c) => {
                         self.control = Some(c);
+                        if c == Control::Volume {
+                            self.volume_from(x, t);
+                        }
                         if c == Control::Scrub && self.activities.media().is_some_and(|m| m.caps.seek) {
                             self.scrub = Some(content::scrub_fraction(self.card_rect(t), x));
                         }
@@ -1696,6 +1974,12 @@ impl App {
                 }
             }
             Event::PointerUp { x, y, button: Button::Primary } => {
+                if std::mem::take(&mut self.call_press) {
+                    if self.call_mute_at(x, y, t) {
+                        return self.toggle_mic(t);
+                    }
+                    return true;
+                }
                 if let Some(c) = self.timer_control.take() {
                     if self.timer_control_at(x, y, t) != Some(c) {
                         return true;
@@ -1728,6 +2012,7 @@ impl App {
                     let scrub = self.scrub.take();
                     let media = self.activities.media();
                     let command = match c {
+                        Control::Volume => None,
                         Control::Scrub => {
                             scrub.zip(media.and_then(|m| m.duration)).map(|(f, d)| MediaCommand::SeekTo(f * d))
                         }
@@ -1740,17 +2025,43 @@ impl App {
                     return true;
                 }
                 match self.press.take() {
-                    Some(p) if !p.long_fired => self.signal(Signal::Click, t),
+                    Some(p) if !p.long_fired => {
+                        // A finished download (or a script's link): tapping its card opens it.
+                        if self.island.presentation().is_open() {
+                            if let OpenContent::Custom(c) = self.open_content(&self.live(t)) {
+                                if let Some(target) = c.open.clone() {
+                                    self.ui_actions.push(UiAction::Path(target));
+                                }
+                            }
+                        }
+                        self.signal(Signal::Click, t)
+                    }
                     _ => false,
                 }
             }
-            // Until the context menu exists: right-click the island to quit.
+            // Right-click: the menu (Settings, hide, pause pop-ups, lyrics, quit).
             Event::PointerDown { x, y, button: Button::Secondary } if self.hit(x, y, t) => {
-                self.quit = true;
-                false
+                self.press = None;
+                if self.menu && self.island.presentation().is_open() {
+                    self.menu = false;
+                    return self.signal(Signal::Escape, t);
+                }
+                self.menu = true;
+                self.panel = None;
+                self.home = false;
+                if self.island.presentation().is_open() {
+                    self.sync_live(t);
+                    true
+                } else {
+                    self.signal(Signal::Click, t)
+                }
             }
             Event::Key(Key::Escape) => self.signal(Signal::Escape, t),
             Event::Hotkey => self.toggle(t),
+            Event::Fullscreen(on) => {
+                self.fullscreen = on;
+                self.update_shown(t)
+            }
             Event::CapsLock(on) => self.report(Report::Hud(Hud::CapsLock(on)), t),
             Event::DragOver { x, y } => self.drag_over(x, y, t),
             Event::A11yPress(button) => self.a11y_press(button, t),
@@ -1770,8 +2081,25 @@ impl App {
     /// Advance timers. Returns true if anything changed.
     pub fn tick(&mut self, t: f64) -> bool {
         let mut changed = self.timer_tick(t);
+        if self.hidden_until.is_some_and(|h| t >= h) {
+            self.hidden_until = None;
+            changed = true;
+        }
+        if self.quiet_until.is_some_and(|q| t >= q) {
+            self.quiet_until = None;
+            changed = true;
+        }
         changed |= self.sync_live(t);
         changed |= self.update_shown(t);
+        // A call on screen shows its length: redraw as each second passes.
+        let sec = match self.live(t).iter().find_map(|l| if let Live::Call(c) = l { Some(c.since) } else { None }) {
+            Some(since) if self.shown.value(t) > 0.01 => (t - since).floor() as i64,
+            _ => -1,
+        };
+        if sec != self.call_sec {
+            self.call_sec = sec;
+            changed = true;
+        }
         if std::mem::take(&mut self.pending_peek) && !self.island.presentation().is_open() {
             // A focus phase changed: open briefly, then close by itself.
             changed |= self.signal(Signal::Click, t);
@@ -1813,6 +2141,11 @@ impl App {
         if self.animating(t) {
             return Some(FRAME);
         }
+        // Hidden (over a fullscreen video, say): a waveform nobody sees
+        // mustn't keep waking the computer.
+        if self.shown.value(t) < 0.01 {
+            return None;
+        }
         let live = self.live(t);
         // An activity without a known amount animates its ring while shown.
         if self.activities.custom().first().is_some_and(|c| c.progress.is_none())
@@ -1829,7 +2162,7 @@ impl App {
         // Lyrics glide at 60 fps while they move: sliding to the next line,
         // or scrolling across one too long for the bar (about 7 px a letter).
         if let (true, Some(l), Some(m)) = (playing, self.song_lyrics(), self.activities.media()) {
-            let pos = m.position_now(t).unwrap_or(0.0);
+            let pos = self.lyrics_pos(m, t);
             let long = self.lyrics_in_bar(&live)
                 && l.current(pos)
                     .is_some_and(|i| l.text(i).chars().count() as f64 * 7.0 > content::COMPACT_LYRICS_W - 90.0);
@@ -1864,6 +2197,13 @@ impl App {
         if let Some(now) = self.clock.filter(|_| self.clock_shown(t)) {
             at(t + secs_to_next_minute(&now));
         }
+        // A call on screen ticks each second.
+        if let Some(since) = self.live(t).iter().find_map(|l| if let Live::Call(c) = l { Some(c.since) } else { None })
+        {
+            if self.shown.value(t) > 0.01 {
+                at(since + (t - since).floor() + 1.0);
+            }
+        }
         // A running timer redraws as each second passes (and ends on time).
         if let Some(tm) = self.timer.as_ref().filter(|tm| tm.running()) {
             let rem = tm.remaining(t);
@@ -1883,6 +2223,9 @@ impl App {
                     at(t + rem.rem_euclid(60.0) + 0.05);
                 }
             }
+        }
+        for deadline in [self.hidden_until, self.quiet_until].into_iter().flatten() {
+            at(deadline);
         }
         // Alarms are checked each minute, only while one is set.
         if let Some(secs) = self.clock.and_then(|now| self.alarms.next_check(&now)) {
@@ -2220,6 +2563,161 @@ mod tests {
         assert!(plain.frame(4.0).opacity > 0.99);
     }
 
+    #[test]
+    fn the_volume_slider_sets_the_volume_without_a_pop_up() {
+        let mut app = App::new(Demo::None, false);
+        app.report(Report::Media(Some(song(true))), 0.0);
+        app.report(Report::Volume(0.3, false), 0.0);
+        click(&mut app, 1.0);
+        let t = 5.0;
+        let card = app.card_rect(t);
+        let (slider, _) = content::media_controls(card, true).into_iter().find(|(_, c)| *c == Control::Volume).unwrap();
+        let y = slider.y + slider.h / 2.0;
+        app.handle(Event::PointerDown { x: slider.x + 10.0, y, button: Button::Primary }, t);
+        assert_eq!(app.take_volume(), Some(0.0));
+        app.handle(Event::PointerMove { x: slider.right() - 10.0, y }, t + 0.1);
+        assert_eq!(app.take_volume(), Some(1.0));
+        app.handle(Event::PointerUp { x: slider.right() - 10.0, y, button: Button::Primary }, t + 0.2);
+        assert_eq!(app.presentation(), Expanded, "dragging the slider doesn't close the card");
+        assert!(app.take_commands().is_empty());
+        // The system echoes the change: no volume pop-up for it.
+        app.report(Report::Hud(Hud::Volume { level: 1.0, muted: false }), t + 0.3);
+        assert!(!app.live(t + 0.4).iter().any(|l| matches!(l, Live::Hud(_))));
+        // A change from the keyboard later does pop up.
+        app.report(Report::Hud(Hud::Volume { level: 0.8, muted: false }), t + 5.0);
+        assert!(app.live(t + 5.1).iter().any(|l| matches!(l, Live::Hud(_))));
+    }
+
+    fn zoom_call() -> Report {
+        Report::Privacy(islet_core::activity::Privacy { camera: None, mic: Some(vec!["Zoom".into()]) })
+    }
+
+    #[test]
+    fn a_call_shows_its_length_and_mutes_the_microphone() {
+        let mut engine = TextEngine::new();
+        let mut app = App::new(Demo::None, false);
+        app.report(zoom_call(), 0.0);
+        app.tick(0.0);
+        assert!(app.call_active());
+        assert_eq!(app.presentation(), Idle, "not for the first moment");
+        app.tick(islet_core::activity::CALL_AFTER);
+        assert_eq!(app.presentation(), Compact);
+        let shown = texts(&app, 65.0, &mut engine);
+        assert!(shown.iter().any(|s| s == "Zoom") && shown.iter().any(|s| s == "1:05"), "{shown:?}");
+        let wake = app.next_timer(65.2).unwrap();
+        assert!((wake - 0.8).abs() < 1e-6, "ticks on the second: {wake}");
+
+        // Open it and mute.
+        click(&mut app, 70.0);
+        let t = 74.0;
+        let r = content::call_mute_button(app.card_rect(t));
+        press(&mut app, r, t);
+        assert_eq!(app.take_mic_commands(), [MicCommand::Set(true)]);
+        assert!(app.accessibility(t + 1.0).buttons.iter().any(|(n, _)| n == "Unmute microphone"));
+        assert!(texts(&app, t + 1.0, &mut engine).iter().any(|s| s.starts_with("Muted")));
+        // The microphone goes off: the call ends.
+        app.report(Report::Privacy(Default::default()), 80.0);
+        assert!(!app.call_active());
+        // Switched off in Settings: no call activity.
+        let mut off = App::new(Demo::None, false);
+        off.set_prefs(IslandPrefs { calls: false, ..IslandPrefs::default() });
+        off.report(zoom_call(), 0.0);
+        off.tick(10.0);
+        assert_eq!(off.presentation(), Idle);
+    }
+
+    fn right_click(app: &mut App, t: f64) {
+        let (x, y) = centre(app, t);
+        app.handle(Event::PointerDown { x, y, button: Button::Secondary }, t);
+    }
+
+    fn menu_row(app: &App, t: f64, action: content::MenuAction) -> Rect {
+        let items = app.menu_items(t);
+        let i = items.iter().position(|m| m.action == action).expect("in the menu");
+        content::menu_rows(app.content_rect(app.pill_rect(t)), items.len())[i]
+    }
+
+    #[test]
+    fn the_menu_hides_the_island_pauses_pop_ups_and_times_lyrics() {
+        use content::MenuAction;
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        // Hide for an hour: gone (even the clock), back when pointed at,
+        // and by itself after the hour.
+        right_click(&mut app, 0.0);
+        let r = menu_row(&app, 4.0, MenuAction::Hide);
+        press(&mut app, r, 4.0);
+        assert_eq!(app.presentation(), Idle);
+        assert!(app.frame(6.0).opacity < 0.01);
+        assert!(app.next_timer(6.0).is_some_and(|s| s <= QUIET_SECS));
+        app.tick(5.0 + QUIET_SECS);
+        assert!(app.frame(5.0 + QUIET_SECS + 2.0).opacity > 0.99, "back after the hour");
+
+        // Pause pop-ups: a volume change or a headset doesn't pop up.
+        let t = 4000.0;
+        right_click(&mut app, t);
+        let r = menu_row(&app, t + 4.0, MenuAction::Quiet);
+        press(&mut app, r, t + 4.0);
+        app.handle(Event::Key(Key::Escape), t + 5.0);
+        app.report(Report::Hud(Hud::Volume { level: 0.5, muted: false }), t + 9.0);
+        app.report(Report::DeviceConnected(buds()), t + 9.0);
+        assert!(app.live(t + 9.5).is_empty(), "quiet");
+        assert_eq!(app.presentation(), Idle);
+
+        // Lyrics: the switch, and timing for this song.
+        app.report(Report::Media(Some(song(true))), t + 10.0);
+        right_click(&mut app, t + 11.0);
+        let r = menu_row(&app, t + 15.0, MenuAction::Lyrics);
+        press(&mut app, r, t + 15.0);
+        assert!(app.prefs.lyrics);
+        assert_eq!(app.take_ui_actions(), [UiAction::SetSwitch("lyrics", true)]);
+        let key = app.lyrics_wanted().unwrap().key();
+        app.report(Report::Lyrics(key, Some(lyrics())), t + 15.0);
+        let row = menu_row(&app, t + 19.0, MenuAction::LyricsTiming);
+        let (_, plus) = content::menu_stepper(row);
+        press(&mut app, plus, t + 19.0);
+        press(&mut app, plus, t + 19.5);
+        let m = app.activities.media().unwrap().clone();
+        assert!((app.lyrics_pos(&m, t + 20.0) - (m.position_now(t + 20.0).unwrap() - 1.0)).abs() < 1e-9);
+        let item = app.menu_items(t + 20.0).into_iter().find(|m| m.action == MenuAction::LyricsTiming).unwrap();
+        assert_eq!(item.detail.as_deref(), Some("+1.0 s"));
+        // Right-click again closes the menu.
+        right_click(&mut app, t + 21.0);
+        assert!(!app.menu);
+    }
+
+    #[test]
+    fn a_fullscreen_video_hides_the_island_until_the_pointer_comes() {
+        let mut engine = TextEngine::new();
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        app.report(Report::Media(Some(song(true))), 0.0);
+        assert_eq!(app.presentation(), Compact);
+        assert!(app.handle(Event::Fullscreen(true), 2.0));
+        assert!(app.frame(4.0).opacity < 0.01, "music and all step aside");
+        assert!(app.elements(4.0, &mut engine).is_empty());
+        assert_eq!(app.frame_interval(4.0), None, "a hidden waveform doesn't wake the computer");
+
+        // Pointing at the top brings it back; leaving hides it again.
+        let (x, y) = centre(&app, 4.0);
+        assert!(app.handle(Event::PointerMove { x, y }, 4.0));
+        assert!(app.frame(5.0).opacity > 0.99 && !app.elements(5.0, &mut engine).is_empty());
+        app.handle(Event::PointerLeave, 5.0);
+        assert!(app.frame(7.0).opacity < 0.01);
+
+        // A ringing alarm still shows; leaving fullscreen shows everything.
+        app.report(
+            Report::Alarm(Some(Alarm { id: 9, hour: 7, minute: 0, label: "Up".into(), days: 0, enabled: true })),
+            7.0,
+        );
+        app.tick(7.0);
+        assert!(app.frame(9.0).opacity > 0.99, "an alarm is never hidden");
+        app.report(Report::Alarm(None), 9.0);
+        app.tick(9.0);
+        app.handle(Event::Fullscreen(false), 9.0);
+        assert!(app.frame(11.0).opacity > 0.99);
+    }
+
     /// Lyrics, the back buttons and Control Centre for visual review:
     /// `ISLET_LYRICS_SHEET=/path/out.png cargo test -p islet lyrics_sheet`
     #[test]
@@ -2247,6 +2745,7 @@ mod tests {
             a.set_time(NOW, 0.0);
             a.set_prefs(lyrics_on());
             a.report(Report::Media(Some(m.clone())), 0.0);
+            a.report(Report::Volume(0.6, false), 0.0);
             let key = a.lyrics_wanted().unwrap().key();
             a.report(Report::Lyrics(key, Some(lyrics())), 0.0);
             a
@@ -2270,7 +2769,20 @@ mod tests {
         let mut idle12 = App::new(Demo::None, false);
         idle12.set_clock_style(false);
         idle12.set_time(NOW, 0.0);
+        let mut menu = base();
+        let (mx, my) = centre(&menu, 1.0);
+        menu.handle(Event::PointerDown { x: mx, y: my, button: Button::Secondary }, 1.0);
+        let mut call = App::new(Demo::None, false);
+        call.report(zoom_call(), 0.0);
+        call.tick(4.0);
+        let mut call_card = App::new(Demo::None, false);
+        call_card.report(zoom_call(), 0.0);
+        call_card.tick(4.0);
+        click(&mut call_card, 5.0);
         let shots: Vec<(&App, f64, u32)> = vec![
+            (&call, 754.0, 46),
+            (&call_card, 754.0, 150),
+            (&menu, 6.0, 250),
             (&idle, 1.0, 46),
             (&idle12, 1.0, 46),
             (&compact, 3.0, 46),
@@ -2312,6 +2824,8 @@ mod tests {
             })
         };
         let mut app = App::new(Demo::None, false);
+        // The dots on their own (with calls on, a call shows the microphone).
+        app.set_prefs(IslandPrefs { calls: false, idle_clock: false, ..IslandPrefs::default() });
         assert!(!app.has_content(0.0));
         let mic = Privacy { camera: None, mic: Some(vec!["Zoom".into()]) };
         assert!(app.report(Report::Privacy(mic), 0.0));
@@ -2322,8 +2836,14 @@ mod tests {
         // The camera wins the colour; a compact activity makes room for it.
         let both = Privacy { camera: Some(vec![]), mic: Some(vec!["Zoom".into()]) };
         app.report(Report::Privacy(both), 1.0);
-        let job =
-            Custom { id: "b".into(), title: "Build".into(), subtitle: String::new(), progress: Some(0.5), color: None };
+        let job = Custom {
+            id: "b".into(),
+            title: "Build".into(),
+            subtitle: String::new(),
+            progress: Some(0.5),
+            color: None,
+            open: None,
+        };
         app.report(Report::Custom(job), 1.0);
         assert_eq!(app.presentation(), Compact);
         let w = app.pill_rect(5.0).w;
@@ -2399,13 +2919,21 @@ mod tests {
     }
 
     #[test]
-    fn escape_collapses_and_right_click_quits() {
+    fn escape_collapses_and_right_click_opens_the_menu() {
         let mut app = App::new(Demo::None, false);
         click(&mut app, 0.0);
         app.handle(Event::Key(Key::Escape), 1.0);
         assert_eq!(app.presentation(), Idle);
         let (x, y) = centre(&app, 6.0);
         app.handle(Event::PointerDown { x, y, button: Button::Secondary }, 6.0);
+        assert!(!app.wants_quit(), "right-click no longer quits by accident");
+        assert_eq!(app.presentation(), Expanded);
+        let mut engine = TextEngine::new();
+        let shown = texts(&app, 10.0, &mut engine);
+        assert!(shown.iter().any(|s| s == "Quit Islet") && shown.iter().any(|s| s == "Islet Settings"), "{shown:?}");
+        // "Quit Islet" quits.
+        let rows = content::menu_rows(app.content_rect(app.pill_rect(10.0)), app.menu_items(10.0).len());
+        press(&mut app, *rows.last().unwrap(), 10.0);
         assert!(app.wants_quit());
     }
 
@@ -2446,7 +2974,7 @@ mod tests {
         assert!((app.pill_rect(t).h - MEDIA_H - content::CARD_HEADER_H).abs() < 0.01);
         assert!(texts(&app, t, &mut engine).contains(&"Song".to_string()));
 
-        let controls = content::media_controls(app.card_rect(t));
+        let controls = content::media_controls(app.card_rect(t), false);
         let (play, _) = controls.iter().find(|(_, c)| *c == Control::PlayPause).unwrap();
         let (px, py) = (play.x + play.w / 2.0, play.y + play.h / 2.0);
         app.handle(Event::PointerDown { x: px, y: py, button: Button::Primary }, t);
@@ -3003,7 +3531,7 @@ mod tests {
             (card.h - (MEDIA_H + content::CARD_HEADER_H + 32.0)).abs() < 0.01,
             "the card grows by the notch height"
         );
-        let (r, _) = content::media_controls(app.card_rect(t))[0];
+        let (r, _) = content::media_controls(app.card_rect(t), false)[0];
         assert!(r.y >= card.y + 32.0 + content::CARD_HEADER_H, "controls are below the notch and header");
         assert!(content::home_button(app.content_rect(card)).y >= card.y + 32.0, "so is Control Centre's button");
     }
@@ -3386,8 +3914,14 @@ mod tests {
         idle.report(Report::Privacy(Privacy { camera: None, mic: Some(vec![]) }), 0.0);
         let mut compact = App::new(Demo::None, false);
         compact.report(Report::Privacy(Privacy { camera: Some(vec![]), mic: None }), 0.0);
-        let job =
-            Custom { id: "b".into(), title: "Build".into(), subtitle: String::new(), progress: Some(0.6), color: None };
+        let job = Custom {
+            id: "b".into(),
+            title: "Build".into(),
+            subtitle: String::new(),
+            progress: Some(0.6),
+            color: None,
+            open: None,
+        };
         compact.report(Report::Custom(job), 0.0);
         let apps = [(clock, 4.0), (system, 9.0), (idle, 4.0), (compact, 4.0)];
         let (cw, ch) = (WINDOW.0 as u32, 240u32);

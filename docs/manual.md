@@ -128,13 +128,16 @@ You can close the Settings window; the island keeps running. Open **Islet Settin
 | Close it | Click it again, press **Esc**, click anywhere else, or move away (it closes by itself after 5 seconds) |
 | Open the biggest view | Press and hold |
 | Switch between two things at once (music and a timer, say) | Scroll over the island |
-| Quit Islet | Right-click the island |
+| Open the menu (Settings, hide for an hour, pause pop-ups, lyrics, quit) | Right-click the island |
+| Quit Islet | Right-click the island → **Quit Islet** |
 
 What it shows on its own:
 
 - **Nothing happening:** the small pill with the current time in it (or nothing at all in [hover-only mode](#11-make-it-yours)). The time follows your computer's clock and its 12- or 24-hour setting.
 - **One thing going on** (music, a timer, navigation): the pill widens, with a picture on the left and a live indicator on the right.
 - **Two things:** the pill plus a small bubble beside it. Scroll to swap them.
+
+**Fullscreen videos and games:** when something goes fullscreen (a YouTube video, a game, a slideshow), the island hides so it's not in the way, even with music playing. Move the pointer to the top centre of the screen to bring it back; it hides again when you move away. A ringing alarm or timer still shows. (On Linux with native Wayland the island simply stays behind the fullscreen window.)
 
 When you open the island with nothing going on, you get **Control Centre**: the time, the date, the weather (if set), and buttons for Wi-Fi, Bluetooth and more.
 
@@ -148,9 +151,10 @@ Islet shows what's playing in any app: Spotify, a browser, Apple Music, VLC and 
 
 **Open the island** for the full player:
 
-1. **Play / pause / previous / next:** the buttons in the middle.
-2. **Jump in the song:** press on the progress bar and drag.
-3. **Control Centre:** the **‹ Control Centre** button at the top left. Control Centre then shows **Now Playing ›** to go back.
+1. **Play / pause / previous / next:** the buttons on the left of the bottom row.
+2. **Volume:** the slider beside them (your computer's volume). Drag it or tap where you want it.
+3. **Jump in the song:** press on the progress bar and drag.
+4. **Control Centre:** the **‹ Control Centre** button at the top left. Control Centre then shows **Now Playing ›** to go back.
 
 ### Synced lyrics
 
@@ -158,7 +162,14 @@ Islet shows what's playing in any app: Spotify, a browser, Apple Music, VLC and 
 2. Turn on **Show synced lyrics**.
 3. Play a song. The pill gets wider and the lyrics slide through it as the song plays: the line being sung is bright, and the lines before and after it are dimmed. Open the island to see two lines under the player too.
 
-Lyrics come from [LRCLIB](https://lrclib.net), a free, open lyrics database. When this is on, Islet sends LRCLIB only the title, artist, album and length of the song that's playing, once per song. Songs without timed lyrics there simply show none. (On a MacBook with a notch, lyrics show only in the open player, because the notch would hide the middle of the line.)
+**Your own lyric files come first.** Islet looks for an `.lrc` file before going online:
+
+- next to the song file, with the same name (`Song.flac` → `Song.lrc`), when the player tells Islet which file it's playing (most Linux players do);
+- in a `lyrics` folder inside Islet's settings folder (`%APPDATA%\Islet\lyrics` on Windows, `~/Library/Application Support/Islet/lyrics` on a Mac, `~/.config/islet/lyrics` on Linux), named `Artist - Title.lrc` or `Title.lrc`.
+
+Otherwise lyrics come from [LRCLIB](https://lrclib.net), a free, open lyrics database. When this is on, Islet sends LRCLIB only the title, artist, album and length of the song that's playing, once per song. Songs without timed lyrics there simply show none. (On a MacBook with a notch, lyrics show only in the open player, because the notch would hide the middle of the line.)
+
+**Lyrics a little early or late?** Right-click the island → **Lyrics timing** → tap **−** to show them sooner or **+** to show them later (half a second per tap, for that song). The same menu turns lyrics on or off.
 
 ### More music options (Settings → General → Now Playing)
 
@@ -218,6 +229,10 @@ These appear for a moment by themselves:
 
 ---
 
+**Calls:** when Zoom, Teams, a browser call (Google Meet, for example) or any other app uses your microphone for more than a few seconds, the island shows a microphone, the app's name and how long the call has been going. Open the island and tap the big microphone button to **mute** your microphone (it turns red); tap again to unmute. It disappears when the call ends. Don't want it? Turn off **Settings → General → Privacy → Calls**. (On a Mac the island can't tell which app it is, so it says "Microphone on".)
+
+**Downloads** (off until you turn it on in **Settings → General → Privacy → Downloads in progress**): while your browser downloads a file, the island shows its name, how much has arrived and the speed. When it's done it says **Downloaded**; open the island and tap the card to open the file. It works with Chrome, Edge, Brave, Firefox and Safari saving to your Downloads folder.
+
 ## 8. Timer, focus sessions and alarms
 
 **Timer** (Settings → **Timer & focus**)
@@ -275,7 +290,7 @@ Shows your arrival time with live traffic, and hands off to Google Maps or Waze.
 - **Show the time when nothing is playing:** the time in the empty pill (on by default).
 - **Accent colour:** for buttons and switches on the island.
 - **Size:** small, medium or large.
-- **Display:** which screen the island is on (with more than one).
+- **Display:** which screen the island is on (with more than one), or **All displays** for an island on each. The extra islands show music, calls, batteries, downloads and Control Centre; alarms, timers and the shortcut stay with the main island. Plug in a new screen? Choose the setting again (or restart Islet) to give it an island.
 - **Gap above the island:** move it down from the top edge (0–40 px).
 
 Islet restarts itself to apply a new size, gap or display.
@@ -285,6 +300,11 @@ Islet restarts itself to apply a new size, gap or display.
 **Settings → General → Start at login:** start Islet when you log in, or not.
 
 ---
+
+**The right-click menu** also has:
+
+- **Hide for an hour:** the island disappears (point at the top of the screen to see it anyway). Choose **Show the island again** to undo.
+- **Pause pop-ups for an hour:** no volume, battery, notification or calendar pop-ups; music, timers and alarms carry on. **Resume pop-ups** undoes it.
 
 ## 12. Privacy settings
 
@@ -333,7 +353,7 @@ islet --help                       # everything else
 **Uninstall:**
 
 - **Windows:** Settings → Apps → Installed apps → **Islet** → **⋯** → **Uninstall**. (To remove the test certificate too: run `certlm.msc` → Trusted People → Certificates → delete "Islet Test".)
-- **Mac:** right-click the island to quit, then drag Islet from Applications to the Bin.
+- **Mac:** right-click the island → **Quit Islet**, then drag Islet from Applications to the Bin.
 - **Linux:** `sudo apt remove islet`, `sudo dnf remove islet`, or delete the AppImage.
 
 Your settings stay in `%APPDATA%\Islet` (Windows), `~/Library/Application Support/Islet` (Mac) or `~/.config/islet` (Linux); delete that folder to remove them too.

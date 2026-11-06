@@ -43,6 +43,10 @@ pub struct IslandPrefs {
     pub auto_hide: bool,
     /// The time on the empty island (when nothing is playing).
     pub idle_clock: bool,
+    /// A call activity (with a mute button) while an app uses the microphone.
+    pub calls: bool,
+    /// Downloads in progress, from the Downloads folder.
+    pub downloads: bool,
     /// The global shortcut that opens and closes the island ("" = none),
     /// e.g. "Ctrl+Alt+I".
     pub hotkey: String,
@@ -53,7 +57,8 @@ pub struct IslandPrefs {
     /// Gap between the top of the screen and the island, in px (0–40;
     /// applies on restart; ignored on notched Macs, where it hangs from the notch).
     pub offset: u32,
-    /// The display to show the island on, by name ("" = the primary one).
+    /// The display to show the island on, by name ("" = the primary one,
+    /// `ALL_DISPLAYS` = one island on every display).
     pub display: String,
 }
 
@@ -67,6 +72,9 @@ pub const ACCENTS: [(&str, [u8; 3]); 7] = [
     ("green", [40, 200, 100]),
     ("teal", [40, 190, 200]),
 ];
+
+/// `display` value for an island on every display.
+pub const ALL_DISPLAYS: &str = "all";
 
 pub const SIZES: [(&str, f64); 3] = [("small", 0.88), ("medium", 1.0), ("large", 1.15)];
 pub const MAX_OFFSET: u32 = 40;
@@ -89,6 +97,8 @@ impl Default for IslandPrefs {
             lyrics: false,
             auto_hide: false,
             idle_clock: true,
+            calls: true,
+            downloads: false,
             hotkey: String::new(),
             accent: "blue".into(),
             size: "medium".into(),
@@ -99,7 +109,7 @@ impl Default for IslandPrefs {
 }
 
 /// The switches `islet set <key> on|off` understands.
-pub const SWITCHES: [&str; 13] = [
+pub const SWITCHES: [&str; 15] = [
     "volume-hud",
     "brightness-hud",
     "caps-lock-hud",
@@ -113,6 +123,8 @@ pub const SWITCHES: [&str; 13] = [
     "lyrics",
     "auto-hide",
     "idle-clock",
+    "calls",
+    "downloads",
 ];
 
 impl IslandPrefs {
@@ -151,6 +163,8 @@ impl IslandPrefs {
             "lyrics" => &mut self.lyrics,
             "auto-hide" => &mut self.auto_hide,
             "idle-clock" => &mut self.idle_clock,
+            "calls" => &mut self.calls,
+            "downloads" => &mut self.downloads,
             _ => return Err(format!("unknown setting {key:?} (one of: {})", SWITCHES.join(", "))),
         })
     }

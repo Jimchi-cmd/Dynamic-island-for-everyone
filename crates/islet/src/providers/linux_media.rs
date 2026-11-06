@@ -30,6 +30,8 @@ struct Player {
     artist: String,
     album: String,
     art_url: String,
+    /// xesam:url, the playing file or stream.
+    url: String,
     track_id: Option<String>,
     length_us: Option<i64>,
     /// Position and when it was read (for extrapolation while playing).
@@ -83,6 +85,7 @@ impl Player {
             self.artist = get("xesam:artist").map(str_list_of).unwrap_or_default().join(", ");
             self.album = get("xesam:album").and_then(str_of).unwrap_or_default();
             self.art_url = get("mpris:artUrl").and_then(str_of).unwrap_or_default();
+            self.url = get("xesam:url").and_then(str_of).unwrap_or_default();
             self.length_us = get("mpris:length").and_then(i64_of).filter(|l| *l > 0);
             self.track_id = get("mpris:trackid").and_then(str_of);
             if self.track_id != old_track && !props.contains_key("Position") {
@@ -157,6 +160,7 @@ impl State {
             rate: if p.rate > 0.0 { p.rate } else { 1.0 },
             art,
             caps: p.caps,
+            file: local_path(&p.url),
         }))
     }
 }

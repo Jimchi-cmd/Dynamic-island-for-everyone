@@ -34,6 +34,8 @@ x11rb::atom_manager! {
         _NET_WM_STATE_STICKY,
         _NET_WM_STATE_SKIP_TASKBAR,
         _NET_WM_STATE_SKIP_PAGER,
+        _NET_WM_STATE_FULLSCREEN,
+        _NET_ACTIVE_WINDOW,
         _NET_WM_DESKTOP,
         _MOTIF_WM_HINTS,
         XdndAware,
@@ -82,6 +84,12 @@ pub struct X11 {
     root: Window,
     /// The grabbed global shortcut: key code and modifiers.
     hotkey: Option<(Keycode, u16)>,
+    /// The island's display (root coordinates), the active window being
+    /// watched, and whether it's fullscreen on that display.
+    monitor: (i32, i32, u32, u32),
+    active: std::cell::Cell<Window>,
+    fullscreen: std::cell::Cell<bool>,
+    fullscreen_checked: std::cell::Cell<bool>,
 }
 
 /// Lock-type modifiers (Caps, Num, Scroll) the shortcut must work under.
@@ -271,6 +279,13 @@ impl Backend for X11 {
         let lsb = conn.setup().image_byte_order == ImageOrder::LSB_FIRST;
         let esc_keycode = find_keycode(&conn, 0xff1b);
         let caps = std::cell::Cell::new(watch_caps_lock(&conn));
+        // Follow the active window (the window manager announces it on the
+        // root window) to hide over fullscreen apps.
+        conn.change_window_attributes(
+            screen.root,
+            &ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE),
+        )
+        .map_err(xe)?;
 
         conn.map_window(win).map_err(xe)?;
         conn.flush().map_err(xe)?;
@@ -299,6 +314,10 @@ impl Backend for X11 {
             wake_fd,
             root: screen.root,
             hotkey: None,
+            monitor: (mx, my, mw, mh),
+            active: std::cell::Cell::new(x11rb::NONE),
+            fullscreen: std::cell::Cell::new(false),
+            fullscreen_checked: std::cell::Cell::new(false),
         })
     }
 
@@ -458,6 +477,53 @@ fn watch_caps_lock(conn: &RustConnection) -> Option<bool> {
 }
 
 impl X11 {
+    /// Re-read the active window and whether it's fullscreen on the
+    /// island's display; Some(state) when that changed.
+    fn check_fullscreen(&self) -> Option<Event> {
+        let a = &self.atoms;
+        let active = self
+            .conn
+            .get_property(false, self.root, a._NET_ACTIVE_WINDOW, AtomEnum::WINDOW, 0, 1)
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .and_then(|r| r.value32().and_then(|mut v| v.next()))
+            .unwrap_or(x11rb::NONE);
+        if active != self.active.get() {
+            let watch = |w: Window, mask: EventMask| {
+                if w != x11rb::NONE && w != self.win {
+                    let _ = self.conn.change_window_attributes(w, &ChangeWindowAttributesAux::new().event_mask(mask));
+                }
+            };
+            watch(self.active.get(), EventMask::NO_EVENT);
+            watch(active, EventMask::PROPERTY_CHANGE);
+            self.active.set(active);
+        }
+        let on = active != x11rb::NONE && active != self.win && self.is_fullscreen(active);
+        let _ = self.conn.flush();
+        (on != self.fullscreen.replace(on)).then_some(Event::Fullscreen(on))
+    }
+
+    /// The window says it's fullscreen and its centre is on our display.
+    fn is_fullscreen(&self, w: Window) -> bool {
+        let a = &self.atoms;
+        let state = self
+            .conn
+            .get_property(false, w, a._NET_WM_STATE, AtomEnum::ATOM, 0, 64)
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .is_some_and(|r| r.value32().is_some_and(|mut v| v.any(|s| s == a._NET_WM_STATE_FULLSCREEN)));
+        if !state {
+            return false;
+        }
+        let Some(g) = self.conn.get_geometry(w).ok().and_then(|c| c.reply().ok()) else { return false };
+        let Some(t) = self.conn.translate_coordinates(w, self.root, 0, 0).ok().and_then(|c| c.reply().ok()) else {
+            return false;
+        };
+        let (cx, cy) = (i32::from(t.dst_x) + i32::from(g.width) / 2, i32::from(t.dst_y) + i32::from(g.height) / 2);
+        let (mx, my, mw, mh) = self.monitor;
+        cx >= mx && cx < mx + mw as i32 && cy >= my && cy < my + mh as i32
+    }
+
     /// Send an XDND client message to the drag source.
     fn dnd_send(&self, to: Window, kind: Atom, data: [u32; 5]) {
         let ev = ClientMessageEvent::new(32, to, kind, data);
@@ -466,6 +532,10 @@ impl X11 {
     }
 
     fn drain(&mut self, out: &mut Vec<Event>) -> Result<()> {
+        // Something may already be fullscreen when Islet starts.
+        if !self.fullscreen_checked.replace(true) {
+            out.extend(self.check_fullscreen());
+        }
         while let Some(ev) = self.conn.poll_for_event().map_err(xe)? {
             if let Some(e) = self.translate(ev) {
                 out.push(e);
@@ -484,6 +554,12 @@ impl X11 {
         };
         Some(match ev {
             XEvent::Expose(e) if e.count == 0 => Event::Redraw,
+            XEvent::PropertyNotify(e)
+                if (e.window == self.root && e.atom == self.atoms._NET_ACTIVE_WINDOW)
+                    || (e.window == self.active.get() && e.atom == self.atoms._NET_WM_STATE) =>
+            {
+                return self.check_fullscreen();
+            }
             XEvent::MotionNotify(e) => Event::PointerMove { x: e.event_x as f64 / s, y: e.event_y as f64 / s },
             XEvent::LeaveNotify(_) => Event::PointerLeave,
             XEvent::ButtonPress(e) => match e.detail {
@@ -645,6 +721,106 @@ mod tests {
         assert!(!chord(&mut island, &[ctrl, i]).contains(&Event::Hotkey), "only the exact combination");
         island.set_hotkey(None).unwrap();
         assert!(!chord(&mut island, &[ctrl, alt, i]).contains(&Event::Hotkey), "removed");
+    }
+
+    #[test]
+    fn an_island_opens_on_the_chosen_monitor() {
+        use super::super::{Backend, WindowSpec};
+        use super::*;
+        use x11rb::protocol::randr::MonitorInfo;
+        if std::env::var_os("DISPLAY").is_none() {
+            eprintln!("skipping: no X display");
+            return;
+        }
+        let Ok((conn, n)) = x11rb::connect(None) else { return };
+        let s = conn.setup().roots[n].clone();
+        let (w, h) = (s.width_in_pixels, s.height_in_pixels);
+        // Split the screen into two monitors, LEFT (primary) and RIGHT.
+        let atom = |name: &str| conn.intern_atom(false, name.as_bytes()).unwrap().reply().unwrap().atom;
+        let (left, right) = (atom("ISLET-LEFT"), atom("ISLET-RIGHT"));
+        let half = w / 2;
+        for (name, x, primary) in [(left, 0, true), (right, half as i16, false)] {
+            let info = MonitorInfo {
+                name,
+                primary,
+                automatic: false,
+                x,
+                y: 0,
+                width: half,
+                height: h,
+                width_in_millimeters: 300,
+                height_in_millimeters: 200,
+                outputs: vec![],
+            };
+            if conn.randr_set_monitor(s.root, info).ok().and_then(|c| c.check().ok()).is_none() {
+                eprintln!("skipping: no RandR 1.5 monitors here");
+                return;
+            }
+        }
+        conn.flush().unwrap();
+        let names = displays();
+        assert!(names.iter().any(|n| n == "ISLET-LEFT") && names.iter().any(|n| n == "ISLET-RIGHT"), "{names:?}");
+        super::super::set_preferred_display(Some("ISLET-RIGHT".into()));
+        let island = X11::create(WindowSpec { width: 420.0, height: 260.0 });
+        super::super::set_preferred_display(None);
+        let island = island.unwrap();
+        assert!(island.pos.0 >= i32::from(half), "on the right monitor: {:?}", island.pos);
+        drop(island);
+        for name in [left, right] {
+            let _ = conn.randr_delete_monitor(s.root, name);
+        }
+        conn.flush().unwrap();
+    }
+
+    #[test]
+    fn a_fullscreen_window_hides_the_island() {
+        use super::super::{Backend, Event, WindowSpec};
+        use super::*;
+        use std::time::{Duration, Instant};
+        if std::env::var_os("DISPLAY").is_none() {
+            eprintln!("skipping: no X display");
+            return;
+        }
+        let Ok(mut island) = X11::create(WindowSpec { width: 420.0, height: 260.0 }) else {
+            eprintln!("skipping: can't open the X display");
+            return;
+        };
+        // Play the window manager: an app window covering the screen, made
+        // active and then fullscreen through the EWMH properties.
+        let (wm, screen) = x11rb::connect(None).unwrap();
+        let s = &wm.setup().roots[screen];
+        let (root, w, h) = (s.root, s.width_in_pixels, s.height_in_pixels);
+        let atoms = Atoms::new(&wm).unwrap().reply().unwrap();
+        let app = wm.generate_id().unwrap();
+        wm.create_window(0, app, root, 0, 0, w, h, 0, WindowClass::INPUT_OUTPUT, 0, &CreateWindowAux::new()).unwrap();
+        wm.map_window(app).unwrap();
+        let pump = |island: &mut X11| {
+            let mut out = Vec::new();
+            let until = Instant::now() + Duration::from_millis(500);
+            while Instant::now() < until {
+                island.wait(Some(Instant::now() + Duration::from_millis(20)), &mut out).unwrap();
+            }
+            out
+        };
+        pump(&mut island);
+        wm.change_property32(PropMode::REPLACE, root, atoms._NET_ACTIVE_WINDOW, AtomEnum::WINDOW, &[app]).unwrap();
+        wm.flush().unwrap();
+        assert!(!pump(&mut island).contains(&Event::Fullscreen(true)), "active, but not fullscreen yet");
+        let full = [atoms._NET_WM_STATE_FULLSCREEN];
+        wm.change_property32(PropMode::REPLACE, app, atoms._NET_WM_STATE, AtomEnum::ATOM, &full).unwrap();
+        wm.flush().unwrap();
+        assert!(pump(&mut island).contains(&Event::Fullscreen(true)));
+        wm.change_property32(PropMode::REPLACE, app, atoms._NET_WM_STATE, AtomEnum::ATOM, &[]).unwrap();
+        wm.flush().unwrap();
+        assert!(pump(&mut island).contains(&Event::Fullscreen(false)));
+        // Fullscreen again, then another window becomes active.
+        wm.change_property32(PropMode::REPLACE, app, atoms._NET_WM_STATE, AtomEnum::ATOM, &full).unwrap();
+        wm.flush().unwrap();
+        assert!(pump(&mut island).contains(&Event::Fullscreen(true)));
+        wm.change_property32(PropMode::REPLACE, root, atoms._NET_ACTIVE_WINDOW, AtomEnum::WINDOW, &[x11rb::NONE])
+            .unwrap();
+        wm.flush().unwrap();
+        assert!(pump(&mut island).contains(&Event::Fullscreen(false)));
     }
 
     #[test]

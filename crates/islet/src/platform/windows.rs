@@ -181,6 +181,125 @@ fn push(e: Event) {
     QUEUE.with(|q| q.borrow_mut().push(e));
 }
 
+/// Is an app fullscreen on the island's display? Windows says when the
+/// foreground window changes, and (from a hook scoped to the foreground
+/// app) when that window moves or resizes, so the island never polls.
+mod fullscreen {
+    use std::cell::Cell;
+    use windows::Win32::Foundation::{HWND, RECT};
+    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetClassNameW, GetForegroundWindow, GetWindowLongW, GetWindowRect, GetWindowThreadProcessId,
+        EVENT_OBJECT_LOCATIONCHANGE, EVENT_SYSTEM_FOREGROUND, GWL_STYLE, OBJID_WINDOW, WINEVENT_OUTOFCONTEXT,
+        WINEVENT_SKIPOWNPROCESS, WS_CAPTION,
+    };
+
+    thread_local! {
+        static DIRTY: Cell<bool> = const { Cell::new(true) };
+        static LOCATION_HOOK: Cell<isize> = const { Cell::new(0) };
+    }
+
+    unsafe extern "system" fn on_event(
+        _hook: HWINEVENTHOOK,
+        event: u32,
+        hwnd: HWND,
+        id_object: i32,
+        _child: i32,
+        _thread: u32,
+        _time: u32,
+    ) {
+        if event == EVENT_SYSTEM_FOREGROUND {
+            follow(hwnd);
+        } else if id_object != OBJID_WINDOW.0 || hwnd != unsafe { GetForegroundWindow() } {
+            return; // a child window, the caret or the cursor moving
+        }
+        DIRTY.with(|d| d.set(true));
+    }
+
+    /// Watch the foreground app's windows move and resize (entering and
+    /// leaving fullscreen is a resize), and nobody else's.
+    fn follow(fg: HWND) {
+        // SAFETY: unhooking our own hook; reading a window's process id.
+        unsafe {
+            let old = LOCATION_HOOK.with(|h| h.replace(0));
+            if old != 0 {
+                let _ = UnhookWinEvent(HWINEVENTHOOK(old as *mut _));
+            }
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(fg, Some(&mut pid));
+            if pid == 0 || pid == std::process::id() {
+                return;
+            }
+            let hook = SetWinEventHook(
+                EVENT_OBJECT_LOCATIONCHANGE,
+                EVENT_OBJECT_LOCATIONCHANGE,
+                None,
+                Some(on_event),
+                pid,
+                0,
+                WINEVENT_OUTOFCONTEXT,
+            );
+            LOCATION_HOOK.with(|h| h.set(hook.0 as isize));
+        }
+    }
+
+    pub fn start() {
+        // SAFETY: an out-of-context hook delivered to this (the UI) thread's
+        // message loop; it lives as long as the process.
+        unsafe {
+            SetWinEventHook(
+                EVENT_SYSTEM_FOREGROUND,
+                EVENT_SYSTEM_FOREGROUND,
+                None,
+                Some(on_event),
+                0,
+                0,
+                WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
+            );
+            follow(GetForegroundWindow());
+        }
+    }
+
+    /// Whether something changed that may have entered or left fullscreen.
+    pub fn take_dirty() -> bool {
+        DIRTY.with(|d| d.replace(false))
+    }
+
+    /// The foreground window covers the island's whole display and has no
+    /// title bar (a maximised window keeps its title bar, even when the
+    /// taskbar hides).
+    pub fn active(island: HWND) -> bool {
+        // SAFETY: reading properties of the foreground window and monitors.
+        unsafe {
+            let fg = GetForegroundWindow();
+            if fg.is_invalid() || fg == island {
+                return false;
+            }
+            let mut class = [0u16; 64];
+            let n = GetClassNameW(fg, &mut class).max(0) as usize;
+            let class = String::from_utf16_lossy(&class[..n]);
+            if matches!(class.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd") {
+                return false; // the desktop or the taskbar
+            }
+            if (GetWindowLongW(fg, GWL_STYLE) as u32) & WS_CAPTION.0 == WS_CAPTION.0 {
+                return false;
+            }
+            let monitor = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
+            if monitor != MonitorFromWindow(island, MONITOR_DEFAULTTONEAREST) {
+                return false; // fullscreen on another display
+            }
+            let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+            let mut r = RECT::default();
+            if !GetMonitorInfoW(monitor, &mut mi).as_bool() || GetWindowRect(fg, &mut r).is_err() {
+                return false;
+            }
+            let m = mi.rcMonitor;
+            r.left <= m.left && r.top <= m.top && r.right >= m.right && r.bottom >= m.bottom
+        }
+    }
+}
+
 pub struct Win32 {
     hwnd: HWND,
     /// The Caps Lock hook thread, while the caps-lock pop-up is on.
@@ -195,6 +314,8 @@ pub struct Win32 {
     scale: f64,
     /// Wakes the loop for the next frame (high resolution where Windows has it).
     timer: windows::Win32::Foundation::HANDLE,
+    /// Last fullscreen state reported.
+    fullscreen: bool,
 }
 
 /// A waitable timer that keeps time to well under a millisecond (Windows 10
@@ -357,6 +478,7 @@ impl Backend for Win32 {
                 pos: POINT::default(),
                 scale: 1.0,
                 timer: frame_timer(),
+                fullscreen: false,
             };
             me.configure()?;
             // Accept dropped files for the shelf (OLE needs a single-threaded
@@ -381,6 +503,7 @@ impl Backend for Win32 {
         unsafe {
             let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
         }
+        fullscreen::start();
     }
 
     fn scale(&self) -> f64 {
@@ -543,6 +666,13 @@ impl Backend for Win32 {
                 self.configure()?;
             }
             out.push(e);
+        }
+        if fullscreen::take_dirty() {
+            let now = fullscreen::active(self.hwnd);
+            if now != self.fullscreen {
+                self.fullscreen = now;
+                out.push(Event::Fullscreen(now));
+            }
         }
         Ok(())
     }

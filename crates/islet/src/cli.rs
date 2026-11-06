@@ -53,7 +53,7 @@ Usage:
                                            OS keychain and turn calendar on
   islet calendar on|off|clear              show events or not; clear removes the link
   islet activity start|update <id> --title <text> [--subtitle <text>] [--progress 0-100]
-                                 [--color #rrggbb]
+                                 [--color #rrggbb] [--open <file or link>]
                                            show your own live activity (a build, a download…)
   islet activity end <id>                  remove it
   islet shelf [--json]                     files on the shelf (drop files on the island to add)
@@ -67,12 +67,12 @@ Usage:
   islet look accent <colour>               blue, purple, pink, red, orange, green, teal
   islet look size small|medium|large       the island's size
   islet look offset <px>                   gap above the island, 0–40 px
-  islet look display <name>|primary        which display (names from `islet displays`)
+  islet look display <name>|primary|all    which display (names from `islet displays`), or all
   islet displays [--json]                  connected displays, primary first
   islet hotkey [<keys>|off]                the shortcut for that, e.g. Ctrl+Alt+I
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
                                            notifications, calendar, fahrenheit, web-artwork,
-                                           spotify, privacy-dots, clipboard, lyrics, auto-hide,
+                                           spotify, privacy-dots, clipboard, lyrics, auto-hide, calls, downloads,
                                            idle-clock
   islet prefs [--json]                     the island's settings
   islet autostart on|off                   start Islet when you log in (or stop doing so)
@@ -188,6 +188,10 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["places", rest @ ..] => places(rest),
         ["displays"] => Ok(crate::platform::displays().join("\n")),
         ["displays", "--json"] => Ok(serde_json::to_string(&crate::platform::displays()).unwrap_or_default()),
+        ["look", "display", "all"] => set_look(|p| {
+            p.display = islet_core::prefs::ALL_DISPLAYS.into();
+            Ok("An island shows on every display.".into())
+        }),
         ["look", "display", "primary"] => set_look(|p| {
             p.display.clear();
             Ok("The island shows on the primary display.".into())
@@ -460,6 +464,7 @@ pub fn parse_activity(id: &str, args: &[&str]) -> Result<islet_core::activity::C
         subtitle: String::new(),
         progress: None,
         color: None,
+        open: None,
     };
     let mut it = args.iter();
     while let Some(&arg) = it.next() {
@@ -467,6 +472,7 @@ pub fn parse_activity(id: &str, args: &[&str]) -> Result<islet_core::activity::C
         match arg {
             "--title" => c.title = value("--title")?.into(),
             "--subtitle" => c.subtitle = value("--subtitle")?.into(),
+            "--open" => c.open = Some(value("--open")?.into()),
             "--progress" => {
                 let v = value("--progress")?;
                 let p: f32 =

@@ -42,6 +42,7 @@ fn run(sink: Sink) -> windows::core::Result<()> {
         let device = devices.GetDefaultAudioEndpoint(eRender, eConsole)?;
         let volume: IAudioEndpointVolume = device.Activate(CLSCTX_ALL, None)?;
         let start = (volume.GetMasterVolumeLevelScalar()?, volume.GetMute()?.as_bool());
+        sink.send(Report::Volume(start.0, start.1));
         let callback: IAudioEndpointVolumeCallback = Callback { sink, last: Mutex::new(start) }.into();
         volume.RegisterControlChangeNotify(&callback)?;
         // Callbacks arrive on Core Audio's threads; keep everything alive.
@@ -50,6 +51,38 @@ fn run(sink: Sink) -> windows::core::Result<()> {
             let _ = (&volume, &callback);
         }
     }
+}
+
+/// The slider's requests, handled on one COM thread; a drag sends many, so
+/// only the newest waiting one is applied.
+static SETTER: std::sync::OnceLock<Mutex<std::sync::mpsc::Sender<f32>>> = std::sync::OnceLock::new();
+
+/// Set the default output's volume (the Now Playing card's slider).
+pub fn set(level: f32) {
+    let tx = SETTER.get_or_init(|| {
+        let (tx, rx) = std::sync::mpsc::channel::<f32>();
+        let _ = std::thread::Builder::new().name("islet-volume-set".into()).spawn(move || {
+            // SAFETY: COM on this thread after CoInitializeEx.
+            let volume: Option<IAudioEndpointVolume> = unsafe {
+                let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+                CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL)
+                    .and_then(|d| d.GetDefaultAudioEndpoint(eRender, eConsole))
+                    .and_then(|d| d.Activate(CLSCTX_ALL, None))
+                    .ok()
+            };
+            while let Ok(mut level) = rx.recv() {
+                while let Ok(newer) = rx.try_recv() {
+                    level = newer;
+                }
+                if let Some(v) = &volume {
+                    // SAFETY: a live endpoint interface; a null event context.
+                    let _ = unsafe { v.SetMasterVolumeLevelScalar(level, std::ptr::null()) };
+                }
+            }
+        });
+        Mutex::new(tx)
+    });
+    let _ = tx.lock().unwrap().send(level);
 }
 
 pub fn start(sink: Sink) {

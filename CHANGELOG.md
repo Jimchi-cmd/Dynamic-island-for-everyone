@@ -2,9 +2,27 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-11-06
+
+The first published release: everything in 0.1.0 (below), plus:
+
+### Added
+- **Out of the way over fullscreen:** when a video, game or presentation goes fullscreen on its display, the island hides (music and all) and shows again while you point at the top of the screen. Alarms and timers still ring through. Windows and X11 follow the fullscreen window; macOS checks when the Space or app changes; on Wayland the island sits on the layer fullscreen windows cover.
+- **Right-click menu** on the island: Islet Settings, hide for an hour, pause pop-ups for an hour, lyrics on or off and their timing for the song, and Quit (right-click used to quit straight away).
+- **Calls:** once an app has had the microphone for a few seconds, the island shows the call (the app, how long it's run) with a mute button for the microphone (pactl on Linux, Core Audio on Windows, CoreAudio on macOS). Switch: Settings → Privacy, or `islet set calls off`.
+- **Volume slider** on the Now Playing card (the computer's output volume; no pop-up for its own changes).
+- **Your own .lrc lyric files** are used first: beside the song file (Linux players say which file), or in the `lyrics` folder of Islet's settings folder, before asking LRCLIB.
+- **Downloads** (opt-in): the Downloads folder is watched for Chrome/Edge/Brave `.crdownload`, Firefox `.part` and Safari `.download` files; the newest shows with its size and speed, then "Downloaded" opens the file when tapped. No polling while nothing downloads. `islet activity start … --open <file or link>` gives script activities the same tap-to-open.
+- **An island on every display** (Settings → Look → Display → All displays, or `islet look display all`): the main island starts a copy on each other display that shows music, calls, batteries, downloads and Control Centre, follows the settings, and quits with it. Alarms, timers, the shortcut and network features stay with the main island.
+- Windows installers are code-signed through SignPath once the project's keys are set (docs/signing.md).
+
+### Changed
+- Lighter on macOS: frames go to Core Animation through IOSurfaces, which it shows without copying; handing over a frame takes about a sixth of the time it did, and animating uses about 40 % less CPU (falls back to the old way where IOSurfaces aren't available). CI checks the frames show right side up.
+- Dependencies: zune-jpeg 0.5, sha2 0.11; GitHub Actions updated.
+
 ## [0.1.0] - 2026-11-06
 
-The first public release.
+Built but never published (its release step tripped over a stray folder); its contents ship in 0.2.0.
 
 ### Island
 - Native, webview-free island for macOS, Windows and Linux (native Wayland on KDE Plasma, sway, Hyprland and other wlroots compositors; X11 and XWayland elsewhere): about 5 MB of RAM, 0 % CPU and zero wakeups when idle.

@@ -40,6 +40,7 @@ pub fn start(sink: Sink) {
             debug_log("volume pop-ups unavailable (pactl not found or no sound server)");
             return;
         };
+        sink.send(Report::Volume(last.0, last.1));
         let Ok(mut child) = Command::new("pactl")
             .arg("subscribe")
             .stdin(Stdio::null())
@@ -64,6 +65,28 @@ pub fn start(sink: Sink) {
         }
         let _ = child.wait();
     });
+}
+
+/// Set the default output's volume (the Now Playing card's slider), with
+/// `pactl` on a helper thread. A drag sends many levels; only the newest
+/// waiting one is applied, so `pactl` never runs more than one at a time.
+/// The change comes back through `subscribe` like any other.
+pub fn set(level: f32) {
+    static SETTER: std::sync::OnceLock<std::sync::Mutex<std::sync::mpsc::Sender<f32>>> = std::sync::OnceLock::new();
+    let tx = SETTER.get_or_init(|| {
+        let (tx, rx) = std::sync::mpsc::channel::<f32>();
+        let _ = std::thread::Builder::new().name("islet-volume-set".into()).spawn(move || {
+            while let Ok(mut level) = rx.recv() {
+                while let Ok(newer) = rx.try_recv() {
+                    level = newer;
+                }
+                let pct = format!("{}%", (level * 100.0).round() as u32);
+                let _ = pactl(&["set-sink-volume", "@DEFAULT_SINK@", &pct]);
+            }
+        });
+        std::sync::Mutex::new(tx)
+    });
+    let _ = tx.lock().unwrap().send(level);
 }
 
 #[cfg(test)]
