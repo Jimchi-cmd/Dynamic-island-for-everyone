@@ -435,8 +435,32 @@
     await loadWorld();
   }
 
+  // Notes and to-dos (Pro)
+  let todos: { id: number; text: string; done: boolean }[] = $state([]);
+  let todoText = $state('');
+
+  async function loadTodos() {
+    try {
+      todos = JSON.parse(await api.islet(['todo', '--json']));
+    } catch (e) {
+      proNote = api.message(e);
+    }
+  }
+
+  async function todoRun(args: string[], input?: string) {
+    proNote = '';
+    try {
+      await api.islet(args, input);
+      todoText = '';
+    } catch (e) {
+      proNote = api.message(e);
+    }
+    await loadTodos();
+  }
+
   async function loadPro() {
     void loadWorld();
+    void loadTodos();
     try {
       pro = parsePro(await api.islet(['pro', 'status', '--json']));
     } catch (e) {
@@ -1310,6 +1334,47 @@
             {/if}
           </div>
           <div class="card">
+            <h2>Notes &amp; to-do</h2>
+            <p class="muted">
+              Type here; tick things off on the island (Control Centre → the checklist button). Kept on this computer
+              only.
+            </p>
+            <form
+              class="actions left"
+              onsubmit={(e) => {
+                e.preventDefault();
+                if (todoText.trim()) void todoRun(['todo', 'add'], todoText.trim());
+              }}
+            >
+              <input
+                type="text"
+                maxlength="200"
+                aria-label="New note or to-do"
+                placeholder="Buy milk…"
+                bind:value={todoText}
+              />
+              <button class="primary" type="submit" disabled={!todoText.trim()}>Add</button>
+            </form>
+            {#if todos.length}
+              <ul class="todos">
+                {#each todos as t (t.id)}
+                  <li>
+                    <label class:done={t.done}>
+                      <input type="checkbox" checked={t.done} onchange={() => todoRun(['todo', 'done', String(t.id)])} />
+                      {t.text}
+                    </label>
+                    <button class="link" aria-label={`Delete ${t.text}`} onclick={() => todoRun(['todo', 'remove', String(t.id)])}>
+                      ✕
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+              {#if todos.some((t) => t.done)}
+                <div class="actions left"><button onclick={() => todoRun(['todo', 'clear-done'])}>Clear finished</button></div>
+              {/if}
+            {/if}
+          </div>
+          <div class="card">
             <h2>Stopwatch</h2>
             <p class="muted">Open the island and tap the stopwatch button in Control Centre. Laps and pause work from the island.</p>
           </div>
@@ -1381,6 +1446,28 @@
     border-radius: 999px;
     color: white;
     background: linear-gradient(135deg, #ff9f0a, #ff375f);
+  }
+  .todos {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+  }
+  .todos li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+  }
+  .todos label {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    overflow-wrap: anywhere;
+  }
+  .todos label.done {
+    opacity: 0.5;
+    text-decoration: line-through;
   }
   .features {
     margin: 4px 0 0;

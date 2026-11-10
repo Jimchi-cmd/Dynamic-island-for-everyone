@@ -21,6 +21,7 @@ pub mod spring;
 pub mod stopwatch;
 pub mod sysmon;
 pub mod timer;
+pub mod todo;
 pub mod version;
 pub mod weather;
 pub mod worldclock;

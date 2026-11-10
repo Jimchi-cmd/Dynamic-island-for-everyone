@@ -212,6 +212,9 @@ pub struct App {
     dragging: bool,
     drag_opened: bool,
     shelf_dirty: bool,
+    /// Notes and to-dos (Islet Pro; todo.json), and whether to save them.
+    todo: islet_core::todo::Todo,
+    todo_dirty: bool,
     /// Clipboard history (in memory only; empty while the feature is off).
     clip: islet_core::clipboard::History,
     /// Entries to put back on the clipboard (for main to hand over).
@@ -325,6 +328,8 @@ impl App {
             dragging: false,
             drag_opened: false,
             shelf_dirty: false,
+            todo: Default::default(),
+            todo_dirty: false,
             clip: Default::default(),
             clip_out: Vec::new(),
             top: TOP_GAP,
@@ -693,6 +698,15 @@ impl App {
         std::mem::take(&mut self.shelf_dirty).then(|| self.shelf.clone())
     }
 
+    pub fn set_todo(&mut self, todo: islet_core::todo::Todo) {
+        self.todo = todo;
+    }
+
+    /// The to-do list after a tick or removal on the island, to save.
+    pub fn take_todo_changes(&mut self) -> Option<islet_core::todo::Todo> {
+        std::mem::take(&mut self.todo_dirty).then(|| self.todo.clone())
+    }
+
     /// Files were dropped on the island: (path, is a folder).
     pub fn drop_files(&mut self, dropped: Vec<(String, bool)>, t: f64) -> bool {
         islet_core::shelf::add(&mut self.shelf, &dropped);
@@ -794,7 +808,7 @@ impl App {
                 }
                 let list = content::list_rows(cr, rows);
                 if let Some(i) = list.iter().position(|r| r.contains(x, y)) {
-                    if p == Panel::Shelf && content::shelf_remove_hit(list[i], x) {
+                    if matches!(p, Panel::Shelf | Panel::Todo) && content::shelf_remove_hit(list[i], x) {
                         return Some(ConnHit::Remove(i + scroll));
                     }
                     return Some(ConnHit::Row(i + scroll));
@@ -928,6 +942,7 @@ impl App {
             Panel::Bluetooth => (c.bt.devices.len(), content::bt_footer(c)),
             Panel::Shelf => (self.shelf.len(), content::shelf_footer(self.shelf.len(), self.dragging)),
             Panel::System | Panel::Stopwatch => (0, None),
+            Panel::Todo => (self.todo.items.len(), Some((content::TODO_ADD.to_string(), true))),
             Panel::Clipboard => {
                 let n = self.clip.len();
                 (n, (n > 0).then(|| (content::CLIPBOARD_CLEAR.to_string(), true)))
@@ -967,7 +982,13 @@ impl App {
                 match p {
                     Panel::Wifi => self.conn_commands.push(ConnCommand::ScanWifi),
                     Panel::Bluetooth => self.conn_commands.push(ConnCommand::ListBluetooth),
-                    Panel::Shelf | Panel::System | Panel::Clipboard | Panel::Stopwatch => {}
+                    Panel::Shelf | Panel::System | Panel::Clipboard | Panel::Stopwatch | Panel::Todo => {}
+                }
+            }
+            ConnHit::Remove(i) if self.panel == Some(Panel::Todo) => {
+                if let Some(id) = self.todo.ordered().get(i).map(|item| item.id) {
+                    self.todo.remove(id);
+                    self.todo_dirty = true;
                 }
             }
             ConnHit::Remove(i) => {
@@ -1041,6 +1062,12 @@ impl App {
                         self.clip_out.push(text);
                     }
                 }
+                Some(Panel::Todo) => {
+                    if let Some(id) = self.todo.ordered().get(i).map(|item| item.id) {
+                        self.todo.toggle(id);
+                        self.todo_dirty = true;
+                    }
+                }
                 Some(Panel::System | Panel::Stopwatch) | None => {}
             },
             ConnHit::Footer => match (self.panel, &c.failure) {
@@ -1049,6 +1076,7 @@ impl App {
                 }
                 (Some(Panel::Bluetooth), _) => self.ui_actions.push(UiAction::Url(BLUETOOTH_SETTINGS.into())),
                 (Some(Panel::Clipboard), _) => self.clip.clear(),
+                (Some(Panel::Todo), _) => self.ui_actions.push(UiAction::Settings("pro".into())),
                 _ => {}
             },
         }
@@ -1204,6 +1232,7 @@ impl App {
                             Panel::Shelf => format!("Shelf, {} items", self.shelf.len()),
                             Panel::System => "System monitor".into(),
                             Panel::Stopwatch => "Stopwatch".into(),
+                            Panel::Todo => format!("To-do, {} left", self.todo.left()),
                             Panel::Clipboard => format!("Clipboard history, {} items", self.clip.len()),
                         };
                         buttons.push((name, r));
@@ -1247,6 +1276,12 @@ impl App {
                             .collect(),
                         Panel::Shelf => self.shelf.iter().map(|i| format!("Open {}", i.name())).collect(),
                         Panel::System | Panel::Stopwatch => Vec::new(),
+                        Panel::Todo => self
+                            .todo
+                            .ordered()
+                            .iter()
+                            .map(|i| format!("{}{}", i.text, if i.done { ", done" } else { ", to do" }))
+                            .collect(),
                         Panel::Clipboard => {
                             self.clip.items().map(|t| format!("Copy {}", islet_core::clipboard::preview(t))).collect()
                         }
@@ -1599,6 +1634,7 @@ impl App {
             shelf: !self.shelf.is_empty(),
             clipboard: self.prefs.clipboard,
             pro: self.pro,
+            todo_left: self.todo.left(),
             world: self.pro && self.prefs.world_clocks.iter().any(|c| islet_core::worldclock::find(c).is_some()),
         }
     }
@@ -1755,6 +1791,9 @@ impl App {
                 }
                 // Shown as OpenContent::Stopwatch instead.
                 OpenContent::Panel(Panel::Stopwatch) => {}
+                OpenContent::Panel(Panel::Todo) => {
+                    out.extend(content::expanded_todo(cr, &self.todo, self.scroll_of(Panel::Todo), eo, engine))
+                }
                 OpenContent::Panel(Panel::Shelf) => out.extend(content::expanded_shelf(
                     cr,
                     &self.shelf,
@@ -1895,6 +1934,7 @@ impl App {
                                 }
                                 Panel::System => content::SYSTEM_H,
                                 Panel::Stopwatch => content::STOPWATCH_H,
+                                Panel::Todo => content::list_height(self.todo.items.len(), true),
                                 Panel::Clipboard => content::list_height(self.clip.len(), !self.clip.is_empty()),
                                 Panel::Shelf => content::list_height(
                                     self.shelf.len(),
@@ -3433,6 +3473,46 @@ mod tests {
         app.stopwatch_command(StopwatchCommand::Reset, 21.0);
         app.tick(21.0);
         assert!(app.live(21.0).is_empty());
+    }
+
+    #[test]
+    fn todo_list_ticks_and_removes_from_the_island() {
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        app.set_pro(true);
+        let mut todo = islet_core::todo::Todo::default();
+        let milk = todo.add("Buy milk").unwrap();
+        todo.add("Call mum").unwrap();
+        app.set_todo(todo);
+        click(&mut app, 0.0);
+        let cr = app.content_rect(app.pill_rect(5.0));
+        assert!(texts(&app, 5.0, &mut engine).iter().any(|s| s == "2"), "the button's badge counts what's left");
+        let (button, _) =
+            *content::clock_chips(cr, app.clock_row()).iter().find(|(_, p)| *p == Panel::Todo).expect("a to-do button");
+        press(&mut app, button, 5.0);
+        let shown = texts(&app, 9.0, &mut engine);
+        assert!(shown.contains(&"Buy milk".to_string()) && shown.contains(&"2 to do".to_string()), "{shown:?}");
+
+        // Tap the first row: ticked, saved, and it moves below the other.
+        let rows = content::list_rows(app.content_rect(app.pill_rect(9.0)), 2);
+        press(&mut app, rows[0], 9.0);
+        let saved = app.take_todo_changes().expect("saved after a tick");
+        assert!(saved.items.iter().find(|i| i.id == milk).unwrap().done);
+        assert_eq!(app.todo.ordered()[1].id, milk);
+        assert!(texts(&app, 10.0, &mut engine).contains(&"1 to do".to_string()));
+
+        // The × on a row deletes it.
+        let r = rows[1];
+        let (x, y) = (r.x + r.w - 20.0, r.y + r.h / 2.0);
+        app.handle(Event::PointerDown { x, y, button: Button::Primary }, 11.0);
+        app.handle(Event::PointerUp { x, y, button: Button::Primary }, 11.05);
+        assert_eq!(app.take_todo_changes().map(|t| t.items.len()), Some(1));
+
+        // Typing happens in Settings: the footer opens it.
+        let footer = content::list_footer(app.content_rect(app.pill_rect(12.0)), 1);
+        press(&mut app, footer, 12.0);
+        assert_eq!(app.take_ui_actions(), [UiAction::Settings("pro".into())]);
     }
 
     #[test]

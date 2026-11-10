@@ -25,6 +25,8 @@ pub fn allowed(args: &[String]) -> bool {
         ["pro", "activate" | "check" | "deactivate"] | ["pro", "status", "--json"] => true,
         ["stopwatch", "start" | "pause" | "resume" | "lap" | "reset"] => true,
         ["world", "--json"] | ["world", "cities", "--json"] => true,
+        ["todo", "--json"] | ["todo", "add" | "clear-done"] => true,
+        ["todo", "done" | "remove", id] => id.parse::<u32>().is_ok(),
         ["world", "add" | "remove", city] => islet_core::worldclock::find(city).is_some(),
         ["alarm", "list", "--json"] | ["alarm", "stop" | "snooze"] => true,
         ["wifi", "list", "--json"] | ["wifi", "list", "--scan", "--json"] | ["bt", "list", "--json"] => true,

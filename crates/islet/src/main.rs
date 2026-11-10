@@ -204,6 +204,7 @@ fn run() -> platform::Result<()> {
         app.set_prefs(load_prefs());
         app.set_pro(pro::active());
         app.set_shelf(config::load_shelf());
+        app.set_todo(config::load_json("todo.json").unwrap_or_default());
     }
     win.watch_caps_lock(app.prefs().caps_lock_hud);
     trace("caps lock watched");
@@ -342,6 +343,8 @@ fn run() -> platform::Result<()> {
                 Control::PrefsChanged if !scripted => {
                     app.set_prefs(load_prefs());
                     app.set_pro(pro::active());
+                    // `islet todo …` and Settings edit todo.json too.
+                    app.set_todo(config::load_json("todo.json").unwrap_or_default());
                     // The islands on other displays follow.
                     for m in &mut mirrors {
                         if let Some(stdin) = m.stdin.as_mut() {
@@ -393,6 +396,11 @@ fn run() -> platform::Result<()> {
         if let Some(items) = app.take_shelf_changes() {
             if !scripted {
                 config::save_shelf(&items);
+            }
+        }
+        if let Some(todo) = app.take_todo_changes() {
+            if !scripted {
+                let _ = config::save_json("todo.json", &todo);
             }
         }
         if app.sysmon_wanted() != sysmon_on {

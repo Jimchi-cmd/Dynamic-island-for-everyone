@@ -28,6 +28,10 @@ Usage:
   islet key routes --clear                 remove it
   islet stopwatch start|pause|resume|lap|reset
                                            a stopwatch on the island (Islet Pro)
+  islet todo add                           add a note or to-do (one line from stdin; Islet Pro)
+  islet todo [--json]                      your list
+  islet todo done|remove <id>              tick an item (again to untick), or delete it
+  islet todo clear-done                    delete the finished ones
   islet world add|remove <city>            world clocks on the clock card (Islet Pro)
   islet world [--json]                     your world clocks
   islet world cities                       the cities to choose from
@@ -104,6 +108,18 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["nav", "stop"] => stop_trip(),
         ["key", "routes"] => store_key(),
         ["stopwatch", cmd] => stopwatch(cmd),
+        ["todo"] => Ok(todo_text()),
+        ["todo", "--json"] => serde_json::to_string(&load_todo().items).map_err(|e| e.to_string()),
+        ["todo", "add"] => read_line("Type a note and press Enter:").and_then(|line| {
+            needs_pro()?;
+            edit_todo(|t| t.add(&line).map(|_| "Added.".to_string()))
+        }),
+        ["todo", "done", id] => todo_id(id)
+            .and_then(|id| edit_todo(|t| if t.toggle(id) { Ok("Done.".into()) } else { Err(format!("no item {id}")) })),
+        ["todo", "remove", id] => todo_id(id).and_then(|id| {
+            edit_todo(|t| if t.remove(id) { Ok("Removed.".into()) } else { Err(format!("no item {id}")) })
+        }),
+        ["todo", "clear-done"] => edit_todo(|t| Ok(format!("Removed {} finished.", t.clear_done()))),
         ["world"] => Ok(config::load_prefs().world_clocks.join("\n")),
         ["world", "--json"] => serde_json::to_string(&config::load_prefs().world_clocks).map_err(|e| e.to_string()),
         ["world", "cities"] => Ok(islet_core::worldclock::CITIES.iter().map(|c| c.0).collect::<Vec<_>>().join("\n")),
@@ -809,6 +825,35 @@ fn needs_pro() -> Result<(), String> {
     } else {
         Err("That's an Islet Pro feature. See Settings → Islet Pro.".into())
     }
+}
+
+fn load_todo() -> islet_core::todo::Todo {
+    config::load_json("todo.json").unwrap_or_default()
+}
+
+fn todo_id(s: &str) -> Result<u32, String> {
+    s.parse().map_err(|_| format!("{s:?} isn't an item number (see: islet todo)"))
+}
+
+/// Change the to-do list, save it and tell the island.
+fn edit_todo(f: impl FnOnce(&mut islet_core::todo::Todo) -> Result<String, String>) -> Result<String, String> {
+    let mut todo = load_todo();
+    let msg = f(&mut todo)?;
+    config::save_json("todo.json", &todo)?;
+    prefs_changed();
+    Ok(msg)
+}
+
+fn todo_text() -> String {
+    let todo = load_todo();
+    if todo.items.is_empty() {
+        return "Nothing to do.".into();
+    }
+    todo.ordered()
+        .iter()
+        .map(|i| format!("{:>3} [{}] {}", i.id, if i.done { "x" } else { " " }, i.text))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn stopwatch(cmd: &str) -> Result<String, String> {

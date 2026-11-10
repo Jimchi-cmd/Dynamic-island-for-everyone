@@ -63,6 +63,8 @@ pub enum Panel {
     Clipboard,
     /// The stopwatch before it starts (Islet Pro).
     Stopwatch,
+    /// Quick notes and to-dos (Islet Pro).
+    Todo,
 }
 
 /// What a tap on the clock card or a list lands on.
@@ -1447,6 +1449,8 @@ pub struct ClockRow {
     pub clipboard: bool,
     /// Islet Pro: the stopwatch and to-do buttons.
     pub pro: bool,
+    /// To-dos left (a badge on the to-do button).
+    pub todo_left: usize,
     /// A line of world clocks under the date.
     pub world: bool,
 }
@@ -1462,6 +1466,7 @@ pub fn clock_chips(pill: Rect, row: ClockRow) -> Vec<(Rect, Panel)> {
     // Labelled chips share the row; the tools are round icons at the end.
     let mut icons = Vec::new();
     if row.pro {
+        icons.push(Panel::Todo);
         icons.push(Panel::Stopwatch);
     }
     if row.clipboard {
@@ -1506,12 +1511,36 @@ pub fn clock_chip_elements(
                 c.connected_device().is_some(),
             ),
             Panel::Shelf => (Icon::Folder, format!("Shelf · {shelf}"), false),
-            Panel::System | Panel::Clipboard | Panel::Stopwatch => {
+            Panel::System | Panel::Clipboard | Panel::Stopwatch | Panel::Todo => {
                 let icon = match panel {
                     Panel::System => Icon::Gauge,
                     Panel::Clipboard => Icon::Clipboard,
+                    Panel::Todo => Icon::Checklist,
                     _ => Icon::Stopwatch,
                 };
+                if panel == Panel::Todo && row.todo_left > 0 {
+                    // How many are left, in a badge on the corner.
+                    let n = if row.todo_left > 9 { "9+".to_string() } else { row.todo_left.to_string() };
+                    let badge = TextStyle {
+                        size: 10.0,
+                        weight: 700,
+                        opacity: o,
+                        align: Align::Center,
+                        tabular: true,
+                        ..TextStyle::default()
+                    };
+                    let (bx, by) = (x + w - 3.0, y + 3.0);
+                    v.push(Element::Ring {
+                        cx: bx,
+                        cy: by,
+                        r: 4.0,
+                        width: 8.0,
+                        fraction: 1.0,
+                        color: accent(),
+                        opacity: o,
+                    });
+                    v.push(text(n, badge, bx, by + 3.6));
+                }
                 v.push(Element::Bar { x, y, w, h, color: WHITE, opacity: o * 0.14 });
                 v.push(Element::Icon {
                     icon,
@@ -1778,6 +1807,61 @@ pub fn expanded_shelf(
     if let Some((line, button)) = footer {
         v.extend(list_footer_elements(pill, shown, &line, button, o, engine));
     }
+    v
+}
+
+/// The to-do list's footer button.
+pub const TODO_ADD: &str = "Add a note in Settings";
+
+/// Notes and to-dos: to do first, then done (dimmed). A tap ticks an item;
+/// × removes it. Typing happens in Settings (the island never takes the keyboard).
+pub fn expanded_todo(
+    pill: Rect,
+    todo: &islet_core::todo::Todo,
+    scroll: usize,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
+    let items = todo.ordered();
+    let left = todo.left();
+    let status = (!items.is_empty()).then(|| if left == 0 { "All done".to_string() } else { format!("{left} to do") });
+    let mut v = list_header_elements(pill, Icon::Checklist, "To-do", status.as_deref(), o, engine);
+    let shown = shown_rows(items.len(), scroll, true);
+    let rows = list_rows(pill, shown);
+    v.extend(scroll_bar(pill, items.len(), scroll, true, o));
+    let style = TextStyle { size: 14.5, weight: 500, opacity: o, ..TextStyle::default() };
+    for (r, item) in rows.iter().zip(items.iter().skip(scroll)) {
+        let (x, cy, rw) = (r.x as f32, (r.y + r.h / 2.0) as f32, r.w as f32);
+        if item.done {
+            v.push(Element::Ring { cx: x + 20.0, cy, r: 8.0, width: 8.0, fraction: 1.0, color: accent(), opacity: o });
+            v.push(Element::Icon { icon: Icon::Check, x: x + 14.0, y: cy - 6.0, size: 12.0, color: WHITE, opacity: o });
+        } else {
+            v.push(Element::Ring {
+                cx: x + 20.0,
+                cy,
+                r: 8.0,
+                width: 1.6,
+                fraction: 1.0,
+                color: WHITE,
+                opacity: o * 0.6,
+            });
+        }
+        let line = TextStyle { opacity: if item.done { o * 0.45 } else { o }, ..style };
+        v.push(text(engine.ellipsize(&item.text, &line, rw - 90.0), line, x + 40.0, cy + 5.0));
+        v.push(Element::Icon {
+            icon: Icon::Close,
+            x: x + rw - 28.0,
+            y: cy - 8.0,
+            size: 16.0,
+            color: WHITE,
+            opacity: o * 0.5,
+        });
+    }
+    if items.is_empty() {
+        let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
+        v.push(text("Nothing to do. Nice!", style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
+    }
+    v.extend(list_footer_elements(pill, shown, TODO_ADD, true, o, engine));
     v
 }
 
