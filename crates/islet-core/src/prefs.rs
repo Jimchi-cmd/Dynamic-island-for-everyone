@@ -60,6 +60,9 @@ pub struct IslandPrefs {
     /// The display to show the island on, by name ("" = the primary one,
     /// `ALL_DISPLAYS` = one island on every display).
     pub display: String,
+    /// World clocks on the clock card (Islet Pro): city names from
+    /// `worldclock::CITIES`, at most `worldclock::MAX`.
+    pub world_clocks: Vec<String>,
 }
 
 /// Accent colours: name and RGB.
@@ -104,6 +107,7 @@ impl Default for IslandPrefs {
             size: "medium".into(),
             offset: 0,
             display: String::new(),
+            world_clocks: Vec::new(),
         }
     }
 }

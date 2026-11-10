@@ -189,6 +189,8 @@ pub enum Report {
     Connectivity(crate::connectivity::ConnUpdate),
     /// The running (or paused) timer, or None.
     Timer(Option<crate::timer::Timer>),
+    /// The stopwatch, or None once it is reset.
+    Stopwatch(Option<crate::stopwatch::Stopwatch>),
     /// Volume, brightness or caps lock changed.
     Hud(Hud),
     /// Current weather (None when weather is turned off).
@@ -274,6 +276,8 @@ pub enum Live {
         reason: PeekReason,
     },
     Timer(crate::timer::Timer),
+    /// The stopwatch (Islet Pro), running or paused.
+    Stopwatch(crate::stopwatch::Stopwatch),
     /// A script's live activity.
     Custom(Custom),
     /// A calendar event starting soon (`starts_at` on the app clock).
@@ -348,6 +352,7 @@ pub struct Activities {
     alarm: Option<crate::alarm::Alarm>,
     conn: crate::connectivity::Connectivity,
     timer: Option<crate::timer::Timer>,
+    stopwatch: Option<crate::stopwatch::Stopwatch>,
     hud: Option<(Hud, f64)>,
     weather: Option<crate::weather::Weather>,
     calendar: Vec<crate::calendar::CalEvent>,
@@ -433,6 +438,10 @@ impl Activities {
 
     pub fn timer(&self) -> Option<&crate::timer::Timer> {
         self.timer.as_ref()
+    }
+
+    pub fn stopwatch(&self) -> Option<&crate::stopwatch::Stopwatch> {
+        self.stopwatch.as_ref()
     }
 
     pub fn alarm(&self) -> Option<&crate::alarm::Alarm> {
@@ -521,6 +530,10 @@ impl Activities {
             }
             Report::Timer(t) => {
                 self.timer = t;
+                true
+            }
+            Report::Stopwatch(s) => {
+                self.stopwatch = s;
                 true
             }
             Report::Hud(h) => {
@@ -636,6 +649,9 @@ impl Activities {
         }
         if let Some(tm) = &self.timer {
             out.push(Live::Timer(tm.clone()));
+        }
+        if let Some(sw) = &self.stopwatch {
+            out.push(Live::Stopwatch(sw.clone()));
         }
         if let Some(c) = self.custom.first() {
             out.push(Live::Custom(c.clone()));

@@ -26,6 +26,11 @@ Usage:
   islet key routes                         store your Google Routes API key in the OS
                                            keychain (reads one line from stdin)
   islet key routes --clear                 remove it
+  islet stopwatch start|pause|resume|lap|reset
+                                           a stopwatch on the island (Islet Pro)
+  islet world add|remove <city>            world clocks on the clock card (Islet Pro)
+  islet world [--json]                     your world clocks
+  islet world cities                       the cities to choose from
   islet pro activate                       turn on Islet Pro with your key (read from stdin)
   islet pro status [--json]                is Pro on?
   islet pro check                          ask the store again whether the key is valid
@@ -98,6 +103,16 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["nav", "start", rest @ ..] => parse_trip(rest).and_then(start_trip),
         ["nav", "stop"] => stop_trip(),
         ["key", "routes"] => store_key(),
+        ["stopwatch", cmd] => stopwatch(cmd),
+        ["world"] => Ok(config::load_prefs().world_clocks.join("\n")),
+        ["world", "--json"] => serde_json::to_string(&config::load_prefs().world_clocks).map_err(|e| e.to_string()),
+        ["world", "cities"] => Ok(islet_core::worldclock::CITIES.iter().map(|c| c.0).collect::<Vec<_>>().join("\n")),
+        ["world", "cities", "--json"] => {
+            serde_json::to_string(&islet_core::worldclock::CITIES.iter().map(|c| c.0).collect::<Vec<_>>())
+                .map_err(|e| e.to_string())
+        }
+        ["world", "add", city @ ..] if !city.is_empty() => world(true, &city.join(" ")),
+        ["world", "remove", city @ ..] if !city.is_empty() => world(false, &city.join(" ")),
         ["pro", "activate"] => read_line("Paste your Islet Pro key and press Enter:").and_then(|k| {
             let r = crate::pro::activate(&k);
             prefs_changed();
@@ -785,6 +800,50 @@ fn update_check(json: bool) -> Result<String, String> {
     } else {
         format!("Islet {current} is up to date.")
     })
+}
+
+/// Islet Pro features say so when Pro is off.
+fn needs_pro() -> Result<(), String> {
+    if crate::pro::active() {
+        Ok(())
+    } else {
+        Err("That's an Islet Pro feature. See Settings → Islet Pro.".into())
+    }
+}
+
+fn stopwatch(cmd: &str) -> Result<String, String> {
+    use islet_core::stopwatch::StopwatchCommand as S;
+    let (cmd, msg) = match cmd {
+        "start" => (S::Start, "Started."),
+        "pause" => (S::Pause, "Paused."),
+        "resume" => (S::Resume, "Resumed."),
+        "lap" => (S::Lap, "Lap."),
+        "reset" => (S::Reset, "Reset."),
+        other => return Err(format!("unknown stopwatch command {other:?} (start, pause, resume, lap or reset)")),
+    };
+    needs_pro()?;
+    control::send(&Control::Stopwatch(cmd)).map(|()| msg.into())
+}
+
+/// Add or remove a world clock.
+fn world(add: bool, city: &str) -> Result<String, String> {
+    use islet_core::worldclock::{find, MAX};
+    let mut p = config::load_prefs();
+    if add {
+        needs_pro()?;
+        let (name, _, _) = find(city).ok_or_else(|| format!("{city:?} isn't in the list (see: islet world cities)"))?;
+        if !p.world_clocks.iter().any(|c| c.eq_ignore_ascii_case(name)) {
+            if p.world_clocks.len() >= MAX {
+                return Err(format!("You can show up to {MAX} world clocks. Remove one first."));
+            }
+            p.world_clocks.push(name.to_string());
+        }
+    } else {
+        p.world_clocks.retain(|c| !c.eq_ignore_ascii_case(city.trim()));
+    }
+    config::save_prefs(&p)?;
+    prefs_changed();
+    Ok(if p.world_clocks.is_empty() { "No world clocks.".into() } else { p.world_clocks.join(", ") })
 }
 
 /// One line from stdin (with a prompt when typed at a terminal).

@@ -10,6 +10,7 @@ use islet_core::connectivity::{self, BtState, Connectivity, WifiState};
 use islet_core::geometry::Rect;
 use islet_core::lyrics::{self, Lyrics};
 use islet_core::nav;
+use islet_core::stopwatch::{self, Stopwatch};
 use islet_core::timer::{self, Phase, Timer};
 use islet_render::elements::{Element, Icon};
 use islet_render::text::{Align, TextEngine, TextItem, TextStyle};
@@ -60,6 +61,8 @@ pub enum Panel {
     System,
     /// Recently copied texts (when clipboard history is on).
     Clipboard,
+    /// The stopwatch before it starts (Islet Pro).
+    Stopwatch,
 }
 
 /// What a tap on the clock card or a list lands on.
@@ -402,6 +405,7 @@ pub fn compact_width(live: &Live) -> f64 {
         | Live::Navigation(_)
         | Live::Alarm(_)
         | Live::Timer(_)
+        | Live::Stopwatch(_)
         | Live::Hud(_)
         | Live::Event { .. }
         | Live::Call(_) => COMPACT_MEDIA_W,
@@ -490,6 +494,9 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
     let cy = (pill.y + pill.h / 2.0) as f32;
     match live {
         Live::Timer(tm) => vec![timer_ring(tm, x + 20.0, cy, 8.5, t, o), countdown(tm, right - 14.0, cy, 15.0, t, o)],
+        Live::Stopwatch(sw) => {
+            vec![stopwatch_icon(sw, x + 10.0, cy, o), stopwatch_time(sw, right - 14.0, cy, 15.0, false, t, o)]
+        }
         Live::Custom(c) => {
             let color = custom_color(c);
             let title = TextStyle { size: 13.5, weight: 600, opacity: o, ..TextStyle::default() };
@@ -706,6 +713,9 @@ pub fn minimal(
     if let Live::Timer(tm) = primary {
         v.push(countdown(tm, pill.right() as f32 - 13.0, cy, 14.0, t, o));
     }
+    if let Live::Stopwatch(sw) = primary {
+        v.push(stopwatch_time(sw, pill.right() as f32 - 13.0, cy, 14.0, false, t, o));
+    }
     if let Live::Hud(h) = primary {
         v.extend(hud_trailing(h, pill.right() as f32 - 14.0, cy, 56.0, o));
     }
@@ -738,6 +748,7 @@ pub fn minimal(
             }),
             Live::Alarm(_) => v.push(bell(b.x, b.y, 20.0, t, o)),
             Live::Timer(tm) => v.push(timer_ring(tm, b.x, b.y, b.r - 7.5, t, o)),
+            Live::Stopwatch(sw) => v.push(stopwatch_icon(sw, b.x - 9.0, b.y, o)),
             Live::Custom(c) => v.push(custom_ring(c, b.x, b.y, b.r - 7.5, t, o)),
             Live::Note(_) => v.push(Element::Icon {
                 icon: Icon::Message,
@@ -817,6 +828,7 @@ fn leading(live: &Live, x: f32, cy: f32, o: f32, h24: bool) -> Vec<Element> {
         Live::Hud(h) => {
             vec![Element::Icon { icon: hud_icon(h), x: x + 3.0, y: cy - 10.0, size: 20.0, color: WHITE, opacity: o }]
         }
+        Live::Stopwatch(sw) => vec![stopwatch_icon(sw, x + 3.0, cy, o)],
         Live::Timer(tm) => vec![Element::Ring {
             cx: x + 12.0,
             cy,
@@ -1040,6 +1052,105 @@ pub fn expanded_timer(pill: Rect, tm: &Timer, t: f64, o: f32, engine: &mut TextE
     v
 }
 
+/// The stopwatch's colour.
+pub const STOPWATCH: [u8; 3] = [100, 210, 255];
+
+/// The stopwatch icon, 18 px, its left edge at `x`, centred on `cy`.
+fn stopwatch_icon(sw: &Stopwatch, x: f32, cy: f32, o: f32) -> Element {
+    let opacity = o * if sw.running() { 1.0 } else { 0.6 };
+    Element::Icon { icon: Icon::Stopwatch, x, y: cy - 9.0, size: 18.0, color: STOPWATCH, opacity }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn stopwatch_time(sw: &Stopwatch, right: f32, cy: f32, size: f32, tenths: bool, t: f64, o: f32) -> Element {
+    let style = TextStyle {
+        size,
+        weight: 600,
+        opacity: o * if sw.running() { 1.0 } else { 0.6 },
+        tabular: true,
+        color: STOPWATCH,
+        align: Align::Right,
+    };
+    text(stopwatch::format(sw.elapsed(t), tenths), style, right, cy + size * 0.36)
+}
+
+/// Buttons of the stopwatch card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopwatchControl {
+    /// Lap while running; Reset while paused.
+    LapReset,
+    /// Start, Pause or Resume.
+    StartPause,
+}
+
+pub const STOPWATCH_H: f64 = 132.0;
+
+pub fn stopwatch_controls(pill: Rect) -> [(Rect, StopwatchControl); 2] {
+    let [(a, _), (b, _)] = alarm_controls(pill);
+    [(a, StopwatchControl::LapReset), (b, StopwatchControl::StartPause)]
+}
+
+/// The stopwatch card: the time to a tenth, the current lap and the last
+/// two, Lap/Reset and Start/Pause. `sw` is None before it is started.
+pub fn expanded_stopwatch(pill: Rect, sw: Option<&Stopwatch>, t: f64, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
+    let pad = PAD as f32;
+    let running = sw.is_some_and(Stopwatch::running);
+    let mut v = vec![Element::Icon {
+        icon: Icon::Stopwatch,
+        x: x + pad,
+        y: y + 25.0,
+        size: 26.0,
+        color: STOPWATCH,
+        opacity: o,
+    }];
+    let title_style = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
+    v.push(text("Stopwatch", title_style, x + pad + 38.0, y + 34.0));
+    let small = TextStyle { size: 13.0, opacity: o * 0.6, tabular: true, ..TextStyle::default() };
+    let sub = match sw {
+        None => "Ready".to_string(),
+        Some(sw) if sw.lap_count() == 0 => if running { "Running" } else { "Paused" }.to_string(),
+        Some(sw) => {
+            let mut parts = vec![format!("Lap {} {}", sw.lap_count() + 1, stopwatch::format(sw.current_lap(t), true))];
+            parts.extend(sw.laps().take(1).map(|(n, d)| format!("Lap {n} {}", stopwatch::format(d, true))));
+            parts.join("  ·  ")
+        }
+    };
+    v.push(text(engine.ellipsize(&sub, &small, w * 0.5), small, x + pad + 38.0, y + 53.0));
+    let big = TextStyle {
+        size: 34.0,
+        weight: 600,
+        opacity: o * if running || sw.is_none() { 1.0 } else { 0.6 },
+        tabular: true,
+        color: STOPWATCH,
+        align: Align::Right,
+    };
+    let elapsed = sw.map_or(0.0, |s| s.elapsed(t));
+    v.push(text(stopwatch::format(elapsed, true), big, x + w - pad, y + 38.0 + 34.0 * 0.36));
+    let label = TextStyle { size: 14.0, weight: 600, opacity: o, align: Align::Center, ..TextStyle::default() };
+    for (r, c) in stopwatch_controls(pill) {
+        let (bx, by, bw, bh) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
+        let (fill, alpha, word, color) = match c {
+            StopwatchControl::LapReset => {
+                let word = if running { "Lap" } else { "Reset" };
+                (WHITE, if sw.is_some() { 0.16 } else { 0.08 }, word, WHITE)
+            }
+            StopwatchControl::StartPause => {
+                let word = match sw {
+                    None => "Start",
+                    Some(_) if running => "Pause",
+                    Some(_) => "Resume",
+                };
+                (if running { ORANGE } else { GREEN }, 1.0, word, [0, 0, 0])
+            }
+        };
+        v.push(Element::Bar { x: bx, y: by, w: bw, h: bh, color: fill, opacity: o * alpha });
+        let text_o = if c == StopwatchControl::LapReset && sw.is_none() { 0.4 } else { 1.0 };
+        v.push(text(word, TextStyle { color, opacity: o * text_o, ..label }, bx + bw / 2.0, by + 22.0));
+    }
+    v
+}
+
 /// Height of the ringing-alarm card.
 pub const ALARM_H: f64 = 132.0;
 
@@ -1253,6 +1364,41 @@ pub fn expanded_clock(pill: Rect, now: &LocalTime, h24: bool, o: f32, engine: &m
     v
 }
 
+/// World clocks under the date: "London 14:05 · Tokyo 22:05 +1".
+pub fn world_clocks(
+    pill: Rect,
+    clocks: &[(String, LocalTime, i32)],
+    h24: bool,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
+    let (left, top) = (pill.x as f32 + 28.0, pill.y as f32 + (1.0 - o) * 8.0);
+    let name = TextStyle { size: 13.0, opacity: o * 0.6, ..TextStyle::default() };
+    let time = TextStyle { size: 13.0, weight: 600, opacity: o, tabular: true, ..TextStyle::default() };
+    let mut v = Vec::new();
+    let mut x = left;
+    let max = (pill.right() - PAD) as f32;
+    for (i, (city, now, days)) in clocks.iter().enumerate() {
+        let (hm, suffix) = format_time(now, h24);
+        let when = match (suffix, days) {
+            (Some(s), 0) => format!("{hm} {s}"),
+            (Some(s), d) => format!("{hm} {s} {d:+}"),
+            (None, 0) => hm,
+            (None, d) => format!("{hm} {d:+}"),
+        };
+        let lead = if i == 0 { format!("{city} ") } else { format!("  ·  {city} ") };
+        let need = engine.measure(&lead, &name) + engine.measure(&when, &time);
+        if x + need > max {
+            break;
+        }
+        v.push(text(lead.clone(), name, x, top + 126.0));
+        x += engine.measure(&lead, &name);
+        v.push(text(when.clone(), time, x, top + 126.0));
+        x += engine.measure(&when, &time);
+    }
+    v
+}
+
 pub fn sky_icon(w: &islet_core::weather::Weather) -> Icon {
     use islet_core::weather::Sky;
     match (w.sky, w.is_day) {
@@ -1293,14 +1439,35 @@ pub fn clock_weather(pill: Rect, w: &islet_core::weather::Weather, fahrenheit: b
 /// The Wi-Fi and Bluetooth buttons along the bottom of the clock card.
 /// The clock card's buttons: Wi-Fi and Bluetooth, plus the shelf when it
 /// has something on it.
-pub fn clock_chips(pill: Rect, shelf: bool, clipboard: bool) -> Vec<(Rect, Panel)> {
+/// What the clock card shows besides the time.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ClockRow {
+    /// The shelf has files on it.
+    pub shelf: bool,
+    pub clipboard: bool,
+    /// Islet Pro: the stopwatch and to-do buttons.
+    pub pro: bool,
+    /// A line of world clocks under the date.
+    pub world: bool,
+}
+
+/// Height of the world-clock line.
+pub const WORLD_H: f64 = 22.0;
+
+pub fn clock_chips(pill: Rect, row: ClockRow) -> Vec<(Rect, Panel)> {
     let (x, w) = (pill.x + PAD, pill.w - 2.0 * PAD);
-    let y = pill.y + 122.0;
+    let y = pill.y + 122.0 + if row.world { WORLD_H } else { 0.0 };
     let panels: &[Panel] =
-        if shelf { &[Panel::Wifi, Panel::Bluetooth, Panel::Shelf] } else { &[Panel::Wifi, Panel::Bluetooth] };
-    // Labelled chips share the row; clipboard and system monitor are round
-    // icons at the end.
-    let icons: &[Panel] = if clipboard { &[Panel::Clipboard, Panel::System] } else { &[Panel::System] };
+        if row.shelf { &[Panel::Wifi, Panel::Bluetooth, Panel::Shelf] } else { &[Panel::Wifi, Panel::Bluetooth] };
+    // Labelled chips share the row; the tools are round icons at the end.
+    let mut icons = Vec::new();
+    if row.pro {
+        icons.push(Panel::Stopwatch);
+    }
+    if row.clipboard {
+        icons.push(Panel::Clipboard);
+    }
+    icons.push(Panel::System);
     let n = panels.len() as f64;
     let icons_w = icons.len() as f64 * (SYSTEM_CHIP + 10.0);
     let cw = (w - icons_w - 10.0 * (n - 1.0)) / n;
@@ -1319,13 +1486,13 @@ pub fn clock_chip_elements(
     pill: Rect,
     c: &Connectivity,
     shelf: usize,
-    clipboard: bool,
+    row: ClockRow,
     o: f32,
     engine: &mut TextEngine,
 ) -> Vec<Element> {
     let mut v = Vec::new();
     let style = TextStyle { size: 13.0, weight: 600, opacity: o, ..TextStyle::default() };
-    for (r, panel) in clock_chips(pill, shelf > 0, clipboard) {
+    for (r, panel) in clock_chips(pill, row) {
         let (x, y, w, h) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
         let (icon, label, on) = match panel {
             Panel::Wifi => (
@@ -1339,8 +1506,12 @@ pub fn clock_chip_elements(
                 c.connected_device().is_some(),
             ),
             Panel::Shelf => (Icon::Folder, format!("Shelf · {shelf}"), false),
-            Panel::System | Panel::Clipboard => {
-                let icon = if panel == Panel::System { Icon::Gauge } else { Icon::Clipboard };
+            Panel::System | Panel::Clipboard | Panel::Stopwatch => {
+                let icon = match panel {
+                    Panel::System => Icon::Gauge,
+                    Panel::Clipboard => Icon::Clipboard,
+                    _ => Icon::Stopwatch,
+                };
                 v.push(Element::Bar { x, y, w, h, color: WHITE, opacity: o * 0.14 });
                 v.push(Element::Icon {
                     icon,
@@ -1355,6 +1526,18 @@ pub fn clock_chip_elements(
         };
         let bg = if on { accent() } else { WHITE };
         v.push(Element::Bar { x, y, w, h, color: bg, opacity: o * if on { 0.9 } else { 0.14 } });
+        if w < 84.0 {
+            // Too narrow for a name (a crowded row): the icon alone.
+            v.push(Element::Icon {
+                icon,
+                x: x + w / 2.0 - 9.0,
+                y: y + h / 2.0 - 9.0,
+                size: 18.0,
+                color: WHITE,
+                opacity: o,
+            });
+            continue;
+        }
         v.push(Element::Icon { icon, x: x + 10.0, y: y + h / 2.0 - 9.0, size: 18.0, color: WHITE, opacity: o });
         let label = engine.ellipsize(&label, &style, w - 44.0);
         v.push(text(label, style, x + 34.0, y + h / 2.0 + 4.5));

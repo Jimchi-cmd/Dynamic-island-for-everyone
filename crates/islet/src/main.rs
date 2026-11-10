@@ -338,6 +338,7 @@ fn run() -> platform::Result<()> {
                 Control::AlarmStop => needs_frame |= app.stop_alarm(t),
                 Control::AlarmSnooze => needs_frame |= app.snooze_alarm(t),
                 Control::Timer(cmd) => needs_frame |= app.timer_command(cmd, t),
+                Control::Stopwatch(cmd) => needs_frame |= app.stopwatch_command(cmd, t),
                 Control::PrefsChanged if !scripted => {
                     app.set_prefs(load_prefs());
                     app.set_pro(pro::active());

@@ -162,6 +162,7 @@ fn describe(r: &Report) -> String {
         Report::Alarm(None) => "alarm stopped".into(),
         Report::Connectivity(u) => format!("connectivity: {u:?}"),
         Report::Timer(t) => format!("timer: {:?}", t.as_ref().map(|t| t.title())),
+        Report::Stopwatch(s) => format!("stopwatch: {}", if s.is_some() { "on" } else { "off" }),
         Report::Hud(h) => format!("hud: {h:?}"),
         Report::Weather(w) => format!("weather: {w:?}"),
         Report::Calendar(c) => format!("calendar: {} events", c.as_ref().map_or(0, |c| c.len())),

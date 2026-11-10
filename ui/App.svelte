@@ -409,7 +409,34 @@
   let proKey = $state('');
   let proNote = $state('');
 
+  // World clocks (Pro)
+  let worldClocks: string[] = $state([]);
+  let cities: string[] = $state([]);
+  let cityPick = $state('');
+
+  async function loadWorld() {
+    try {
+      worldClocks = JSON.parse(await api.islet(['world', '--json']));
+      if (!cities.length) cities = JSON.parse(await api.islet(['world', 'cities', '--json']));
+    } catch (e) {
+      proNote = api.message(e);
+    }
+  }
+
+  async function worldChange(add: boolean, city: string) {
+    if (!city) return;
+    proNote = '';
+    try {
+      await api.islet(['world', add ? 'add' : 'remove', city]);
+      cityPick = '';
+    } catch (e) {
+      proNote = api.message(e);
+    }
+    await loadWorld();
+  }
+
   async function loadPro() {
+    void loadWorld();
     try {
       pro = parsePro(await api.islet(['pro', 'status', '--json']));
     } catch (e) {
@@ -1261,6 +1288,30 @@
             {:else if pro}
               <p class="muted">Islet Pro isn’t on sale in this build yet.</p>
             {/if}
+          </div>
+        {/if}
+        {#if pro?.active}
+          <div class="card">
+            <h2>World clocks</h2>
+            <p class="muted">Up to three cities on the clock card, with daylight saving taken care of.</p>
+            {#if worldClocks.length}
+              <div class="actions left">
+                {#each worldClocks as c (c)}
+                  <button onclick={() => worldChange(false, c)} aria-label={`Remove ${c}`}>{c} ✕</button>
+                {/each}
+              </div>
+            {/if}
+            {#if worldClocks.length < 3}
+              <label for="city">Add a city</label>
+              <select id="city" bind:value={cityPick} onchange={() => worldChange(true, cityPick)}>
+                <option value="">Choose…</option>
+                {#each cities.filter((c) => !worldClocks.includes(c)) as c (c)}<option value={c}>{c}</option>{/each}
+              </select>
+            {/if}
+          </div>
+          <div class="card">
+            <h2>Stopwatch</h2>
+            <p class="muted">Open the island and tap the stopwatch button in Control Centre. Laps and pause work from the island.</p>
           </div>
         {/if}
         {#if pro?.features.length}

@@ -6,6 +6,7 @@
 use crate::config;
 use crate::platform::Waker;
 use islet_core::nav::Trip;
+use islet_core::stopwatch::StopwatchCommand;
 use islet_core::timer::TimerCommand;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
@@ -22,6 +23,7 @@ pub enum Control {
     AlarmStop,
     AlarmSnooze,
     Timer(TimerCommand),
+    Stopwatch(StopwatchCommand),
     /// island.json changed: reload it.
     PrefsChanged,
     /// shelf.json changed: reload it.
@@ -103,6 +105,9 @@ fn handle(stream: &TcpStream, token: &str) -> Result<Control, String> {
         (Some("activity"), Some(json)) => serde_json::from_str(json).map(Control::Activity).map_err(|e| e.to_string()),
         (Some("activity-end"), Some(id)) => Ok(Control::ActivityEnd(id.to_string())),
         (Some("timer"), Some(json)) => serde_json::from_str(json).map(Control::Timer).map_err(|e| e.to_string()),
+        (Some("stopwatch"), Some(json)) => {
+            serde_json::from_str(json).map(Control::Stopwatch).map_err(|e| e.to_string())
+        }
         (Some("ping"), _) => Ok(Control::Ping),
         (Some("toggle"), _) => Ok(Control::Toggle),
         (Some("caps-lock"), Some("on")) => Ok(Control::CapsLock(true)),
@@ -140,6 +145,9 @@ pub fn send(cmd: &Control) -> Result<(), String> {
         Control::Activity(c) => format!("{token}\tactivity\t{}", serde_json::to_string(c).map_err(|e| e.to_string())?),
         Control::ActivityEnd(id) => format!("{token}\tactivity-end\t{id}"),
         Control::Timer(cmd) => format!("{token}\ttimer\t{}", serde_json::to_string(cmd).map_err(|e| e.to_string())?),
+        Control::Stopwatch(cmd) => {
+            format!("{token}\tstopwatch\t{}", serde_json::to_string(cmd).map_err(|e| e.to_string())?)
+        }
         Control::Ping => format!("{token}\tping"),
         Control::Toggle => format!("{token}\ttoggle"),
         Control::CapsLock(on) => format!("{token}\tcaps-lock\t{}", if *on { "on" } else { "off" }),

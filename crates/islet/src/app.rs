@@ -2,7 +2,9 @@
 //! state machine → springs → frame and content. No OS calls in here, so all
 //! of it is unit-tested.
 
-use crate::content::{self, AlarmControl, ConnHit, Control, NavControl, Panel, TimerControl, TIMER_ALARM_ID};
+use crate::content::{
+    self, AlarmControl, ClockRow, ConnHit, Control, NavControl, Panel, StopwatchControl, TimerControl, TIMER_ALARM_ID,
+};
 use crate::platform::{Button, Event, Key};
 use islet_core::activity::{Activities, Call, Hud, Live, MediaCommand, MediaInfo, MicCommand, NavInfo, Report};
 use islet_core::alarm::{Alarm, AlarmClock, AlarmEvent};
@@ -15,6 +17,7 @@ use islet_core::island::{
 };
 use islet_core::prefs::IslandPrefs;
 use islet_core::spring::{Animated, Spring};
+use islet_core::stopwatch::{Stopwatch, StopwatchCommand};
 use islet_core::timer::{Timer, TimerCommand, TimerEvent};
 use islet_render::elements::Element;
 use islet_render::text::TextEngine;
@@ -162,6 +165,8 @@ enum OpenContent<'a> {
     Alarm(&'a Alarm),
     Panel(Panel),
     Timer(&'a Timer),
+    /// The stopwatch card (None: not started yet).
+    Stopwatch(Option<&'a Stopwatch>),
     Nav(&'a NavInfo),
     Media(&'a MediaInfo),
     Battery,
@@ -196,6 +201,11 @@ pub struct App {
     timer_ringing: bool,
     timer_control: Option<TimerControl>,
     timer_sec: i64,
+    /// The stopwatch (Islet Pro), the card button being pressed, and the
+    /// last tenth/second drawn.
+    stopwatch: Option<Stopwatch>,
+    stopwatch_control: Option<StopwatchControl>,
+    stopwatch_shown: i64,
     /// The file shelf; whether files are being dragged over the island (and
     /// whether that opened it); and a pending save.
     shelf: Vec<islet_core::shelf::ShelfItem>,
@@ -308,6 +318,9 @@ impl App {
             timer_ringing: false,
             timer_control: None,
             timer_sec: -1,
+            stopwatch: None,
+            stopwatch_control: None,
+            stopwatch_shown: -1,
             shelf: Vec::new(),
             dragging: false,
             drag_opened: false,
@@ -516,6 +529,39 @@ impl App {
             }
         }
         changed
+    }
+
+    /// Start, pause, lap or reset the stopwatch (Islet Pro only).
+    pub fn stopwatch_command(&mut self, cmd: StopwatchCommand, t: f64) -> bool {
+        if !self.pro {
+            return false;
+        }
+        match (&mut self.stopwatch, cmd) {
+            (None, StopwatchCommand::Start | StopwatchCommand::Resume) => self.stopwatch = Some(Stopwatch::started(t)),
+            (Some(sw), StopwatchCommand::Start | StopwatchCommand::Resume) => sw.resume(t),
+            (Some(sw), StopwatchCommand::Pause) => sw.pause(t),
+            (Some(sw), StopwatchCommand::Lap) => sw.lap(t),
+            (_, StopwatchCommand::Reset) => {
+                self.stopwatch = None;
+                if self.panel.is_none() && self.island.presentation().is_open() {
+                    // Stay on the (now empty) stopwatch card.
+                    self.panel = Some(Panel::Stopwatch);
+                }
+            }
+            (None, _) => return false,
+        }
+        self.stopwatch_shown = -1;
+        self.report(Report::Stopwatch(self.stopwatch.clone()), t)
+    }
+
+    /// The Lap/Reset or Start/Pause button under (x, y) on the stopwatch card.
+    fn stopwatch_control_at(&self, x: f64, y: f64, t: f64) -> Option<StopwatchControl> {
+        if !self.island.presentation().is_open()
+            || !matches!(self.open_content(&self.live(t)), OpenContent::Stopwatch(_))
+        {
+            return None;
+        }
+        content::stopwatch_controls(self.card_rect(t)).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, c)| c)
     }
 
     /// Start, pause, resume or stop the timer.
@@ -727,7 +773,7 @@ impl App {
             return Some(ConnHit::Menu(i));
         }
         match open {
-            OpenContent::Clock => content::clock_chips(cr, !self.shelf.is_empty(), self.prefs.clipboard)
+            OpenContent::Clock => content::clock_chips(cr, self.clock_row())
                 .into_iter()
                 .find(|(r, _)| r.contains(x, y))
                 .map(|(_, p)| ConnHit::Open(p)),
@@ -881,7 +927,7 @@ impl App {
             Panel::Wifi => (c.wifi.networks.len(), content::wifi_footer(c)),
             Panel::Bluetooth => (c.bt.devices.len(), content::bt_footer(c)),
             Panel::Shelf => (self.shelf.len(), content::shelf_footer(self.shelf.len(), self.dragging)),
-            Panel::System => (0, None),
+            Panel::System | Panel::Stopwatch => (0, None),
             Panel::Clipboard => {
                 let n = self.clip.len();
                 (n, (n > 0).then(|| (content::CLIPBOARD_CLEAR.to_string(), true)))
@@ -921,7 +967,7 @@ impl App {
                 match p {
                     Panel::Wifi => self.conn_commands.push(ConnCommand::ScanWifi),
                     Panel::Bluetooth => self.conn_commands.push(ConnCommand::ListBluetooth),
-                    Panel::Shelf | Panel::System | Panel::Clipboard => {}
+                    Panel::Shelf | Panel::System | Panel::Clipboard | Panel::Stopwatch => {}
                 }
             }
             ConnHit::Remove(i) => {
@@ -995,7 +1041,7 @@ impl App {
                         self.clip_out.push(text);
                     }
                 }
-                Some(Panel::System) | None => {}
+                Some(Panel::System | Panel::Stopwatch) | None => {}
             },
             ConnHit::Footer => match (self.panel, &c.failure) {
                 (Some(Panel::Wifi), Some((_, Some(ssid)))) => {
@@ -1047,6 +1093,11 @@ impl App {
                 Some(p) => format!("{}, {}%", c.title, (p * 100.0).round() as i32),
                 None => format!("{}, in progress", c.title),
             },
+            Some(Live::Stopwatch(sw)) => format!(
+                "Stopwatch, {}{}",
+                islet_core::stopwatch::format(sw.elapsed(t), false),
+                if sw.running() { "" } else { ", paused" }
+            ),
             Some(Live::Timer(tm)) => format!(
                 "{}, {} left{}",
                 tm.title(),
@@ -1139,7 +1190,7 @@ impl App {
                     }
                 }
                 OpenContent::Clock => {
-                    for (r, p) in content::clock_chips(cr, !self.shelf.is_empty(), self.prefs.clipboard) {
+                    for (r, p) in content::clock_chips(cr, self.clock_row()) {
                         let name = match p {
                             Panel::Wifi => {
                                 format!("Wi-Fi{}", c.wifi.current.as_ref().map_or(String::new(), |n| format!(", {n}")))
@@ -1152,6 +1203,7 @@ impl App {
                             }
                             Panel::Shelf => format!("Shelf, {} items", self.shelf.len()),
                             Panel::System => "System monitor".into(),
+                            Panel::Stopwatch => "Stopwatch".into(),
                             Panel::Clipboard => format!("Clipboard history, {} items", self.clip.len()),
                         };
                         buttons.push((name, r));
@@ -1194,7 +1246,7 @@ impl App {
                             .map(|d| format!("{}, {}", d.name, if d.connected { "connected" } else { "not connected" }))
                             .collect(),
                         Panel::Shelf => self.shelf.iter().map(|i| format!("Open {}", i.name())).collect(),
-                        Panel::System => Vec::new(),
+                        Panel::System | Panel::Stopwatch => Vec::new(),
                         Panel::Clipboard => {
                             self.clip.items().map(|t| format!("Copy {}", islet_core::clipboard::preview(t))).collect()
                         }
@@ -1512,6 +1564,8 @@ impl App {
             OpenContent::Alarm(a)
         } else if self.menu {
             OpenContent::Menu
+        } else if self.panel == Some(Panel::Stopwatch) {
+            OpenContent::Stopwatch(self.activities.stopwatch())
         } else if let Some(p) = self.panel {
             OpenContent::Panel(p)
         } else if home {
@@ -1526,6 +1580,8 @@ impl App {
             OpenContent::Call(c.clone())
         } else if let (Some(Live::Timer(_)), Some(tm)) = (live.first(), self.activities.timer()) {
             OpenContent::Timer(tm)
+        } else if let (Some(Live::Stopwatch(_)), Some(sw)) = (live.first(), self.activities.stopwatch()) {
+            OpenContent::Stopwatch(Some(sw))
         } else if matches!(live.first(), Some(Live::Battery { .. })) {
             OpenContent::Battery
         } else if let (Some(Live::Navigation(_)) | None, Some(n)) = (live.first(), self.activities.nav()) {
@@ -1535,6 +1591,38 @@ impl App {
         } else {
             OpenContent::Clock
         }
+    }
+
+    /// What the clock card shows besides the time.
+    fn clock_row(&self) -> ClockRow {
+        ClockRow {
+            shelf: !self.shelf.is_empty(),
+            clipboard: self.prefs.clipboard,
+            pro: self.pro,
+            world: self.pro && self.prefs.world_clocks.iter().any(|c| islet_core::worldclock::find(c).is_some()),
+        }
+    }
+
+    /// The chosen world clocks (Islet Pro): name, local time, days ahead.
+    fn world_clocks(&self) -> Vec<(String, islet_core::clock::LocalTime, i32)> {
+        if !self.pro {
+            return Vec::new();
+        }
+        let here = (self.utc_offset / 60) as i32;
+        self.prefs
+            .world_clocks
+            .iter()
+            .take(islet_core::worldclock::MAX)
+            .filter_map(|c| {
+                let (name, _, _) = islet_core::worldclock::find(c)?;
+                let (now, days) = islet_core::worldclock::city_time(name, self.wall as i64, here)?;
+                Some((name.to_string(), now, days))
+            })
+            .collect()
+    }
+
+    fn stopwatch_card_open(&self, t: f64) -> bool {
+        self.island.presentation().is_open() && matches!(self.open_content(&self.live(t)), OpenContent::Stopwatch(_))
     }
 
     fn clock_shown(&self, t: f64) -> bool {
@@ -1637,6 +1725,7 @@ impl App {
                 OpenContent::Call(c) => out.extend(content::expanded_call(card, &c, t, eo, engine)),
                 OpenContent::Alarm(a) => out.extend(content::expanded_alarm(cr, a, self.h24, t, eo, engine)),
                 OpenContent::Timer(tm) => out.extend(content::expanded_timer(card, tm, t, eo, engine)),
+                OpenContent::Stopwatch(sw) => out.extend(content::expanded_stopwatch(card, sw, t, eo, engine)),
                 OpenContent::Agenda => out.extend(content::expanded_agenda(card, &self.agenda(), eo, engine)),
                 OpenContent::Custom(c) => out.extend(content::expanded_custom(card, c, t, eo, engine)),
                 OpenContent::Notes => out.extend(content::expanded_notes(card, self.activities.notes(), eo, engine)),
@@ -1664,6 +1753,8 @@ impl App {
                 OpenContent::Panel(Panel::System) => {
                     out.extend(content::expanded_system(cr, self.activities.system(), eo, engine))
                 }
+                // Shown as OpenContent::Stopwatch instead.
+                OpenContent::Panel(Panel::Stopwatch) => {}
                 OpenContent::Panel(Panel::Shelf) => out.extend(content::expanded_shelf(
                     cr,
                     &self.shelf,
@@ -1691,11 +1782,15 @@ impl App {
                     if let Some(now) = self.clock {
                         out.extend(content::expanded_clock(cr, &now, self.h24, eo, engine));
                     }
+                    let world = self.world_clocks();
+                    if !world.is_empty() {
+                        out.extend(content::world_clocks(cr, &world, self.h24, eo, engine));
+                    }
                     out.extend(content::clock_chip_elements(
                         cr,
                         self.activities.connectivity(),
                         self.shelf.len(),
-                        self.prefs.clipboard,
+                        self.clock_row(),
                         eo,
                         engine,
                     ));
@@ -1785,6 +1880,7 @@ impl App {
                         OpenContent::Call(_) => content::CALL_H,
                         OpenContent::Alarm(_) => content::ALARM_H,
                         OpenContent::Timer(_) => content::TIMER_H,
+                        OpenContent::Stopwatch(_) => content::STOPWATCH_H,
                         OpenContent::Agenda => content::agenda_height(self.agenda().len()),
                         OpenContent::Custom(_) => content::CUSTOM_H,
                         OpenContent::Notes => content::notes_height(self.activities.notes().count()),
@@ -1798,6 +1894,7 @@ impl App {
                                     content::list_height(c.bt.devices.len(), content::bt_footer(c).is_some())
                                 }
                                 Panel::System => content::SYSTEM_H,
+                                Panel::Stopwatch => content::STOPWATCH_H,
                                 Panel::Clipboard => content::list_height(self.clip.len(), !self.clip.is_empty()),
                                 Panel::Shelf => content::list_height(
                                     self.shelf.len(),
@@ -1807,7 +1904,7 @@ impl App {
                         }
                         OpenContent::Media(_) if self.song_lyrics().is_some() => MEDIA_H + content::CARD_LYRICS_H,
                         OpenContent::Media(_) | OpenContent::Nav(_) => MEDIA_H,
-                        OpenContent::Clock => CLOCK_H,
+                        OpenContent::Clock => CLOCK_H + if self.clock_row().world { content::WORLD_H } else { 0.0 },
                         OpenContent::Battery => {
                             let rows =
                                 self.activities.devices().len() + usize::from(self.activities.laptop().is_some());
@@ -1947,6 +2044,10 @@ impl App {
                     self.timer_control = Some(c);
                     return true;
                 }
+                if let Some(c) = self.stopwatch_control_at(x, y, t) {
+                    self.stopwatch_control = Some(c);
+                    return true;
+                }
                 if self.call_mute_at(x, y, t) {
                     self.call_press = true;
                     return true;
@@ -1986,6 +2087,27 @@ impl App {
                         return self.toggle_mic(t);
                     }
                     return true;
+                }
+                if let Some(c) = self.stopwatch_control.take() {
+                    if self.stopwatch_control_at(x, y, t) != Some(c) {
+                        return true;
+                    }
+                    let (exists, running) = match &self.stopwatch {
+                        Some(sw) => (true, sw.running()),
+                        None => (false, false),
+                    };
+                    let cmd = match c {
+                        StopwatchControl::LapReset if running => StopwatchCommand::Lap,
+                        StopwatchControl::LapReset if exists => StopwatchCommand::Reset,
+                        StopwatchControl::LapReset => return true,
+                        StopwatchControl::StartPause if running => StopwatchCommand::Pause,
+                        StopwatchControl::StartPause => StopwatchCommand::Start,
+                    };
+                    if cmd == StopwatchCommand::Start && self.panel == Some(Panel::Stopwatch) {
+                        // From Control Centre: once started it is a live activity.
+                        self.panel = None;
+                    }
+                    return self.stopwatch_command(cmd, t);
                 }
                 if let Some(c) = self.timer_control.take() {
                     if self.timer_control_at(x, y, t) != Some(c) {
@@ -2098,6 +2220,23 @@ impl App {
         }
         changed |= self.sync_live(t);
         changed |= self.update_shown(t);
+        // A running stopwatch redraws as its shown digits change: tenths on
+        // its card, seconds on the pill.
+        let shown = match &self.stopwatch {
+            Some(sw) if sw.running() && self.shown.value(t) > 0.01 => {
+                let e = sw.elapsed(t);
+                if self.stopwatch_card_open(t) {
+                    (e * 10.0).floor() as i64 * 2 + 1
+                } else {
+                    e.floor() as i64 * 2
+                }
+            }
+            _ => -1,
+        };
+        if shown != self.stopwatch_shown {
+            self.stopwatch_shown = shown;
+            changed = true;
+        }
         // A call on screen shows its length: redraw as each second passes.
         let sec = match self.live(t).iter().find_map(|l| if let Live::Call(c) = l { Some(c.since) } else { None }) {
             Some(since) if self.shown.value(t) > 0.01 => (t - since).floor() as i64,
@@ -2209,6 +2348,11 @@ impl App {
         {
             if self.shown.value(t) > 0.01 {
                 at(since + (t - since).floor() + 1.0);
+            }
+        }
+        if let Some(sw) = self.stopwatch.as_ref().filter(|_| self.shown.value(t) > 0.01) {
+            if let Some(next) = sw.next_tick(t, self.stopwatch_card_open(t)) {
+                at(next);
             }
         }
         // A running timer redraws as each second passes (and ends on time).
@@ -2518,7 +2662,7 @@ mod tests {
 
         // Into the Wi-Fi list; its back button returns to Control Centre.
         let cr = app.content_rect(app.pill_rect(t));
-        press(&mut app, content::clock_chips(cr, false, false)[0].0, t);
+        press(&mut app, content::clock_chips(cr, ClockRow::default())[0].0, t);
         let t = 12.0;
         assert!(texts(&app, t, &mut engine).iter().any(|s| s == "Wi-Fi"));
         let r = content::back_button(app.content_rect(app.pill_rect(t)));
@@ -2770,7 +2914,7 @@ mod tests {
         let r = content::home_button(list.content_rect(list.pill_rect(4.0)));
         press(&mut list, r, 4.0);
         let cr = list.content_rect(list.pill_rect(8.0));
-        press(&mut list, content::clock_chips(cr, false, false)[0].0, 8.0);
+        press(&mut list, content::clock_chips(cr, ClockRow::default())[0].0, 8.0);
         let mut idle = App::new(Demo::None, false);
         idle.set_time(NOW, 0.0);
         let mut idle12 = App::new(Demo::None, false);
@@ -3161,7 +3305,7 @@ mod tests {
 
         // Open the Wi-Fi list.
         let cr = app.content_rect(app.pill_rect(5.0));
-        press(&mut app, content::clock_chips(cr, false, false)[0].0, 5.0);
+        press(&mut app, content::clock_chips(cr, ClockRow::default())[0].0, 5.0);
         assert_eq!(app.take_conn_commands(), [ConnCommand::ScanWifi]);
         let rows = content::list_rows(app.content_rect(app.pill_rect(9.0)), 2);
         assert!(texts(&app, 9.0, &mut engine).iter().any(|s| s == "Cafe"));
@@ -3205,7 +3349,7 @@ mod tests {
             14.0,
         );
         let cr = app.content_rect(app.pill_rect(18.0));
-        press(&mut app, content::clock_chips(cr, false, false)[1].0, 18.0);
+        press(&mut app, content::clock_chips(cr, ClockRow::default())[1].0, 18.0);
         assert_eq!(app.take_conn_commands(), [ConnCommand::ListBluetooth]);
         let rows = content::list_rows(app.content_rect(app.pill_rect(22.0)), 1);
         press(&mut app, rows[0], 22.0);
@@ -3243,6 +3387,74 @@ mod tests {
         press(&mut app, repeat, 104.0);
         assert_eq!(app.take_alarm_out(), [AlarmOut::Sound(false)]);
         assert!(app.timer.as_ref().is_some_and(|tm| tm.remaining(105.0) > 88.0), "Repeat starts it again");
+    }
+
+    #[test]
+    fn stopwatch_is_pro_and_starts_from_control_centre() {
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        assert!(!app.stopwatch_command(StopwatchCommand::Start, 0.0), "free: no stopwatch");
+        click(&mut app, 0.0);
+        let cr = app.content_rect(app.pill_rect(5.0));
+        assert!(!content::clock_chips(cr, app.clock_row()).iter().any(|(_, p)| *p == Panel::Stopwatch));
+
+        app.set_pro(true);
+        let chips = content::clock_chips(cr, app.clock_row());
+        let (button, _) = *chips.iter().find(|(_, p)| *p == Panel::Stopwatch).expect("Pro: a stopwatch button");
+        press(&mut app, button, 5.0);
+        let shown = texts(&app, 9.0, &mut engine);
+        assert!(shown.contains(&"0:00.0".to_string()) && shown.contains(&"Start".to_string()), "{shown:?}");
+
+        // Start: it becomes a live activity, ticking in tenths on its card.
+        let [(lap, _), (start, _)] = content::stopwatch_controls(app.card_rect(9.0));
+        press(&mut app, start, 9.0);
+        assert!(app.stopwatch.as_ref().is_some_and(Stopwatch::running));
+        assert!(matches!(app.live(9.5).first(), Some(Live::Stopwatch(_))));
+        let wake = app.next_timer(10.33).unwrap();
+        assert!(wake > 0.0 && wake <= 0.1 + 1e-9, "tenths while the card is open: {wake}");
+        assert!(texts(&app, 10.5, &mut engine).iter().any(|s| s == "0:01.4"), "{:?}", texts(&app, 10.5, &mut engine));
+
+        // Lap, then pause: Lap turns into Reset.
+        let [(lap2, _), (pause, _)] = content::stopwatch_controls(app.card_rect(12.0));
+        assert_eq!(lap, lap2);
+        press(&mut app, lap2, 12.0);
+        assert_eq!(app.stopwatch.as_ref().unwrap().lap_count(), 1);
+        press(&mut app, pause, 14.0);
+        assert!(!app.stopwatch.as_ref().unwrap().running());
+        assert!(texts(&app, 15.0, &mut engine).iter().any(|s| s == "Reset"));
+        assert!(app.next_timer(15.0).is_none_or(|w| w > 1.0), "paused: no ticking");
+
+        // Closed: the pill shows whole seconds.
+        app.handle(Event::Key(Key::Escape), 16.0);
+        app.tick(20.0);
+        assert_eq!(app.presentation(), Compact);
+        assert!(texts(&app, 20.0, &mut engine).iter().any(|s| s == "0:05"), "{:?}", texts(&app, 20.0, &mut engine));
+        app.stopwatch_command(StopwatchCommand::Reset, 21.0);
+        app.tick(21.0);
+        assert!(app.live(21.0).is_empty());
+    }
+
+    #[test]
+    fn world_clocks_show_on_the_clock_card_with_pro() {
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        // 4 November 2026, 14:05 UTC; here is UTC.
+        app.set_wall(1_793_801_100.0, 0, 0.0);
+        let mut p = app.prefs().clone();
+        p.world_clocks = vec!["Tokyo".into(), "Atlantis".into(), "New York".into()];
+        app.set_prefs(p);
+        click(&mut app, 0.0);
+        let free_h = app.pill_rect(5.0).h;
+        assert!(!texts(&app, 5.0, &mut engine).iter().any(|s| s.starts_with("Tokyo")), "free: none");
+
+        app.set_pro(true);
+        app.sync_live(5.0);
+        let shown = texts(&app, 9.0, &mut engine);
+        assert!(shown.contains(&"Tokyo ".to_string()) && shown.contains(&"23:05".to_string()), "{shown:?}");
+        assert!(shown.contains(&"09:05".to_string()), "New York is on EST in November: {shown:?}");
+        assert!(app.pill_rect(9.0).h > free_h, "the card grows a line");
     }
 
     #[test]
@@ -3585,7 +3797,7 @@ mod tests {
         app.report(bt_list(true), 0.0);
         click(&mut app, 0.0);
         let cr = app.content_rect(app.pill_rect(5.0));
-        press(&mut app, content::clock_chips(cr, false, false)[1].0, 5.0);
+        press(&mut app, content::clock_chips(cr, ClockRow::default())[1].0, 5.0);
         app.take_conn_commands();
         // Five devices and the footer: four rows show, the card fits the
         // window, and scrolling reaches the fifth.
@@ -3679,7 +3891,8 @@ mod tests {
         app.set_time(NOW, t);
         click(app, t);
         let cr = app.content_rect(app.pill_rect(t + 4.0));
-        let (r, _) = content::clock_chips(cr, false, false).into_iter().find(|(_, p)| *p == Panel::System).unwrap();
+        let (r, _) =
+            content::clock_chips(cr, ClockRow::default()).into_iter().find(|(_, p)| *p == Panel::System).unwrap();
         let (x, y) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
         app.handle(Event::PointerMove { x, y }, t + 4.0);
         app.handle(Event::PointerDown { x, y, button: Button::Primary }, t + 4.0);
@@ -3833,7 +4046,7 @@ mod tests {
         app.set_time(NOW, 0.0);
         click(&mut app, 0.0);
         let cr = app.content_rect(app.pill_rect(5.0));
-        let chips = content::clock_chips(cr, false, true);
+        let chips = content::clock_chips(cr, ClockRow { clipboard: true, ..ClockRow::default() });
         let (chip, _) = chips.iter().find(|(_, p)| *p == Panel::Clipboard).copied().unwrap();
         press(&mut app, chip, 5.0);
         let mut engine = TextEngine::new();
@@ -4287,7 +4500,7 @@ mod tests {
             click(&mut a, 0.0);
             if let Some(i) = panel {
                 let cr = a.content_rect(a.pill_rect(5.0));
-                press(&mut a, content::clock_chips(cr, false, false)[i].0, 5.0);
+                press(&mut a, content::clock_chips(cr, ClockRow::default())[i].0, 5.0);
                 if fail {
                     a.report(
                         Report::Connectivity(ConnUpdate::Failed {
