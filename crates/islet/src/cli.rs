@@ -26,6 +26,10 @@ Usage:
   islet key routes                         store your Google Routes API key in the OS
                                            keychain (reads one line from stdin)
   islet key routes --clear                 remove it
+  islet pro activate                       turn on Islet Pro with your key (read from stdin)
+  islet pro status [--json]                is Pro on?
+  islet pro check                          ask the store again whether the key is valid
+  islet pro deactivate                     turn Pro off here (frees the key for another computer)
   islet alarm add <time> [--label <name>] [--days <days>]
                                            set an alarm: 7:30, 19:30 or 7:30pm; days:
                                            once (default), daily, weekdays, weekends, mon,wed,…
@@ -94,6 +98,22 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["nav", "start", rest @ ..] => parse_trip(rest).and_then(start_trip),
         ["nav", "stop"] => stop_trip(),
         ["key", "routes"] => store_key(),
+        ["pro", "activate"] => read_line("Paste your Islet Pro key and press Enter:").and_then(|k| {
+            let r = crate::pro::activate(&k);
+            prefs_changed();
+            r
+        }),
+        ["pro", "status"] => Ok(crate::pro::status_text()),
+        ["pro", "status", "--json"] => Ok(crate::pro::status_json()),
+        ["pro", "check"] => crate::pro::check(true).map(|on| {
+            prefs_changed();
+            if on {
+                "Your key is valid. Islet Pro is on.".into()
+            } else {
+                crate::pro::status_text()
+            }
+        }),
+        ["pro", "deactivate"] => crate::pro::deactivate().inspect(|_| prefs_changed()),
         ["key", "routes", "--clear"] => secrets::clear_routes_key().map(|()| "Removed.".into()),
         ["autostart", "on"] => autostart::set(true).map(|()| "Islet will start when you log in.".into()),
         ["autostart", "off"] => autostart::set(false).map(|()| "Islet will no longer start at login.".into()),
@@ -767,14 +787,20 @@ fn update_check(json: bool) -> Result<String, String> {
     })
 }
 
-fn store_key() -> Result<String, String> {
+/// One line from stdin (with a prompt when typed at a terminal).
+fn read_line(prompt: &str) -> Result<String, String> {
     use std::io::IsTerminal;
     if std::io::stdin().is_terminal() {
-        eprintln!("Paste your Google Routes API key and press Enter:");
+        eprintln!("{prompt}");
     }
-    let mut key = String::new();
-    std::io::stdin().read_line(&mut key).map_err(|e| e.to_string())?;
-    let key = key.trim();
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line).map_err(|e| e.to_string())?;
+    Ok(line.trim().to_string())
+}
+
+fn store_key() -> Result<String, String> {
+    let key = read_line("Paste your Google Routes API key and press Enter:")?;
+    let key = key.as_str();
     if key.is_empty() {
         return Err("no key given".into());
     }

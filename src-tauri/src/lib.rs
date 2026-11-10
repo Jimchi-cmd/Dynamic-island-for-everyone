@@ -22,6 +22,7 @@ pub fn allowed(args: &[String]) -> bool {
     match a.as_slice() {
         ["status", "--json"] | ["autostart", "on" | "off"] | ["nav", "stop"] | ["quit"] => true,
         ["key", "routes"] | ["key", "routes", "--clear"] | ["update", "check", "--json"] => true,
+        ["pro", "activate" | "check" | "deactivate"] | ["pro", "status", "--json"] => true,
         ["alarm", "list", "--json"] | ["alarm", "stop" | "snooze"] => true,
         ["wifi", "list", "--json"] | ["wifi", "list", "--scan", "--json"] | ["bt", "list", "--json"] => true,
         ["wifi", "connect", ssid] | ["wifi", "connect", ssid, "--password-stdin"] => !ssid.starts_with('-'),
@@ -344,6 +345,8 @@ mod tests {
         assert!(allowed(&args(&["wifi", "connect", "Cafe", "--password-stdin"])));
         assert!(!allowed(&args(&["wifi", "connect", "--evil"])));
         assert!(!allowed(&args(&[])), "running the island itself goes through start_island");
+        assert!(allowed(&args(&["pro", "activate"])) && allowed(&args(&["pro", "status", "--json"])));
+        assert!(!allowed(&args(&["pro", "activate", "KEY-ON-THE-COMMAND-LINE"])), "keys go through stdin");
     }
 
     #[test]

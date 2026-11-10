@@ -13,6 +13,8 @@
     MODES,
     navStartArgs,
     parsePage,
+    parsePro,
+    type ProStatus,
     permissionsFor,
     signalBars,
     SWITCH_NAMES,
@@ -23,13 +25,14 @@
     type Trip,
   } from './lib/settings';
 
-  type Page = 'general' | 'connections' | 'alarms' | 'timer' | 'navigation' | 'updates' | 'about';
+  type Page = 'general' | 'connections' | 'alarms' | 'timer' | 'navigation' | 'pro' | 'updates' | 'about';
   const PAGES: { id: Page; label: string }[] = [
     { id: 'general', label: 'General' },
     { id: 'connections', label: 'Wi-Fi & Bluetooth' },
     { id: 'alarms', label: 'Alarms' },
     { id: 'timer', label: 'Timer & focus' },
     { id: 'navigation', label: 'Navigation' },
+    { id: 'pro', label: 'Islet Pro' },
     { id: 'updates', label: 'Updates' },
     { id: 'about', label: 'About' },
   ];
@@ -140,6 +143,7 @@
 
   $effect(() => {
     if (page === 'connections' && !wifi) void loadConnections(true);
+    if (page === 'pro' && !pro) void loadPro();
   });
 
   // The island's own preferences (island.json via the CLI)
@@ -398,6 +402,33 @@
       await api.islet(['autostart', on ? 'on' : 'off']);
       await refresh();
     });
+  }
+
+  // Islet Pro
+  let pro: ProStatus | null = $state(null);
+  let proKey = $state('');
+  let proNote = $state('');
+
+  async function loadPro() {
+    try {
+      pro = parsePro(await api.islet(['pro', 'status', '--json']));
+    } catch (e) {
+      proNote = api.message(e);
+    }
+  }
+
+  async function proRun(args: string[], input?: string) {
+    proNote = '';
+    busy = true;
+    try {
+      proNote = await api.islet(args, input);
+      proKey = '';
+    } catch (e) {
+      proNote = api.message(e);
+    } finally {
+      busy = false;
+      await loadPro();
+    }
   }
 
   async function saveKey() {
@@ -1184,6 +1215,63 @@
           Islet refreshes the ETA every minute while the card is open and every 2–5 minutes otherwise, and makes no
           requests without a trip. Trips go straight to Google; route results are never stored.
         </p>
+      {:else if page === 'pro'}
+        <h1>Islet Pro {#if pro?.active}<span class="badge">Supporter</span>{/if}</h1>
+        {#if pro?.active}
+          <div class="card">
+            <h2>Pro is on. Thank you!</h2>
+            <p class="muted">
+              Key {pro.keyHint}. You’re supporting an independent open-source app.
+              {#if pro.expiresAt}It runs until {new Date(pro.expiresAt * 1000).toLocaleDateString()}.{/if}
+            </p>
+            <div class="actions left">
+              <button disabled={busy} onclick={() => proRun(['pro', 'check'])}>Check my key</button>
+              <button disabled={busy} onclick={() => proRun(['pro', 'deactivate'])}>Move Pro to another computer</button>
+            </div>
+            <p class="small muted">
+              Islet asks the store once a week whether your key is still valid. Being offline never turns Pro off.
+            </p>
+          </div>
+        {:else}
+          <div class="card">
+            <h2>One payment, yours for good</h2>
+            <p class="muted">
+              Everything Islet does today stays free. Pro adds the extras below and helps keep Islet going. Use your key
+              on up to three of your computers.
+            </p>
+            {#if pro?.refused}
+              <p class="small" role="alert">The store no longer accepts the key on this computer (refunded or revoked).</p>
+            {/if}
+            {#if pro?.forSale}
+              <div class="actions left">
+                {#if pro.buyUrl}
+                  <button class="primary" onclick={() => pro?.buyUrl && api.openLink(pro.buyUrl)}>Buy Islet Pro</button>
+                {/if}
+              </div>
+              <label for="pro-key">Already bought it? Paste your key</label>
+              <input id="pro-key" type="password" autocomplete="off" spellcheck="false" bind:value={proKey} placeholder="Your key" />
+              <div class="actions left">
+                <button disabled={busy || !proKey.trim()} onclick={() => proRun(['pro', 'activate'], proKey.trim())}>
+                  Activate
+                </button>
+              </div>
+              <p class="small muted">
+                Activating sends the key to the store to check it. The key is kept in your system keychain.
+              </p>
+            {:else if pro}
+              <p class="muted">Islet Pro isn’t on sale in this build yet.</p>
+            {/if}
+          </div>
+        {/if}
+        {#if pro?.features.length}
+          <div class="card">
+            <h2>What Pro adds</h2>
+            <ul class="features">
+              {#each pro.features as f (f)}<li>{f}</li>{/each}
+            </ul>
+          </div>
+        {/if}
+        {#if proNote}<p class="small" role="status">{proNote}</p>{/if}
       {:else if page === 'updates'}
         <h1>Updates</h1>
         <div class="card row">
@@ -1233,6 +1321,21 @@
 {/if}
 
 <style>
+  .badge {
+    font-size: 12px;
+    font-weight: 600;
+    vertical-align: middle;
+    padding: 2px 8px;
+    margin-left: 6px;
+    border-radius: 999px;
+    color: white;
+    background: linear-gradient(135deg, #ff9f0a, #ff375f);
+  }
+  .features {
+    margin: 4px 0 0;
+    padding-left: 18px;
+    line-height: 1.6;
+  }
   .places {
     display: flex;
     flex-direction: column;

@@ -51,6 +51,34 @@ export function parseStatus(json: string): Status {
   };
 }
 
+export interface ProStatus {
+  active: boolean;
+  forSale: boolean;
+  buyUrl: string | null;
+  keyHint: string;
+  /** The store stopped accepting the key (refunded, revoked). */
+  refused: boolean;
+  checkedAt: number;
+  expiresAt: number | null;
+  features: string[];
+}
+
+/** `islet pro status --json`. Anything missing reads as "Pro is off". */
+export function parsePro(json: string): ProStatus {
+  const v = JSON.parse(json);
+  const buy = typeof v.buyUrl === 'string' && v.buyUrl.startsWith('https://') ? v.buyUrl : null;
+  return {
+    active: v.active === true,
+    forSale: v.forSale === true,
+    buyUrl: buy,
+    keyHint: typeof v.keyHint === 'string' ? v.keyHint : '',
+    refused: v.refused === true,
+    checkedAt: Number(v.checkedAt) || 0,
+    expiresAt: typeof v.expiresAt === 'number' ? v.expiresAt : null,
+    features: Array.isArray(v.features) ? v.features.map(String) : [],
+  };
+}
+
 /** Arguments for `islet nav start`, or an error to show next to the form. */
 export function navStartArgs(t: Trip): string[] | { error: string } {
   const destination = t.destination.trim();

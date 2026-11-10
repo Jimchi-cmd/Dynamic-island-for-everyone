@@ -213,6 +213,7 @@ pub struct App {
     notes_open: bool,
     /// island.json: which pop-ups are on, weather, calendar…
     prefs: IslandPrefs,
+    pro: bool,
     /// Unix time and UTC offset at the last `set_wall` (for calendar events).
     wall: f64,
     utc_offset: i64,
@@ -316,6 +317,7 @@ impl App {
             top: TOP_GAP,
             notes_open: false,
             prefs: IslandPrefs::default(),
+            pro: false,
             wall: 0.0,
             utc_offset: 0,
             panel: None,
@@ -1272,6 +1274,11 @@ impl App {
     /// Move the island down from the top edge (the window grows to match).
     pub fn set_top(&mut self, top: f64) {
         self.top = top;
+    }
+
+    /// Islet Pro is on (its features show; see `islet_core::pro`).
+    pub fn set_pro(&mut self, on: bool) {
+        self.pro = on;
     }
 
     pub fn set_prefs(&mut self, prefs: IslandPrefs) {

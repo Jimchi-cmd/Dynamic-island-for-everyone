@@ -66,6 +66,12 @@ jobs:
       HAS_SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
       # The release's tag: pushed (refs/tags/v…) or handed over by publish.yml.
       TAG: ${{ inputs.tag || github.ref_name }}
+      # Islet Pro's store (docs/pro.md). These ids are public, so they are
+      # repository variables, not secrets. Unset: the build says Pro isn't on sale.
+      ISLET_POLAR_ORG: ${{ vars.ISLET_POLAR_ORG }}
+      ISLET_LEMON_STORE: ${{ vars.ISLET_LEMON_STORE }}
+      ISLET_LEMON_PRODUCT: ${{ vars.ISLET_LEMON_PRODUCT }}
+      ISLET_BUY_URL: ${{ vars.ISLET_BUY_URL }}
       IS_RELEASE: ${{ inputs.tag != '' || startsWith(github.ref, 'refs/tags/v') }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}

@@ -15,6 +15,7 @@ pub mod lyrics;
 pub mod nav;
 pub mod paths;
 pub mod prefs;
+pub mod pro;
 pub mod shelf;
 pub mod spring;
 pub mod sysmon;

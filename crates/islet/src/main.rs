@@ -24,6 +24,7 @@ mod control;
 mod msix;
 mod net;
 mod platform;
+mod pro;
 mod providers;
 mod secrets;
 mod sound;
@@ -152,6 +153,18 @@ fn run() -> platform::Result<()> {
     trace("providers started");
     let (control_tx, control_rx) = std::sync::mpsc::channel::<Control>();
     if mirror.is_none() {
+        // Islet Pro: is the key still valid? Asked at most once a week, and
+        // only once a key has been entered (see pro.rs).
+        if std::env::var_os("ISLET_DEMO").is_none() && demo == Demo::None {
+            let (tx, waker) = (control_tx.clone(), win.waker());
+            std::thread::spawn(move || loop {
+                let before = pro::active();
+                if pro::check(false).is_ok() && pro::active() != before && tx.send(Control::PrefsChanged).is_ok() {
+                    waker.wake();
+                }
+                std::thread::sleep(std::time::Duration::from_secs(6 * 3600));
+            });
+        }
         control::serve(control_tx, win.waker());
     } else {
         // A mirror hears from the main island on stdin: "prefs" when the
@@ -189,6 +202,7 @@ fn run() -> platform::Result<()> {
             app.set_alarms(config::load_alarms());
         }
         app.set_prefs(load_prefs());
+        app.set_pro(pro::active());
         app.set_shelf(config::load_shelf());
     }
     win.watch_caps_lock(app.prefs().caps_lock_hud);
@@ -326,6 +340,7 @@ fn run() -> platform::Result<()> {
                 Control::Timer(cmd) => needs_frame |= app.timer_command(cmd, t),
                 Control::PrefsChanged if !scripted => {
                     app.set_prefs(load_prefs());
+                    app.set_pro(pro::active());
                     // The islands on other displays follow.
                     for m in &mut mirrors {
                         if let Some(stdin) = m.stdin.as_mut() {

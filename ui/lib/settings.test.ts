@@ -98,3 +98,16 @@ describe('switches', () => {
     expect(Object.values(SWITCH_NAMES).sort()).toEqual(names);
   });
 });
+
+import { parsePro } from './settings';
+
+describe('parsePro', () => {
+  it('reads the status, and treats anything odd as "off"', () => {
+    const on = parsePro(
+      '{"active":true,"forSale":true,"buyUrl":"https://buy.example/islet","keyHint":"…7F2C","features":["Stopwatch"]}',
+    );
+    expect(on).toMatchObject({ active: true, forSale: true, keyHint: '…7F2C', features: ['Stopwatch'] });
+    expect(parsePro('{}')).toMatchObject({ active: false, forSale: false, buyUrl: null, features: [] });
+    expect(parsePro('{"active":"yes","buyUrl":"javascript:alert(1)"}')).toMatchObject({ active: false, buyUrl: null });
+  });
+});
