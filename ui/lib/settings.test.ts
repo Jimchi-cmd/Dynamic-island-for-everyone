@@ -138,3 +138,23 @@ describe('looks', () => {
     expect(CARD_BUTTONS.map((b) => [b.id, b.label])).toEqual(fromRust);
   });
 });
+
+import { parseStreak, streakLine } from './settings';
+
+describe('focus streak', () => {
+  it('reads the numbers and ignores anything odd', () => {
+    expect(parseStreak('{"days":3,"today":1,"best":7,"rounds":20}')).toEqual({ days: 3, today: 1, best: 7, rounds: 20 });
+    expect(parseStreak('{"days":"3","today":-1}')).toEqual({ days: 0, today: 0, best: 0, rounds: 0 });
+  });
+
+  it('says what today still needs', () => {
+    expect(streakLine({ days: 3, today: 2, best: 7, rounds: 20 })).toBe('3 days in a row: 2 rounds done today. Best: 7 days.');
+    expect(streakLine({ days: 3, today: 0, best: 3, rounds: 9 })).toBe(
+      '3 days in a row: finish a round today to keep it going. Best: 3 days.',
+    );
+    expect(streakLine({ days: 1, today: 1, best: 1, rounds: 1 })).toBe('Day 1 of a new streak: 1 round done today. Best: 1 day.');
+    expect(streakLine({ days: 0, today: 0, best: 4, rounds: 12 })).toBe(
+      'No streak right now. Finish a focus round to start one. Best: 4 days.',
+    );
+  });
+});

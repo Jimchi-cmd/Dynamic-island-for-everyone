@@ -20,6 +20,7 @@ pub mod pro;
 pub mod shelf;
 pub mod spring;
 pub mod stopwatch;
+pub mod streak;
 pub mod sysmon;
 pub mod timer;
 pub mod todo;

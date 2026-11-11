@@ -64,6 +64,7 @@ pub fn allowed(args: &[String]) -> bool {
         ["timer", "start", dur, rest @ ..] => {
             !dur.starts_with('-') && rest.chunks(2).all(|kv| matches!(kv, ["--label", v] if !v.starts_with('-')))
         }
+        ["focus", "streak", "--json"] => true,
         ["focus", rest @ ..] => {
             rest.chunks(2).all(|kv| matches!(kv, ["--work" | "--break" | "--rounds", v] if !v.starts_with('-')))
         }

@@ -309,6 +309,9 @@ pub struct App {
     mic_commands: Vec<MicCommand>,
     call_sec: i64,
     /// The call card's mute button is being pressed.
+    /// Days in a row with a finished focus round, and whether to save it.
+    streak: islet_core::streak::Streak,
+    streak_dirty: bool,
     call_press: bool,
     /// The Join button being pressed on the agenda card (its link).
     join_press: Option<String>,
@@ -396,6 +399,8 @@ impl App {
             volume_set_at: f64::NEG_INFINITY,
             mic_commands: Vec::new(),
             call_sec: -1,
+            streak: Default::default(),
+            streak_dirty: false,
             call_press: false,
             join_press: None,
         };
@@ -634,10 +639,16 @@ impl App {
     }
 
     fn timer_tick(&mut self, t: f64) -> bool {
+        let today = islet_core::streak::day_of(self.wall as i64, self.utc_offset);
         let Some(tm) = &mut self.timer else { return false };
         let mut changed = false;
         while let Some(e) = tm.advance(t) {
             changed = true;
+            // A focus round worked through to its end counts towards the streak.
+            if tm.focus && matches!(e, TimerEvent::BreakStarted | TimerEvent::Done) {
+                self.streak.record(today);
+                self.streak_dirty = true;
+            }
             match e {
                 TimerEvent::BreakStarted | TimerEvent::WorkStarted(_) => {
                     self.alarm_out.push(AlarmOut::Chime);
@@ -722,6 +733,21 @@ impl App {
 
     pub fn set_todo(&mut self, todo: islet_core::todo::Todo) {
         self.todo = todo;
+    }
+
+    /// The focus streak as saved (focus.json).
+    pub fn set_streak(&mut self, streak: islet_core::streak::Streak) {
+        self.streak = streak;
+    }
+
+    /// The streak after a focus round was finished, to save.
+    pub fn take_streak_changes(&mut self) -> Option<islet_core::streak::Streak> {
+        std::mem::take(&mut self.streak_dirty).then_some(self.streak)
+    }
+
+    /// "3 days in a row", for the focus card.
+    fn streak_label(&self) -> Option<String> {
+        self.streak.label(islet_core::streak::day_of(self.wall as i64, self.utc_offset))
     }
 
     /// The to-do list after a tick or removal on the island, to save.
@@ -1984,7 +2010,10 @@ impl App {
                 OpenContent::Menu => out.extend(content::expanded_menu(cr, &self.menu_items(t), eo, engine)),
                 OpenContent::Call(c) => out.extend(content::expanded_call(card, &c, t, eo, engine)),
                 OpenContent::Alarm(a) => out.extend(content::expanded_alarm(cr, a, self.h24, t, eo, engine)),
-                OpenContent::Timer(tm) => out.extend(content::expanded_timer(card, tm, t, eo, engine)),
+                OpenContent::Timer(tm) => {
+                    let streak = self.streak_label();
+                    out.extend(content::expanded_timer(card, tm, streak.as_deref(), t, eo, engine));
+                }
                 OpenContent::Stopwatch(sw) => out.extend(content::expanded_stopwatch(card, sw, t, eo, engine)),
                 OpenContent::Agenda => out.extend(content::expanded_agenda(card, &self.agenda(), eo, engine)),
                 OpenContent::Custom(c) => out.extend(content::expanded_custom(card, c, t, eo, engine)),
@@ -4222,6 +4251,48 @@ mod tests {
         app.set_wall(wall0 + 1200.0 + 301.0, 3 * 3600, 1501.0);
         app.tick(1501.0);
         assert_eq!(app.presentation(), Idle);
+    }
+
+    #[test]
+    fn finished_focus_rounds_build_a_streak() {
+        let day = 86_400.0;
+        let wall0 = 1_800_000_000.0;
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        app.set_wall(wall0, 0, 0.0);
+        // Two rounds of 60 s with a 10 s break.
+        app.timer_command(TimerCommand::Focus { work: 60.0, brk: 10.0, rounds: 2 }, 0.0);
+        app.tick(30.0);
+        assert_eq!(app.take_streak_changes(), None, "half a round is nothing yet");
+        app.tick(61.0);
+        let s = app.take_streak_changes().expect("a finished round is saved");
+        assert_eq!((s.days, s.today, s.rounds), (1, 1, 1));
+        app.tick(131.5);
+        let s = app.take_streak_changes().expect("the last round counts too");
+        assert_eq!((s.days, s.today, s.rounds), (1, 2, 2));
+        assert_eq!(app.take_streak_changes(), None, "saved once");
+
+        // A plain timer never counts.
+        let mut plain = App::new(Demo::None, false);
+        plain.set_wall(wall0, 0, 0.0);
+        plain.timer_command(TimerCommand::Start { secs: 5.0, label: "Tea".into() }, 0.0);
+        plain.tick(6.0);
+        assert_eq!(plain.take_streak_changes(), None);
+
+        // The next day's session shows the streak on its card.
+        let mut next = App::new(Demo::None, false);
+        next.set_time(NOW, 0.0);
+        next.set_streak(s);
+        next.set_wall(wall0 + day, 0, 0.0);
+        next.timer_command(TimerCommand::Focus { work: 60.0, brk: 10.0, rounds: 2 }, 0.0);
+        click(&mut next, 1.0);
+        let card = texts(&next, 5.0, &mut engine);
+        assert!(card.iter().any(|t| t == "Running"), "one day is not a streak yet: {card:?}");
+        next.tick(61.0);
+        assert_eq!(next.take_streak_changes().map(|s| s.days), Some(2));
+        let card = texts(&next, 65.0, &mut engine);
+        assert!(card.iter().any(|t| t == "Running · 2 days in a row"), "{card:?}");
     }
 
     #[test]

@@ -243,6 +243,12 @@ These appear for a moment by themselves:
 
 **Focus session:** set **Work** and **Break** minutes and the number of **Rounds**, then start it. The island chimes and pops up at each change between work and break.
 
+**Focus streak:** every work round you see through to its end counts. Do at least one a day and Islet counts the days in a row: the focus card shows "3 days in a row" from the second day, and Settings → Timer & focus shows the streak, your best, and whether today is done. Missing a whole day starts it again. The count is kept in `focus.json` on this computer only. From a terminal:
+
+```bash
+islet focus streak
+```
+
 **Alarms** (Settings → **Alarms**)
 
 1. Under **New alarm**, choose the **Time**, a name if you like, and under **Repeat** the days it should ring (none = once). Click **Add alarm**.

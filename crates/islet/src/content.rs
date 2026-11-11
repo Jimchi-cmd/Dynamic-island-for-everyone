@@ -1275,14 +1275,27 @@ pub fn timer_controls(pill: Rect) -> [(Rect, TimerControl); 2] {
 }
 
 /// The timer card: phase, a big countdown, Pause/Resume and Stop.
-pub fn expanded_timer(pill: Rect, tm: &Timer, t: f64, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+pub fn expanded_timer(
+    pill: Rect,
+    tm: &Timer,
+    streak: Option<&str>,
+    t: f64,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
     let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
     let pad = PAD as f32;
     let mut v = vec![timer_ring(tm, x + pad + 13.0, y + 38.0, 12.0, t, o)];
     let title_style = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
     v.push(text(engine.ellipsize(&tm.title(), &title_style, w * 0.45), title_style, x + pad + 38.0, y + 34.0));
     let small = TextStyle { size: 13.0, opacity: o * 0.6, ..TextStyle::default() };
-    let sub = if tm.running() { "Running" } else { "Paused" };
+    let state = if tm.running() { "Running" } else { "Paused" };
+    // A focus session shows its streak ("3 days in a row") where it fits
+    // beside the countdown.
+    let sub = match streak.filter(|_| tm.focus) {
+        Some(s) => engine.ellipsize(&format!("{state} · {s}"), &small, w * 0.5),
+        None => state.to_string(),
+    };
     v.push(text(sub, small, x + pad + 38.0, y + 53.0));
     v.push(countdown(tm, x + w - pad, y + 38.0, 34.0, t, o));
     let label = TextStyle { size: 14.0, weight: 600, opacity: o, align: Align::Center, ..TextStyle::default() };

@@ -206,6 +206,7 @@ fn run() -> platform::Result<()> {
         app.set_pro(pro::active());
         app.set_shelf(config::load_shelf());
         app.set_todo(config::load_json("todo.json").unwrap_or_default());
+        app.set_streak(config::load_json("focus.json").unwrap_or_default());
     }
     win.watch_caps_lock(app.prefs().caps_lock_hud);
     trace("caps lock watched");
@@ -402,6 +403,13 @@ fn run() -> platform::Result<()> {
         if let Some(todo) = app.take_todo_changes() {
             if !scripted {
                 let _ = config::save_json("todo.json", &todo);
+            }
+        }
+        // Only the main island keeps the focus streak (a copy on another
+        // display would count each round again).
+        if let Some(streak) = app.take_streak_changes() {
+            if !scripted && mirror.is_none() {
+                let _ = config::save_json("focus.json", &streak);
             }
         }
         if app.sysmon_wanted() != sysmon_on {

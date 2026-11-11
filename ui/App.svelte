@@ -20,6 +20,9 @@
     permissionsFor,
     signalBars,
     SWITCH_NAMES,
+    parseStreak,
+    streakLine,
+    type FocusStreak,
     type BtList,
     type IslandPrefs,
     type WifiList,
@@ -195,6 +198,7 @@
     if (page === 'connections' && !wifi) void loadConnections(true);
     // General needs to know about Pro too, for the Pro-only island styles.
     if ((page === 'pro' || page === 'general') && !pro) void loadPro();
+    if (page === 'timer') void loadStreak();
   });
 
   // The island's own preferences (island.json via the CLI)
@@ -375,6 +379,16 @@
   let focusWork = $state(25);
   let focusBreak = $state(5);
   let focusRounds = $state(4);
+
+  // Days in a row with a finished focus round (`islet focus streak --json`).
+  let streak = $state<FocusStreak | null>(null);
+  async function loadStreak() {
+    try {
+      streak = parseStreak(await api.islet(['focus', 'streak', '--json']));
+    } catch {
+      streak = null;
+    }
+  }
   let timerNote = $state('');
 
   async function timerCmd(args: string[]) {
@@ -1272,6 +1286,9 @@
               >Start focus</button
             >
           </div>
+          {#if streak && streak.rounds > 0}
+            <p class="small muted" role="status">{streakLine(streak)}</p>
+          {/if}
         </div>
         <div class="actions left">
           <button onclick={() => timerCmd(['timer', 'pause'])}>Pause</button>

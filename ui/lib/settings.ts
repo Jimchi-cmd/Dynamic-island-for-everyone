@@ -328,3 +328,31 @@ export const SWITCH_NAMES: Record<string, string> = {
   downloads: 'downloads',
   powerSaver: 'power-saver',
 };
+
+/** `islet focus streak --json`. */
+export interface FocusStreak {
+  /** Days in a row, counting today or up to yesterday. */
+  days: number;
+  /** Focus rounds finished today. */
+  today: number;
+  best: number;
+  rounds: number;
+}
+
+export function parseStreak(json: string): FocusStreak {
+  const v = JSON.parse(json);
+  const n = (x: unknown) => (typeof x === 'number' && x > 0 ? Math.floor(x) : 0);
+  return { days: n(v.days), today: n(v.today), best: n(v.best), rounds: n(v.rounds) };
+}
+
+const plural = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
+
+/** One line under the focus form: the streak, and what today still needs. */
+export function streakLine(s: FocusStreak): string {
+  const best = `Best: ${plural(s.best, 'day', 'days')}.`;
+  if (s.days === 0) return `No streak right now. Finish a focus round to start one. ${best}`;
+  const run = s.days === 1 ? 'Day 1 of a new streak' : `${s.days} days in a row`;
+  const today =
+    s.today > 0 ? `${plural(s.today, 'round', 'rounds')} done today` : 'finish a round today to keep it going';
+  return `${run}: ${today}. ${best}`;
+}

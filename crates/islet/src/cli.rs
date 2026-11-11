@@ -54,6 +54,7 @@ Usage:
   islet timer pause|resume|stop
   islet focus [--work 25m] [--break 5m] [--rounds 4]
                                            a focus session: work and breaks, with a chime
+  islet focus streak [--json]              days in a row with a finished focus round
   islet wifi list [--scan] [--json]        nearby Wi-Fi networks
   islet wifi connect <name> [--password-stdin]
                                            join a network (the password is read from stdin)
@@ -184,6 +185,8 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["timer", "pause"] => send_timer(TimerCommand::Pause),
         ["timer", "resume"] => send_timer(TimerCommand::Resume),
         ["timer", "stop"] => send_timer(TimerCommand::Stop),
+        ["focus", "streak"] => Ok(streak_text(false)),
+        ["focus", "streak", "--json"] => Ok(streak_text(true)),
         ["focus", rest @ ..] => parse_focus(rest).and_then(send_timer),
         ["weather"] => weather_now(),
         ["weather", "off"] => set_weather(None).map(|()| "Weather is off.".into()),
@@ -690,6 +693,22 @@ pub fn parse_timer(args: &[&str]) -> Result<TimerCommand, String> {
         }
     }
     Ok(TimerCommand::Start { secs: secs.ok_or("how long? islet timer start 25m")?, label })
+}
+
+/// The focus streak (focus.json), as a sentence or as JSON for Settings.
+fn streak_text(json: bool) -> String {
+    let s: islet_core::streak::Streak = config::load_json("focus.json").unwrap_or_default();
+    let today = islet_core::streak::day_of(crate::clock::epoch() as i64, crate::clock::utc_offset());
+    if json {
+        return serde_json::json!({
+            "days": s.current(today),
+            "today": s.done_on(today),
+            "best": s.best,
+            "rounds": s.rounds,
+        })
+        .to_string();
+    }
+    s.describe(today)
 }
 
 pub fn parse_focus(args: &[&str]) -> Result<TimerCommand, String> {
