@@ -47,6 +47,18 @@ pub fn format_time(t: &LocalTime, h24: bool) -> (String, Option<&'static str>) {
     }
 }
 
+/// "November" for 11 ("" out of range).
+pub fn month_name(month: u8) -> &'static str {
+    month.checked_sub(1).and_then(|i| MONTHS.get(i as usize)).copied().unwrap_or("")
+}
+
+/// "Wed 4 Nov": the date when the line has to share its space.
+pub fn format_date_short(t: &LocalTime) -> String {
+    let wd = WEEKDAYS.get(t.weekday as usize).map_or("", |w| &w[..3]);
+    let mo = month_name(t.month);
+    format!("{wd} {} {}", t.day, &mo[..mo.len().min(3)])
+}
+
 /// "Wednesday, 4 November"
 pub fn format_date(t: &LocalTime) -> String {
     let wd = WEEKDAYS.get(t.weekday as usize).copied().unwrap_or("");

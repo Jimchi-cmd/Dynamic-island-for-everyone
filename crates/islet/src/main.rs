@@ -26,6 +26,7 @@ mod net;
 mod platform;
 mod pro;
 mod providers;
+mod quick;
 mod secrets;
 mod sound;
 
@@ -426,6 +427,9 @@ fn run() -> platform::Result<()> {
                     }
                 }
                 UiAction::SetSwitch(..) => {}
+                UiAction::Screenshot if !scripted => quick::screenshot(),
+                UiAction::Lock if !scripted => quick::lock(),
+                UiAction::Screenshot | UiAction::Lock => {}
             }
         }
         let open = app.nav_card_open(t);

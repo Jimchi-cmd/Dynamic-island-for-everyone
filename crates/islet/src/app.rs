@@ -58,7 +58,7 @@ const PRIVACY_DOT: f32 = 6.0;
 /// At most one activity switch per this many seconds of scrolling.
 const SWITCH_COOLDOWN: f64 = 0.35;
 /// Height of the expanded clock and media cards.
-const CLOCK_H: f64 = 168.0;
+const CLOCK_H: f64 = 168.0 + content::QUICK_H;
 const MEDIA_H: f64 = 160.0;
 /// How quickly the empty island fades in and out when it hides until
 /// hovered (Settings → Look).
@@ -144,6 +144,10 @@ pub enum UiAction {
     Settings(String),
     /// Turn a setting on or off and save it (`islet set <key> on|off`).
     SetSwitch(&'static str, bool),
+    /// Start the OS's own screenshot tool.
+    Screenshot,
+    /// Lock the computer.
+    Lock,
 }
 
 /// Windows has no public API to connect Bluetooth devices: its settings do.
@@ -215,6 +219,10 @@ pub struct App {
     /// Notes and to-dos (Islet Pro; todo.json), and whether to save them.
     todo: islet_core::todo::Todo,
     todo_dirty: bool,
+    /// The quick timer's length (an index into `content::QUICK_MINUTES`).
+    quick: usize,
+    /// The month the calendar card shows (None: this month).
+    cal_view: Option<(i32, u8)>,
     /// Clipboard history (in memory only; empty while the feature is off).
     clip: islet_core::clipboard::History,
     /// Entries to put back on the clipboard (for main to hand over).
@@ -330,6 +338,8 @@ impl App {
             shelf_dirty: false,
             todo: Default::default(),
             todo_dirty: false,
+            quick: content::QUICK_DEFAULT,
+            cal_view: None,
             clip: Default::default(),
             clip_out: Vec::new(),
             top: TOP_GAP,
@@ -790,7 +800,18 @@ impl App {
             OpenContent::Clock => content::clock_chips(cr, self.clock_row())
                 .into_iter()
                 .find(|(r, _)| r.contains(x, y))
-                .map(|(_, p)| ConnHit::Open(p)),
+                .map(|(_, p)| ConnHit::Open(p))
+                .or_else(|| {
+                    content::quick_row(cr, self.clock_row())
+                        .into_iter()
+                        .find(|(r, _)| r.contains(x, y))
+                        .map(|(_, q)| ConnHit::Quick(q))
+                }),
+            OpenContent::Panel(Panel::Calendar) => content::calendar_arrows(cr)
+                .into_iter()
+                .find(|(r, _)| r.contains(x, y))
+                .map(|(_, dir)| ConnHit::Month(dir))
+                .or_else(|| content::list_header(cr).contains(x, y).then_some(ConnHit::Back)),
             OpenContent::Panel(p) => {
                 let (total, footer) = self.panel_list(p);
                 let scroll = self.scroll_of(p);
@@ -941,7 +962,7 @@ impl App {
             Panel::Wifi => (c.wifi.networks.len(), content::wifi_footer(c)),
             Panel::Bluetooth => (c.bt.devices.len(), content::bt_footer(c)),
             Panel::Shelf => (self.shelf.len(), content::shelf_footer(self.shelf.len(), self.dragging)),
-            Panel::System | Panel::Stopwatch => (0, None),
+            Panel::System | Panel::Stopwatch | Panel::Calendar => (0, None),
             Panel::Todo => (self.todo.items.len(), Some((content::TODO_ADD.to_string(), true))),
             Panel::Clipboard => {
                 let n = self.clip.len();
@@ -982,8 +1003,45 @@ impl App {
                 match p {
                     Panel::Wifi => self.conn_commands.push(ConnCommand::ScanWifi),
                     Panel::Bluetooth => self.conn_commands.push(ConnCommand::ListBluetooth),
-                    Panel::Shelf | Panel::System | Panel::Clipboard | Panel::Stopwatch | Panel::Todo => {}
+                    Panel::Shelf
+                    | Panel::System
+                    | Panel::Clipboard
+                    | Panel::Stopwatch
+                    | Panel::Todo
+                    | Panel::Calendar => {}
                 }
+            }
+            ConnHit::Quick(q) => {
+                use content::Quick;
+                match q {
+                    Quick::Step(dir) => {
+                        let max = content::QUICK_MINUTES.len() - 1;
+                        self.quick = if dir < 0 { self.quick.saturating_sub(1) } else { (self.quick + 1).min(max) };
+                    }
+                    Quick::Start => {
+                        let secs = f64::from(content::QUICK_MINUTES[self.quick]) * 60.0;
+                        // The island shows the new timer's card instead of Control Centre.
+                        self.home = false;
+                        return self.timer_command(TimerCommand::Start { secs, label: String::new() }, t);
+                    }
+                    Quick::Calendar => {
+                        self.panel = Some(Panel::Calendar);
+                        self.cal_view = None;
+                    }
+                    // The island gets out of the way (and out of the picture).
+                    Quick::Screenshot => {
+                        self.ui_actions.push(UiAction::Screenshot);
+                        return self.signal(Signal::Escape, t);
+                    }
+                    Quick::Lock => {
+                        self.ui_actions.push(UiAction::Lock);
+                        return self.signal(Signal::Escape, t);
+                    }
+                }
+            }
+            ConnHit::Month(dir) => {
+                let (y, m) = self.cal_month();
+                self.cal_view = Some(islet_core::calendar::shift_month(y, m, i32::from(dir)));
             }
             ConnHit::Remove(i) if self.panel == Some(Panel::Todo) => {
                 if let Some(id) = self.todo.ordered().get(i).map(|item| item.id) {
@@ -1068,7 +1126,7 @@ impl App {
                         self.todo_dirty = true;
                     }
                 }
-                Some(Panel::System | Panel::Stopwatch) | None => {}
+                Some(Panel::System | Panel::Stopwatch | Panel::Calendar) | None => {}
             },
             ConnHit::Footer => match (self.panel, &c.failure) {
                 (Some(Panel::Wifi), Some((_, Some(ssid)))) => {
@@ -1233,13 +1291,31 @@ impl App {
                             Panel::System => "System monitor".into(),
                             Panel::Stopwatch => "Stopwatch".into(),
                             Panel::Todo => format!("To-do, {} left", self.todo.left()),
+                            Panel::Calendar => "Calendar".into(),
                             Panel::Clipboard => format!("Clipboard history, {} items", self.clip.len()),
+                        };
+                        buttons.push((name, r));
+                    }
+                    let minutes = content::QUICK_MINUTES[self.quick];
+                    for (r, q) in content::quick_row(cr, self.clock_row()) {
+                        let name = match q {
+                            content::Quick::Step(d) if d < 0 => "Shorter timer".to_string(),
+                            content::Quick::Step(_) => "Longer timer".to_string(),
+                            content::Quick::Start => format!("Start a {minutes}-minute timer"),
+                            content::Quick::Calendar => "Calendar".to_string(),
+                            content::Quick::Screenshot => "Take a screenshot".to_string(),
+                            content::Quick::Lock => "Lock the computer".to_string(),
                         };
                         buttons.push((name, r));
                     }
                 }
                 OpenContent::Panel(p) => {
                     buttons.push(("Back".into(), content::list_header(cr)));
+                    if p == Panel::Calendar {
+                        for (r, dir) in content::calendar_arrows(cr) {
+                            buttons.push((if dir < 0 { "Previous month" } else { "Next month" }.into(), r));
+                        }
+                    }
                     let radio = match p {
                         Panel::Wifi if c.wifi.available => Some(("Wi-Fi", c.wifi.enabled)),
                         Panel::Bluetooth if c.bt.available => Some(("Bluetooth", c.bt.powered)),
@@ -1275,7 +1351,7 @@ impl App {
                             .map(|d| format!("{}, {}", d.name, if d.connected { "connected" } else { "not connected" }))
                             .collect(),
                         Panel::Shelf => self.shelf.iter().map(|i| format!("Open {}", i.name())).collect(),
-                        Panel::System | Panel::Stopwatch => Vec::new(),
+                        Panel::System | Panel::Stopwatch | Panel::Calendar => Vec::new(),
                         Panel::Todo => self
                             .todo
                             .ordered()
@@ -1657,6 +1733,51 @@ impl App {
             .collect()
     }
 
+    /// The month on the calendar card.
+    fn cal_month(&self) -> (i32, u8) {
+        self.cal_view.or(self.clock.map(|now| (now.year, now.month))).unwrap_or((1970, 1))
+    }
+
+    /// The next alarm for the clock card: "7:30 · in 8 h 15 min".
+    fn next_alarm_label(&self) -> Option<String> {
+        let now = self.clock?;
+        let (a, mins) = self.alarms.upcoming(&now)?;
+        Some(format!("{} · {}", islet_core::alarm::format_hm(a.hour, a.minute, self.h24), content::until_label(mins)))
+    }
+
+    /// The next few events for the calendar card: (when, what).
+    fn upcoming_events(&self) -> Vec<(String, String)> {
+        let now = self.wall as i64;
+        let today = (now + self.utc_offset).div_euclid(86_400);
+        self.activities
+            .calendar()
+            .iter()
+            .filter(|e| e.end > now)
+            .take(4)
+            .map(|e| {
+                let local = e.start + if e.all_day { 0 } else { self.utc_offset };
+                let day = local.div_euclid(86_400);
+                let (_, month, d) = islet_core::calendar::civil_from_days(day);
+                let date = match day - today {
+                    i64::MIN..=0 => "Today".to_string(),
+                    1 => "Tomorrow".to_string(),
+                    _ => {
+                        let name = islet_core::clock::month_name(month);
+                        format!("{d} {}", &name[..name.len().min(3)])
+                    }
+                };
+                let when = if e.all_day {
+                    date
+                } else {
+                    let secs = local.rem_euclid(86_400);
+                    let hm = islet_core::alarm::format_hm((secs / 3600) as u8, (secs / 60 % 60) as u8, self.h24);
+                    format!("{date} · {hm}")
+                };
+                (when, e.summary.clone())
+            })
+            .collect()
+    }
+
     fn stopwatch_card_open(&self, t: f64) -> bool {
         self.island.presentation().is_open() && matches!(self.open_content(&self.live(t)), OpenContent::Stopwatch(_))
     }
@@ -1791,6 +1912,29 @@ impl App {
                 }
                 // Shown as OpenContent::Stopwatch instead.
                 OpenContent::Panel(Panel::Stopwatch) => {}
+                OpenContent::Panel(Panel::Calendar) => {
+                    let (year, month) = self.cal_month();
+                    let days =
+                        islet_core::calendar::event_days(self.activities.calendar(), year, month, self.utc_offset);
+                    let today = self.clock.unwrap_or(islet_core::clock::LocalTime {
+                        year: 1970,
+                        month: 1,
+                        day: 1,
+                        weekday: 4,
+                        hour: 0,
+                        minute: 0,
+                        second: 0,
+                    });
+                    out.extend(content::expanded_calendar(
+                        cr,
+                        (year, month),
+                        &today,
+                        &days,
+                        &self.upcoming_events(),
+                        eo,
+                        engine,
+                    ));
+                }
                 OpenContent::Panel(Panel::Todo) => {
                     out.extend(content::expanded_todo(cr, &self.todo, self.scroll_of(Panel::Todo), eo, engine))
                 }
@@ -1819,8 +1963,11 @@ impl App {
                 )),
                 OpenContent::Clock => {
                     if let Some(now) = self.clock {
-                        out.extend(content::expanded_clock(cr, &now, self.h24, eo, engine));
+                        let alarm = self.next_alarm_label();
+                        out.extend(content::expanded_clock(cr, &now, self.h24, alarm.as_deref(), eo, engine));
                     }
+                    let minutes = content::QUICK_MINUTES[self.quick];
+                    out.extend(content::quick_row_elements(cr, self.clock_row(), minutes, eo));
                     let world = self.world_clocks();
                     if !world.is_empty() {
                         out.extend(content::world_clocks(cr, &world, self.h24, eo, engine));
@@ -1935,6 +2082,7 @@ impl App {
                                 Panel::System => content::SYSTEM_H,
                                 Panel::Stopwatch => content::STOPWATCH_H,
                                 Panel::Todo => content::list_height(self.todo.items.len(), true),
+                                Panel::Calendar => content::CALENDAR_H,
                                 Panel::Clipboard => content::list_height(self.clip.len(), !self.clip.is_empty()),
                                 Panel::Shelf => content::list_height(
                                     self.shelf.len(),
@@ -3475,6 +3623,121 @@ mod tests {
         assert!(app.live(21.0).is_empty());
     }
 
+    fn quick_button(app: &App, t: f64, q: content::Quick) -> Rect {
+        let cr = app.content_rect(app.pill_rect(t));
+        content::quick_row(cr, app.clock_row()).into_iter().find(|(_, b)| *b == q).unwrap().0
+    }
+
+    fn press_quick(app: &mut App, t: f64, q: content::Quick) {
+        let r = quick_button(app, t, q);
+        press(app, r, t);
+    }
+
+    #[test]
+    fn quick_timer_starts_from_the_clock_card() {
+        use content::Quick;
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        click(&mut app, 0.0);
+        // 5 → 10 → 15 minutes, back to 10, and it stops at the ends.
+        let plus = quick_button(&app, 5.0, Quick::Step(1));
+        press(&mut app, plus, 5.0);
+        press(&mut app, plus, 5.2);
+        press_quick(&mut app, 5.4, Quick::Step(-1));
+        assert!(texts(&app, 6.0, &mut engine).contains(&"10 min".to_string()));
+        assert_eq!(app.presentation(), Expanded, "stepping doesn't close the island");
+        for i in 0..20 {
+            press_quick(&mut app, 6.0 + f64::from(i) * 0.1, Quick::Step(-1));
+        }
+        assert!(texts(&app, 9.0, &mut engine).contains(&"1 min".to_string()));
+        assert!(app.accessibility(9.0).buttons.iter().any(|(n, _)| n == "Start a 1-minute timer"));
+
+        press_quick(&mut app, 9.0, Quick::Start);
+        assert!(app.timer.as_ref().is_some_and(|tm| (tm.remaining(9.1) - 60.0).abs() < 1.0));
+        assert!(texts(&app, 13.0, &mut engine).iter().any(|s| s == "Pause"), "the island shows the timer's card");
+    }
+
+    #[test]
+    fn screenshot_and_lock_close_the_island_first() {
+        use content::Quick;
+        for (button, action) in [(Quick::Screenshot, UiAction::Screenshot), (Quick::Lock, UiAction::Lock)] {
+            let mut app = App::new(Demo::None, false);
+            app.set_time(NOW, 0.0);
+            click(&mut app, 0.0);
+            press_quick(&mut app, 5.0, button);
+            assert_eq!(app.take_ui_actions(), [action]);
+            assert_eq!(app.presentation(), Idle, "out of the picture");
+        }
+    }
+
+    #[test]
+    fn calendar_card_shows_months_and_events() {
+        use content::Quick;
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        // 4 November 2026, 14:05 UTC.
+        app.set_wall(1_793_801_100.0, 0, 0.0);
+        let at = |d: i64, h: i64| 1_793_750_400 + (d - 4) * 86_400 + h * 3600;
+        app.report(
+            Report::Calendar(Some(vec![
+                islet_core::calendar::CalEvent {
+                    summary: "Dentist".into(),
+                    start: at(4, 16),
+                    end: at(4, 17),
+                    all_day: false,
+                    location: None,
+                },
+                islet_core::calendar::CalEvent {
+                    summary: "Trip".into(),
+                    start: at(20, 0),
+                    end: at(22, 0),
+                    all_day: true,
+                    location: None,
+                },
+            ])),
+            0.0,
+        );
+        click(&mut app, 0.0);
+        press_quick(&mut app, 5.0, Quick::Calendar);
+        let shown = texts(&app, 9.0, &mut engine);
+        assert!(shown.contains(&"November 2026".to_string()), "{shown:?}");
+        assert!(shown.contains(&"30".to_string()) && !shown.contains(&"31".to_string()), "30 days: {shown:?}");
+        assert!(shown.contains(&"Today · 16:00".to_string()) && shown.contains(&"Dentist".to_string()), "{shown:?}");
+        assert!(shown.contains(&"20 Nov".to_string()) && shown.contains(&"Trip".to_string()), "{shown:?}");
+        assert!((app.pill_rect(9.0).h - content::CALENDAR_H).abs() < 0.5);
+
+        // › twice: January 2027 (31 days); ‹ goes back; the header returns to Control Centre.
+        let cr = app.content_rect(app.pill_rect(9.0));
+        let [(prev, _), (next, _)] = content::calendar_arrows(cr);
+        press(&mut app, next, 9.0);
+        press(&mut app, next, 9.2);
+        let shown = texts(&app, 9.5, &mut engine);
+        assert!(shown.contains(&"January 2027".to_string()) && shown.contains(&"31".to_string()), "{shown:?}");
+        press(&mut app, prev, 9.6);
+        assert!(texts(&app, 9.8, &mut engine).contains(&"December 2026".to_string()));
+        press(&mut app, content::back_button(cr), 10.0);
+        assert!(texts(&app, 14.0, &mut engine).contains(&"Timer".to_string()), "back on the clock card");
+    }
+
+    #[test]
+    fn clock_card_names_the_next_alarm() {
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        app.set_alarms(vec![Alarm { id: 1, hour: 7, minute: 30, label: "Up".into(), days: 0, enabled: true }]);
+        click(&mut app, 0.0);
+        let shown = texts(&app, 5.0, &mut engine);
+        // 14:05 → 07:30 tomorrow is 17 h 25 min away.
+        assert!(shown.contains(&"07:30 · in 17 h 25 min".to_string()), "{shown:?}");
+        assert!(shown.contains(&"Wed 4 Nov".to_string()), "the date shortens to make room: {shown:?}");
+        assert_eq!(content::until_label(45), "in 45 min");
+        assert_eq!(content::until_label(120), "in 2 h");
+        assert_eq!(content::until_label(30 * 60), "tomorrow");
+        assert_eq!(content::until_label(3 * 1440 + 5), "in 3 days");
+    }
+
     #[test]
     fn todo_list_ticks_and_removes_from_the_island() {
         let mut app = App::new(Demo::None, false);
@@ -3742,7 +4005,10 @@ mod tests {
         app.set_time(NOW, 0.0);
         click(&mut app, 0.0);
         let mut engine = TextEngine::new();
-        assert_eq!(texts(&app, 5.0, &mut engine), ["14:05", "Wednesday, 4 November", "Wi-Fi", "Bluetooth"]);
+        assert_eq!(
+            texts(&app, 5.0, &mut engine),
+            ["14:05", "Wednesday, 4 November", "5 min", "Timer", "Wi-Fi", "Bluetooth"]
+        );
         assert!((app.next_timer(5.0).unwrap() - 18.0).abs() < 1e-9, "wakes at the next minute");
         let later = LocalTime { minute: 6, second: 0, ..NOW };
         assert!(app.set_time(later, 23.0), "a new minute redraws");
@@ -4523,6 +4789,87 @@ mod tests {
             let frame = a.frame(t);
             islet_render::draw(&mut cell, &frame, 1.0);
             let clip = islet_render::clip_mask(&frame, cw, WINDOW.1 as u32, 1.0);
+            let els = a.elements(t, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            let (x, y) = ((i % 2) as i32 * cw as i32, (i / 2) as i32 * ch as i32);
+            sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+        }
+        sheet.save_png(out).unwrap();
+    }
+
+    /// The clock card, calendar, stopwatch and to-do list for visual review:
+    /// `ISLET_PRO_SHEET=/path/out.png cargo test -p islet pro_sheet`
+    #[test]
+    fn pro_sheet() {
+        let Some(out) = std::env::var_os("ISLET_PRO_SHEET") else { return };
+        use content::Quick;
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let mut engine = TextEngine::new();
+        let open = |pro: bool| {
+            let mut a = App::new(Demo::None, false);
+            a.set_time(NOW, 0.0);
+            a.set_wall(1_793_801_100.0, 0, 0.0);
+            a.set_pro(pro);
+            a.set_alarms(vec![Alarm { id: 1, hour: 7, minute: 30, label: "Up".into(), days: 0, enabled: true }]);
+            let mut p = a.prefs().clone();
+            p.world_clocks = vec!["London".into(), "Tokyo".into()];
+            a.set_prefs(p);
+            let mut todo = islet_core::todo::Todo::default();
+            for (i, s) in ["Buy milk", "Call mum", "Finish the essay"].iter().enumerate() {
+                let id = todo.add(s).unwrap();
+                if i == 0 {
+                    todo.toggle(id);
+                }
+            }
+            a.set_todo(todo);
+            let at = |d: i64, h: i64| 1_793_750_400 + (d - 4) * 86_400 + h * 3600;
+            let ev = |summary: &str, start, end, all_day| islet_core::calendar::CalEvent {
+                summary: summary.into(),
+                start,
+                end,
+                all_day,
+                location: None,
+            };
+            let events = vec![
+                ev("Dentist", at(4, 16), at(4, 17), false),
+                ev("Football practice", at(5, 9), at(5, 10), false),
+                ev("Trip to Jinja", at(20, 0), at(22, 0), true),
+            ];
+            a.report(Report::Calendar(Some(events)), 0.0);
+            click(&mut a, 0.0);
+            a
+        };
+        let free = open(false);
+        let pro = open(true);
+        let mut calendar = open(true);
+        press_quick(&mut calendar, 5.0, Quick::Calendar);
+        let panel = |p: Panel| {
+            let mut a = open(true);
+            let cr = a.content_rect(a.pill_rect(5.0));
+            let (r, _) = *content::clock_chips(cr, a.clock_row()).iter().find(|(_, x)| *x == p).unwrap();
+            press(&mut a, r, 5.0);
+            a
+        };
+        let todo = panel(Panel::Todo);
+        let mut stopwatch = panel(Panel::Stopwatch);
+        let [_, (start, _)] = content::stopwatch_controls(stopwatch.card_rect(9.0));
+        press(&mut stopwatch, start, 9.0);
+        let [(lap, _), _] = content::stopwatch_controls(stopwatch.card_rect(40.0));
+        press(&mut stopwatch, lap, 40.0);
+        let mut pill = open(true);
+        pill.stopwatch_command(StopwatchCommand::Start, 6.0);
+        pill.handle(Event::Key(Key::Escape), 7.0);
+        pill.tick(8.0);
+        let apps = [free, pro, calendar, todo, stopwatch, pill];
+        let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
+        let mut sheet = Pixmap::new(cw * 2, ch * 3).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        for (i, a) in apps.iter().enumerate() {
+            let t = 250.0;
+            let mut cell = Pixmap::new(cw, ch).unwrap();
+            let frame = a.frame(t);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, ch, 1.0);
             let els = a.elements(t, &mut engine);
             islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
             let (x, y) = ((i % 2) as i32 * cw as i32, (i / 2) as i32 * ch as i32);

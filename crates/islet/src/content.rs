@@ -65,6 +65,8 @@ pub enum Panel {
     Stopwatch,
     /// Quick notes and to-dos (Islet Pro).
     Todo,
+    /// A month's days, with the calendar link's events.
+    Calendar,
 }
 
 /// What a tap on the clock card or a list lands on.
@@ -89,6 +91,179 @@ pub enum ConnHit {
     Menu(usize),
     /// Lyrics timing: earlier (−1) or later (+1).
     LyricsShift(i8),
+    /// The clock card's second row: quick timer, calendar, screenshot, lock.
+    Quick(Quick),
+    /// The calendar card: the month before (−1) or after (+1).
+    Month(i8),
+}
+
+/// The clock card's quick actions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Quick {
+    /// The quick timer: fewer (−1) or more (+1) minutes.
+    Step(i8),
+    /// Start the quick timer.
+    Start,
+    Calendar,
+    Screenshot,
+    Lock,
+}
+
+/// The quick timer's lengths, in minutes.
+pub const QUICK_MINUTES: [u32; 12] = [1, 2, 3, 5, 10, 15, 20, 25, 30, 45, 60, 90];
+/// Where the quick timer starts (5 minutes).
+pub const QUICK_DEFAULT: usize = 3;
+/// Height the quick row adds to the clock card.
+pub const QUICK_H: f64 = 42.0;
+
+/// The clock card's second row: − 5 min + and Start on the left; calendar,
+/// screenshot and lock on the right.
+pub fn quick_row(pill: Rect, row: ClockRow) -> [(Rect, Quick); 6] {
+    let (x, w) = (pill.x + PAD, pill.w - 2.0 * PAD);
+    let y = pill.y + 164.0 + if row.world { WORLD_H } else { 0.0 };
+    let (h, right) = (32.0, x + w);
+    [
+        (Rect::new(x, y, 30.0, h), Quick::Step(-1)),
+        (Rect::new(x + 88.0, y, 30.0, h), Quick::Step(1)),
+        (Rect::new(x + 124.0, y, 76.0, h), Quick::Start),
+        (Rect::new(right - 116.0, y, 32.0, h), Quick::Calendar),
+        (Rect::new(right - 74.0, y, 32.0, h), Quick::Screenshot),
+        (Rect::new(right - 32.0, y, 32.0, h), Quick::Lock),
+    ]
+}
+
+pub fn quick_row_elements(pill: Rect, row: ClockRow, minutes: u32, o: f32) -> Vec<Element> {
+    let mut v = Vec::new();
+    let buttons = quick_row(pill, row);
+    // The stepper: one capsule holding −, the length and +.
+    let (minus, plus) = (buttons[0].0, buttons[1].0);
+    let (sx, sy, sw, sh) = (minus.x as f32, minus.y as f32, (plus.right() - minus.x) as f32, minus.h as f32);
+    v.push(Element::Bar { x: sx, y: sy, w: sw, h: sh, color: WHITE, opacity: o * 0.14 });
+    v.push(Element::Bar { x: sx + 10.0, y: sy + sh / 2.0 - 1.0, w: 10.0, h: 2.0, color: WHITE, opacity: o });
+    v.push(Element::Icon {
+        icon: Icon::Plus,
+        x: plus.x as f32 + 8.0,
+        y: sy + 9.0,
+        size: 14.0,
+        color: WHITE,
+        opacity: o,
+    });
+    let label =
+        TextStyle { size: 13.0, weight: 600, opacity: o, align: Align::Center, tabular: true, ..TextStyle::default() };
+    v.push(text(format!("{minutes} min"), label, sx + sw / 2.0, sy + sh / 2.0 + 4.5));
+    for (r, q) in buttons {
+        let (x, y, w, h) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
+        let icon = match q {
+            Quick::Step(_) => continue,
+            Quick::Start => {
+                v.push(Element::Bar { x, y, w, h, color: ORANGE, opacity: o });
+                v.push(Element::Icon {
+                    icon: Icon::Play,
+                    x: x + 9.0,
+                    y: y + 9.0,
+                    size: 14.0,
+                    color: [0, 0, 0],
+                    opacity: o,
+                });
+                let style = TextStyle { color: [0, 0, 0], align: Align::Left, ..label };
+                v.push(text("Timer", style, x + 27.0, y + h / 2.0 + 4.5));
+                continue;
+            }
+            Quick::Calendar => Icon::Calendar,
+            Quick::Screenshot => Icon::Screenshot,
+            Quick::Lock => Icon::Lock,
+        };
+        v.push(Element::Bar { x, y, w, h, color: WHITE, opacity: o * 0.14 });
+        v.push(Element::Icon {
+            icon,
+            x: x + w / 2.0 - 9.0,
+            y: y + h / 2.0 - 9.0,
+            size: 18.0,
+            color: WHITE,
+            opacity: o,
+        });
+    }
+    v
+}
+
+/// Height of the calendar card.
+pub const CALENDAR_H: f64 = LIST_TOP + 16.0 + 6.0 * CAL_ROW + 12.0;
+const CAL_ROW: f64 = 23.0;
+
+/// The calendar card's ‹ and › buttons.
+pub fn calendar_arrows(pill: Rect) -> [(Rect, i8); 2] {
+    let y = pill.y + 15.0;
+    [
+        (Rect::new(pill.right() - PAD - 62.0, y, 28.0, 28.0), -1),
+        (Rect::new(pill.right() - PAD - 28.0, y, 28.0, 28.0), 1),
+    ]
+}
+
+/// A month: its days in a Monday-first grid, today ringed, days with events
+/// dotted; the next events beside it.
+#[allow(clippy::too_many_arguments)]
+pub fn expanded_calendar(
+    pill: Rect,
+    (year, month): (i32, u8),
+    today: &LocalTime,
+    event_days: &[u8],
+    upcoming: &[(String, String)],
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
+    use islet_core::calendar::{days_in_month, weekday_of};
+    let title = format!("{} {year}", islet_core::clock::month_name(month));
+    let mut v = list_header_elements(pill, Icon::Calendar, &title, None, o, engine);
+    for (r, dir) in calendar_arrows(pill) {
+        let (x, y, s) = (r.x as f32, r.y as f32, r.w as f32);
+        v.push(Element::Bar { x, y, w: s, h: s, color: WHITE, opacity: o * 0.16 });
+        let icon = if dir < 0 { Icon::Back } else { Icon::Forward };
+        v.push(Element::Icon { icon, x: x + 6.0, y: y + 6.0, size: 16.0, color: WHITE, opacity: o });
+    }
+    let (left, top) = (pill.x as f32 + PAD as f32, (pill.y + LIST_TOP) as f32);
+    let col = 28.0f32;
+    let head = TextStyle { size: 10.5, weight: 600, opacity: o * 0.45, align: Align::Center, ..TextStyle::default() };
+    for (i, d) in ["M", "T", "W", "T", "F", "S", "S"].iter().enumerate() {
+        v.push(text(*d, head, left + col * (i as f32 + 0.5), top + 9.0));
+    }
+    // Monday-first column of the 1st.
+    let first = (weekday_of(year, month, 1) + 6) % 7;
+    let is_now = today.year == year && today.month == month;
+    let day =
+        TextStyle { size: 12.5, weight: 500, opacity: o, align: Align::Center, tabular: true, ..TextStyle::default() };
+    for d in 1..=days_in_month(year, month) {
+        let cell = usize::from(first) + usize::from(d) - 1;
+        let (cx, cy) =
+            (left + col * ((cell % 7) as f32 + 0.5), top + 16.0 + CAL_ROW as f32 * ((cell / 7) as f32 + 0.5));
+        let today_cell = is_now && today.day == d;
+        if today_cell {
+            v.push(Element::Ring { cx, cy, r: 5.0, width: 10.0, fraction: 1.0, color: accent(), opacity: o });
+        }
+        let weekend = cell % 7 >= 5;
+        let style = TextStyle {
+            weight: if today_cell { 700 } else { 500 },
+            opacity: if weekend && !today_cell { o * 0.55 } else { o },
+            ..day
+        };
+        v.push(text(d.to_string(), style, cx, cy + 4.5));
+        if event_days.contains(&d) && !today_cell {
+            v.push(Element::Ring { cx, cy: cy + 9.5, r: 0.8, width: 1.6, fraction: 1.0, color: RED, opacity: o });
+        }
+    }
+    // What's coming up, beside the grid.
+    let (ex, ew) = (left + col * 7.0 + 14.0, pill.right() as f32 - PAD as f32 - (left + col * 7.0 + 14.0));
+    let when = TextStyle { size: 11.0, weight: 600, opacity: o * 0.55, ..TextStyle::default() };
+    let what = TextStyle { size: 12.5, weight: 600, opacity: o, ..TextStyle::default() };
+    if upcoming.is_empty() {
+        v.push(text("No events", when, ex, top + 26.0));
+    }
+    for (i, (time, name)) in upcoming.iter().take(4).enumerate() {
+        let y = top + 12.0 + i as f32 * 36.0;
+        v.push(Element::Bar { x: ex, y, w: 2.5, h: 28.0, color: RED, opacity: o });
+        v.push(text(engine.ellipsize(time, &when, ew - 10.0), when, ex + 9.0, y + 11.0));
+        v.push(text(engine.ellipsize(name, &what, ew - 10.0), what, ex + 9.0, y + 25.0));
+    }
+    v
 }
 
 pub const ROW_H: f64 = 36.0;
@@ -1351,7 +1526,16 @@ fn parts_label(parts: &[(Part, u8)]) -> String {
 }
 
 /// The expanded clock (an open island with nothing live).
-pub fn expanded_clock(pill: Rect, now: &LocalTime, h24: bool, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+/// `alarm`: the next alarm, as "7:30 · in 8 h 15 min" (the date shortens to
+/// make room for it).
+pub fn expanded_clock(
+    pill: Rect,
+    now: &LocalTime,
+    h24: bool,
+    alarm: Option<&str>,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
     let rise = (1.0 - o) * 8.0; // content settles upward into place
     let (left, top) = (pill.x as f32 + 26.0, pill.y as f32 + rise);
     let (time, suffix) = format_time(now, h24);
@@ -1362,8 +1546,31 @@ pub fn expanded_clock(pill: Rect, now: &LocalTime, h24: bool, o: f32, engine: &m
         v.push(text(suffix, TextStyle { size: 20.0, ..time_style }, x, top + 74.0));
     }
     let date_style = TextStyle { size: 15.0, opacity: o * 0.6, ..TextStyle::default() };
-    v.push(text(format_date(now), date_style, left + 2.0, top + 102.0));
+    let Some(alarm) = alarm else {
+        v.push(text(format_date(now), date_style, left + 2.0, top + 102.0));
+        return v;
+    };
+    let date = islet_core::clock::format_date_short(now);
+    let x = left + 2.0 + engine.measure(&date, &date_style) + 10.0;
+    v.push(text(date, date_style, left + 2.0, top + 102.0));
+    v.push(Element::Icon { icon: Icon::Bell(0), x, y: top + 90.0, size: 14.0, color: ORANGE, opacity: o });
+    let alarm_style =
+        TextStyle { size: 13.0, weight: 600, opacity: o, color: ORANGE, tabular: true, ..TextStyle::default() };
+    // Stops short of the weather's credit line in the corner.
+    let room = (pill.right() - PAD) as f32 - 66.0 - (x + 18.0);
+    v.push(text(engine.ellipsize(alarm, &alarm_style, room), alarm_style, x + 18.0, top + 101.5));
     v
+}
+
+/// "in 8 h 15 min", "in 12 min", "in 2 days".
+pub fn until_label(minutes: i64) -> String {
+    match minutes {
+        m if m < 60 => format!("in {m} min"),
+        m if m < 24 * 60 && m % 60 == 0 => format!("in {} h", m / 60),
+        m if m < 24 * 60 => format!("in {} h {} min", m / 60, m % 60),
+        m if m < 48 * 60 => "tomorrow".into(),
+        m => format!("in {} days", m / (24 * 60)),
+    }
 }
 
 /// World clocks under the date: "London 14:05 · Tokyo 22:05 +1".
@@ -1511,11 +1718,12 @@ pub fn clock_chip_elements(
                 c.connected_device().is_some(),
             ),
             Panel::Shelf => (Icon::Folder, format!("Shelf · {shelf}"), false),
-            Panel::System | Panel::Clipboard | Panel::Stopwatch | Panel::Todo => {
+            Panel::System | Panel::Clipboard | Panel::Stopwatch | Panel::Todo | Panel::Calendar => {
                 let icon = match panel {
                     Panel::System => Icon::Gauge,
                     Panel::Clipboard => Icon::Clipboard,
                     Panel::Todo => Icon::Checklist,
+                    Panel::Calendar => Icon::Calendar,
                     _ => Icon::Stopwatch,
                 };
                 if panel == Panel::Todo && row.todo_left > 0 {
