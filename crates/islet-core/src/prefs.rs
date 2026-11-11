@@ -47,6 +47,9 @@ pub struct IslandPrefs {
     pub calls: bool,
     /// Downloads in progress, from the Downloads folder.
     pub downloads: bool,
+    /// Hold pop-ups (notifications, volume, battery, calendar) while a
+    /// focus session's work round runs; breaks let them through.
+    pub focus_quiet: bool,
     /// Islet Pro: go back to the light limits, and keep the island still
     /// (see `limits`). Without Pro this does nothing.
     pub power_saver: bool,
@@ -183,6 +186,7 @@ impl Default for IslandPrefs {
             calls: true,
             downloads: false,
             power_saver: false,
+            focus_quiet: false,
             hotkey: String::new(),
             accent: "blue".into(),
             style: "black".into(),
@@ -197,7 +201,7 @@ impl Default for IslandPrefs {
 }
 
 /// The switches `islet set <key> on|off` understands.
-pub const SWITCHES: [&str; 16] = [
+pub const SWITCHES: [&str; 17] = [
     "volume-hud",
     "brightness-hud",
     "caps-lock-hud",
@@ -214,6 +218,7 @@ pub const SWITCHES: [&str; 16] = [
     "calls",
     "downloads",
     "power-saver",
+    "focus-quiet",
 ];
 
 impl IslandPrefs {
@@ -255,6 +260,7 @@ impl IslandPrefs {
             "calls" => &mut self.calls,
             "downloads" => &mut self.downloads,
             "power-saver" => &mut self.power_saver,
+            "focus-quiet" => &mut self.focus_quiet,
             _ => return Err(format!("unknown setting {key:?} (one of: {})", SWITCHES.join(", "))),
         })
     }

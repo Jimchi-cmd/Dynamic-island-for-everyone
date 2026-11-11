@@ -567,6 +567,26 @@
   let todos: { id: number; text: string; done: boolean }[] = $state([]);
   let todoText = $state('');
 
+  // Quick notes: one line into a plain file (`islet note`).
+  let quickNote = $state('');
+  let quickNoteSaid = $state('');
+  let notesPath = $state('');
+  async function loadNotesPath() {
+    try {
+      notesPath = (await api.islet(['note', '--where'])).trim();
+    } catch {
+      notesPath = '';
+    }
+  }
+  async function saveQuickNote() {
+    try {
+      quickNoteSaid = await api.islet(['note'], quickNote.trim());
+      quickNote = '';
+    } catch (e) {
+      quickNoteSaid = api.message(e);
+    }
+  }
+
   async function loadTodos() {
     try {
       todos = JSON.parse(await api.islet(['todo', '--json']));
@@ -614,6 +634,7 @@
   async function loadPro() {
     void loadWorld();
     void loadTodos();
+    void loadNotesPath();
     void loadShortcuts();
     try {
       pro = parsePro(await api.islet(['pro', 'status', '--json']));
@@ -1340,6 +1361,21 @@
               >Start focus</button
             >
           </div>
+          <div class="net">
+            <span class="name">Do not disturb while working</span>
+            <input
+              type="checkbox"
+              class="switch"
+              aria-label="Do not disturb while working"
+              checked={islandPrefs?.focusQuiet ?? false}
+              disabled={!islandPrefs}
+              onchange={(e) => setSwitch('focusQuiet', e.currentTarget.checked)}
+            />
+          </div>
+          <p class="muted small">
+            Keeps notifications, volume and battery pop-ups and calendar reminders off the island during a work round.
+            Breaks let them through, and alarms still ring.
+          </p>
           {#if streak && streak.rounds > 0}
             <p class="small muted" role="status">{streakLine(streak)}</p>
           {/if}
@@ -1617,6 +1653,34 @@
                 {#each cities.filter((c) => !worldClocks.includes(c)) as c (c)}<option value={c}>{c}</option>{/each}
               </select>
             {/if}
+          </div>
+          <div class="card">
+            <h2>Quick notes</h2>
+            <p class="muted">
+              One line at a time, added with the date to a plain text file you can open anywhere:
+              <span class="path">{notesPath || '“Islet notes.txt” in Documents'}</span>
+            </p>
+            <form
+              class="actions left"
+              onsubmit={(e) => {
+                e.preventDefault();
+                if (quickNote.trim()) void saveQuickNote();
+              }}
+            >
+              <input
+                type="text"
+                maxlength="500"
+                aria-label="Quick note"
+                placeholder="Ask about the essay deadline…"
+                bind:value={quickNote}
+              />
+              <button class="primary" type="submit" disabled={!quickNote.trim()}>Save</button>
+            </form>
+            {#if quickNoteSaid}<p class="small" role="status">{quickNoteSaid}</p>{/if}
+            <p class="muted small">
+              For a hotkey, bind a key to <code>islet note</code> in your system’s keyboard settings, or run
+              <code>islet note "your text"</code> from a launcher.
+            </p>
           </div>
           <div class="card">
             <h2>Notes &amp; to-do</h2>
@@ -2083,6 +2147,10 @@
   .net input[type='range'] {
     width: 220px;
     flex: none;
+  }
+  .path {
+    font-weight: 600;
+    overflow-wrap: anywhere;
   }
   h3.day {
     margin: 14px 0 2px;

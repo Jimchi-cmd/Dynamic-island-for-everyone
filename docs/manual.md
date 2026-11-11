@@ -263,6 +263,8 @@ islet class
 islet class remove 1
 ```
 
+**Do not disturb while working** (a switch under the focus form): during a work round, notifications, volume and battery pop-ups and calendar reminders stay off the island. Breaks let them through, pausing the session lifts it, and alarms still ring. Notifications you missed are in the island's list.
+
 **Focus streak:** every work round you see through to its end counts. Do at least one a day and Islet counts the days in a row: the focus card shows "3 days in a row" from the second day, and Settings → Timer & focus shows the streak, your best, and whether today is done. Missing a whole day starts it again. The count is kept in `focus.json` on this computer only. From a terminal:
 
 ```bash

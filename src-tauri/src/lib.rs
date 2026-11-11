@@ -25,6 +25,7 @@ pub fn allowed(args: &[String]) -> bool {
         ["pro", "activate" | "check" | "deactivate"] | ["pro", "status", "--json"] => true,
         ["stopwatch", "start" | "pause" | "resume" | "lap" | "reset"] => true,
         ["world", "--json"] | ["world", "cities", "--json"] => true,
+        ["note"] | ["note", "--where"] => true,
         ["class", "--json"] => true,
         ["class", "remove", n] => n.parse::<u32>().is_ok(),
         ["class", "add", day, start, end, name, rest @ ..] => {

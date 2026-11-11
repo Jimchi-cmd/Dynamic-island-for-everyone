@@ -265,6 +265,8 @@ export interface IslandPrefs {
   downloads: boolean;
   /** Islet Pro: the light limits again, and a still island. */
   powerSaver: boolean;
+  /** Hold pop-ups while a focus work round runs. */
+  focusQuiet: boolean;
   hotkey: string;
   accent: string;
   style: string;
@@ -327,6 +329,7 @@ export const SWITCH_NAMES: Record<string, string> = {
   calls: 'calls',
   downloads: 'downloads',
   powerSaver: 'power-saver',
+  focusQuiet: 'focus-quiet',
 };
 
 /** `islet focus streak --json`. */

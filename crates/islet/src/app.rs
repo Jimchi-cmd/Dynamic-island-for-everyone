@@ -744,6 +744,16 @@ impl App {
         self.todo = todo;
     }
 
+    /// "Do not disturb while focusing" is on and a focus work round is
+    /// running. Breaks, and a paused session, let pop-ups through.
+    fn focusing(&self) -> bool {
+        self.prefs.focus_quiet
+            && self
+                .timer
+                .as_ref()
+                .is_some_and(|tm| tm.focus && tm.running() && tm.phase == islet_core::timer::Phase::Work)
+    }
+
     /// The class timetable (timetable.json).
     pub fn set_timetable(&mut self, timetable: islet_core::timetable::Timetable, t: f64) -> bool {
         self.timetable = timetable;
@@ -1790,8 +1800,9 @@ impl App {
         if !self.prefs.calls {
             v.retain(|l| !matches!(l, Live::Call(_)));
         }
-        // Pop-ups paused from the menu: brief notices wait, lasting things stay.
-        if self.quiet_until.is_some_and(|q| t < q) {
+        // Pop-ups paused from the menu, or held while a focus round runs:
+        // brief notices wait, lasting things stay.
+        if self.quiet_until.is_some_and(|q| t < q) || self.focusing() {
             v.retain(|l| !matches!(l, Live::Hud(_) | Live::Battery { .. } | Live::Note(_) | Live::Event { .. }));
         }
         if v.len() > 1 {
@@ -4418,6 +4429,43 @@ mod tests {
         gap.handle(Event::Key(Key::Escape), 100.0);
         gap.tick(101.0);
         assert!(texts(&gap, 105.0, &mut engine).iter().any(|s| s == "Art"), "Tuesday's Art is up next");
+    }
+
+    #[test]
+    fn focus_rounds_can_hold_pop_ups_until_the_break() {
+        let mut app = App::new(Demo::None, false);
+        app.set_prefs(IslandPrefs { focus_quiet: true, notifications: true, ..IslandPrefs::default() });
+        app.timer_command(TimerCommand::Focus { work: 60.0, brk: 30.0, rounds: 2 }, 0.0);
+        app.tick(1.0);
+        // A notification during the work round stays out of sight; the timer shows.
+        app.report(note("Chat", "Amina", "Are you coming?"), 5.0);
+        app.tick(5.0);
+        let live = app.live(6.0);
+        assert!(live.iter().any(|l| matches!(l, Live::Timer(_))), "the session itself shows");
+        assert!(!live.iter().any(|l| matches!(l, Live::Note(_))), "held while working");
+        // In the break, pop-ups come through again.
+        app.tick(61.0);
+        app.report(note("Chat", "Amina", "Never mind"), 62.0);
+        assert!(app.live(63.0).iter().any(|l| matches!(l, Live::Note(_))), "the break lets them in");
+        // Back at work they are held again; pausing the session lifts it.
+        app.tick(91.0);
+        app.report(note("Mail", "Invoice", "Due Friday"), 92.0);
+        assert!(!app.live(93.0).iter().any(|l| matches!(l, Live::Note(_))));
+        app.timer_command(TimerCommand::Pause, 94.0);
+        assert!(app.live(94.5).iter().any(|l| matches!(l, Live::Note(_))), "paused: not focusing");
+
+        // With the switch off, nothing is held.
+        let mut plain = App::new(Demo::None, false);
+        plain.set_prefs(IslandPrefs { notifications: true, ..IslandPrefs::default() });
+        plain.timer_command(TimerCommand::Focus { work: 60.0, brk: 30.0, rounds: 2 }, 0.0);
+        plain.report(note("Chat", "Amina", "Hi"), 5.0);
+        assert!(plain.live(6.0).iter().any(|l| matches!(l, Live::Note(_))));
+        // A plain timer never holds anything.
+        let mut tea = App::new(Demo::None, false);
+        tea.set_prefs(IslandPrefs { focus_quiet: true, notifications: true, ..IslandPrefs::default() });
+        tea.timer_command(TimerCommand::Start { secs: 60.0, label: "Tea".into() }, 0.0);
+        tea.report(note("Chat", "Amina", "Hi"), 5.0);
+        assert!(tea.live(6.0).iter().any(|l| matches!(l, Live::Note(_))));
     }
 
     #[test]

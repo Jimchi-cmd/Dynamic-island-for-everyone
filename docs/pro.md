@@ -29,6 +29,25 @@ islet pro status
 islet pro deactivate
 ```
 
+## Quick notes
+
+One line at a time, added with the date and time to a plain text file: `Islet notes.txt` in your Documents folder. Open it in any editor.
+
+- **From Settings:** Islet Pro → Quick notes.
+- **From a terminal or a launcher:**
+
+```bash
+islet note "Ask about the essay deadline"
+```
+
+- **With a hotkey:** bind a key to `islet note` in your system's keyboard settings. Islet doesn't register a second global shortcut of its own yet.
+
+To see where the file is:
+
+```bash
+islet note --where
+```
+
 ## No low-end limits, and Power saver
 
 The free app is tuned for a laptop with 4 GB of memory. With Pro those limits are off as soon as your key is active, with nothing to switch on:

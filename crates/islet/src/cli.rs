@@ -32,6 +32,9 @@ Usage:
                                            a lesson for your timetable (mon 9:00 10:00 Maths)
   islet class [--json]                     your timetable; the clock card counts down to lessons
   islet class remove <n>                   delete lesson n
+  islet note [<text>]                      add a line to Islet notes.txt in Documents (Islet Pro);
+                                           bind it to a key in your system's keyboard settings
+  islet note --where                       where that file is
   islet todo add                           add a note or to-do (one line from stdin; Islet Pro)
   islet todo [--json]                      your list
   islet todo done|remove <id>              tick an item (again to untick), or delete it
@@ -100,7 +103,7 @@ Usage:
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
                                            notifications, calendar, fahrenheit, web-artwork,
                                            spotify, privacy-dots, clipboard, lyrics, auto-hide, calls, downloads,
-                                           idle-clock
+                                           idle-clock, focus-quiet, power-saver (Islet Pro)
   islet prefs [--json]                     the island's settings
   islet autostart on|off                   start Islet when you log in (or stop doing so)
   islet status [--json]                    is Islet running, and how it is set up
@@ -126,6 +129,11 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["class", "--json"] => serde_json::to_string(&load_timetable().lessons).map_err(|e| e.to_string()),
         ["class", "add", day, start, end, name, rest @ ..] => class_add(day, start, end, name, rest),
         ["class", "remove", n] => class_remove(n),
+        ["note", "--where"] => notes_file().map(|p| p.display().to_string()),
+        ["note"] => read_line("Type a note and press Enter:").and_then(|line| add_note(&line)),
+        ["note", first, rest @ ..] if !first.starts_with('-') => {
+            add_note(&std::iter::once(first).chain(rest).copied().collect::<Vec<_>>().join(" "))
+        }
         ["todo"] => Ok(todo_text()),
         ["todo", "--json"] => serde_json::to_string(&load_todo().items).map_err(|e| e.to_string()),
         ["todo", "add"] => read_line("Type a note and press Enter:").and_then(|line| {
@@ -1009,6 +1017,35 @@ fn class_text() -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// The quick-notes file: "Islet notes.txt" in Documents (or the home
+/// folder when there is no Documents). `ISLET_NOTES_FILE` names another.
+fn notes_file() -> Result<std::path::PathBuf, String> {
+    if let Some(p) = std::env::var_os("ISLET_NOTES_FILE").filter(|p| !p.is_empty()) {
+        return Ok(p.into());
+    }
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .filter(|h| !h.is_empty())
+        .map(std::path::PathBuf::from)
+        .ok_or("can't find your home folder")?;
+    let docs = home.join("Documents");
+    Ok(if docs.is_dir() { docs } else { home }.join(islet_core::quicknote::FILE_NAME))
+}
+
+/// Add one line to the quick-notes file (Islet Pro).
+fn add_note(text: &str) -> Result<String, String> {
+    use std::io::Write;
+    needs_pro()?;
+    let line = islet_core::quicknote::entry(text, &crate::clock::now())?;
+    let path = notes_file()?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("can't open {}: {e}", path.display()))?;
+    file.write_all(line.as_bytes()).map_err(|e| format!("can't write {}: {e}", path.display()))?;
+    Ok(format!("Noted in {}.", path.display()))
 }
 
 /// Change the to-do list, save it and tell the island.
