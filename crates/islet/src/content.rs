@@ -120,25 +120,55 @@ pub const QUICK_H: f64 = 42.0;
 
 /// The clock card's second row: − 5 min + and Start on the left; calendar,
 /// screenshot and lock on the right.
-pub fn quick_row(pill: Rect, row: ClockRow) -> [(Rect, Quick); 6] {
+/// The buttons the user switched off in Settings are left out; the round
+/// ones keep to the right.
+pub fn quick_row(pill: Rect, row: ClockRow) -> Vec<(Rect, Quick)> {
     let (x, w) = (pill.x + PAD, pill.w - 2.0 * PAD);
     let y = pill.y + 164.0 + if row.world { WORLD_H } else { 0.0 };
     let (h, right) = (32.0, x + w);
-    [
-        (Rect::new(x, y, 30.0, h), Quick::Step(-1)),
-        (Rect::new(x + 88.0, y, 30.0, h), Quick::Step(1)),
-        (Rect::new(x + 124.0, y, 76.0, h), Quick::Start),
-        (Rect::new(right - 116.0, y, 32.0, h), Quick::Calendar),
-        (Rect::new(right - 74.0, y, 32.0, h), Quick::Screenshot),
-        (Rect::new(right - 32.0, y, 32.0, h), Quick::Lock),
-    ]
+    let mut v = Vec::new();
+    if !row.no_timer {
+        v.push((Rect::new(x, y, 30.0, h), Quick::Step(-1)));
+        v.push((Rect::new(x + 88.0, y, 30.0, h), Quick::Step(1)));
+        v.push((Rect::new(x + 124.0, y, 76.0, h), Quick::Start));
+    }
+    let round: Vec<Quick> =
+        [(row.no_calendar, Quick::Calendar), (row.no_screenshot, Quick::Screenshot), (row.no_lock, Quick::Lock)]
+            .into_iter()
+            .filter(|(hidden, _)| !hidden)
+            .map(|(_, q)| q)
+            .collect();
+    for (i, q) in round.iter().enumerate() {
+        let from_right = (round.len() - i) as f64;
+        v.push((Rect::new(right - from_right * 32.0 - (from_right - 1.0) * 10.0, y, 32.0, h), *q));
+    }
+    v
+}
+
+/// The height the quick row takes: none when every button in it is off.
+pub fn quick_h(row: ClockRow) -> f64 {
+    if row.no_timer && row.no_calendar && row.no_screenshot && row.no_lock {
+        0.0
+    } else {
+        QUICK_H
+    }
 }
 
 pub fn quick_row_elements(pill: Rect, row: ClockRow, minutes: u32, o: f32) -> Vec<Element> {
     let mut v = Vec::new();
     let buttons = quick_row(pill, row);
     // The stepper: one capsule holding −, the length and +.
-    let (minus, plus) = (buttons[0].0, buttons[1].0);
+    let find = |q: Quick| buttons.iter().find(|(_, b)| *b == q).map(|(r, _)| *r);
+    if let (Some(minus), Some(plus)) = (find(Quick::Step(-1)), find(Quick::Step(1))) {
+        v.extend(quick_stepper(minus, plus, minutes, o));
+    }
+    v.extend(quick_buttons(&buttons, o));
+    v
+}
+
+/// − 5 min + in one capsule.
+fn quick_stepper(minus: Rect, plus: Rect, minutes: u32, o: f32) -> Vec<Element> {
+    let mut v = Vec::new();
     let (sx, sy, sw, sh) = (minus.x as f32, minus.y as f32, (plus.right() - minus.x) as f32, minus.h as f32);
     v.push(Element::Bar { x: sx, y: sy, w: sw, h: sh, color: WHITE, opacity: o * 0.14 });
     v.push(Element::Bar { x: sx + 10.0, y: sy + sh / 2.0 - 1.0, w: 10.0, h: 2.0, color: WHITE, opacity: o });
@@ -153,7 +183,15 @@ pub fn quick_row_elements(pill: Rect, row: ClockRow, minutes: u32, o: f32) -> Ve
     let label =
         TextStyle { size: 13.0, weight: 600, opacity: o, align: Align::Center, tabular: true, ..TextStyle::default() };
     v.push(text(format!("{minutes} min"), label, sx + sw / 2.0, sy + sh / 2.0 + 4.5));
-    for (r, q) in buttons {
+    v
+}
+
+/// Start, and the round calendar, screenshot and lock buttons.
+fn quick_buttons(buttons: &[(Rect, Quick)], o: f32) -> Vec<Element> {
+    let mut v = Vec::new();
+    let label =
+        TextStyle { size: 13.0, weight: 600, opacity: o, align: Align::Center, tabular: true, ..TextStyle::default() };
+    for (r, q) in buttons.iter().copied() {
         let (x, y, w, h) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
         let icon = match q {
             Quick::Step(_) => continue,
@@ -1664,6 +1702,14 @@ pub struct ClockRow {
     pub shortcuts: bool,
     /// A line of world clocks under the date.
     pub world: bool,
+    /// Buttons the user switched off in Settings.
+    pub no_timer: bool,
+    pub no_calendar: bool,
+    pub no_screenshot: bool,
+    pub no_lock: bool,
+    pub no_system: bool,
+    pub no_todo: bool,
+    pub no_stopwatch: bool,
 }
 
 /// Height of the world-clock line.
@@ -1682,14 +1728,18 @@ pub fn clock_chips(pill: Rect, row: ClockRow) -> Vec<(Rect, Panel)> {
     if row.shortcuts {
         icons.push(Panel::Shortcuts);
     }
-    if row.pro {
+    if row.pro && !row.no_todo {
         icons.push(Panel::Todo);
+    }
+    if row.pro && !row.no_stopwatch {
         icons.push(Panel::Stopwatch);
     }
     if row.clipboard {
         icons.push(Panel::Clipboard);
     }
-    icons.push(Panel::System);
+    if !row.no_system {
+        icons.push(Panel::System);
+    }
     let n = panels.len() as f64;
     let icons_w = icons.len() as f64 * (SYSTEM_CHIP + 10.0);
     let cw = (w - icons_w - 10.0 * (n - 1.0)) / n;

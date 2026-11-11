@@ -85,6 +85,8 @@ Usage:
                                            green, mint, teal or graphite
   islet look style <style>                 what the island is made of: black, or with Islet Pro
                                            tinted, glass or tinted-glass
+  islet card                               the clock card's buttons
+  islet card show|hide <button>            timer, calendar, screenshot, lock, system, todo, stopwatch
   islet look size small|medium|large       the island's size
   islet look offset <px>                   gap above the island, 0–40 px
   islet look display <name>|primary|all    which display (names from `islet displays`), or all
@@ -240,6 +242,11 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
             Ok(format!("Accent: {n}."))
         }),
         ["look", "style", name] => set_style(name),
+        ["card"] => Ok(card_text()),
+        ["card", show @ ("show" | "hide"), button] => set_look(|p| {
+            p.set_card_button(button, *show == "show")?;
+            Ok(format!("{button}: {}.", if *show == "show" { "shown" } else { "hidden" }))
+        }),
         ["look", "size", name] => set_look(|p| {
             let (n, _) = islet_core::prefs::SIZES
                 .iter()
@@ -837,6 +844,16 @@ fn needs_pro() -> Result<(), String> {
     } else {
         Err("That's an Islet Pro feature. See Settings → Islet Pro.".into())
     }
+}
+
+/// The clock card's buttons and whether each shows.
+fn card_text() -> String {
+    let p = config::load_prefs();
+    islet_core::prefs::CARD_BUTTONS
+        .iter()
+        .map(|(id, name)| format!("{id:<11} {:<7} {name}", if p.hides(id) { "hidden" } else { "shown" }))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// What the island is made of. Everything but black is an Islet Pro look.

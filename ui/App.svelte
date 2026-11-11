@@ -4,6 +4,7 @@
   import type { Info, Prefs, UpdateInfo } from './lib/bridge';
   import {
     ACCENTS,
+    CARD_BUTTONS,
     STYLES,
     type PlaceSuggestion,
     alarmAddArgs,
@@ -241,6 +242,15 @@
     if (e.metaKey) parts.push('Super');
     parts.push(key);
     hotkeyDraft = parts.join('+');
+  }
+
+  async function setCardButton(id: string, show: boolean) {
+    try {
+      await api.islet(['card', show ? 'show' : 'hide', id]);
+      await loadIslandPrefs();
+    } catch (e) {
+      problem = api.message(e);
+    }
   }
 
   async function setLook(what: 'accent' | 'style' | 'size' | 'offset' | 'display', value: string) {
@@ -866,6 +876,20 @@
               ></button>
             {/each}
           </div>
+          <p class="muted small">Buttons on the card that opens when you click the island. Wi-Fi and Bluetooth always show.</p>
+          {#each CARD_BUTTONS.filter((b) => !b.pro || pro?.active) as b (b.id)}
+            <div class="net">
+              <span class="name">{b.label}</span>
+              <input
+                type="checkbox"
+                class="switch"
+                aria-label="Show {b.label} on the island's card"
+                checked={!(islandPrefs?.cardHidden ?? []).includes(b.id)}
+                disabled={!islandPrefs}
+                onchange={(e) => setCardButton(b.id, e.currentTarget.checked)}
+              />
+            </div>
+          {/each}
           <p class="muted small">What the island is made of.</p>
           <div class="styles" role="radiogroup" aria-label="Island style">
             {#each STYLES as s (s.id)}

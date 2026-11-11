@@ -112,7 +112,7 @@ describe('parsePro', () => {
   });
 });
 
-import { ACCENTS, STYLES } from './settings';
+import { ACCENTS, CARD_BUTTONS, STYLES } from './settings';
 
 describe('looks', () => {
   const rust = readFileSync(new URL('../../crates/islet-core/src/prefs.rs', import.meta.url), 'utf8');
@@ -130,5 +130,11 @@ describe('looks', () => {
     const list = rust.match(/pub const STYLES: \[&str; \d+\] = \[([^\]]*)\]/)?.[1] ?? '';
     expect(STYLES.map((s) => s.id)).toEqual([...list.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]));
     expect(STYLES.filter((s) => !s.pro).map((s) => s.id)).toEqual(['black']);
+  });
+
+  it('offer the clock-card buttons the island knows', () => {
+    const block = rust.match(/pub const CARD_BUTTONS: [^=]*= \[([\s\S]*?)\];/)?.[1] ?? '';
+    const fromRust = [...block.matchAll(/\("([a-z]+)", "([^"]+)"\)/g)].map((m) => [m[1], m[2]]);
+    expect(CARD_BUTTONS.map((b) => [b.id, b.label])).toEqual(fromRust);
   });
 });

@@ -69,7 +69,21 @@ pub struct IslandPrefs {
     /// Your own buttons (Islet Pro): each opens a folder, file, script or
     /// web page. At most `MAX_SHORTCUTS`.
     pub shortcuts: Vec<Shortcut>,
+    /// Clock-card buttons the user switched off (ids from `CARD_BUTTONS`).
+    pub card_hidden: Vec<String>,
 }
+
+/// The clock card's optional buttons: id and name. Wi-Fi and Bluetooth
+/// always show.
+pub const CARD_BUTTONS: [(&str, &str); 7] = [
+    ("timer", "Quick timer"),
+    ("calendar", "Calendar"),
+    ("screenshot", "Screenshot"),
+    ("lock", "Lock"),
+    ("system", "System monitor"),
+    ("todo", "To-do list"),
+    ("stopwatch", "Stopwatch"),
+];
 
 /// A button of your own: a name, and what it opens (a path or an
 /// `https://` link). Paths open as they would from the file manager, so a
@@ -173,6 +187,7 @@ impl Default for IslandPrefs {
             display: String::new(),
             world_clocks: Vec::new(),
             shortcuts: Vec::new(),
+            card_hidden: Vec::new(),
         }
     }
 }
@@ -240,6 +255,24 @@ impl IslandPrefs {
 }
 
 impl IslandPrefs {
+    /// Did the user switch this clock-card button off?
+    pub fn hides(&self, button: &str) -> bool {
+        self.card_hidden.iter().any(|b| b == button)
+    }
+
+    /// Show or hide a clock-card button (see `CARD_BUTTONS`).
+    pub fn set_card_button(&mut self, button: &str, show: bool) -> Result<(), String> {
+        let (id, _) = CARD_BUTTONS
+            .iter()
+            .find(|(id, _)| *id == button)
+            .ok_or_else(|| format!("no such button: {button} (see: islet card)"))?;
+        self.card_hidden.retain(|b| b != id);
+        if !show {
+            self.card_hidden.push((*id).to_string());
+        }
+        Ok(())
+    }
+
     pub fn accent_rgb(&self) -> [u8; 3] {
         ACCENTS.iter().find(|(n, _)| n.eq_ignore_ascii_case(&self.accent)).map_or(ACCENTS[0].1, |(_, c)| *c)
     }

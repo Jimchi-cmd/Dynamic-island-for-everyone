@@ -266,6 +266,7 @@ export interface IslandPrefs {
   hotkey: string;
   accent: string;
   style: string;
+  cardHidden: string[];
   size: string;
   offset: number;
   display: string;
@@ -286,6 +287,17 @@ export const ACCENTS: Record<string, string> = {
   teal: '#28bec8',
   graphite: '#9698a2',
 };
+
+/** The clock card's optional buttons, as in `islet_core::prefs::CARD_BUTTONS`. */
+export const CARD_BUTTONS: { id: string; label: string; pro: boolean }[] = [
+  { id: 'timer', label: 'Quick timer', pro: false },
+  { id: 'calendar', label: 'Calendar', pro: false },
+  { id: 'screenshot', label: 'Screenshot', pro: false },
+  { id: 'lock', label: 'Lock', pro: false },
+  { id: 'system', label: 'System monitor', pro: false },
+  { id: 'todo', label: 'To-do list', pro: true },
+  { id: 'stopwatch', label: 'Stopwatch', pro: true },
+];
 
 /** What the island is made of, as in `islet_core::prefs::STYLES`. All but black are Islet Pro. */
 export const STYLES: { id: string; label: string; pro: boolean }[] = [

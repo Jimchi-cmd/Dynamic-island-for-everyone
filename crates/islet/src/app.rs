@@ -1744,6 +1744,13 @@ impl App {
             todo_left: self.todo.left(),
             shortcuts: self.pro && !self.prefs.shortcuts.is_empty(),
             world: self.pro && self.prefs.world_clocks.iter().any(|c| islet_core::worldclock::find(c).is_some()),
+            no_timer: self.prefs.hides("timer"),
+            no_calendar: self.prefs.hides("calendar"),
+            no_screenshot: self.prefs.hides("screenshot"),
+            no_lock: self.prefs.hides("lock"),
+            no_system: self.prefs.hides("system"),
+            no_todo: self.prefs.hides("todo"),
+            no_stopwatch: self.prefs.hides("stopwatch"),
         }
     }
 
@@ -2132,7 +2139,13 @@ impl App {
                         }
                         OpenContent::Media(_) if self.song_lyrics().is_some() => MEDIA_H + content::CARD_LYRICS_H,
                         OpenContent::Media(_) | OpenContent::Nav(_) => MEDIA_H,
-                        OpenContent::Clock => CLOCK_H + if self.clock_row().world { content::WORLD_H } else { 0.0 },
+                        OpenContent::Clock => {
+                            let row = self.clock_row();
+                            // Shorter when every quick button is switched off.
+                            CLOCK_H - content::QUICK_H
+                                + content::quick_h(row)
+                                + if row.world { content::WORLD_H } else { 0.0 }
+                        }
                         OpenContent::Battery => {
                             let rows =
                                 self.activities.devices().len() + usize::from(self.activities.laptop().is_some());
@@ -3876,6 +3889,49 @@ mod tests {
         };
         let (wifi_line, is_button) = content::wifi_footer(&c).unwrap();
         assert!(is_button && engine.measure(&wifi_line, &button) <= wide - 20.0, "{wifi_line}");
+    }
+
+    #[test]
+    fn clock_card_buttons_can_be_switched_off() {
+        use content::Quick;
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        click(&mut app, 0.0);
+        let full = app.pill_rect(5.0).h;
+
+        // Without the timer and the lock: the rest keep to the right, nothing overlaps.
+        let mut p = app.prefs().clone();
+        p.set_card_button("timer", false).unwrap();
+        p.set_card_button("lock", false).unwrap();
+        p.set_card_button("system", false).unwrap();
+        assert!(p.set_card_button("rocket", false).is_err());
+        app.set_prefs(p);
+        app.sync_live(5.0);
+        let cr = app.content_rect(app.pill_rect(9.0));
+        let row = content::quick_row(cr, app.clock_row());
+        assert_eq!(row.iter().map(|(_, q)| *q).collect::<Vec<_>>(), [Quick::Calendar, Quick::Screenshot]);
+        assert!((row[1].0.right() - (cr.right() - 20.0)).abs() < 0.01, "packed to the right edge");
+        assert!(!texts(&app, 9.0, &mut engine).iter().any(|s| s == "Timer" || s == "5 min"));
+        assert!(!content::clock_chips(cr, app.clock_row()).iter().any(|(_, p)| *p == Panel::System));
+        assert!((app.pill_rect(9.0).h - full).abs() < 0.5, "the row is still there");
+        press_quick(&mut app, 9.0, Quick::Calendar);
+        assert!(matches!(app.open_content(&app.live(9.5)), OpenContent::Panel(Panel::Calendar)));
+
+        // With every quick button off the card loses the row's height.
+        let mut p = app.prefs().clone();
+        p.set_card_button("calendar", false).unwrap();
+        p.set_card_button("screenshot", false).unwrap();
+        app.set_prefs(p);
+        app.handle(Event::Key(Key::Escape), 10.0);
+        click(&mut app, 12.0);
+        assert!((full - app.pill_rect(16.0).h - content::QUICK_H).abs() < 0.5);
+
+        // Switching one back on brings it back.
+        let mut p = app.prefs().clone();
+        p.set_card_button("timer", true).unwrap();
+        app.set_prefs(p);
+        assert!(texts(&app, 17.0, &mut engine).iter().any(|s| s == "Timer"));
     }
 
     #[test]
