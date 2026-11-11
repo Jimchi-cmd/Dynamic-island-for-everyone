@@ -2566,6 +2566,78 @@ pub fn idle_clock(pill: Rect, now: &LocalTime, h24: bool, o: f32, engine: &mut T
     v
 }
 
+// ---- Status on hover ----------------------------------------------------------
+
+/// One thing beside the time on the hovered, empty island: the weather,
+/// the battery, how busy the processor is.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StatusItem {
+    pub icon: Icon,
+    pub text: String,
+    pub color: [u8; 3],
+}
+
+/// Room for one item (icon and a short number), and between two of them.
+const STATUS_ITEM_W: f64 = 56.0;
+const STATUS_GAP: f64 = 4.0;
+/// Room kept for the time in the middle ("12:05 PM" at its widest).
+const STATUS_TIME_W: f64 = 76.0;
+
+/// How many of `n` items sit left of the time; the rest sit right. They
+/// alternate (left, right, left).
+fn status_left(n: usize) -> usize {
+    n.div_ceil(2)
+}
+
+/// The width `k` items take on one side of the time, with the gap to it.
+fn status_side(k: usize) -> f64 {
+    if k == 0 {
+        0.0
+    } else {
+        k as f64 * STATUS_ITEM_W + (k - 1) as f64 * STATUS_GAP + 6.0
+    }
+}
+
+/// The hovered pill's width with `n` items beside the time (0: no strip).
+pub fn status_width(n: usize) -> f64 {
+    if n == 0 {
+        return 0.0;
+    }
+    let left = status_left(n);
+    STATUS_TIME_W + status_side(left) + status_side(n - left) + 20.0
+}
+
+/// How far right of the pill's middle the time sits with `n` items, so the
+/// whole row is centred when one side holds more than the other.
+pub fn status_shift(n: usize) -> f64 {
+    let left = status_left(n);
+    (status_side(left) - status_side(n - left)) / 2.0
+}
+
+/// The items either side of the time. `pill` is centred on the time (the
+/// time itself is `idle_clock`, drawn in the same rectangle).
+pub fn status_strip(pill: Rect, items: &[StatusItem], o: f32) -> Vec<Element> {
+    let (cx, cy) = ((pill.x + pill.w / 2.0) as f32, (pill.y + pill.h / 2.0) as f32);
+    let style = TextStyle { size: 13.0, weight: 600, opacity: o, tabular: true, ..TextStyle::default() };
+    let (item_w, gap, half) = (STATUS_ITEM_W as f32, STATUS_GAP as f32, STATUS_TIME_W as f32 / 2.0 + 6.0);
+    let (mut left, mut right) = (0.0f32, 0.0f32);
+    let mut v = Vec::with_capacity(items.len() * 2);
+    for (i, item) in items.iter().enumerate() {
+        // Even ones go left of the time, outwards; odd ones go right.
+        let x = if i % 2 == 0 {
+            left += item_w + if left > 0.0 { gap } else { 0.0 };
+            cx - half - left
+        } else {
+            let x = cx + half + right;
+            right += item_w + gap;
+            x
+        };
+        v.push(Element::Icon { icon: item.icon, x, y: cy - 8.0, size: 16.0, color: item.color, opacity: o });
+        v.push(text(item.text.clone(), TextStyle { color: item.color, ..style }, x + 20.0, cy + 4.5));
+    }
+    v
+}
+
 // ---- Back to Control Centre ------------------------------------------------
 
 /// Height of the strip at the top of an activity card that holds the

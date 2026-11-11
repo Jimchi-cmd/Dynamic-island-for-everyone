@@ -267,6 +267,8 @@ export interface IslandPrefs {
   powerSaver: boolean;
   /** Hold pop-ups while a focus work round runs. */
   focusQuiet: boolean;
+  /** Weather, battery and processor beside the time when you point at the island. */
+  hoverStatus: boolean;
   hotkey: string;
   accent: string;
   style: string;
@@ -330,6 +332,7 @@ export const SWITCH_NAMES: Record<string, string> = {
   downloads: 'downloads',
   powerSaver: 'power-saver',
   focusQuiet: 'focus-quiet',
+  hoverStatus: 'hover-status',
 };
 
 /** `islet focus streak --json`. */

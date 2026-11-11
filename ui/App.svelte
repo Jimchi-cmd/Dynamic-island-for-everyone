@@ -949,6 +949,17 @@
               onchange={(e) => setSwitch('idleClock', e.currentTarget.checked)}
             />
           </div>
+          <div class="net">
+            <span class="name">Show weather, battery and processor when you point at it</span>
+            <input
+              type="checkbox"
+              class="switch"
+              aria-label="Show weather, battery and processor when you point at the island"
+              checked={islandPrefs?.hoverStatus ?? true}
+              disabled={!islandPrefs}
+              onchange={(e) => setSwitch('hoverStatus', e.currentTarget.checked)}
+            />
+          </div>
           <p class="muted small">Accent colour for buttons and switches on the island.</p>
           <div class="swatches" role="radiogroup" aria-label="Accent colour">
             {#each Object.entries(ACCENTS) as [name, hex] (name)}

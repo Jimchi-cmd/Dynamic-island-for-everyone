@@ -103,7 +103,7 @@ Usage:
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
                                            notifications, calendar, fahrenheit, web-artwork,
                                            spotify, privacy-dots, clipboard, lyrics, auto-hide, calls, downloads,
-                                           idle-clock, focus-quiet, power-saver (Islet Pro)
+                                           idle-clock, hover-status, focus-quiet, power-saver (Islet Pro)
   islet prefs [--json]                     the island's settings
   islet autostart on|off                   start Islet when you log in (or stop doing so)
   islet status [--json]                    is Islet running, and how it is set up

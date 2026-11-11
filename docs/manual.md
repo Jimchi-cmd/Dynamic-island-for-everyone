@@ -123,7 +123,7 @@ You can close the Settings window; the island keeps running. Open **Islet Settin
 
 | To… | Do this |
 |---|---|
-| Peek (it grows slightly) | Move the pointer over the island |
+| Peek (it grows slightly, or into a status strip) | Move the pointer over the island |
 | Open it | Click it |
 | Close it | Click it again, press **Esc**, click anywhere else, or move away (it closes by itself after 5 seconds) |
 | Open the biggest view | Press and hold |
@@ -320,6 +320,7 @@ Shows your arrival time with live traffic, and hands off to Google Maps or Waze.
 
 - **Show the island only when I point at it** (hover-only mode): the empty island disappears until you move the pointer to the top centre of the screen. Music, timers, pop-ups and anything else going on always show.
 - **Show the time when nothing is playing:** the time in the empty pill (on by default).
+- **Show weather, battery and processor when you point at it:** point at the empty island and it widens into a status strip: the weather (if you chose a place), the laptop's battery (green while charging, red at 20% or less) and how busy the processor is (orange from 90%), either side of the time. The processor is read only while you point, and the reading shows up after about a second. Not on a Mac with a notch, where the notch is in the way. On by default.
 - **Accent colour:** for buttons and switches on the island.
 - **Size:** small, medium or large.
 - **Display:** which screen the island is on (with more than one), or **All displays** for an island on each. The extra islands show music, calls, batteries, downloads and Control Centre; alarms, timers and the shortcut stay with the main island. Plug in a new screen? Choose the setting again (or restart Islet) to give it an island.

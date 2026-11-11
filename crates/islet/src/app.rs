@@ -318,6 +318,9 @@ pub struct App {
     /// Days in a row with a finished focus round, and whether to save it.
     streak: islet_core::streak::Streak,
     streak_dirty: bool,
+    /// The pointer just left a hovered island that showed its status
+    /// strip: the strip fades as the pill shrinks back.
+    strip_linger: bool,
     call_press: bool,
     /// The Join button being pressed on the agenda card (its link).
     join_press: Option<String>,
@@ -410,6 +413,7 @@ impl App {
             call_sec: -1,
             streak: Default::default(),
             streak_dirty: false,
+            strip_linger: false,
             call_press: false,
             join_press: None,
         };
@@ -724,7 +728,61 @@ impl App {
     /// Wi-Fi / Bluetooth requests for the connectivity worker.
     /// Whether the system monitor panel is on screen (sample only then).
     pub fn sysmon_wanted(&self) -> bool {
-        self.panel == Some(Panel::System) && self.island.presentation().is_open()
+        (self.panel == Some(Panel::System) && self.island.presentation().is_open())
+            // The hovered island's status strip shows how busy the processor is.
+            || (self.strip_allowed() && self.island.presentation() == Presentation::Peek)
+    }
+
+    /// The status strip can show: it is switched on, nothing is live, and
+    /// there is no notch in the way.
+    fn strip_allowed(&self) -> bool {
+        self.prefs.hover_status && self.notch.is_none() && self.live_count == 0 && self.clock.is_some()
+    }
+
+    /// What the hovered, empty island shows beside the time: the weather,
+    /// the laptop's battery, and how busy the processor is.
+    fn status_items(&self) -> Vec<content::StatusItem> {
+        use islet_render::elements::Icon;
+        let mut v = Vec::new();
+        if let Some(w) = self.activities.weather() {
+            v.push(content::StatusItem {
+                icon: content::sky_icon(w),
+                text: islet_core::weather::format_temp(w.temp_c, self.prefs.fahrenheit),
+                color: content::WHITE,
+            });
+        }
+        if let Some(b) = self.activities.laptop() {
+            let color = if b.charging {
+                content::GREEN
+            } else if b.percent <= 20 {
+                content::RED
+            } else {
+                content::WHITE
+            };
+            v.push(content::StatusItem { icon: Icon::Battery(b.percent), text: format!("{}%", b.percent), color });
+        }
+        if let Some(s) = self.activities.system() {
+            let pct = (s.cpu.clamp(0.0, 1.0) * 100.0).round() as u8;
+            let color = if pct >= 90 { content::ORANGE } else { content::WHITE };
+            v.push(content::StatusItem { icon: Icon::Gauge, text: format!("{pct}%"), color });
+        }
+        v
+    }
+
+    /// How visible the status strip is: it grows in with the hovered pill
+    /// and fades as the pill shrinks back.
+    fn strip_opacity(&self, t: f64) -> f32 {
+        let p = self.island.presentation();
+        let on = p == Presentation::Peek || (p == Presentation::Idle && self.strip_linger);
+        if !on || !self.strip_allowed() || self.shown.value(t) < 0.01 {
+            return 0.0;
+        }
+        let full = content::status_width(self.status_items().len());
+        if full <= IDLE_W + 12.0 {
+            return 0.0;
+        }
+        let r = self.pill_rect(t);
+        (smooth((r.w - IDLE_W - 12.0) / (full - IDLE_W - 12.0)) * smooth((60.0 - r.h) / 16.0)) as f32
     }
 
     pub fn take_conn_commands(&mut self) -> Vec<ConnCommand> {
@@ -1973,12 +2031,22 @@ impl App {
     fn clock_shown(&self, t: f64) -> bool {
         let card = (self.expanded_opacity(t) > 0.0 || self.island.presentation().is_open())
             && matches!(self.open_content(&self.live(t)), OpenContent::Clock);
-        card || self.idle_clock_opacity(t, &self.live(t)) > 0.0
+        card || self.idle_clock_opacity(t, &self.live(t)) > 0.0 || self.strip_opacity(t) > 0.0
     }
 
     /// The time on the empty pill: on unless switched off, while nothing is
     /// live, fading as the pill grows into a card (and with the pill when it
     /// hides until hovered). Not on a notched Mac, where the notch hides it.
+    /// 1 when the idle clock is on and nothing is live, whatever the pill's
+    /// shape: with the status strip the time doesn't fade as the pill widens.
+    fn idle_clock_base(&self, live: &[Live]) -> f32 {
+        if !self.prefs.idle_clock || self.notch.is_some() || self.clock.is_none() || !live.is_empty() {
+            0.0
+        } else {
+            1.0
+        }
+    }
+
     fn idle_clock_opacity(&self, t: f64, live: &[Live]) -> f32 {
         if !self.prefs.idle_clock || self.notch.is_some() || self.clock.is_none() || !live.is_empty() {
             return 0.0;
@@ -2022,6 +2090,7 @@ impl App {
             || self.compact_opacity(t, &live) > 0.0
             || self.privacy_opacity(t) > 0.0
             || self.idle_clock_opacity(t, &live) > 0.0
+            || self.strip_opacity(t) > 0.0
     }
 
     /// The camera / microphone dot shows while the pill is closed (idle or
@@ -2234,11 +2303,22 @@ impl App {
                 _ => {}
             }
         }
-        let io = self.idle_clock_opacity(t, &live);
+        // The time stays put while the hovered pill grows a status strip
+        // around it (which shows the time even with the idle clock off).
+        let so = self.strip_opacity(t);
+        let io =
+            if so > 0.0 { 1.0f32.min(so.max(self.idle_clock_base(&live))) } else { self.idle_clock_opacity(t, &live) };
         if let (true, Some(now)) = (io > 0.0, self.clock) {
             // Centred in what the camera / microphone dot leaves free.
             let room = if self.privacy_shown() { PRIVACY_W } else { 0.0 };
-            let inner = Rect::new(p.x, p.y, (p.w - room).max(1.0), p.h);
+            let mut inner = Rect::new(p.x, p.y, (p.w - room).max(1.0), p.h);
+            if so > 0.0 {
+                // With more on one side, the time glides over as the strip
+                // grows in, so the row as a whole stays centred.
+                let items = self.status_items();
+                inner.x += content::status_shift(items.len()) * f64::from(so);
+                out.extend(content::status_strip(inner, &items, so));
+            }
             out.extend(content::idle_clock(inner, &now, self.h24, io, engine));
         }
         let po = self.privacy_opacity(t);
@@ -2261,6 +2341,12 @@ impl App {
         let (w, h, r) = target_size(p, None);
         let live = self.live(t);
         let dims = match p {
+            // Hovered and empty: room for the status strip, if it has anything.
+            Presentation::Peek if self.strip_allowed() && live.is_empty() => {
+                let room = if self.privacy_shown() { PRIVACY_W } else { 0.0 };
+                let strip = content::status_width(self.status_items().len());
+                (w.max(strip + room), h, r)
+            }
             Presentation::Compact => {
                 let room = if self.privacy_shown() { PRIVACY_W } else { 0.0 };
                 let cw = if self.lyrics_in_bar(&live) {
@@ -2343,6 +2429,7 @@ impl App {
     fn signal(&mut self, s: Signal, t: f64) -> bool {
         let from = self.island.presentation();
         let Some(to) = self.island.apply(s) else { return false };
+        self.strip_linger = from == Presentation::Peek && to == Presentation::Idle;
         let spring = spring_for(from, to);
         let start = self.bounds(t);
         let dims = self.target_dims(to, t);
@@ -4431,6 +4518,147 @@ mod tests {
         assert!(texts(&gap, 105.0, &mut engine).iter().any(|s| s == "Art"), "Tuesday's Art is up next");
     }
 
+    fn hover(app: &mut App, t: f64) {
+        let r = app.pill_rect(t);
+        app.handle(Event::PointerMove { x: r.x + r.w / 2.0, y: r.y + r.h / 2.0 }, t);
+    }
+
+    fn stats(cpu: f32) -> islet_core::sysmon::Stats {
+        let gb = 1 << 30;
+        islet_core::sysmon::Stats {
+            cpu,
+            mem_used: 5 * gb,
+            mem_total: 16 * gb,
+            disk_used: 400 * gb,
+            disk_total: 512 * gb,
+        }
+    }
+
+    #[test]
+    fn pointing_at_the_empty_island_shows_a_status_strip() {
+        use islet_core::weather::{Sky, Weather};
+        let mut engine = TextEngine::new();
+        // With nothing to tell, hovering is what it always was.
+        let mut bare = App::new(Demo::None, false);
+        bare.set_time(NOW, 0.0);
+        hover(&mut bare, 1.0);
+        assert_eq!(bare.presentation(), Peek);
+        assert!((bare.pill_rect(5.0).w - target_size(Peek, None).0).abs() < 0.5);
+        assert_eq!(texts(&bare, 5.0, &mut engine), ["14:05"]);
+
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        let w =
+            Weather { place: "Kampala".into(), temp_c: 24.3, high_c: None, low_c: None, sky: Sky::Clear, is_day: true };
+        app.report(Report::Weather(Some(w)), 0.0);
+        app.report(Report::Laptop(laptop(82, false)), 0.0);
+        app.tick(0.5);
+        assert_eq!(app.presentation(), Idle);
+        assert_eq!(texts(&app, 0.9, &mut engine), ["14:05"], "idle: only the time");
+        assert!(!app.sysmon_wanted(), "and the processor isn't sampled");
+
+        hover(&mut app, 1.0);
+        assert!(app.sysmon_wanted(), "hovering starts the processor reading");
+        let wide = app.pill_rect(5.0).w;
+        assert!((wide - content::status_width(2)).abs() < 0.5, "room for two things beside the time: {wide}");
+        let shown = texts(&app, 5.0, &mut engine);
+        assert!(shown.contains(&"14:05".to_string()) && shown.contains(&"24°".to_string()), "{shown:?}");
+        assert!(shown.contains(&"82%".to_string()), "{shown:?}");
+        // The time is in the middle, exactly where it is on the idle pill.
+        let time_x = |a: &App, t: f64, e: &mut TextEngine| {
+            a.elements(t, e)
+                .iter()
+                .find_map(|el| if let Element::Text(i) = el { (i.text == "14:05").then_some(i.x) } else { None })
+                .unwrap()
+        };
+        assert!((time_x(&app, 5.0, &mut engine) - time_x(&bare, 5.0, &mut engine)).abs() < 0.6);
+
+        // The first reading arrives: the strip makes room for it.
+        assert!(app.report(Report::System(Some(stats(0.23))), 6.0));
+        assert!((app.pill_rect(9.0).w - content::status_width(3)).abs() < 0.5);
+        assert!(texts(&app, 9.0, &mut engine).contains(&"23%".to_string()));
+
+        // Pointing away shrinks it back to the plain time, and the sampling stops.
+        app.handle(Event::PointerMove { x: 1.0, y: 250.0 }, 10.0);
+        assert_eq!(app.presentation(), Idle);
+        assert!(!app.sysmon_wanted());
+        assert_eq!(texts(&app, 14.0, &mut engine), ["14:05"]);
+        assert!((app.pill_rect(14.0).w - target_size(Idle, None).0).abs() < 0.5);
+
+        // Switched off, hovering is plain again; with music playing there is no strip either.
+        app.set_prefs(IslandPrefs { hover_status: false, ..IslandPrefs::default() });
+        hover(&mut app, 15.0);
+        assert!((app.pill_rect(19.0).w - target_size(Peek, None).0).abs() < 0.5);
+        assert_eq!(texts(&app, 19.0, &mut engine), ["14:05"]);
+        let mut playing = App::new(Demo::None, false);
+        playing.set_time(NOW, 0.0);
+        playing.report(Report::Laptop(laptop(82, false)), 0.0);
+        playing.report(Report::Media(Some(song(true))), 0.0);
+        hover(&mut playing, 1.0);
+        assert!(!texts(&playing, 5.0, &mut engine).contains(&"82%".to_string()));
+    }
+
+    /// The hovered island's status strip, for visual review:
+    /// `ISLET_STRIP_SHEET=/path/out.png cargo test -p islet strip_sheet`
+    #[test]
+    fn strip_sheet() {
+        let Some(out) = std::env::var_os("ISLET_STRIP_SHEET") else { return };
+        use islet_core::weather::{Sky, Weather};
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let mut engine = TextEngine::new();
+        let make = |weather: bool, battery: Option<(u8, bool)>, cpu: Option<f32>| {
+            let mut a = App::new(Demo::None, false);
+            a.set_time(NOW, 0.0);
+            if weather {
+                let w = Weather {
+                    place: "Kampala".into(),
+                    temp_c: 24.3,
+                    high_c: None,
+                    low_c: None,
+                    sky: Sky::PartlyCloudy,
+                    is_day: true,
+                };
+                a.report(Report::Weather(Some(w)), 0.0);
+            }
+            if let Some((p, c)) = battery {
+                a.report(Report::Laptop(laptop(p, c)), 0.0);
+            }
+            if let Some(c) = cpu {
+                a.report(Report::System(Some(stats(c))), 0.0);
+            }
+            hover(&mut a, 1.0);
+            a
+        };
+        let apps = [
+            make(false, None, None),
+            make(true, None, None),
+            make(true, Some((82, false)), None),
+            make(true, Some((100, true)), Some(0.07)),
+            make(false, Some((14, false)), Some(0.96)),
+            make(false, Some((57, false)), None),
+        ];
+        let (cw, ch) = (WINDOW.0 as u32, 70u32);
+        let mut sheet = Pixmap::new(cw, ch * apps.len() as u32).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        for (i, a) in apps.iter().enumerate() {
+            let mut cell = Pixmap::new(cw, ch).unwrap();
+            let frame = a.frame(9.0);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, ch, 1.0);
+            let els = a.elements(9.0, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            sheet.draw_pixmap(
+                0,
+                (i as u32 * ch) as i32,
+                cell.as_ref(),
+                &PixmapPaint::default(),
+                Transform::identity(),
+                None,
+            );
+        }
+        sheet.save_png(out).unwrap();
+    }
+
     #[test]
     fn focus_rounds_can_hold_pop_ups_until_the_break() {
         let mut app = App::new(Demo::None, false);
@@ -5176,6 +5404,9 @@ mod tests {
         open_system_panel(&mut app, 20.0);
         assert!(app.sysmon_wanted());
         app.handle(Event::Key(Key::Escape), 30.0);
+        // The pointer is still over the island, whose status strip shows the
+        // processor too; pointing away is what stops the readings.
+        app.handle(Event::PointerMove { x: 1.0, y: 250.0 }, 31.0);
         assert!(!app.sysmon_wanted());
     }
 
