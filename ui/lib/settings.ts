@@ -356,3 +356,54 @@ export function streakLine(s: FocusStreak): string {
     s.today > 0 ? `${plural(s.today, 'round', 'rounds')} done today` : 'finish a round today to keep it going';
   return `${run}: ${today}. ${best}`;
 }
+
+/** A lesson of the class timetable (`islet class --json`). */
+export interface Lesson {
+  /** 0 = Monday … 6 = Sunday. */
+  day: number;
+  /** Minutes after midnight. */
+  start: number;
+  end: number;
+  name: string;
+  room: string;
+}
+
+export const WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const DAY_ARGS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+export function parseLessons(json: string): Lesson[] {
+  const v = JSON.parse(json);
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((l) => l && Number.isInteger(l.day) && l.day >= 0 && l.day <= 6 && typeof l.name === 'string')
+    .map((l) => ({
+      day: l.day,
+      start: Number(l.start) || 0,
+      end: Number(l.end) || 0,
+      name: l.name,
+      room: typeof l.room === 'string' ? l.room : '',
+    }));
+}
+
+/** Minutes after midnight as "09:00" or "9:00 AM". */
+export function formatMinutes(minutes: number, h24: boolean): string {
+  return formatAlarmTime({ hour: Math.floor(minutes / 60) % 24, minute: minutes % 60 }, h24);
+}
+
+/** Arguments for `islet class add`, from the form, or what is missing. */
+export function lessonAddArgs(
+  day: number,
+  start: string,
+  end: string,
+  name: string,
+  room: string,
+): string[] | { error: string } {
+  const time = /^\d{1,2}:\d{2}$/;
+  if (!name.trim()) return { error: 'Give the lesson a name.' };
+  if (!time.test(start.trim()) || !time.test(end.trim())) return { error: 'Pick when it starts and ends.' };
+  if (end.trim().padStart(5, '0') <= start.trim().padStart(5, '0')) return { error: 'A lesson ends after it starts.' };
+  if (name.trim().startsWith('-') || room.trim().startsWith('-')) return { error: 'Names cannot start with "-".' };
+  const args = ['class', 'add', DAY_ARGS[day] ?? 'mon', start.trim(), end.trim(), name.trim()];
+  if (room.trim()) args.push('--room', room.trim());
+  return args;
+}

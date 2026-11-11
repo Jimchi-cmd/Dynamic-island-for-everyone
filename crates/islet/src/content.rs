@@ -1622,11 +1622,21 @@ fn parts_label(parts: &[(Part, u8)]) -> String {
 /// The expanded clock (an open island with nothing live).
 /// `alarm`: the next alarm, as "7:30 · in 8 h 15 min" (the date shortens to
 /// make room for it).
+/// The line beside the date on the clock card: the next alarm, or where
+/// the class timetable stands.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClockNote<'a> {
+    pub icon: Icon,
+    pub color: [u8; 3],
+    pub text: &'a str,
+}
+
 pub fn expanded_clock(
     pill: Rect,
     now: &LocalTime,
     h24: bool,
-    alarm: Option<&str>,
+    note: Option<ClockNote<'_>>,
+    weather: bool,
     o: f32,
     engine: &mut TextEngine,
 ) -> Vec<Element> {
@@ -1640,19 +1650,19 @@ pub fn expanded_clock(
         v.push(text(suffix, TextStyle { size: 20.0, ..time_style }, x, top + 74.0));
     }
     let date_style = TextStyle { size: 15.0, opacity: o * 0.6, ..TextStyle::default() };
-    let Some(alarm) = alarm else {
+    let Some(note) = note else {
         v.push(text(format_date(now), date_style, left + 2.0, top + 102.0));
         return v;
     };
     let date = islet_core::clock::format_date_short(now);
     let x = left + 2.0 + engine.measure(&date, &date_style) + 10.0;
     v.push(text(date, date_style, left + 2.0, top + 102.0));
-    v.push(Element::Icon { icon: Icon::Bell(0), x, y: top + 90.0, size: 14.0, color: ORANGE, opacity: o });
-    let alarm_style =
-        TextStyle { size: 13.0, weight: 600, opacity: o, color: ORANGE, tabular: true, ..TextStyle::default() };
-    // Stops short of the weather's credit line in the corner.
-    let room = (pill.right() - PAD) as f32 - 66.0 - (x + 18.0);
-    v.push(text(engine.ellipsize(alarm, &alarm_style, room), alarm_style, x + 18.0, top + 101.5));
+    v.push(Element::Icon { icon: note.icon, x, y: top + 90.0, size: 14.0, color: note.color, opacity: o });
+    let note_style =
+        TextStyle { size: 13.0, weight: 600, opacity: o, color: note.color, tabular: true, ..TextStyle::default() };
+    // Stops short of the weather's credit line in the corner, when there is one.
+    let room = (pill.right() - PAD) as f32 - if weather { 66.0 } else { 0.0 } - (x + 18.0);
+    v.push(text(engine.ellipsize(note.text, &note_style, room), note_style, x + 18.0, top + 101.5));
     v
 }
 

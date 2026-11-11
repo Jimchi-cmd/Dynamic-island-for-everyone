@@ -25,6 +25,13 @@ pub fn allowed(args: &[String]) -> bool {
         ["pro", "activate" | "check" | "deactivate"] | ["pro", "status", "--json"] => true,
         ["stopwatch", "start" | "pause" | "resume" | "lap" | "reset"] => true,
         ["world", "--json"] | ["world", "cities", "--json"] => true,
+        ["class", "--json"] => true,
+        ["class", "remove", n] => n.parse::<u32>().is_ok(),
+        ["class", "add", day, start, end, name, rest @ ..] => {
+            [day, start, end, name].iter().all(|v| !v.starts_with('-') && v.len() <= 80)
+                && matches!(rest, [] | ["--room", _])
+                && rest.iter().skip(1).all(|v| !v.starts_with('-') && v.len() <= 80)
+        }
         ["todo", "--json"] | ["todo", "add" | "clear-done"] => true,
         ["todo", "done" | "remove", id] => id.parse::<u32>().is_ok(),
         ["shortcut", "--json"] => true,

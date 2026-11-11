@@ -23,6 +23,7 @@ pub mod stopwatch;
 pub mod streak;
 pub mod sysmon;
 pub mod timer;
+pub mod timetable;
 pub mod todo;
 pub mod version;
 pub mod weather;

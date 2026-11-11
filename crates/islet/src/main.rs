@@ -207,6 +207,7 @@ fn run() -> platform::Result<()> {
         app.set_shelf(config::load_shelf());
         app.set_todo(config::load_json("todo.json").unwrap_or_default());
         app.set_streak(config::load_json("focus.json").unwrap_or_default());
+        app.set_timetable(config::load_json("timetable.json").unwrap_or_default(), 0.0);
     }
     win.watch_caps_lock(app.prefs().caps_lock_hud);
     trace("caps lock watched");
@@ -347,6 +348,8 @@ fn run() -> platform::Result<()> {
                     app.set_pro(pro::active());
                     // `islet todo …` and Settings edit todo.json too.
                     app.set_todo(config::load_json("todo.json").unwrap_or_default());
+                    // …and `islet class …` edits timetable.json.
+                    needs_frame |= app.set_timetable(config::load_json("timetable.json").unwrap_or_default(), t);
                     // The islands on other displays follow.
                     for m in &mut mirrors {
                         if let Some(stdin) = m.stdin.as_mut() {

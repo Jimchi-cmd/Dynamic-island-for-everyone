@@ -22,6 +22,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 - **Notifications** on the island (Linux, opt-in).
 - **Calendar:** what's next, ten minutes before it starts, and today's agenda (Google, Outlook or iCloud via their private iCal link). A **Join** button appears when the event has a video-call link. Deadlines and exams count down ("Due in 6 days").
 - **Timer and focus sessions:** a countdown ring on the island, or Pomodoro rounds of work and breaks. A streak counts the days in a row you finished a round.
+- **Class timetable:** enter your week once; the island counts down to the next lesson and shows your free gaps.
 - **Alarms:** one-time or repeating. When one rings, the island opens with a swinging bell and a chime until you snooze or stop it.
 - **Wi-Fi and Bluetooth:** open the island, tap Wi-Fi or Bluetooth on the clock card, and pick a network or a device, or switch the radio on or off.
 - **Control Centre from anywhere:** every open card (music, a timer, navigation…) has a "‹ Control Centre" button at the top that goes to the clock card with Wi-Fi, Bluetooth, the shelf and the system monitor, and lists have a back button.

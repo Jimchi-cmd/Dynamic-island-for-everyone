@@ -243,6 +243,26 @@ These appear for a moment by themselves:
 
 **Focus session:** set **Work** and **Break** minutes and the number of **Rounds**, then start it. The island chimes and pops up at each change between work and break.
 
+**Class timetable** (Settings → **Timer & focus** → **Class timetable**): enter your week once, with a day, start and end time, a name and, if you like, a room.
+
+- Ten minutes before a lesson the island shows it as "up next", like a calendar event, and its agenda lists the day's lessons with their rooms.
+- The clock card says where the day stands: "Maths in 25 min", "Maths · 20 min left", or in a gap "Free 45 min · then Physics".
+- It works without a calendar link, and the timetable is kept in `timetable.json` on this computer only.
+
+From a terminal:
+
+```bash
+islet class add mon 9:00 10:00 "Maths" --room "Room 4"
+```
+
+```bash
+islet class
+```
+
+```bash
+islet class remove 1
+```
+
 **Focus streak:** every work round you see through to its end counts. Do at least one a day and Islet counts the days in a row: the focus card shows "3 days in a row" from the second day, and Settings → Timer & focus shows the streak, your best, and whether today is done. Missing a whole day starts it again. The count is kept in `focus.json` on this computer only. From a terminal:
 
 ```bash

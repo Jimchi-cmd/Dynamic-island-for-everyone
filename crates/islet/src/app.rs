@@ -225,6 +225,12 @@ pub struct App {
     /// Notes and to-dos (Islet Pro; todo.json), and whether to save them.
     todo: islet_core::todo::Todo,
     todo_dirty: bool,
+    /// The class timetable, and the day its lessons were last laid out for.
+    timetable: islet_core::timetable::Timetable,
+    lessons_day: i64,
+    /// Calendar events and lessons together, in order: what "up next" and
+    /// the agenda read. (The month card shows the calendar alone.)
+    soon: Vec<islet_core::calendar::CalEvent>,
     /// When the sleep timer pauses what's playing (None: off).
     sleep_at: Option<f64>,
     /// The quick timer's length (an index into `content::QUICK_MINUTES`).
@@ -351,6 +357,9 @@ impl App {
             shelf_dirty: false,
             todo: Default::default(),
             todo_dirty: false,
+            timetable: Default::default(),
+            lessons_day: i64::MIN,
+            soon: Vec::new(),
             sleep_at: None,
             quick: content::QUICK_DEFAULT,
             cal_view: None,
@@ -733,6 +742,35 @@ impl App {
 
     pub fn set_todo(&mut self, todo: islet_core::todo::Todo) {
         self.todo = todo;
+    }
+
+    /// The class timetable (timetable.json).
+    pub fn set_timetable(&mut self, timetable: islet_core::timetable::Timetable, t: f64) -> bool {
+        self.timetable = timetable;
+        self.refresh_soon();
+        self.update_up_next(t)
+    }
+
+    /// The local day (since 1970) on the wall clock.
+    fn today(&self) -> i64 {
+        islet_core::streak::day_of(self.wall as i64, self.utc_offset)
+    }
+
+    /// Lay the week's lessons out beside the calendar's events.
+    fn refresh_soon(&mut self) {
+        self.lessons_day = self.today();
+        let mut soon = self.activities.calendar().to_vec();
+        // Yesterday too, for a lesson that runs past midnight.
+        soon.extend(self.timetable.events(self.lessons_day - 1, 9, self.utc_offset));
+        soon.sort_by_key(|e| (e.start, e.end));
+        self.soon = soon;
+    }
+
+    /// "Maths in 25 min", "Free 45 min · then Physics": the clock card's line.
+    fn class_line(&self) -> Option<String> {
+        let local = self.wall as i64 + self.utc_offset;
+        let weekday = islet_core::timetable::weekday_of_day(local.div_euclid(86_400));
+        self.timetable.line(weekday, (local.rem_euclid(86_400) / 60) as u16, self.h24)
     }
 
     /// The focus streak as saved (focus.json).
@@ -1469,26 +1507,27 @@ impl App {
     /// The wall clock (Unix seconds) and UTC offset, for calendar events.
     /// Returns true when "up next" changed.
     pub fn set_wall(&mut self, epoch: f64, utc_offset: i64, t: f64) -> bool {
+        let moved = utc_offset != self.utc_offset;
         self.wall = epoch;
         self.utc_offset = utc_offset;
+        // A new day (or time zone): lay the lessons out again.
+        if !self.timetable.lessons.is_empty() && (moved || self.today() != self.lessons_day) {
+            self.refresh_soon();
+        }
         self.update_up_next(t)
     }
 
     fn update_up_next(&mut self, t: f64) -> bool {
         let now = self.wall as i64;
-        let next = islet_core::calendar::up_next(self.activities.calendar(), now)
-            .map(|e| (e.clone(), t + (e.start as f64 - self.wall)));
+        let next =
+            islet_core::calendar::up_next(&self.soon, now).map(|e| (e.clone(), t + (e.start as f64 - self.wall)));
         self.report(Report::UpNext(next), t)
     }
 
     /// The events on the agenda card: what is on now and the next day's.
     fn agenda_events(&self) -> impl Iterator<Item = &islet_core::calendar::CalEvent> {
         let now = self.wall as i64;
-        self.activities
-            .calendar()
-            .iter()
-            .filter(move |e| e.end > now && e.start < now + 24 * 3600)
-            .take(content::AGENDA_ROWS)
+        self.soon.iter().filter(move |e| e.end > now && e.start < now + 24 * 3600).take(content::AGENDA_ROWS)
     }
 
     /// An event's video-call link, once it is about to start or is on.
@@ -1720,6 +1759,7 @@ impl App {
         }
         if let Report::Calendar(_) = &r {
             let changed = self.activities.report(r, t);
+            self.refresh_soon();
             return self.update_up_next(t) || self.sync_live(t) || changed;
         }
         if let Report::Hud(h) = &r {
@@ -2110,8 +2150,23 @@ impl App {
                 )),
                 OpenContent::Clock => {
                     if let Some(now) = self.clock {
-                        let alarm = self.next_alarm_label();
-                        out.extend(content::expanded_clock(cr, &now, self.h24, alarm.as_deref(), eo, engine));
+                        // Where the school day stands, or else the next alarm.
+                        let (class, alarm) = (self.class_line(), self.next_alarm_label());
+                        let note = match (&class, &alarm) {
+                            (Some(c), _) => Some(content::ClockNote {
+                                icon: islet_render::elements::Icon::Calendar,
+                                color: content::GREEN,
+                                text: c,
+                            }),
+                            (None, Some(a)) => Some(content::ClockNote {
+                                icon: islet_render::elements::Icon::Bell(0),
+                                color: content::ORANGE,
+                                text: a,
+                            }),
+                            (None, None) => None,
+                        };
+                        let weather = self.activities.weather().is_some();
+                        out.extend(content::expanded_clock(cr, &now, self.h24, note, weather, eo, engine));
                     }
                     let minutes = content::QUICK_MINUTES[self.quick];
                     out.extend(content::quick_row_elements(cr, self.clock_row(), minutes, eo));
@@ -2731,8 +2786,8 @@ impl App {
         }
         // Calendar: wake exactly when "up next" appears or goes, and each
         // minute while it shows (its "in 8 min" label).
-        if !self.activities.calendar().is_empty() {
-            if let Some(change) = islet_core::calendar::next_change(self.activities.calendar(), self.wall as i64) {
+        if !self.soon.is_empty() {
+            if let Some(change) = islet_core::calendar::next_change(&self.soon, self.wall as i64) {
                 at(t + (change as f64 - self.wall).max(0.0));
             }
             if let Some(Live::Event { starts_at, .. }) =
@@ -4308,6 +4363,61 @@ mod tests {
         );
         let card = texts(&app, 9.0, &mut engine);
         assert!(card.iter().any(|s| s == "Due in 6 days") && card.iter().any(|s| s == "Dentist"), "{card:?}");
+    }
+
+    #[test]
+    fn the_class_timetable_counts_down_to_lessons() {
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        // Monday 2 November 2026, 08:40 at UTC+3.
+        let offset = 3 * 3600;
+        let monday = 1_793_577_600; // 00:00 UTC that day
+        let wall = |h: i64, m: i64| (monday + h * 3600 + m * 60 - offset) as f64;
+        let mut tt = islet_core::timetable::Timetable::default();
+        tt.add(0, 9 * 60, 10 * 60, "Maths", "Room 4").unwrap();
+        tt.add(0, 11 * 60, 12 * 60, "Physics", "").unwrap();
+        tt.add(1, 9 * 60, 10 * 60, "Art", "").unwrap();
+        app.set_time(NOW, 0.0);
+        app.set_wall(wall(8, 40), offset, 0.0);
+        app.set_timetable(tt, 0.0);
+        app.tick(0.0);
+        assert_eq!(app.presentation(), Idle, "20 minutes away: nothing on the island yet");
+        let wake = app.next_timer(0.0).unwrap();
+        assert!(wake <= 600.0 + 1e-6, "it wakes for the lesson ten minutes before: {wake}");
+
+        // The clock card says how long there is.
+        click(&mut app, 1.0);
+        let card = texts(&app, 5.0, &mut engine);
+        assert!(card.iter().any(|s| s == "Maths in 20 min"), "{card:?}");
+        app.handle(Event::Key(Key::Escape), 6.0);
+
+        // Ten minutes before, it is "up next" like a calendar event, with its room on the agenda.
+        app.set_wall(wall(8, 51), offset, 660.0);
+        app.tick(660.0);
+        assert_eq!(app.presentation(), Compact);
+        assert!(texts(&app, 664.0, &mut engine).iter().any(|s| s == "Maths"));
+        click(&mut app, 670.0);
+        let agenda = texts(&app, 675.0, &mut engine);
+        assert!(agenda.iter().any(|s| s == "Room 4") && agenda.iter().any(|s| s == "Physics"), "{agenda:?}");
+        assert!(agenda.iter().any(|s| s == "09:00" || s == "9:00 AM"), "lessons show at local time: {agenda:?}");
+
+        // In the gap after Maths, the card counts the free time.
+        let mut gap = App::new(Demo::None, false);
+        gap.set_time(NOW, 0.0);
+        gap.set_wall(wall(10, 15), offset, 0.0);
+        gap.set_timetable(app.timetable.clone(), 0.0);
+        click(&mut gap, 1.0);
+        let shown = texts(&gap, 5.0, &mut engine);
+        assert!(shown.iter().any(|s| s == "Free 45 min · then Physics"), "{shown:?}");
+
+        // Lessons stay off the month card: it shows the calendar alone.
+        assert!(gap.upcoming_events().is_empty());
+
+        // Tomorrow's lessons are laid out when the day turns.
+        gap.set_wall(wall(24 + 8, 55), offset, 100.0);
+        gap.handle(Event::Key(Key::Escape), 100.0);
+        gap.tick(101.0);
+        assert!(texts(&gap, 105.0, &mut engine).iter().any(|s| s == "Art"), "Tuesday's Art is up next");
     }
 
     #[test]

@@ -23,6 +23,11 @@
     parseStreak,
     streakLine,
     type FocusStreak,
+    formatMinutes,
+    lessonAddArgs,
+    parseLessons,
+    WEEK_DAYS,
+    type Lesson,
     type BtList,
     type IslandPrefs,
     type WifiList,
@@ -198,7 +203,10 @@
     if (page === 'connections' && !wifi) void loadConnections(true);
     // General needs to know about Pro too, for the Pro-only island styles.
     if ((page === 'pro' || page === 'general') && !pro) void loadPro();
-    if (page === 'timer') void loadStreak();
+    if (page === 'timer') {
+      void loadStreak();
+      void loadLessons();
+    }
   });
 
   // The island's own preferences (island.json via the CLI)
@@ -390,6 +398,52 @@
     }
   }
   let timerNote = $state('');
+
+  // Class timetable (`islet class …`)
+  let lessons = $state<Lesson[]>([]);
+  let lessonDay = $state(0);
+  let lessonStart = $state('09:00');
+  let lessonEnd = $state('10:00');
+  let lessonName = $state('');
+  let lessonRoom = $state('');
+  let lessonNote = $state('');
+  async function loadLessons() {
+    try {
+      lessons = parseLessons(await api.islet(['class', '--json']));
+    } catch (e) {
+      lessonNote = api.message(e);
+    }
+  }
+
+  async function addLesson() {
+    const args = lessonAddArgs(lessonDay, lessonStart, lessonEnd, lessonName, lessonRoom);
+    if (!Array.isArray(args)) {
+      lessonNote = args.error;
+      return;
+    }
+    try {
+      lessonNote = await api.islet(args);
+      lessonName = '';
+      lessonRoom = '';
+      // The next lesson usually follows this one.
+      lessonStart = lessonEnd;
+      const [h = 9, m = 0] = lessonEnd.split(':').map(Number);
+      lessonEnd = `${String(Math.min(h + 1, 23)).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    } catch (e) {
+      lessonNote = api.message(e);
+    }
+    await loadLessons();
+  }
+
+  async function removeLesson(index: number) {
+    try {
+      await api.islet(['class', 'remove', String(index + 1)]);
+      lessonNote = '';
+    } catch (e) {
+      lessonNote = api.message(e);
+    }
+    await loadLessons();
+  }
 
   async function timerCmd(args: string[]) {
     try {
@@ -1296,6 +1350,58 @@
           <button onclick={() => timerCmd(['timer', 'stop'])}>Stop</button>
         </div>
         {#if timerNote}<p class="small" role="status">{timerNote}</p>{/if}
+        <div class="card">
+          <h2>Class timetable</h2>
+          <p class="muted small">
+            Enter your week once. The island shows a lesson ten minutes before it starts, and the clock card counts down
+            to the next one and shows your free gaps. Kept on this computer only.
+          </p>
+          {#each WEEK_DAYS as dayName, d (d)}
+            {#if lessons.some((l) => l.day === d)}
+              <h3 class="day">{dayName}</h3>
+              {#each lessons as l, i (i)}
+                {#if l.day === d}
+                  <div class="net">
+                    <span class="when">{formatMinutes(l.start, h24)} – {formatMinutes(l.end, h24)}</span>
+                    <span class="name">{l.name}</span>
+                    <span class="muted small">{l.room}</span>
+                    <button class="link" aria-label={`Delete ${l.name} on ${dayName}`} onclick={() => removeLesson(i)}>✕</button>
+                  </div>
+                {/if}
+              {/each}
+            {/if}
+          {/each}
+          <div class="three">
+            <div>
+              <label for="lday">Day</label>
+              <select id="lday" bind:value={lessonDay}>
+                {#each WEEK_DAYS as dayName, d (d)}<option value={d}>{dayName}</option>{/each}
+              </select>
+            </div>
+            <div>
+              <label for="lstart">Starts</label>
+              <input id="lstart" type="time" bind:value={lessonStart} />
+            </div>
+            <div>
+              <label for="lend">Ends</label>
+              <input id="lend" type="time" bind:value={lessonEnd} />
+            </div>
+          </div>
+          <div class="two">
+            <div>
+              <label for="lname">Lesson</label>
+              <input id="lname" type="text" maxlength="40" placeholder="Maths" bind:value={lessonName} />
+            </div>
+            <div>
+              <label for="lroom">Room (optional)</label>
+              <input id="lroom" type="text" maxlength="40" placeholder="Room 4" bind:value={lessonRoom} />
+            </div>
+          </div>
+          <div class="actions">
+            <button class="primary" disabled={!lessonName.trim()} onclick={addLesson}>Add lesson</button>
+          </div>
+          {#if lessonNote}<p class="small" role="status">{lessonNote}</p>{/if}
+        </div>
       {:else if page === 'alarms'}
         <h1>Alarms</h1>
         <p class="muted">
@@ -1557,7 +1663,7 @@
             <h2>Shortcuts</h2>
             <p class="muted">
               Buttons of your own on the island (Control Centre → the bolt button). Each opens a folder, a file, a script
-              or a web page. Up to eight.
+              or a web page. Up to 50.
             </p>
             {#each shortcuts as s, i (i)}
               <div class="net">
@@ -1977,6 +2083,21 @@
   .net input[type='range'] {
     width: 220px;
     flex: none;
+  }
+  h3.day {
+    margin: 14px 0 2px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .net .when {
+    flex: none;
+    width: 172px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
   }
   .net .target {
     flex: 2;

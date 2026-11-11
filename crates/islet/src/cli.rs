@@ -28,6 +28,10 @@ Usage:
   islet key routes --clear                 remove it
   islet stopwatch start|pause|resume|lap|reset
                                            a stopwatch on the island (Islet Pro)
+  islet class add <day> <start> <end> <name> [--room <where>]
+                                           a lesson for your timetable (mon 9:00 10:00 Maths)
+  islet class [--json]                     your timetable; the clock card counts down to lessons
+  islet class remove <n>                   delete lesson n
   islet todo add                           add a note or to-do (one line from stdin; Islet Pro)
   islet todo [--json]                      your list
   islet todo done|remove <id>              tick an item (again to untick), or delete it
@@ -118,6 +122,10 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["nav", "stop"] => stop_trip(),
         ["key", "routes"] => store_key(),
         ["stopwatch", cmd] => stopwatch(cmd),
+        ["class"] => Ok(class_text()),
+        ["class", "--json"] => serde_json::to_string(&load_timetable().lessons).map_err(|e| e.to_string()),
+        ["class", "add", day, start, end, name, rest @ ..] => class_add(day, start, end, name, rest),
+        ["class", "remove", n] => class_remove(n),
         ["todo"] => Ok(todo_text()),
         ["todo", "--json"] => serde_json::to_string(&load_todo().items).map_err(|e| e.to_string()),
         ["todo", "add"] => read_line("Type a note and press Enter:").and_then(|line| {
@@ -938,6 +946,69 @@ fn load_todo() -> islet_core::todo::Todo {
 
 fn todo_id(s: &str) -> Result<u32, String> {
     s.parse().map_err(|_| format!("{s:?} isn't an item number (see: islet todo)"))
+}
+
+fn load_timetable() -> islet_core::timetable::Timetable {
+    config::load_json("timetable.json").unwrap_or_default()
+}
+
+/// Change the class timetable, save it and tell the island.
+fn edit_timetable(
+    f: impl FnOnce(&mut islet_core::timetable::Timetable) -> Result<String, String>,
+) -> Result<String, String> {
+    let mut t = load_timetable();
+    let msg = f(&mut t)?;
+    config::save_json("timetable.json", &t)?;
+    prefs_changed();
+    Ok(msg)
+}
+
+/// `islet class add mon 9:00 10:00 "Maths" [--room "Room 4"]`.
+fn class_add(day: &str, start: &str, end: &str, name: &str, rest: &[&str]) -> Result<String, String> {
+    use islet_core::timetable::{parse_day, DAY_NAMES};
+    let d = parse_day(day).ok_or_else(|| format!("{day:?} isn't a day (mon, tue, wed, thu, fri, sat or sun)"))?;
+    let minutes = |s: &str| {
+        islet_core::alarm::parse_time(s)
+            .map(|(h, m)| u16::from(h) * 60 + u16::from(m))
+            .ok_or_else(|| format!("{s:?} isn't a time (try 9:00 or 2:30pm)"))
+    };
+    let (start, end) = (minutes(start)?, minutes(end)?);
+    let room = match rest {
+        [] => "",
+        ["--room", r] => r,
+        _ => return Err("after the name, only --room <where> is understood".into()),
+    };
+    if name.starts_with('-') {
+        return Err("the lesson's name can't start with \"-\"".into());
+    }
+    edit_timetable(|t| {
+        t.add(d, start, end, name, room)?;
+        Ok(format!("Added {} on {}.", name.trim(), DAY_NAMES[d as usize]))
+    })
+}
+
+fn class_remove(n: &str) -> Result<String, String> {
+    let i: usize = n.parse().ok().filter(|i| *i >= 1).ok_or("say which lesson by its number (see: islet class)")?;
+    edit_timetable(|t| if t.remove(i - 1) { Ok("Removed.".into()) } else { Err(format!("there is no lesson {i}")) })
+}
+
+fn class_text() -> String {
+    use islet_core::timetable::DAY_NAMES;
+    let t = load_timetable();
+    if t.lessons.is_empty() {
+        return "No lessons yet. Add one with: islet class add mon 9:00 10:00 \"Maths\" --room \"Room 4\"".into();
+    }
+    let h24 = crate::clock::prefers_24h();
+    let hm = |m: u16| islet_core::alarm::format_hm((m / 60) as u8, (m % 60) as u8, h24);
+    t.lessons
+        .iter()
+        .enumerate()
+        .map(|(i, l)| {
+            let room = if l.room.is_empty() { String::new() } else { format!(" ({})", l.room) };
+            format!("{:>3}  {:<9} {}–{}  {}{room}", i + 1, DAY_NAMES[l.day as usize], hm(l.start), hm(l.end), l.name)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Change the to-do list, save it and tell the island.

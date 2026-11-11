@@ -158,3 +158,32 @@ describe('focus streak', () => {
     );
   });
 });
+
+import { formatMinutes, lessonAddArgs, parseLessons } from './settings';
+
+describe('class timetable', () => {
+  it('reads lessons and drops anything that is not one', () => {
+    const json = '[{"day":0,"start":540,"end":600,"name":"Maths","room":"Room 4"},{"day":9,"name":"x"},{"day":2,"start":480,"end":540,"name":"Art"}]';
+    expect(parseLessons(json)).toEqual([
+      { day: 0, start: 540, end: 600, name: 'Maths', room: 'Room 4' },
+      { day: 2, start: 480, end: 540, name: 'Art', room: '' },
+    ]);
+    expect(parseLessons('{}')).toEqual([]);
+  });
+
+  it('formats times both ways', () => {
+    expect(formatMinutes(540, true)).toBe('09:00');
+    expect(formatMinutes(870, false)).toBe('2:30 PM');
+  });
+
+  it('builds the add command or says what is missing', () => {
+    expect(lessonAddArgs(0, '09:00', '10:00', ' Maths ', 'Room 4')).toEqual([
+      'class', 'add', 'mon', '09:00', '10:00', 'Maths', '--room', 'Room 4',
+    ]);
+    expect(lessonAddArgs(4, '9:00', '10:30', 'Art', '')).toEqual(['class', 'add', 'fri', '9:00', '10:30', 'Art']);
+    expect(lessonAddArgs(0, '09:00', '10:00', '', '')).toEqual({ error: 'Give the lesson a name.' });
+    expect(lessonAddArgs(0, '', '10:00', 'Maths', '')).toEqual({ error: 'Pick when it starts and ends.' });
+    expect(lessonAddArgs(0, '10:00', '9:00', 'Maths', '')).toEqual({ error: 'A lesson ends after it starts.' });
+    expect(lessonAddArgs(0, '09:00', '10:00', '-x', '')).toEqual({ error: 'Names cannot start with "-".' });
+  });
+});
