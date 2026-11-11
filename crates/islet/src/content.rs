@@ -434,9 +434,16 @@ pub struct AgendaRow {
     pub title: String,
     pub location: Option<String>,
     pub now: bool,
+    /// Starting soon (or on now) with a video-call link: a Join button.
+    pub join: bool,
 }
 
 pub const AGENDA_ROWS: usize = 4;
+
+/// The Join button at the right of agenda row `i`.
+pub fn agenda_join_button(pill: Rect, i: usize) -> Rect {
+    Rect::new(pill.right() - PAD - 58.0, pill.y + 48.0 + i as f64 * 40.0 + 4.0, 58.0, 28.0)
+}
 
 pub fn agenda_height(rows: usize) -> f64 {
     48.0 + rows.clamp(1, AGENDA_ROWS) as f64 * 40.0 + 6.0
@@ -458,10 +465,20 @@ pub fn expanded_agenda(pill: Rect, rows: &[AgendaRow], o: f32, engine: &mut Text
         let ry = y + 48.0 + i as f32 * 40.0;
         let color = if r.now { RED } else { WHITE };
         v.push(text(r.time.clone(), TextStyle { color, ..time_style }, x + pad, ry + 18.0));
-        let name = engine.ellipsize(&r.title, &name_style, w - 2.0 * pad - 78.0);
+        // The text stops short of the Join button.
+        let room = w - 2.0 * pad - 78.0 - if r.join { 66.0 } else { 0.0 };
+        let name = engine.ellipsize(&r.title, &name_style, room);
         v.push(text(name, name_style, x + pad + 78.0, ry + 18.0));
         if let Some(loc) = &r.location {
-            v.push(text(engine.ellipsize(loc, &small, w - 2.0 * pad - 78.0), small, x + pad + 78.0, ry + 34.0));
+            v.push(text(engine.ellipsize(loc, &small, room), small, x + pad + 78.0, ry + 34.0));
+        }
+        if r.join {
+            let b = agenda_join_button(pill, i);
+            let (bx, by, bw, bh) = (b.x as f32, b.y as f32, b.w as f32, b.h as f32);
+            let label = TextStyle { size: 13.0, weight: 700, opacity: o, ..TextStyle::default() };
+            let tw = engine.measure("Join", &label);
+            v.push(Element::Bar { x: bx, y: by, w: bw, h: bh, color: GREEN, opacity: o });
+            v.push(text("Join", label, bx + (bw - tw) / 2.0, by + bh / 2.0 + 4.5));
         }
     }
     if rows.is_empty() {

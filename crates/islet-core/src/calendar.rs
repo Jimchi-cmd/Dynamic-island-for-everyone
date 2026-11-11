@@ -16,6 +16,52 @@ pub struct CalEvent {
     pub end: i64,
     pub all_day: bool,
     pub location: Option<String>,
+    /// Where to join, when the event carries a video-call link.
+    pub link: Option<String>,
+}
+
+/// Video-call services whose links get a Join button. Only these are
+/// offered, so a stray link in an invitation is never opened by a tap.
+const MEETING_HOSTS: [&str; 14] = [
+    "zoom.us",
+    "zoom.com",
+    "meet.google.com",
+    "teams.microsoft.com",
+    "teams.live.com",
+    "webex.com",
+    "whereby.com",
+    "meet.jit.si",
+    "gotomeeting.com",
+    "gotomeet.me",
+    "bluejeans.com",
+    "chime.aws",
+    "join.skype.com",
+    "discord.gg",
+];
+
+/// The first video-call link in a piece of an event (its location, notes…).
+pub fn meeting_link(text: &str) -> Option<String> {
+    let mut rest = text;
+    while let Some(at) = rest.find("https://") {
+        let from = &rest[at..];
+        let end = from
+            .find(|c: char| {
+                c.is_whitespace() || matches!(c, '"' | '<' | '>' | '\\' | '\'' | '|' | '{' | '}' | '^' | '`')
+            })
+            .unwrap_or(from.len());
+        let url = from[..end].trim_end_matches(['.', ',', ';', ':', ')', ']', '!', '?']);
+        rest = &from[end.min(from.len()).max(8)..];
+        let authority = url["https://".len()..].split(['/', '?', '#']).next().unwrap_or("");
+        // "https://zoom.us@elsewhere.example/" goes elsewhere: no user part, no port tricks.
+        if authority.is_empty() || authority.contains('@') || url.len() > 600 {
+            continue;
+        }
+        let host = authority.split(':').next().unwrap_or("").to_ascii_lowercase();
+        if MEETING_HOSTS.iter().any(|h| host == *h || host.ends_with(&format!(".{h}"))) {
+            return Some(url.to_string());
+        }
+    }
+    None
 }
 
 /// Refresh the feed this often while calendar is on.
@@ -339,6 +385,9 @@ pub fn parse_ics(ics: &str, from: i64, to: i64, local_offset: i64) -> Vec<CalEve
             .collect();
         let summary = ev.get("SUMMARY").map(|(_, v)| unescape(v)).unwrap_or_else(|| "(No title)".into());
         let location = ev.get("LOCATION").map(|(_, v)| unescape(v)).filter(|l| !l.trim().is_empty());
+        let link = ["X-GOOGLE-CONFERENCE", "URL", "LOCATION", "DESCRIPTION"]
+            .iter()
+            .find_map(|name| ev.get(name).and_then(|(_, v)| meeting_link(&unescape(v))));
         // All-day events are dates on the local calendar.
         let utc_of = |n: Naive| if all_day { n - local_offset } else { to_utc(n, start_utc, tzid) };
         let mut push = |n: Naive| {
@@ -347,7 +396,14 @@ pub fn parse_ics(ics: &str, from: i64, to: i64, local_offset: i64) -> Vec<CalEve
             }
             let (s, e) = (utc_of(n), utc_of(n) + length);
             if e > from && s < to {
-                out.push(CalEvent { summary: summary.clone(), start: s, end: e, all_day, location: location.clone() });
+                out.push(CalEvent {
+                    summary: summary.clone(),
+                    start: s,
+                    end: e,
+                    all_day,
+                    location: location.clone(),
+                    link: link.clone(),
+                });
             }
         };
         let Some(rule) = ev.get("RRULE").map(|(_, v)| parse_rule(v)) else {
@@ -512,7 +568,7 @@ mod tests {
 
     #[test]
     fn marks_the_days_events_fall_on() {
-        let e = |start, end, all_day| CalEvent { summary: "x".into(), start, end, all_day, location: None };
+        let e = |start, end, all_day| CalEvent { summary: "x".into(), start, end, all_day, location: None, link: None };
         let events = [
             // 23:30–00:30 UTC on the 4th: at UTC+3 it is all on the 5th.
             e(utc(2026, 11, 4, 23, 30), utc(2026, 11, 5, 0, 30), false),
@@ -532,6 +588,39 @@ mod tests {
 
     fn cal(body: &str) -> String {
         format!("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n{ZONE}{body}END:VCALENDAR\r\n")
+    }
+
+    #[test]
+    fn finds_video_call_links_and_nothing_else() {
+        assert_eq!(
+            meeting_link("Join: https://us02web.zoom.us/j/123456?pwd=abc. See you!").as_deref(),
+            Some("https://us02web.zoom.us/j/123456?pwd=abc")
+        );
+        assert_eq!(
+            meeting_link("<https://meet.google.com/abc-defg-hij>").as_deref(),
+            Some("https://meet.google.com/abc-defg-hij")
+        );
+        // Other links are skipped, and the call link after them is found.
+        assert_eq!(
+            meeting_link("Agenda https://docs.example.com/x then https://teams.microsoft.com/l/meetup-join/1")
+                .as_deref(),
+            Some("https://teams.microsoft.com/l/meetup-join/1")
+        );
+        assert_eq!(meeting_link("Room 4"), None);
+        assert_eq!(meeting_link("https://example.com/zoom.us"), None, "the host decides, not the path");
+        assert_eq!(meeting_link("https://zoom.us@elsewhere.example/j/1"), None, "no user part");
+        assert_eq!(meeting_link("https://notzoom.us/j/1"), None);
+        assert_eq!(meeting_link("http://zoom.us/j/1"), None, "https only");
+        assert_eq!(meeting_link("https://"), None);
+    }
+
+    #[test]
+    fn events_carry_their_call_link() {
+        let ics = cal("BEGIN:VEVENT\r\nSUMMARY:Review\r\nDTSTART:20261020T090000Z\r\nDTEND:20261020T093000Z\r\nLOCATION:Online\r\nDESCRIPTION:Notes at https://docs.example.com/n\\nJoin https://meet.google.com/abc-defg-hij\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Lunch\r\nDTSTART:20261020T120000Z\r\nDTEND:20261020T130000Z\r\nLOCATION:Canteen\r\nEND:VEVENT\r\n");
+        let ev = parse_ics(&ics, utc(2026, 10, 1, 0, 0), utc(2026, 11, 30, 0, 0), 0);
+        assert_eq!(ev.len(), 2);
+        assert_eq!(ev[0].link.as_deref(), Some("https://meet.google.com/abc-defg-hij"));
+        assert_eq!(ev[1].link, None);
     }
 
     #[test]
@@ -581,7 +670,8 @@ mod tests {
 
     #[test]
     fn up_next_and_wakeups() {
-        let e = |s| CalEvent { summary: "x".into(), start: s, end: s + 1800, all_day: false, location: None };
+        let e =
+            |s| CalEvent { summary: "x".into(), start: s, end: s + 1800, all_day: false, location: None, link: None };
         let events = [e(1000), e(5000)];
         assert!(up_next(&events, 0).is_none(), "more than 10 minutes away");
         assert_eq!(up_next(&events, 500).map(|e| e.start), Some(1000));

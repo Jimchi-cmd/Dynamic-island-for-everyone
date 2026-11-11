@@ -310,6 +310,8 @@ pub struct App {
     call_sec: i64,
     /// The call card's mute button is being pressed.
     call_press: bool,
+    /// The Join button being pressed on the agenda card (its link).
+    join_press: Option<String>,
 }
 
 impl App {
@@ -395,6 +397,7 @@ impl App {
             mic_commands: Vec::new(),
             call_sec: -1,
             call_press: false,
+            join_press: None,
         };
         app.anim_region = app.target_bounds();
         app
@@ -1294,6 +1297,13 @@ impl App {
                     buttons.push((if a.id == TIMER_ALARM_ID { "Repeat" } else { "Snooze" }.into(), snooze));
                     buttons.push(("Stop".into(), stop));
                 }
+                OpenContent::Agenda => {
+                    for (i, e) in self.agenda_events().enumerate() {
+                        if self.join_link(e).is_some() {
+                            buttons.push((format!("Join {}", e.summary), content::agenda_join_button(cr, i)));
+                        }
+                    }
+                }
                 OpenContent::Timer(tm) => {
                     let [(pause, _), (stop, _)] = content::timer_controls(cr);
                     buttons.push((if tm.running() { "Pause" } else { "Resume" }.into(), pause));
@@ -1445,14 +1455,27 @@ impl App {
         self.report(Report::UpNext(next), t)
     }
 
-    /// The next few events for the agenda card.
-    fn agenda(&self) -> Vec<content::AgendaRow> {
+    /// The events on the agenda card: what is on now and the next day's.
+    fn agenda_events(&self) -> impl Iterator<Item = &islet_core::calendar::CalEvent> {
         let now = self.wall as i64;
         self.activities
             .calendar()
             .iter()
-            .filter(|e| e.end > now && e.start < now + 24 * 3600)
+            .filter(move |e| e.end > now && e.start < now + 24 * 3600)
             .take(content::AGENDA_ROWS)
+    }
+
+    /// An event's video-call link, once it is about to start or is on.
+    fn join_link(&self, e: &islet_core::calendar::CalEvent) -> Option<String> {
+        let now = self.wall as i64;
+        let soon = !e.all_day && e.start - now <= islet_core::calendar::SOON_SECS && e.end > now;
+        e.link.clone().filter(|_| soon)
+    }
+
+    /// The next few events for the agenda card.
+    fn agenda(&self) -> Vec<content::AgendaRow> {
+        let now = self.wall as i64;
+        self.agenda_events()
             .map(|e| {
                 let local = (e.start + self.utc_offset).rem_euclid(86_400);
                 let time = if e.all_day {
@@ -1465,9 +1488,22 @@ impl App {
                     title: e.summary.clone(),
                     location: e.location.clone(),
                     now: !e.all_day && e.start <= now,
+                    join: self.join_link(e).is_some(),
                 }
             })
             .collect()
+    }
+
+    /// The call link of the Join button at (x, y) on the agenda card.
+    fn join_at(&self, x: f64, y: f64, t: f64) -> Option<String> {
+        if !self.island.presentation().is_open() || !matches!(self.open_content(&self.live(t)), OpenContent::Agenda) {
+            return None;
+        }
+        let card = self.card_rect(t);
+        self.agenda_events()
+            .enumerate()
+            .find(|(i, _)| content::agenda_join_button(card, *i).contains(x, y))
+            .and_then(|(_, e)| self.join_link(e))
     }
 
     /// Move the island down from the top edge (the window grows to match).
@@ -2321,6 +2357,10 @@ impl App {
                     self.call_press = true;
                     return true;
                 }
+                if let Some(link) = self.join_at(x, y, t) {
+                    self.join_press = Some(link);
+                    return true;
+                }
                 if let Some(h) = self.conn_hit_at(x, y, t) {
                     self.conn_hit = Some(h);
                     return true;
@@ -2354,6 +2394,14 @@ impl App {
                 if std::mem::take(&mut self.call_press) {
                     if self.call_mute_at(x, y, t) {
                         return self.toggle_mic(t);
+                    }
+                    return true;
+                }
+                if let Some(link) = self.join_press.take() {
+                    // Released on the same button: open the call, and get out of its way.
+                    if self.join_at(x, y, t).as_ref() == Some(&link) {
+                        self.ui_actions.push(UiAction::Url(link));
+                        return self.signal(Signal::Escape, t);
                     }
                     return true;
                 }
@@ -3842,6 +3890,7 @@ mod tests {
                     end: at(4, 17),
                     all_day: false,
                     location: None,
+                    link: None,
                 },
                 islet_core::calendar::CalEvent {
                     summary: "Trip".into(),
@@ -3849,6 +3898,7 @@ mod tests {
                     end: at(22, 0),
                     all_day: true,
                     location: None,
+                    link: None,
                 },
             ])),
             0.0,
@@ -4141,6 +4191,7 @@ mod tests {
             end: start + 900,
             all_day: false,
             location: Some("Room 4".into()),
+            link: None,
         }
     }
 
@@ -4171,6 +4222,47 @@ mod tests {
         app.set_wall(wall0 + 1200.0 + 301.0, 3 * 3600, 1501.0);
         app.tick(1501.0);
         assert_eq!(app.presentation(), Idle);
+    }
+
+    #[test]
+    fn a_meeting_with_a_call_link_gets_a_join_button() {
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        let wall0 = 1_800_000_000.0;
+        let call = "https://meet.google.com/abc-defg-hij";
+        let review = islet_core::calendar::CalEvent {
+            summary: "Design review".into(),
+            link: Some(call.into()),
+            ..standup(1_800_001_200)
+        };
+        // A later meeting has a link too, but it is hours away.
+        let later = islet_core::calendar::CalEvent { link: Some(call.into()), ..standup(1_800_020_000) };
+        app.set_wall(wall0 + 610.0, 3 * 3600, 610.0);
+        app.report(Report::Calendar(Some(vec![review, later])), 610.0);
+        app.tick(610.0);
+        assert_eq!(app.presentation(), Compact, "ten minutes before: up next");
+        click(&mut app, 620.0);
+        let card = texts(&app, 625.0, &mut engine);
+        assert_eq!(card.iter().filter(|s| *s == "Join").count(), 1, "only the one about to start: {card:?}");
+        assert!(app.accessibility(625.0).buttons.iter().any(|(n, _)| n == "Join Design review"));
+
+        // Pressing and sliding off does nothing; a tap opens the call and closes the card.
+        let b = content::agenda_join_button(app.card_rect(625.0), 0);
+        let (x, y) = (b.x + b.w / 2.0, b.y + b.h / 2.0);
+        app.handle(Event::PointerDown { x, y, button: Button::Primary }, 626.0);
+        app.handle(Event::PointerUp { x: x - 150.0, y, button: Button::Primary }, 626.1);
+        assert!(app.take_ui_actions().is_empty());
+        press(&mut app, b, 627.0);
+        assert_eq!(app.take_ui_actions(), [UiAction::Url(call.into())]);
+        assert_eq!(app.presentation(), Compact, "the card steps aside for the call");
+
+        // Without a link there is no button.
+        let mut plain = App::new(Demo::None, false);
+        plain.set_wall(wall0 + 610.0, 3 * 3600, 610.0);
+        plain.report(Report::Calendar(Some(vec![standup(1_800_001_200)])), 610.0);
+        plain.tick(610.0);
+        click(&mut plain, 620.0);
+        assert!(!texts(&plain, 625.0, &mut engine).iter().any(|s| s == "Join"));
     }
 
     fn note(app: &str, summary: &str, body: &str) -> Report {
@@ -5244,6 +5336,7 @@ mod tests {
                 end,
                 all_day,
                 location: None,
+                link: None,
             };
             let events = vec![
                 ev("Dentist", at(4, 16), at(4, 17), false),
@@ -5291,6 +5384,35 @@ mod tests {
             sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
         }
         sheet.save_png(out).unwrap();
+    }
+
+    /// The agenda card with a Join button, for visual review:
+    /// `ISLET_JOIN_SHEET=/path/out.png cargo test -p islet join_sheet`
+    #[test]
+    fn join_sheet() {
+        let Some(out) = std::env::var_os("ISLET_JOIN_SHEET") else { return };
+        use tiny_skia::Pixmap;
+        let mut engine = TextEngine::new();
+        let mut a = App::new(Demo::None, false);
+        let review = islet_core::calendar::CalEvent {
+            summary: "Design review with the whole product team".into(),
+            location: Some("Google Meet, and Room 4 for those in the office".into()),
+            link: Some("https://meet.google.com/abc-defg-hij".into()),
+            ..standup(1_800_001_200)
+        };
+        a.set_wall(1_800_000_610.0, 3 * 3600, 610.0);
+        a.report(Report::Calendar(Some(vec![review, standup(1_800_009_000)])), 610.0);
+        a.tick(610.0);
+        click(&mut a, 620.0);
+        let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
+        let mut cell = Pixmap::new(cw, ch).unwrap();
+        cell.fill(tiny_skia::Color::from_rgba8(226, 230, 236, 255));
+        let frame = a.frame(700.0);
+        islet_render::draw(&mut cell, &frame, 1.0);
+        let clip = islet_render::clip_mask(&frame, cw, ch, 1.0);
+        let els = a.elements(700.0, &mut engine);
+        islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+        cell.save_png(out).unwrap();
     }
 
     /// Wi-Fi and Bluetooth screens for visual review:
