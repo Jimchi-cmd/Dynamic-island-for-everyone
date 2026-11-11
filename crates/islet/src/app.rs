@@ -3764,8 +3764,10 @@ mod tests {
         let note = TextStyle { size: 12.5, ..TextStyle::default() };
         let (shelf_line, _) = content::shelf_footer(3, false).unwrap();
         assert!(engine.measure(&shelf_line, &note) <= wide, "{shelf_line}");
-        let mut c = islet_core::connectivity::Connectivity::default();
-        c.failure = Some(("needs a password".into(), Some("A very long network name indeed 5G".into())));
+        let c = islet_core::connectivity::Connectivity {
+            failure: Some(("needs a password".into(), Some("A very long network name indeed 5G".into()))),
+            ..Default::default()
+        };
         let (wifi_line, is_button) = content::wifi_footer(&c).unwrap();
         assert!(is_button && engine.measure(&wifi_line, &button) <= wide - 20.0, "{wifi_line}");
     }
