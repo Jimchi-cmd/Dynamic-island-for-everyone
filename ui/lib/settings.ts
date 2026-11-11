@@ -265,20 +265,35 @@ export interface IslandPrefs {
   downloads: boolean;
   hotkey: string;
   accent: string;
+  style: string;
   size: string;
   offset: number;
   display: string;
 }
 
+/** Accent colours, as in `islet_core::prefs::ACCENTS` (a test checks they match). */
 export const ACCENTS: Record<string, string> = {
   blue: '#0a84ff',
+  indigo: '#6260ee',
   purple: '#a064ff',
   pink: '#ff468c',
   red: '#ff453a',
   orange: '#ff961e',
+  yellow: '#fac814',
+  lime: '#96d728',
   green: '#28c864',
+  mint: '#46d7b4',
   teal: '#28bec8',
+  graphite: '#9698a2',
 };
+
+/** What the island is made of, as in `islet_core::prefs::STYLES`. All but black are Islet Pro. */
+export const STYLES: { id: string; label: string; pro: boolean }[] = [
+  { id: 'black', label: 'Black', pro: false },
+  { id: 'tinted', label: 'Tinted', pro: true },
+  { id: 'glass', label: 'Glass', pro: true },
+  { id: 'tinted-glass', label: 'Tinted glass', pro: true },
+];
 
 /** Each switch's name for `islet set <name> on|off`. */
 export const SWITCH_NAMES: Record<string, string> = {

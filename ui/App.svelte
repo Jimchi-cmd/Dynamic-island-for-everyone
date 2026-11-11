@@ -4,6 +4,7 @@
   import type { Info, Prefs, UpdateInfo } from './lib/bridge';
   import {
     ACCENTS,
+    STYLES,
     type PlaceSuggestion,
     alarmAddArgs,
     DAY_LETTERS,
@@ -191,7 +192,8 @@
 
   $effect(() => {
     if (page === 'connections' && !wifi) void loadConnections(true);
-    if (page === 'pro' && !pro) void loadPro();
+    // General needs to know about Pro too, for the Pro-only island styles.
+    if ((page === 'pro' || page === 'general') && !pro) void loadPro();
   });
 
   // The island's own preferences (island.json via the CLI)
@@ -241,7 +243,7 @@
     hotkeyDraft = parts.join('+');
   }
 
-  async function setLook(what: 'accent' | 'size' | 'offset' | 'display', value: string) {
+  async function setLook(what: 'accent' | 'style' | 'size' | 'offset' | 'display', value: string) {
     try {
       await api.islet(['look', what, value]);
       await loadIslandPrefs();
@@ -862,6 +864,30 @@
                 disabled={!islandPrefs}
                 onclick={() => setLook('accent', name)}
               ></button>
+            {/each}
+          </div>
+          <p class="muted small">What the island is made of.</p>
+          <div class="styles" role="radiogroup" aria-label="Island style">
+            {#each STYLES as s (s.id)}
+              {@const chosen = (islandPrefs?.style ?? 'black') === s.id}
+              {@const accent = ACCENTS[islandPrefs?.accent ?? 'blue'] ?? ACCENTS.blue}
+              <button
+                class="style-tile"
+                class:chosen
+                role="radio"
+                aria-checked={chosen}
+                aria-label={s.pro && !pro?.active ? `${s.label} (Islet Pro)` : s.label}
+                disabled={!islandPrefs}
+                onclick={() => (s.pro && !pro?.active ? (page = 'pro') : setLook('style', s.id))}
+              >
+                <span class="preview" style:--tint={accent}>
+                  <span class="mini {s.id}"></span>
+                </span>
+                <span class="style-name">
+                  {s.label}
+                  {#if s.pro && !pro?.active}<span class="pro-tag">Pro</span>{/if}
+                </span>
+              </button>
             {/each}
           </div>
           <div class="net">
@@ -1635,6 +1661,68 @@
     outline: 2px solid currentColor;
     outline-offset: 2px;
   }
+  /* Island styles: each tile previews the island over a bit of wallpaper. */
+  .styles {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin: 6px 0 12px;
+  }
+  .style-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 6px 7px;
+    border-radius: 12px;
+    background: var(--field);
+    box-shadow: none;
+    font-size: 12.5px;
+  }
+  .style-tile.chosen {
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+  .preview {
+    display: grid;
+    place-items: start center;
+    height: 46px;
+    padding-top: 9px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #ffbe78, #f06ea0 55%, #466ee6);
+  }
+  .mini {
+    width: 68%;
+    height: 17px;
+    border-radius: 9px;
+    background: #000;
+  }
+  .mini.tinted {
+    background: color-mix(in srgb, var(--tint) 28%, #060606);
+  }
+  .mini.glass,
+  .mini.tinted-glass {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 60%), rgba(22, 22, 26, 0.62);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+  }
+  .mini.tinted-glass {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 60%),
+      color-mix(in srgb, color-mix(in srgb, var(--tint) 24%, #060606) 66%, transparent);
+  }
+  .style-name {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    font-weight: 550;
+  }
+  .pro-tag {
+    font-size: 9.5px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 999px;
+    color: #fff;
+    background: linear-gradient(135deg, #ff9f0a, #ff375f);
+  }
   .layout {
     display: grid;
     grid-template-columns: 216px 1fr;
@@ -1811,6 +1899,16 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* A row's control keeps to the right and leaves room for its label. */
+  .net select {
+    width: auto;
+    min-width: 200px;
+    flex: none;
+  }
+  .net input[type='range'] {
+    width: 220px;
+    flex: none;
   }
   .net .target {
     flex: 2;

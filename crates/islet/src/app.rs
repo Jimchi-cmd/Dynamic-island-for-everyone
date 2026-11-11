@@ -2693,6 +2693,16 @@ impl App {
         r.inflate(1.0)
     }
 
+    /// What the island is made of: black, or with Islet Pro the chosen
+    /// style (tinted, glass…). A notched Mac stays black to match its notch.
+    fn skin(&self) -> islet_render::Skin {
+        if !self.pro || self.notch.is_some() {
+            return islet_render::Skin::default();
+        }
+        let (color, alpha, glass) = islet_core::prefs::style_body(&self.prefs.style, self.prefs.accent_rgb());
+        islet_render::Skin { color, alpha, glass }
+    }
+
     pub fn frame(&self, t: f64) -> PillFrame {
         let r = self.pill_rect(t);
         PillFrame {
@@ -2708,6 +2718,7 @@ impl App {
             highlight: 0.0,
             flat_top: self.notch.is_some(),
             opacity: self.shown.value(t).clamp(0.0, 1.0) as f32,
+            skin: self.skin(),
         }
     }
 }
@@ -3868,6 +3879,30 @@ mod tests {
     }
 
     #[test]
+    fn island_styles_are_pro_and_a_notched_mac_stays_black() {
+        use islet_render::Skin;
+        let mut app = App::new(Demo::None, false);
+        let mut p = app.prefs().clone();
+        p.style = "tinted-glass".into();
+        p.accent = "pink".into();
+        app.set_prefs(p);
+        assert_eq!(app.frame(0.0).skin, Skin::default(), "free: solid black whatever the file says");
+
+        app.set_pro(true);
+        let skin = app.frame(0.0).skin;
+        assert!(skin.glass && skin.alpha < 1.0 && skin.color[0] > skin.color[1], "pink-tinted glass: {skin:?}");
+        let mut p = app.prefs().clone();
+        p.style = "tinted".into();
+        app.set_prefs(p);
+        let skin = app.frame(0.0).skin;
+        assert!(!skin.glass && skin.alpha == 1.0 && skin.color != [0, 0, 0]);
+
+        // The island grows out of a Mac's notch: it has to match it.
+        app.set_notch(Some((180.0, 32.0)), 0.0);
+        assert_eq!(app.frame(0.0).skin, Skin::default());
+    }
+
+    #[test]
     fn shortcuts_open_from_control_centre_with_pro() {
         use islet_core::prefs::Shortcut;
         let mut app = App::new(Demo::None, false);
@@ -4954,6 +4989,74 @@ mod tests {
             let els = a.elements(t, &mut engine);
             islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
             let (x, y) = ((i % 2) as i32 * cw as i32, (i / 2) as i32 * ch as i32);
+            sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+        }
+        sheet.save_png(out).unwrap();
+    }
+
+    /// The island's styles over a bright wallpaper, for visual review:
+    /// `ISLET_STYLE_SHEET=/path/out.png cargo test -p islet style_sheet`
+    #[test]
+    fn style_sheet() {
+        let Some(out) = std::env::var_os("ISLET_STYLE_SHEET") else { return };
+        use tiny_skia::{
+            Color, FillRule, GradientStop, LinearGradient, Paint, PathBuilder, Pixmap, PixmapPaint, Point,
+            Rect as SkRect, SpreadMode, Transform,
+        };
+        let mut engine = TextEngine::new();
+        let looks = [("black", "blue"), ("tinted", "blue"), ("glass", "blue"), ("tinted-glass", "pink")];
+        let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
+        let mut sheet = Pixmap::new(cw * 2, ch * 3).unwrap();
+        // A wallpaper with light and dark parts and a few bright shapes.
+        let wall = LinearGradient::new(
+            Point::from_xy(0.0, 0.0),
+            Point::from_xy(cw as f32 * 2.0, ch as f32 * 3.0),
+            vec![
+                GradientStop::new(0.0, Color::from_rgba8(255, 190, 120, 255)),
+                GradientStop::new(0.5, Color::from_rgba8(240, 110, 160, 255)),
+                GradientStop::new(1.0, Color::from_rgba8(70, 110, 230, 255)),
+            ],
+            SpreadMode::Pad,
+            Transform::identity(),
+        )
+        .unwrap();
+        let all = SkRect::from_xywh(0.0, 0.0, cw as f32 * 2.0, ch as f32 * 3.0).unwrap();
+        sheet.fill_rect(all, &Paint { shader: wall, ..Paint::default() }, Transform::identity(), None);
+        for (i, color) in [(255, 255, 255), (30, 30, 60), (255, 240, 120)].into_iter().enumerate() {
+            let mut p = Paint::default();
+            p.set_color_rgba8(color.0, color.1, color.2, 200);
+            p.anti_alias = true;
+            let circle = PathBuilder::from_circle(200.0 + i as f32 * 260.0, 60.0 + i as f32 * 250.0, 110.0).unwrap();
+            sheet.fill_path(&circle, &p, FillRule::Winding, Transform::identity(), None);
+        }
+        let make = |style: &str, accent: &str, music: bool| {
+            let mut a = App::new(Demo::None, false);
+            a.set_time(NOW, 0.0);
+            a.set_pro(true);
+            let mut p = a.prefs().clone();
+            p.style = style.into();
+            p.accent = accent.into();
+            a.set_prefs(p);
+            if music {
+                a.report(Report::Media(Some(song(true))), 0.0);
+                a.tick(0.0);
+            } else {
+                click(&mut a, 0.0);
+            }
+            a
+        };
+        let mut apps: Vec<App> = looks.iter().map(|(s, c)| make(s, c, false)).collect();
+        apps.push(make("glass", "blue", true));
+        apps.push(make("tinted-glass", "green", true));
+        for (i, a) in apps.iter().enumerate() {
+            let t = 250.0;
+            let mut cell = Pixmap::new(cw, ch).unwrap();
+            let frame = a.frame(t);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, ch, 1.0);
+            let els = a.elements(t, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            let (x, y) = ((i % 2) as i32 * cw as i32, (i / 2) as i32 * ch as i32 + 12);
             sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
         }
         sheet.save_png(out).unwrap();

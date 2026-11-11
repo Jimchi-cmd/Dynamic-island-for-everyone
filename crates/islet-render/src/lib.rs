@@ -10,7 +10,28 @@ pub mod text;
 
 pub use metaball::Circle;
 pub use squircle::Squircle;
-use tiny_skia::{Color, FillRule, Mask, Paint, PathBuilder, Pixmap, Stroke, Transform};
+use tiny_skia::{
+    Color, FillRule, GradientStop, LinearGradient, Mask, Paint, PathBuilder, Pixmap, Point, SpreadMode, Stroke,
+    Transform,
+};
+
+/// What the island's body is made of.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Skin {
+    /// The body's colour…
+    pub color: [u8; 3],
+    /// …and how solid it is (1 = opaque; less lets the desktop show through).
+    pub alpha: f32,
+    /// A glassy sheen: light falling from the top edge and a bright rim.
+    pub glass: bool,
+}
+
+impl Default for Skin {
+    /// Solid black, like the real thing.
+    fn default() -> Self {
+        Skin { color: [0, 0, 0], alpha: 1.0, glass: false }
+    }
+}
 
 /// Everything needed to draw one frame of the island (logical px).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -28,6 +49,7 @@ pub struct PillFrame {
     /// Windows hit-tests layered windows by alpha, so a hidden island keeps
     /// the faintest alpha to still notice the pointer arriving.
     pub opacity: f32,
+    pub skin: Skin,
 }
 
 impl PillFrame {
@@ -68,7 +90,7 @@ impl PillFrame {
     }
 
     pub fn pill(shape: Squircle) -> Self {
-        Self { shape, bubble: None, highlight: 0.0, flat_top: false, opacity: 1.0 }
+        Self { shape, bubble: None, highlight: 0.0, flat_top: false, opacity: 1.0, skin: Skin::default() }
     }
 
     fn outline(&self) -> Option<tiny_skia::Path> {
@@ -111,8 +133,11 @@ pub fn draw(pixmap: &mut Pixmap, frame: &PillFrame, scale: f32) {
     let ts = Transform::from_scale(scale, scale);
     let Some(path) = frame.outline() else { return };
     let mut paint = Paint::default();
-    let alpha = (frame.opacity.clamp(0.0, 1.0) * 255.0).round().max(1.0) as u8;
-    paint.set_color_rgba8(0, 0, 0, alpha);
+    let shown = frame.opacity.clamp(0.0, 1.0);
+    let skin = frame.skin;
+    let alpha = (shown * skin.alpha.clamp(0.0, 1.0) * 255.0).round().max(1.0) as u8;
+    let [r, g, b] = skin.color;
+    paint.set_color_rgba8(r, g, b, alpha);
     paint.anti_alias = true;
     pixmap.fill_path(&path, &paint, FillRule::Winding, ts, None);
 
@@ -122,6 +147,40 @@ pub fn draw(pixmap: &mut Pixmap, frame: &PillFrame, scale: f32) {
         }
         if let Some(neck) = metaball::neck(frame.pill_end(), b) {
             pixmap.fill_path(&neck, &paint, FillRule::Winding, ts, None);
+        }
+    }
+
+    if skin.glass && shown > 0.02 {
+        // Glass: light falls on the top edge and fades down the body, and a
+        // rim catches it all the way round (brightest at the top).
+        let s = frame.shape;
+        let white = |a: f32| Color::from_rgba(1.0, 1.0, 1.0, (a * shown).clamp(0.0, 1.0)).unwrap_or(Color::TRANSPARENT);
+        let fall = |top: f32, bottom: f32, reach: f32| {
+            LinearGradient::new(
+                Point::from_xy(s.x, s.y),
+                Point::from_xy(s.x, s.y + (s.h * reach).max(1.0)),
+                vec![GradientStop::new(0.0, white(top)), GradientStop::new(1.0, white(bottom))],
+                SpreadMode::Pad,
+                Transform::identity(),
+            )
+        };
+        if let Some(shader) = fall(0.14, 0.0, 0.55) {
+            let sheen = Paint { shader, anti_alias: true, ..Paint::default() };
+            pixmap.fill_path(&path, &sheen, FillRule::Winding, ts, None);
+        }
+        let inset = 0.6;
+        let inner = Squircle {
+            x: s.x + inset,
+            y: s.y + inset,
+            w: s.w - 2.0 * inset,
+            h: s.h - 2.0 * inset,
+            radius: (s.radius - inset).max(0.0),
+            smoothing: s.smoothing,
+        };
+        let rim_path = if frame.flat_top { inner.path_flat_top() } else { inner.path() };
+        if let (Some(p), Some(shader)) = (rim_path, fall(0.55, 0.14, 1.0)) {
+            let rim = Paint { shader, anti_alias: true, ..Paint::default() };
+            pixmap.stroke_path(&p, &rim, &Stroke { width: 1.2, ..Stroke::default() }, ts, None);
         }
     }
 

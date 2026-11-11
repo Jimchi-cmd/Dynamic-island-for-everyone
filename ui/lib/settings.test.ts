@@ -111,3 +111,24 @@ describe('parsePro', () => {
     expect(parsePro('{"active":"yes","buyUrl":"javascript:alert(1)"}')).toMatchObject({ active: false, buyUrl: null });
   });
 });
+
+import { ACCENTS, STYLES } from './settings';
+
+describe('looks', () => {
+  const rust = readFileSync(new URL('../../crates/islet-core/src/prefs.rs', import.meta.url), 'utf8');
+
+  it('offer the accent colours the island knows, in the same RGB', () => {
+    const block = rust.match(/pub const ACCENTS: [^=]*= \[([\s\S]*?)\];/)?.[1] ?? '';
+    const fromRust = [...block.matchAll(/\("([a-z]+)", \[(\d+), (\d+), (\d+)\]\)/g)].map(
+      (m) => [m[1], '#' + [m[2], m[3], m[4]].map((n) => Number(n).toString(16).padStart(2, '0')).join('')] as const,
+    );
+    expect(fromRust.length).toBeGreaterThan(6);
+    expect(Object.entries(ACCENTS)).toEqual(fromRust);
+  });
+
+  it('offer the styles the island knows', () => {
+    const list = rust.match(/pub const STYLES: \[&str; \d+\] = \[([^\]]*)\]/)?.[1] ?? '';
+    expect(STYLES.map((s) => s.id)).toEqual([...list.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]));
+    expect(STYLES.filter((s) => !s.pro).map((s) => s.id)).toEqual(['black']);
+  });
+});

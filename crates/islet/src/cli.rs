@@ -81,7 +81,10 @@ Usage:
   islet media hide|show <app>              hide (or show again) one app's Now Playing
   islet toggle                             open the island, or close it
   islet caps-lock on|off                   show the Caps Lock pop-up (used by the GNOME extension)
-  islet look accent <colour>               blue, purple, pink, red, orange, green, teal
+  islet look accent <colour>               blue, indigo, purple, pink, red, orange, yellow, lime,
+                                           green, mint, teal or graphite
+  islet look style <style>                 what the island is made of: black, or with Islet Pro
+                                           tinted, glass or tinted-glass
   islet look size small|medium|large       the island's size
   islet look offset <px>                   gap above the island, 0–40 px
   islet look display <name>|primary|all    which display (names from `islet displays`), or all
@@ -236,6 +239,7 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
             p.accent = (*n).into();
             Ok(format!("Accent: {n}."))
         }),
+        ["look", "style", name] => set_style(name),
         ["look", "size", name] => set_look(|p| {
             let (n, _) = islet_core::prefs::SIZES
                 .iter()
@@ -833,6 +837,22 @@ fn needs_pro() -> Result<(), String> {
     } else {
         Err("That's an Islet Pro feature. See Settings → Islet Pro.".into())
     }
+}
+
+/// What the island is made of. Everything but black is an Islet Pro look.
+fn set_style(name: &str) -> Result<String, String> {
+    let styles = islet_core::prefs::STYLES;
+    let style = styles
+        .iter()
+        .find(|s| s.eq_ignore_ascii_case(name))
+        .ok_or_else(|| format!("style is one of: {}", styles.join(", ")))?;
+    if *style != "black" {
+        needs_pro()?;
+    }
+    set_look(|p| {
+        p.style = (*style).into();
+        Ok(format!("Style: {style}."))
+    })
 }
 
 fn shortcuts_text() -> String {

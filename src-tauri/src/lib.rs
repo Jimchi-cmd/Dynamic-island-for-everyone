@@ -51,6 +51,7 @@ pub fn allowed(args: &[String]) -> bool {
         ["hotkey", "off"] | ["wifi" | "bt", "on" | "off"] => true,
         ["hotkey", combo] => islet_core::hotkey::Hotkey::parse(combo).is_ok(),
         ["look", "accent", name] => islet_core::prefs::ACCENTS.iter().any(|(n, _)| n == name),
+        ["look", "style", name] => islet_core::prefs::STYLES.contains(name),
         ["look", "size", name] => islet_core::prefs::SIZES.iter().any(|(n, _)| n == name),
         ["displays", "--json"] | ["look", "display", "primary"] => true,
         ["places", q, "--json"] => !q.starts_with('-'),
