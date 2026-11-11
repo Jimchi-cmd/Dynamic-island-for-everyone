@@ -63,6 +63,42 @@ pub struct IslandPrefs {
     /// World clocks on the clock card (Islet Pro): city names from
     /// `worldclock::CITIES`, at most `worldclock::MAX`.
     pub world_clocks: Vec<String>,
+    /// Your own buttons (Islet Pro): each opens a folder, file, script or
+    /// web page. At most `MAX_SHORTCUTS`.
+    pub shortcuts: Vec<Shortcut>,
+}
+
+/// A button of your own: a name, and what it opens (a path or an
+/// `https://` link). Paths open as they would from the file manager, so a
+/// script or program runs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Shortcut {
+    pub name: String,
+    pub target: String,
+}
+
+pub const MAX_SHORTCUTS: usize = 8;
+
+impl Shortcut {
+    /// A shortcut from what the user typed, or why it can't be one.
+    pub fn new(name: &str, target: &str) -> Result<Shortcut, String> {
+        let (name, target) = (name.trim(), target.trim());
+        if name.is_empty() || name.chars().count() > 40 {
+            return Err("Give the shortcut a short name.".into());
+        }
+        if target.is_empty() || target.len() > 1024 || target.starts_with('-') || target.contains(['\n', '\r', '\0']) {
+            return Err("Enter a folder, a file or an https:// link.".into());
+        }
+        // Links must be web links; anything else is a path on this computer.
+        if target.contains("://") && !target.starts_with("https://") && !target.starts_with("http://") {
+            return Err("Only https:// and http:// links can be opened.".into());
+        }
+        Ok(Shortcut { name: name.to_string(), target: target.to_string() })
+    }
+
+    pub fn is_link(&self) -> bool {
+        self.target.starts_with("https://") || self.target.starts_with("http://")
+    }
 }
 
 /// Accent colours: name and RGB.
@@ -108,6 +144,7 @@ impl Default for IslandPrefs {
             offset: 0,
             display: String::new(),
             world_clocks: Vec::new(),
+            shortcuts: Vec::new(),
         }
     }
 }
@@ -222,6 +259,22 @@ mod tests {
         assert!(p.volume_hud && !p.notifications && p.weather.is_none() && !p.calendar && !p.lyrics && !p.auto_hide);
         let p: IslandPrefs = serde_json::from_str(r#"{"volumeHud":false,"unknownKey":1}"#).unwrap();
         assert!(!p.volume_hud);
+    }
+
+    #[test]
+    fn shortcuts_take_paths_and_web_links_only() {
+        let s = Shortcut::new("  Homework ", " /home/me/School ").unwrap();
+        assert_eq!((s.name.as_str(), s.target.as_str(), s.is_link()), ("Homework", "/home/me/School", false));
+        assert!(Shortcut::new("Docs", r"C:\Users\me\Documents").is_ok_and(|s| !s.is_link()));
+        assert!(Shortcut::new("Mail", "https://mail.example.com/inbox").is_ok_and(|s| s.is_link()));
+        // No other schemes, no option-looking targets, no empty names.
+        for bad in ["javascript://alert(1)", "file:///etc/passwd", "ms-settings://x", "--help", "", "a\nb"] {
+            assert!(Shortcut::new("x", bad).is_err(), "{bad:?}");
+        }
+        assert!(Shortcut::new(" ", "/tmp").is_err());
+        assert!(Shortcut::new(&"n".repeat(41), "/tmp").is_err());
+        // Old settings files have none.
+        assert!(serde_json::from_str::<IslandPrefs>("{}").unwrap().shortcuts.is_empty());
     }
 
     #[test]

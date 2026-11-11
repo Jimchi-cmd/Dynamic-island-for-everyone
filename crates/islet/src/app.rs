@@ -148,6 +148,8 @@ pub enum UiAction {
     Screenshot,
     /// Lock the computer.
     Lock,
+    /// Open one of the user's shortcuts: a path or a web link.
+    Shortcut(String),
 }
 
 /// Windows has no public API to connect Bluetooth devices: its settings do.
@@ -219,6 +221,8 @@ pub struct App {
     /// Notes and to-dos (Islet Pro; todo.json), and whether to save them.
     todo: islet_core::todo::Todo,
     todo_dirty: bool,
+    /// When the sleep timer pauses what's playing (None: off).
+    sleep_at: Option<f64>,
     /// The quick timer's length (an index into `content::QUICK_MINUTES`).
     quick: usize,
     /// The month the calendar card shows (None: this month).
@@ -338,6 +342,7 @@ impl App {
             shelf_dirty: false,
             todo: Default::default(),
             todo_dirty: false,
+            sleep_at: None,
             quick: content::QUICK_DEFAULT,
             cal_view: None,
             clip: Default::default(),
@@ -865,6 +870,11 @@ impl App {
             let detail = if d == 0.0 { "On time".to_string() } else { format!("{d:+.1} s") };
             v.push(MenuItem { detail: Some(detail), ..item(MenuAction::LyricsTiming, Icon::Music, "Lyrics timing") });
         }
+        // The sleep timer: offered while something plays (or one is set).
+        if self.sleep_at.is_some() || self.activities.media().is_some_and(|m| m.playing) {
+            let detail = self.sleep_at.map_or("Off".to_string(), left);
+            v.push(MenuItem { detail: Some(detail), ..item(MenuAction::Sleep, Icon::Moon, "Sleep timer") });
+        }
         v.push(item(MenuAction::Quit, Icon::Close, "Quit Islet"));
         v
     }
@@ -896,6 +906,16 @@ impl App {
                 self.ui_actions.push(UiAction::SetSwitch("lyrics", on));
             }
             MenuAction::LyricsTiming => {}
+            MenuAction::Sleep => {
+                // Each tap picks the next length; after the longest, off.
+                let steps = content::SLEEP_MINUTES;
+                let now = self.sleep_at.map(|at| ((at - t) / 60.0).ceil() as u32);
+                let next = match now {
+                    None => Some(steps[0]),
+                    Some(left) => steps.iter().copied().find(|m| *m > left),
+                };
+                self.sleep_at = next.map(|m| t + f64::from(m) * 60.0);
+            }
             MenuAction::Quit => self.quit = true,
         }
         self.sync_live(t);
@@ -964,6 +984,7 @@ impl App {
             Panel::Shelf => (self.shelf.len(), content::shelf_footer(self.shelf.len(), self.dragging)),
             Panel::System | Panel::Stopwatch | Panel::Calendar => (0, None),
             Panel::Todo => (self.todo.items.len(), Some((content::TODO_ADD.to_string(), true))),
+            Panel::Shortcuts => (self.prefs.shortcuts.len(), Some((content::SHORTCUTS_EDIT.to_string(), true))),
             Panel::Clipboard => {
                 let n = self.clip.len();
                 (n, (n > 0).then(|| (content::CLIPBOARD_CLEAR.to_string(), true)))
@@ -1008,7 +1029,8 @@ impl App {
                     | Panel::Clipboard
                     | Panel::Stopwatch
                     | Panel::Todo
-                    | Panel::Calendar => {}
+                    | Panel::Calendar
+                    | Panel::Shortcuts => {}
                 }
             }
             ConnHit::Quick(q) => {
@@ -1093,6 +1115,13 @@ impl App {
                 _ => {}
             },
             ConnHit::Row(i) => match self.panel {
+                Some(Panel::Shortcuts) => {
+                    if let Some(s) = self.prefs.shortcuts.get(i) {
+                        // Open it and get out of the way.
+                        self.ui_actions.push(UiAction::Shortcut(s.target.clone()));
+                        return self.signal(Signal::Escape, t);
+                    }
+                }
                 Some(Panel::Wifi) => {
                     if let Some(n) = c.wifi.networks.get(i).filter(|n| !n.active) {
                         self.conn_commands.push(ConnCommand::ConnectWifi { ssid: n.ssid.clone(), password: None });
@@ -1134,7 +1163,7 @@ impl App {
                 }
                 (Some(Panel::Bluetooth), _) => self.ui_actions.push(UiAction::Url(BLUETOOTH_SETTINGS.into())),
                 (Some(Panel::Clipboard), _) => self.clip.clear(),
-                (Some(Panel::Todo), _) => self.ui_actions.push(UiAction::Settings("pro".into())),
+                (Some(Panel::Todo | Panel::Shortcuts), _) => self.ui_actions.push(UiAction::Settings("pro".into())),
                 _ => {}
             },
         }
@@ -1292,6 +1321,7 @@ impl App {
                             Panel::Stopwatch => "Stopwatch".into(),
                             Panel::Todo => format!("To-do, {} left", self.todo.left()),
                             Panel::Calendar => "Calendar".into(),
+                            Panel::Shortcuts => "Shortcuts".into(),
                             Panel::Clipboard => format!("Clipboard history, {} items", self.clip.len()),
                         };
                         buttons.push((name, r));
@@ -1352,6 +1382,7 @@ impl App {
                             .collect(),
                         Panel::Shelf => self.shelf.iter().map(|i| format!("Open {}", i.name())).collect(),
                         Panel::System | Panel::Stopwatch | Panel::Calendar => Vec::new(),
+                        Panel::Shortcuts => self.prefs.shortcuts.iter().map(|s| format!("Open {}", s.name)).collect(),
                         Panel::Todo => self
                             .todo
                             .ordered()
@@ -1711,6 +1742,7 @@ impl App {
             clipboard: self.prefs.clipboard,
             pro: self.pro,
             todo_left: self.todo.left(),
+            shortcuts: self.pro && !self.prefs.shortcuts.is_empty(),
             world: self.pro && self.prefs.world_clocks.iter().any(|c| islet_core::worldclock::find(c).is_some()),
         }
     }
@@ -1935,6 +1967,13 @@ impl App {
                         engine,
                     ));
                 }
+                OpenContent::Panel(Panel::Shortcuts) => out.extend(content::expanded_shortcuts(
+                    cr,
+                    &self.prefs.shortcuts,
+                    self.scroll_of(Panel::Shortcuts),
+                    eo,
+                    engine,
+                )),
                 OpenContent::Panel(Panel::Todo) => {
                     out.extend(content::expanded_todo(cr, &self.todo, self.scroll_of(Panel::Todo), eo, engine))
                 }
@@ -2083,6 +2122,7 @@ impl App {
                                 Panel::Stopwatch => content::STOPWATCH_H,
                                 Panel::Todo => content::list_height(self.todo.items.len(), true),
                                 Panel::Calendar => content::CALENDAR_H,
+                                Panel::Shortcuts => content::list_height(self.prefs.shortcuts.len(), true),
                                 Panel::Clipboard => content::list_height(self.clip.len(), !self.clip.is_empty()),
                                 Panel::Shelf => content::list_height(
                                     self.shelf.len(),
@@ -2406,6 +2446,14 @@ impl App {
             self.quiet_until = None;
             changed = true;
         }
+        // The sleep timer: pause what's playing, once.
+        if self.sleep_at.is_some_and(|at| t >= at) {
+            self.sleep_at = None;
+            if self.activities.media().is_some_and(|m| m.playing && m.caps.play_pause) {
+                self.commands.push(MediaCommand::PlayPause);
+            }
+            changed = true;
+        }
         changed |= self.sync_live(t);
         changed |= self.update_shown(t);
         // A running stopwatch redraws as its shown digits change: tenths on
@@ -2563,7 +2611,7 @@ impl App {
                 }
             }
         }
-        for deadline in [self.hidden_until, self.quiet_until].into_iter().flatten() {
+        for deadline in [self.hidden_until, self.quiet_until, self.sleep_at].into_iter().flatten() {
             at(deadline);
         }
         // Alarms are checked each minute, only while one is set.
@@ -2974,6 +3022,53 @@ mod tests {
         let items = app.menu_items(t);
         let i = items.iter().position(|m| m.action == action).expect("in the menu");
         content::menu_rows(app.content_rect(app.pill_rect(t)), items.len())[i]
+    }
+
+    #[test]
+    fn sleep_timer_pauses_the_music_once() {
+        use content::MenuAction;
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        right_click(&mut app, 0.0);
+        assert!(!app.menu_items(1.0).iter().any(|m| m.action == MenuAction::Sleep), "nothing playing: no sleep timer");
+        app.handle(Event::Key(Key::Escape), 1.0);
+
+        app.report(Report::Media(Some(song(true))), 2.0);
+        app.tick(2.0);
+        right_click(&mut app, 3.0);
+        let detail = |app: &App, t: f64| {
+            app.menu_items(t).into_iter().find(|m| m.action == MenuAction::Sleep).and_then(|m| m.detail)
+        };
+        assert_eq!(detail(&app, 6.0).as_deref(), Some("Off"));
+        // Taps step through 15, 30, 45 and 60 minutes, then off again.
+        for want in ["15 min left", "30 min left", "45 min left", "60 min left", "Off"] {
+            let row = menu_row(&app, 6.0, MenuAction::Sleep);
+            press(&mut app, row, 6.0);
+            assert_eq!(detail(&app, 6.1).as_deref(), Some(want));
+        }
+        let row = menu_row(&app, 6.0, MenuAction::Sleep);
+        press(&mut app, row, 6.0);
+        assert!(texts(&app, 10.0, &mut engine).contains(&"Sleep timer".to_string()));
+        assert_eq!(app.presentation(), Expanded, "choosing a length keeps the menu open");
+        assert!(content::menu_height(7) <= WINDOW.1, "the longest menu fits the window");
+
+        // It wakes the island exactly then, pauses once, and is done.
+        app.handle(Event::Key(Key::Escape), 11.0);
+        let due = 6.05 + 15.0 * 60.0; // the tap's release is what counts
+        assert!(app.next_timer(due - 5.0).is_some_and(|w| w <= 5.0 + 1e-6));
+        app.tick(due - 1.0);
+        assert!(app.take_commands().is_empty());
+        app.tick(due + 0.1);
+        assert_eq!(app.take_commands(), [MediaCommand::PlayPause]);
+        app.tick(due + 5.0);
+        assert!(app.take_commands().is_empty() && app.sleep_at.is_none());
+
+        // Already paused when it's due: nothing to do.
+        app.sleep_at = Some(due + 10.0);
+        app.report(Report::Media(Some(song(false))), due + 6.0);
+        app.tick(due + 11.0);
+        assert!(app.take_commands().is_empty());
     }
 
     #[test]
@@ -3770,6 +3865,39 @@ mod tests {
         };
         let (wifi_line, is_button) = content::wifi_footer(&c).unwrap();
         assert!(is_button && engine.measure(&wifi_line, &button) <= wide - 20.0, "{wifi_line}");
+    }
+
+    #[test]
+    fn shortcuts_open_from_control_centre_with_pro() {
+        use islet_core::prefs::Shortcut;
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        let mut p = app.prefs().clone();
+        p.shortcuts = vec![
+            Shortcut::new("Homework", "/home/me/School").unwrap(),
+            Shortcut::new("Mail", "https://mail.example.com").unwrap(),
+        ];
+        app.set_prefs(p);
+        click(&mut app, 0.0);
+        let cr = app.content_rect(app.pill_rect(5.0));
+        assert!(!content::clock_chips(cr, app.clock_row()).iter().any(|(_, p)| *p == Panel::Shortcuts), "free: none");
+
+        app.set_pro(true);
+        let (button, _) = *content::clock_chips(cr, app.clock_row())
+            .iter()
+            .find(|(_, p)| *p == Panel::Shortcuts)
+            .expect("Pro: a shortcuts button");
+        press(&mut app, button, 5.0);
+        let shown = texts(&app, 9.0, &mut engine);
+        assert!(shown.contains(&"Homework".to_string()) && shown.contains(&"Mail".to_string()), "{shown:?}");
+        assert!(app.accessibility(9.0).buttons.iter().any(|(n, _)| n == "Open Mail"));
+
+        // A tap opens it and closes the island.
+        let rows = content::list_rows(app.content_rect(app.pill_rect(9.0)), 2);
+        press(&mut app, rows[1], 9.0);
+        assert_eq!(app.take_ui_actions(), [UiAction::Shortcut("https://mail.example.com".into())]);
+        assert_eq!(app.presentation(), Idle);
     }
 
     #[test]

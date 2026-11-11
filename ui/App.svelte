@@ -506,9 +506,35 @@
     await loadTodos();
   }
 
+  // Your own buttons (Pro)
+  let shortcuts: { name: string; target: string }[] = $state([]);
+  let shortcutName = $state('');
+  let shortcutTarget = $state('');
+
+  async function loadShortcuts() {
+    try {
+      shortcuts = JSON.parse(await api.islet(['shortcut', '--json']));
+    } catch (e) {
+      proNote = api.message(e);
+    }
+  }
+
+  async function shortcutRun(args: string[]) {
+    proNote = '';
+    try {
+      await api.islet(args);
+      shortcutName = '';
+      shortcutTarget = '';
+    } catch (e) {
+      proNote = api.message(e);
+    }
+    await loadShortcuts();
+  }
+
   async function loadPro() {
     void loadWorld();
     void loadTodos();
+    void loadShortcuts();
     try {
       pro = parsePro(await api.islet(['pro', 'status', '--json']));
     } catch (e) {
@@ -1434,6 +1460,49 @@
             {/if}
           </div>
           <div class="card">
+            <h2>Shortcuts</h2>
+            <p class="muted">
+              Buttons of your own on the island (Control Centre → the bolt button). Each opens a folder, a file, a script
+              or a web page. Up to eight.
+            </p>
+            {#each shortcuts as s, i (i)}
+              <div class="net">
+                <span class="name">{s.name}</span>
+                <span class="muted small target">{s.target}</span>
+                <button class="link" aria-label={`Delete ${s.name}`} onclick={() => shortcutRun(['shortcut', 'remove', String(i + 1)])}>
+                  ✕
+                </button>
+              </div>
+            {/each}
+            {#if shortcuts.length < 8}
+              <div class="two">
+                <div>
+                  <label for="sc-name">Name</label>
+                  <input id="sc-name" type="text" maxlength="40" placeholder="Homework" bind:value={shortcutName} />
+                </div>
+                <div>
+                  <label for="sc-target">Opens</label>
+                  <input
+                    id="sc-target"
+                    type="text"
+                    spellcheck="false"
+                    placeholder={info?.os === 'windows' ? 'C:\\Users\\you\\Documents or https://…' : '/home/you/Documents or https://…'}
+                    bind:value={shortcutTarget}
+                  />
+                </div>
+              </div>
+              <div class="actions">
+                <button
+                  class="primary"
+                  disabled={!shortcutName.trim() || !shortcutTarget.trim()}
+                  onclick={() => shortcutRun(['shortcut', 'add', '--name', shortcutName.trim(), '--target', shortcutTarget.trim()])}
+                >
+                  Add shortcut
+                </button>
+              </div>
+            {/if}
+          </div>
+          <div class="card">
             <h2>Stopwatch</h2>
             <p class="muted">Open the island and tap the stopwatch button in Control Centre. Laps and pause work from the island.</p>
           </div>
@@ -1742,6 +1811,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .net .target {
+    flex: 2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    text-align: left;
   }
   .bars {
     font-family: ui-monospace, monospace;

@@ -75,6 +75,43 @@ pub fn lock() {
     run_first(lock_commands(std::env::consts::OS), "lock the computer");
 }
 
+/// Open one of the user's shortcuts: a web link in the browser; a folder,
+/// file or script as the file manager would (so a program or script runs).
+pub fn open_shortcut(target: &str) {
+    if target.starts_with("https://") || target.starts_with("http://") {
+        crate::providers::navigation::open_url(target);
+        return;
+    }
+    let path = std::path::Path::new(target);
+    // Linux file managers don't run scripts through xdg-open: a file marked
+    // executable is started directly, in its own folder.
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let runnable = std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0);
+        if runnable {
+            let mut cmd = Command::new(path);
+            if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+                cmd.current_dir(dir);
+            }
+            let started = cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+            if let Err(e) = started {
+                crate::providers::debug_log(&format!("could not run a shortcut: {e}"));
+            }
+            return;
+        }
+    }
+    #[cfg(target_os = "macos")]
+    let r = Command::new("open").arg(path).spawn();
+    #[cfg(target_os = "windows")]
+    let r = Command::new("explorer").arg(path).spawn();
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let r = Command::new("xdg-open").arg(path).spawn();
+    if let Err(e) = r {
+        crate::providers::debug_log(&format!("could not open a shortcut: {e}"));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

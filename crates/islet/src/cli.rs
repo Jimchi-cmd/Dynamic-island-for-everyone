@@ -32,6 +32,10 @@ Usage:
   islet todo [--json]                      your list
   islet todo done|remove <id>              tick an item (again to untick), or delete it
   islet todo clear-done                    delete the finished ones
+  islet shortcut add --name <name> --target <folder, file, script or https link>
+                                           a button of your own on the island (Islet Pro)
+  islet shortcut [--json]                  your shortcuts
+  islet shortcut remove <number>           delete one
   islet world add|remove <city>            world clocks on the clock card (Islet Pro)
   islet world [--json]                     your world clocks
   islet world cities                       the cities to choose from
@@ -120,6 +124,10 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
             edit_todo(|t| if t.remove(id) { Ok("Removed.".into()) } else { Err(format!("no item {id}")) })
         }),
         ["todo", "clear-done"] => edit_todo(|t| Ok(format!("Removed {} finished.", t.clear_done()))),
+        ["shortcut"] => Ok(shortcuts_text()),
+        ["shortcut", "--json"] => serde_json::to_string(&config::load_prefs().shortcuts).map_err(|e| e.to_string()),
+        ["shortcut", "add", "--name", name, "--target", target] => shortcut_add(name, target),
+        ["shortcut", "remove", n] => shortcut_remove(n),
         ["world"] => Ok(config::load_prefs().world_clocks.join("\n")),
         ["world", "--json"] => serde_json::to_string(&config::load_prefs().world_clocks).map_err(|e| e.to_string()),
         ["world", "cities"] => Ok(islet_core::worldclock::CITIES.iter().map(|c| c.0).collect::<Vec<_>>().join("\n")),
@@ -825,6 +833,43 @@ fn needs_pro() -> Result<(), String> {
     } else {
         Err("That's an Islet Pro feature. See Settings → Islet Pro.".into())
     }
+}
+
+fn shortcuts_text() -> String {
+    let list = config::load_prefs().shortcuts;
+    if list.is_empty() {
+        return "No shortcuts.".into();
+    }
+    list.iter()
+        .enumerate()
+        .map(|(i, s)| format!("{:>2}  {}  →  {}", i + 1, s.name, s.target))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn shortcut_add(name: &str, target: &str) -> Result<String, String> {
+    use islet_core::prefs::{Shortcut, MAX_SHORTCUTS};
+    needs_pro()?;
+    let s = Shortcut::new(name, target)?;
+    let mut p = config::load_prefs();
+    if p.shortcuts.len() >= MAX_SHORTCUTS {
+        return Err(format!("You can have up to {MAX_SHORTCUTS} shortcuts. Remove one first."));
+    }
+    p.shortcuts.push(s);
+    config::save_prefs(&p)?;
+    prefs_changed();
+    Ok("Added.".into())
+}
+
+/// Remove shortcut number `n` (1-based, as listed).
+fn shortcut_remove(n: &str) -> Result<String, String> {
+    let mut p = config::load_prefs();
+    let i = n.parse::<usize>().ok().filter(|i| (1..=p.shortcuts.len()).contains(i));
+    let i = i.ok_or_else(|| format!("{n:?} isn't one of your shortcuts (see: islet shortcut)"))?;
+    p.shortcuts.remove(i - 1);
+    config::save_prefs(&p)?;
+    prefs_changed();
+    Ok("Removed.".into())
 }
 
 fn load_todo() -> islet_core::todo::Todo {

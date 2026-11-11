@@ -67,6 +67,8 @@ pub enum Panel {
     Todo,
     /// A month's days, with the calendar link's events.
     Calendar,
+    /// The user's own buttons (Islet Pro).
+    Shortcuts,
 }
 
 /// What a tap on the clock card or a list lands on.
@@ -1658,6 +1660,8 @@ pub struct ClockRow {
     pub pro: bool,
     /// To-dos left (a badge on the to-do button).
     pub todo_left: usize,
+    /// The user has shortcuts of their own (Islet Pro).
+    pub shortcuts: bool,
     /// A line of world clocks under the date.
     pub world: bool,
 }
@@ -1674,6 +1678,9 @@ pub fn clock_chips(pill: Rect, row: ClockRow) -> Vec<(Rect, Panel)> {
     let mut icons = Vec::new();
     if row.shelf {
         icons.push(Panel::Shelf);
+    }
+    if row.shortcuts {
+        icons.push(Panel::Shortcuts);
     }
     if row.pro {
         icons.push(Panel::Todo);
@@ -1720,9 +1727,16 @@ pub fn clock_chip_elements(
                 c.connected_device().map_or_else(|| "Bluetooth".into(), |d| d.name.clone()),
                 c.connected_device().is_some(),
             ),
-            Panel::Shelf | Panel::System | Panel::Clipboard | Panel::Stopwatch | Panel::Todo | Panel::Calendar => {
+            Panel::Shelf
+            | Panel::System
+            | Panel::Clipboard
+            | Panel::Stopwatch
+            | Panel::Todo
+            | Panel::Calendar
+            | Panel::Shortcuts => {
                 let icon = match panel {
                     Panel::Shelf => Icon::Folder,
+                    Panel::Shortcuts => Icon::Bolt,
                     Panel::System => Icon::Gauge,
                     Panel::Clipboard => Icon::Clipboard,
                     Panel::Todo => Icon::Checklist,
@@ -2030,6 +2044,40 @@ pub fn expanded_shelf(
     v
 }
 
+/// The shortcuts list's footer button.
+pub const SHORTCUTS_EDIT: &str = "Edit shortcuts in Settings";
+
+/// Your own buttons: a tap opens the folder, file, script or page.
+pub fn expanded_shortcuts(
+    pill: Rect,
+    items: &[islet_core::prefs::Shortcut],
+    scroll: usize,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
+    let mut v = list_header_elements(pill, Icon::Bolt, "Shortcuts", None, o, engine);
+    let shown = shown_rows(items.len(), scroll, true);
+    let rows = list_rows(pill, shown);
+    v.extend(scroll_bar(pill, items.len(), scroll, true, o));
+    let name_style = TextStyle { size: 15.0, weight: 600, opacity: o, ..TextStyle::default() };
+    let small = TextStyle { size: 12.0, opacity: o * 0.5, align: Align::Right, ..TextStyle::default() };
+    for (r, item) in rows.iter().zip(items.iter().skip(scroll)) {
+        let (x, cy, rw) = (r.x as f32, (r.y + r.h / 2.0) as f32, r.w as f32);
+        let icon = if item.is_link() { Icon::Navigation } else { Icon::Folder };
+        v.push(Element::Icon { icon, x: x + 10.0, y: cy - 10.0, size: 20.0, color: accent_text(), opacity: o });
+        let kind = if item.is_link() { "Web" } else { "Open" };
+        let room = rw - 40.0 - 10.0 - engine.measure(kind, &small) - 12.0;
+        v.push(text(engine.ellipsize(&item.name, &name_style, room), name_style, x + 40.0, cy + 5.0));
+        v.push(text(kind, small, x + rw - 10.0, cy + 4.5));
+    }
+    if items.is_empty() {
+        let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
+        v.push(text("No shortcuts yet", style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
+    }
+    v.extend(list_footer_elements(pill, shown, SHORTCUTS_EDIT, true, o, engine));
+    v
+}
+
 /// The to-do list's footer button.
 pub const TODO_ADD: &str = "Add a note in Settings";
 
@@ -2236,8 +2284,13 @@ pub enum MenuAction {
     Lyrics,
     /// Lyrics timing: − / + buttons at the row's right.
     LyricsTiming,
+    /// The sleep timer: off → 15 → 30 → 45 → 60 minutes → off.
+    Sleep,
     Quit,
 }
+
+/// The sleep timer's choices, in minutes.
+pub const SLEEP_MINUTES: [u32; 4] = [15, 30, 45, 60];
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MenuItem {
@@ -2253,14 +2306,22 @@ pub struct MenuItem {
 const MENU_TOP: f64 = 14.0;
 const MENU_ROW: f64 = 34.0;
 
+/// A row's height: the longest menu (seven rows) tightens up to fit the window.
+fn menu_row(rows: usize) -> f64 {
+    if rows > 6 {
+        MENU_ROW - 2.0
+    } else {
+        MENU_ROW
+    }
+}
+
 pub fn menu_height(rows: usize) -> f64 {
-    MENU_TOP + rows as f64 * MENU_ROW + 12.0
+    MENU_TOP + rows as f64 * menu_row(rows) + 12.0
 }
 
 pub fn menu_rows(pill: Rect, rows: usize) -> Vec<Rect> {
-    (0..rows)
-        .map(|i| Rect::new(pill.x + 14.0, pill.y + MENU_TOP + i as f64 * MENU_ROW, pill.w - 28.0, MENU_ROW))
-        .collect()
+    let h = menu_row(rows);
+    (0..rows).map(|i| Rect::new(pill.x + 14.0, pill.y + MENU_TOP + i as f64 * h, pill.w - 28.0, h)).collect()
 }
 
 /// The − and + buttons of the lyrics-timing row.

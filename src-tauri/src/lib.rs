@@ -27,6 +27,11 @@ pub fn allowed(args: &[String]) -> bool {
         ["world", "--json"] | ["world", "cities", "--json"] => true,
         ["todo", "--json"] | ["todo", "add" | "clear-done"] => true,
         ["todo", "done" | "remove", id] => id.parse::<u32>().is_ok(),
+        ["shortcut", "--json"] => true,
+        ["shortcut", "remove", n] => n.parse::<u8>().is_ok(),
+        ["shortcut", "add", "--name", name, "--target", target] => {
+            !name.starts_with('-') && islet_core::prefs::Shortcut::new(name, target).is_ok()
+        }
         ["world", "add" | "remove", city] => islet_core::worldclock::find(city).is_some(),
         ["alarm", "list", "--json"] | ["alarm", "stop" | "snooze"] => true,
         ["wifi", "list", "--json"] | ["wifi", "list", "--scan", "--json"] | ["bt", "list", "--json"] => true,

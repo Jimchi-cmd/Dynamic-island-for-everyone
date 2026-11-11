@@ -429,7 +429,8 @@ fn run() -> platform::Result<()> {
                 UiAction::SetSwitch(..) => {}
                 UiAction::Screenshot if !scripted => quick::screenshot(),
                 UiAction::Lock if !scripted => quick::lock(),
-                UiAction::Screenshot | UiAction::Lock => {}
+                UiAction::Shortcut(target) if !scripted => quick::open_shortcut(&target),
+                UiAction::Screenshot | UiAction::Lock | UiAction::Shortcut(_) => {}
             }
         }
         let open = app.nav_card_open(t);
