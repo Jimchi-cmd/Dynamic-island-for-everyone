@@ -1875,36 +1875,44 @@ impl App {
     }
 
     /// The next few events for the calendar card: (when, what).
-    fn upcoming_events(&self) -> Vec<(String, String)> {
+    fn upcoming_events(&self) -> Vec<content::Upcoming> {
+        use islet_core::calendar::{countdown, is_deadline, CalEvent};
+        const ROWS: usize = 4;
         let now = self.wall as i64;
         let today = (now + self.utc_offset).div_euclid(86_400);
-        self.activities
-            .calendar()
-            .iter()
-            .filter(|e| e.end > now)
-            .take(4)
-            .map(|e| {
-                let local = e.start + if e.all_day { 0 } else { self.utc_offset };
-                let day = local.div_euclid(86_400);
-                let (_, month, d) = islet_core::calendar::civil_from_days(day);
-                let date = match day - today {
-                    i64::MIN..=0 => "Today".to_string(),
-                    1 => "Tomorrow".to_string(),
-                    _ => {
-                        let name = islet_core::clock::month_name(month);
-                        format!("{d} {}", &name[..name.len().min(3)])
-                    }
-                };
-                let when = if e.all_day {
-                    date
-                } else {
-                    let secs = local.rem_euclid(86_400);
-                    let hm = islet_core::alarm::format_hm((secs / 3600) as u8, (secs / 60 % 60) as u8, self.h24);
-                    format!("{date} · {hm}")
-                };
-                (when, e.summary.clone())
-            })
-            .collect()
+        let ahead = || self.activities.calendar().iter().filter(move |e| e.end > now);
+        // Deadlines come first, however far off: up to two, so there is
+        // still room for what is on today. The rest follow in order.
+        let deadlines: Vec<&CalEvent> = ahead().filter(|e| is_deadline(&e.summary)).take(2).collect();
+        let others = ahead().filter(|e| !deadlines.iter().any(|d| std::ptr::eq(*d, *e)));
+        let row = |e: &CalEvent, deadline: bool| {
+            if deadline {
+                let when = format!("Due {}", countdown(e, now, self.utc_offset));
+                return content::Upcoming { when, name: e.summary.clone(), deadline };
+            }
+            let local = e.start + if e.all_day { 0 } else { self.utc_offset };
+            let day = local.div_euclid(86_400);
+            let (_, month, d) = islet_core::calendar::civil_from_days(day);
+            let date = match day - today {
+                i64::MIN..=0 => "Today".to_string(),
+                1 => "Tomorrow".to_string(),
+                _ => {
+                    let name = islet_core::clock::month_name(month);
+                    format!("{d} {}", &name[..name.len().min(3)])
+                }
+            };
+            let when = if e.all_day {
+                date
+            } else {
+                let secs = local.rem_euclid(86_400);
+                let hm = islet_core::alarm::format_hm((secs / 3600) as u8, (secs / 60 % 60) as u8, self.h24);
+                format!("{date} · {hm}")
+            };
+            content::Upcoming { when, name: e.summary.clone(), deadline }
+        };
+        let mut rows: Vec<content::Upcoming> = deadlines.iter().map(|e| row(e, true)).collect();
+        rows.extend(others.take(ROWS - rows.len()).map(|e| row(e, false)));
+        rows
     }
 
     fn stopwatch_card_open(&self, t: f64) -> bool {
@@ -4254,6 +4262,55 @@ mod tests {
     }
 
     #[test]
+    fn deadlines_count_down_on_the_calendar_card() {
+        use content::Quick;
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        // Wednesday 4 November 2026, 09:00 UTC.
+        let now = 1_793_782_800;
+        app.set_wall(now as f64, 0, 0.0);
+        let ev = |summary: &str, start: i64, all_day| islet_core::calendar::CalEvent {
+            summary: summary.into(),
+            start,
+            end: start + if all_day { 86_400 } else { 3600 },
+            all_day,
+            location: None,
+            link: None,
+        };
+        let day0 = now - 9 * 3600;
+        app.report(
+            Report::Calendar(Some(vec![
+                ev("Dentist", now + 2 * 3600, false),
+                ev("Football practice", now + 26 * 3600, false),
+                ev("Lunch with Amina", now + 50 * 3600, false),
+                ev("Choir", now + 74 * 3600, false),
+                ev("History essay due", day0 + 6 * 86_400, true),
+                ev("Maths exam", now + 20 * 86_400 + 3600, false),
+                ev("Physics test", now + 30 * 86_400, false),
+            ])),
+            0.0,
+        );
+        click(&mut app, 0.0);
+        press_quick(&mut app, 5.0, Quick::Calendar);
+        let rows = app.upcoming_events();
+        let shown: Vec<(&str, &str, bool)> =
+            rows.iter().map(|u| (u.when.as_str(), u.name.as_str(), u.deadline)).collect();
+        assert_eq!(
+            shown,
+            [
+                ("Due in 6 days", "History essay due", true),
+                ("Due in 20 days", "Maths exam", true),
+                ("Today · 11:00", "Dentist", false),
+                ("Tomorrow · 11:00", "Football practice", false),
+            ],
+            "the two nearest deadlines lead, then what is on next"
+        );
+        let card = texts(&app, 9.0, &mut engine);
+        assert!(card.iter().any(|s| s == "Due in 6 days") && card.iter().any(|s| s == "Dentist"), "{card:?}");
+    }
+
+    #[test]
     fn finished_focus_rounds_build_a_streak() {
         let day = 86_400.0;
         let wall0 = 1_800_000_000.0;
@@ -5412,6 +5469,7 @@ mod tests {
             let events = vec![
                 ev("Dentist", at(4, 16), at(4, 17), false),
                 ev("Football practice", at(5, 9), at(5, 10), false),
+                ev("History essay due", at(10, 0), at(11, 0), true),
                 ev("Trip to Jinja", at(20, 0), at(22, 0), true),
             ];
             a.report(Report::Calendar(Some(events)), 0.0);

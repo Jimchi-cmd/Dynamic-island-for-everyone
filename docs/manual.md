@@ -270,6 +270,8 @@ islet focus streak
 2. Paste it in the box and click **Save link**. It's stored in your system's keychain.
 3. Turn on **Show upcoming events**. Ten minutes before an event, the island shows what's next; open it for today's agenda.
 
+**Deadlines:** an event whose title says it is one (due, deadline, exam, test, quiz, assignment, homework, coursework, submit, hand in, midterm, finals) counts down on the calendar card: "Due in 6 days", in orange. The two nearest deadlines come first, up to six weeks ahead, and the next events follow.
+
 When an event that is about to start has a video-call link (Zoom, Google Meet, Teams, Webex, Whereby, Jitsi, GoTo, BlueJeans, Chime, Skype or Discord), its row gets a green **Join** button that opens the call in your browser or the call's app. Other links in an invitation are never opened.
 
 **Notifications** (Linux, and Windows with the MSIX)

@@ -9,7 +9,7 @@ use islet_core::calendar::{self, CalEvent};
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::time::Duration;
 
-/// Events from a day ago to a week ahead.
+/// Events from a day ago to six weeks ahead (deadlines count down from afar).
 pub fn fetch() -> Result<Vec<CalEvent>, String> {
     let link = secrets::calendar_url().ok_or("No calendar link yet. Add one with: islet calendar set")?;
     let mut resp = crate::net::agent().get(&calendar::feed_url(&link)).call().map_err(|e| format!("network: {e}"))?;
@@ -19,7 +19,7 @@ pub fn fetch() -> Result<Vec<CalEvent>, String> {
     let body =
         resp.body_mut().with_config().limit(16 * 1024 * 1024).read_to_string().map_err(|e| format!("network: {e}"))?;
     let now = clock::epoch() as i64;
-    Ok(calendar::parse_ics(&body, now - 86_400, now + 7 * 86_400, clock::utc_offset()))
+    Ok(calendar::parse_ics(&body, now - 86_400, now + 42 * 86_400, clock::utc_offset()))
 }
 
 /// Send `true` to turn calendar on (or refresh now), `false` to turn it off.

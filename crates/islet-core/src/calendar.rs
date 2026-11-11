@@ -493,6 +493,55 @@ pub fn relative(start: i64, now: i64) -> String {
     }
 }
 
+/// Words that make an event a deadline: something due, not somewhere to be.
+const DEADLINE_WORDS: [&str; 14] = [
+    "due",
+    "deadline",
+    "exam",
+    "exams",
+    "test",
+    "quiz",
+    "assignment",
+    "homework",
+    "coursework",
+    "submit",
+    "submission",
+    "midterm",
+    "finals",
+    "hand-in",
+];
+
+/// Is this event a deadline, going by its title? Whole words only, so
+/// "Contest" and "Duet practice" are not.
+pub fn is_deadline(summary: &str) -> bool {
+    let lower = summary.to_lowercase();
+    lower.contains("hand in")
+        || lower.split(|c: char| !(c.is_alphanumeric() || c == '-')).any(|w| DEADLINE_WORDS.contains(&w))
+}
+
+/// How long until a deadline: "in 40 min", "in 5 h", "tomorrow", "in 3 days".
+/// An all-day one counts whole days on the local calendar ("today").
+pub fn countdown(e: &CalEvent, now: i64, utc_offset: i64) -> String {
+    let today = (now + utc_offset).div_euclid(86_400);
+    // All-day events are already dates on the local calendar.
+    let day = if e.all_day { e.start.div_euclid(86_400) } else { (e.start + utc_offset).div_euclid(86_400) };
+    let left = e.start - now;
+    if !e.all_day && left <= 0 {
+        return "now".into();
+    }
+    if !e.all_day && left < 3600 {
+        return format!("in {} min", (left + 59) / 60);
+    }
+    if !e.all_day && left < 24 * 3600 && day - today <= 1 {
+        return format!("in {} h", (left + 1800) / 3600);
+    }
+    match day - today {
+        i64::MIN..=0 => "today".into(),
+        1 => "tomorrow".into(),
+        n => format!("in {n} days"),
+    }
+}
+
 /// Days in a month (1–12).
 pub fn days_in_month(year: i32, month: u8) -> u8 {
     match month {
@@ -621,6 +670,43 @@ mod tests {
         assert_eq!(ev.len(), 2);
         assert_eq!(ev[0].link.as_deref(), Some("https://meet.google.com/abc-defg-hij"));
         assert_eq!(ev[1].link, None);
+    }
+
+    #[test]
+    fn spots_deadlines_by_whole_words() {
+        for yes in
+            ["Essay due", "Maths EXAM", "Physics test (ch. 4)", "Submit lab report", "Hand in coursework", "Quiz 3"]
+        {
+            assert!(is_deadline(yes), "{yes}");
+        }
+        for no in ["Contest", "Duet practice", "Lunch with Amina", "Testing the mic", "Examine the plan"] {
+            assert!(!is_deadline(no), "{no}");
+        }
+    }
+
+    #[test]
+    fn counts_down_to_a_deadline() {
+        let now = utc(2026, 11, 4, 9, 0);
+        let at = |start, all_day| CalEvent {
+            summary: "x".into(),
+            start,
+            end: start + 3600,
+            all_day,
+            location: None,
+            link: None,
+        };
+        assert_eq!(countdown(&at(now + 40 * 60, false), now, 0), "in 40 min");
+        assert_eq!(countdown(&at(now + 5 * 3600, false), now, 0), "in 5 h");
+        assert_eq!(countdown(&at(now + 20 * 3600, false), now, 0), "in 20 h");
+        assert_eq!(countdown(&at(utc(2026, 11, 7, 23, 59), false), now, 0), "in 3 days");
+        assert_eq!(countdown(&at(now - 60, false), now, 0), "now");
+        // All-day deadlines count calendar days.
+        assert_eq!(countdown(&at(utc(2026, 11, 4, 0, 0), true), now, 0), "today");
+        assert_eq!(countdown(&at(utc(2026, 11, 5, 0, 0), true), now, 0), "tomorrow");
+        assert_eq!(countdown(&at(utc(2026, 11, 14, 0, 0), true), now, 0), "in 10 days");
+        // 23:00 local at UTC+3 is 20:00 UTC: a deadline at 01:00 local is tomorrow, 2 h away.
+        let late = utc(2026, 11, 4, 20, 0);
+        assert_eq!(countdown(&at(late + 2 * 3600, false), late, 3 * 3600), "in 2 h");
     }
 
     #[test]

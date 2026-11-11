@@ -242,12 +242,21 @@ pub fn calendar_arrows(pill: Rect) -> [(Rect, i8); 2] {
 /// A month: its days in a Monday-first grid, today ringed, days with events
 /// dotted; the next events beside it.
 #[allow(clippy::too_many_arguments)]
+/// A row beside the month grid: when, what, and whether it is a deadline
+/// (then `when` counts down: "in 3 days").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Upcoming {
+    pub when: String,
+    pub name: String,
+    pub deadline: bool,
+}
+
 pub fn expanded_calendar(
     pill: Rect,
     (year, month): (i32, u8),
     today: &LocalTime,
     event_days: &[u8],
-    upcoming: &[(String, String)],
+    upcoming: &[Upcoming],
     o: f32,
     engine: &mut TextEngine,
 ) -> Vec<Element> {
@@ -297,11 +306,14 @@ pub fn expanded_calendar(
     if upcoming.is_empty() {
         v.push(text("No events", when, ex, top + 26.0));
     }
-    for (i, (time, name)) in upcoming.iter().take(4).enumerate() {
+    for (i, u) in upcoming.iter().take(4).enumerate() {
         let y = top + 12.0 + i as f32 * 36.0;
-        v.push(Element::Bar { x: ex, y, w: 2.5, h: 28.0, color: RED, opacity: o });
-        v.push(text(engine.ellipsize(time, &when, ew - 10.0), when, ex + 9.0, y + 11.0));
-        v.push(text(engine.ellipsize(name, &what, ew - 10.0), what, ex + 9.0, y + 25.0));
+        // A deadline is orange and counts down; an event is red with its time.
+        let (bar, when) =
+            if u.deadline { (ORANGE, TextStyle { color: ORANGE, opacity: o, ..when }) } else { (RED, when) };
+        v.push(Element::Bar { x: ex, y, w: 2.5, h: 28.0, color: bar, opacity: o });
+        v.push(text(engine.ellipsize(&u.when, &when, ew - 10.0), when, ex + 9.0, y + 11.0));
+        v.push(text(engine.ellipsize(&u.name, &what, ew - 10.0), what, ex + 9.0, y + 25.0));
     }
     v
 }
