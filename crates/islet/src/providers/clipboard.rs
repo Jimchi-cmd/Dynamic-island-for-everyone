@@ -142,7 +142,7 @@ mod platform {
                             a.prop,
                             AtomEnum::ANY,
                             0,
-                            (islet_core::clipboard::MAX_CHARS * 4) as u32,
+                            (islet_core::clipboard::READ_CHARS * 4) as u32,
                         )
                         .ok()
                         .and_then(|c| c.reply().ok())

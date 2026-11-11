@@ -358,6 +358,8 @@ pub struct Activities {
     calendar: Vec<crate::calendar::CalEvent>,
     up_next: Option<(crate::calendar::CalEvent, f64)>,
     notes: std::collections::VecDeque<Note>,
+    /// Notifications to remember (0: `NOTE_HISTORY`).
+    note_cap: usize,
     remote: Option<MediaInfo>,
     custom: Vec<Custom>,
     privacy: Privacy,
@@ -438,6 +440,11 @@ impl Activities {
 
     pub fn timer(&self) -> Option<&crate::timer::Timer> {
         self.timer.as_ref()
+    }
+
+    /// How many notifications to remember (see `limits`).
+    pub fn set_note_history(&mut self, n: usize) {
+        self.note_cap = n;
     }
 
     pub fn stopwatch(&self) -> Option<&crate::stopwatch::Stopwatch> {
@@ -592,7 +599,7 @@ impl Activities {
             }
             Report::Notification(n) => {
                 self.notes.push_front(n);
-                self.notes.truncate(NOTE_HISTORY);
+                self.notes.truncate(if self.note_cap == 0 { NOTE_HISTORY } else { self.note_cap });
                 self.note_until = t + NOTE_SECS;
                 true
             }

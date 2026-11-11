@@ -29,6 +29,33 @@ islet pro status
 islet pro deactivate
 ```
 
+## No low-end limits, and Power saver
+
+The free app is tuned for a laptop with 4 GB of memory. With Pro those limits are off as soon as your key is active, with nothing to switch on:
+
+| | Free | Pro | Pro with Power saver |
+|---|---|---|---|
+| Waveform, bell and spinner | 30 frames a second | 60 frames a second | still |
+| Album art kept at | 112 px | 256 px | 112 px |
+| Clipboard history | 20 copies of 10,000 characters | 500 copies of 100,000 characters | 20 copies of 10,000 characters |
+| Files on the shelf | 12 | 100 | 100 |
+| Notifications remembered | 20 | 200 | 20 |
+
+Without the limits Islet uses more memory, and a little more power while music plays. An idle island still does no work at all.
+
+**Power saver** (Settings → Islet Pro → Performance) is for a long day on battery:
+
+- It brings the light limits back.
+- It holds the waveform still, so playing music costs no extra power.
+- An open music card moves its progress bar once a second.
+- Nothing you saved is removed: the shelf, notes and shortcuts stay as they are. The clipboard history shortens to 20 as you copy new things.
+
+From a terminal:
+
+```bash
+islet set power-saver on
+```
+
 ## For the maintainer: setting up the store
 
 Islet works with **Polar** or **Lemon Squeezy**. Both act as the merchant of record, so they handle payments, sales tax, VAT and refunds, and both issue license keys. You need to be 18 or older to open a seller account. Use whichever you prefer:

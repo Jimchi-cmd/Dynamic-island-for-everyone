@@ -651,6 +651,10 @@ fn set_hotkey(combo: &str) -> Result<String, String> {
 
 fn set_switch(key: &str, value: &str) -> Result<String, String> {
     let on = islet_core::prefs::parse_on_off(value).ok_or_else(|| format!("say on or off, not {value:?}"))?;
+    // Power saver belongs to Islet Pro (the free app is already light).
+    if key == "power-saver" && on {
+        needs_pro()?;
+    }
     let mut p = config::load_prefs();
     p.set_switch(key, on)?;
     config::save_prefs(&p)?;

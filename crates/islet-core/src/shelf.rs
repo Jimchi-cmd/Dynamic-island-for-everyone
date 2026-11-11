@@ -1,9 +1,9 @@
 //! The file shelf: references to files dropped on the island (paths, never
-//! copies), kept until removed. Newest first, at most `MAX` items.
+//! copies), kept until removed. Newest first; `MAX` items in the free app.
 
 use serde::{Deserialize, Serialize};
 
-pub const MAX: usize = 12;
+pub const MAX: usize = crate::limits::LIGHT.shelf;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShelfItem {
@@ -22,12 +22,13 @@ impl ShelfItem {
 }
 
 /// Add dropped paths to the front; duplicates move up instead of repeating.
-pub fn add(items: &mut Vec<ShelfItem>, dropped: &[(String, bool)]) {
+/// The shelf holds at most `max` files; the oldest fall off.
+pub fn add(items: &mut Vec<ShelfItem>, dropped: &[(String, bool)], max: usize) {
     for (p, dir) in dropped.iter().rev() {
         items.retain(|i| &i.path != p);
         items.insert(0, ShelfItem { path: p.clone(), dir: *dir });
     }
-    items.truncate(MAX);
+    items.truncate(max.max(1));
 }
 
 /// Paths from a `text/uri-list` (XDND drops): `file://` URIs, percent-decoded.
@@ -76,11 +77,14 @@ mod tests {
         assert_eq!(item("/home/a/Report final.pdf").name(), "Report final.pdf");
         assert_eq!(item("C:\\Users\\a\\Photos\\").name(), "Photos");
         let mut items = vec![item("/a"), item("/b")];
-        add(&mut items, &[("/c".into(), false), ("/b".into(), false)]);
+        add(&mut items, &[("/c".into(), false), ("/b".into(), false)], MAX);
         let paths: Vec<_> = items.iter().map(|i| i.path.as_str()).collect();
         assert_eq!(paths, ["/c", "/b", "/a"], "dropped order kept, /b moved up, not repeated");
-        add(&mut items, &(0..20).map(|i| (format!("/f{i}"), false)).collect::<Vec<_>>());
+        let more: Vec<_> = (0..20).map(|i| (format!("/f{i}"), false)).collect();
+        add(&mut items, &more, MAX);
         assert_eq!(items.len(), MAX);
+        add(&mut items, &more, 100);
+        assert_eq!(items.len(), 20, "with room for more, all twenty stay");
     }
 
     #[test]

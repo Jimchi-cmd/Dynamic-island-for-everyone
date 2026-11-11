@@ -47,6 +47,9 @@ pub struct IslandPrefs {
     pub calls: bool,
     /// Downloads in progress, from the Downloads folder.
     pub downloads: bool,
+    /// Islet Pro: go back to the light limits, and keep the island still
+    /// (see `limits`). Without Pro this does nothing.
+    pub power_saver: bool,
     /// The global shortcut that opens and closes the island ("" = none),
     /// e.g. "Ctrl+Alt+I".
     pub hotkey: String,
@@ -94,7 +97,7 @@ pub struct Shortcut {
     pub target: String,
 }
 
-pub const MAX_SHORTCUTS: usize = 8;
+pub const MAX_SHORTCUTS: usize = 50;
 
 impl Shortcut {
     /// A shortcut from what the user typed, or why it can't be one.
@@ -179,6 +182,7 @@ impl Default for IslandPrefs {
             idle_clock: true,
             calls: true,
             downloads: false,
+            power_saver: false,
             hotkey: String::new(),
             accent: "blue".into(),
             style: "black".into(),
@@ -193,7 +197,7 @@ impl Default for IslandPrefs {
 }
 
 /// The switches `islet set <key> on|off` understands.
-pub const SWITCHES: [&str; 15] = [
+pub const SWITCHES: [&str; 16] = [
     "volume-hud",
     "brightness-hud",
     "caps-lock-hud",
@@ -209,6 +213,7 @@ pub const SWITCHES: [&str; 15] = [
     "idle-clock",
     "calls",
     "downloads",
+    "power-saver",
 ];
 
 impl IslandPrefs {
@@ -249,6 +254,7 @@ impl IslandPrefs {
             "idle-clock" => &mut self.idle_clock,
             "calls" => &mut self.calls,
             "downloads" => &mut self.downloads,
+            "power-saver" => &mut self.power_saver,
             _ => return Err(format!("unknown setting {key:?} (one of: {})", SWITCHES.join(", "))),
         })
     }

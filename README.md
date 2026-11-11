@@ -29,7 +29,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 - **Calls:** while Zoom, Teams, a browser call or any app has the microphone, the island shows how long the call has run, with a button that mutes your microphone.
 - **Camera and microphone dots:** a green dot while an app uses the camera, an orange one for the microphone (your screen reader hears which app).
 - **System monitor:** CPU, memory and disk on the clock card, read only while you look at it.
-- **Clipboard history** (opt-in): your last 20 copied texts, one tap to copy again. Kept in memory only; password-manager copies are skipped.
+- **Clipboard history** (opt-in): your last 20 copied texts (500 with Islet Pro), one tap to copy again. Kept in memory only; password-manager copies are skipped.
 - **Live activities** for your scripts and apps: `islet activity start build --title Build --progress 40` puts a progress ring on the island.
 - **Make it yours:** accent colour, island size, gap from the top, which display (or every display), and a global shortcut to open it. Or hide the empty island until you point at it: anything live (music, timers, pop-ups) still shows.
 - **Navigation ETA** with live traffic, arrival time and the first turn, then one tap hands off to Google Maps or Waze. Destination suggestions as you type. Uses your own free-tier Google key ([setup](docs/navigation.md)).

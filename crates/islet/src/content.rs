@@ -687,8 +687,20 @@ pub fn format_duration(secs: f64) -> String {
     }
 }
 
+thread_local! {
+    /// Power saver: the waveform holds one shape instead of moving. (Per
+    /// thread: the island draws on one thread only.)
+    static STILL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub fn set_still(on: bool) {
+    STILL.with(|s| s.set(on));
+}
+
 /// Animated equaliser bars, centred on `cy`. Static stubs while paused.
 pub fn waveform(x: f32, cy: f32, n: usize, t: f64, playing: bool, color: [u8; 3], o: f32) -> Vec<Element> {
+    // Held still, the bars keep a shape that still reads as "playing".
+    let t = if STILL.with(std::cell::Cell::get) { 0.37 } else { t };
     const SPEEDS: [f64; 6] = [1.7, 2.3, 1.3, 2.9, 2.1, 1.5];
     const PHASES: [f64; 6] = [0.0, 1.1, 2.3, 0.6, 1.9, 2.8];
     (0..n)

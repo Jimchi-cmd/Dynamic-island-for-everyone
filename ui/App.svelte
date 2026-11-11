@@ -1451,6 +1451,33 @@
         {/if}
         {#if pro?.active}
           <div class="card">
+            <h2>Performance</h2>
+            <p class="muted">
+              {#if islandPrefs?.powerSaver}
+                Power saver is on. Islet keeps short histories and small album art, and the waveform stands still, so
+                playing music costs no extra battery.
+              {:else}
+                The limits of the free app are off: animation at 60 frames a second, sharper album art, a clipboard
+                history of 500 copies and room for 100 files on the shelf. Islet uses more memory and a little more
+                power for it.
+              {/if}
+            </p>
+            <div class="net">
+              <span class="name">Power saver</span>
+              <input
+                type="checkbox"
+                class="switch"
+                aria-label="Power saver"
+                checked={islandPrefs?.powerSaver ?? false}
+                disabled={!islandPrefs}
+                onchange={(e) => setSwitch('powerSaver', e.currentTarget.checked)}
+              />
+            </div>
+            <p class="muted small">
+              For a long day on battery. Nothing you saved is removed: your shelf, notes and shortcuts stay as they are.
+            </p>
+          </div>
+          <div class="card">
             <h2>World clocks</h2>
             <p class="muted">Up to three cities on the clock card, with daylight saving taken care of.</p>
             {#if worldClocks.length}
@@ -1524,7 +1551,7 @@
                 </button>
               </div>
             {/each}
-            {#if shortcuts.length < 8}
+            {#if shortcuts.length < 50}
               <div class="two">
                 <div>
                   <label for="sc-name">Name</label>

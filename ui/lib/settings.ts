@@ -263,6 +263,8 @@ export interface IslandPrefs {
   idleClock: boolean;
   calls: boolean;
   downloads: boolean;
+  /** Islet Pro: the light limits again, and a still island. */
+  powerSaver: boolean;
   hotkey: string;
   accent: string;
   style: string;
@@ -324,4 +326,5 @@ export const SWITCH_NAMES: Record<string, string> = {
   idleClock: 'idle-clock',
   calls: 'calls',
   downloads: 'downloads',
+  powerSaver: 'power-saver',
 };

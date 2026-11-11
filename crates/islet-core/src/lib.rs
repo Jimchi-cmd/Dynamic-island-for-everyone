@@ -11,6 +11,7 @@ pub mod downloads;
 pub mod geometry;
 pub mod hotkey;
 pub mod island;
+pub mod limits;
 pub mod lyrics;
 pub mod nav;
 pub mod paths;

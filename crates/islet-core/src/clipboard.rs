@@ -11,10 +11,12 @@
 
 use std::collections::VecDeque;
 
-/// Entries kept.
-pub const MAX_ITEMS: usize = 20;
+/// Entries kept, unless `History::set_limits` says otherwise.
+pub const MAX_ITEMS: usize = crate::limits::LIGHT.clipboard_items;
 /// Longer copies are kept only up to this many characters.
-pub const MAX_CHARS: usize = 10_000;
+pub const MAX_CHARS: usize = crate::limits::LIGHT.clipboard_chars;
+/// The most a copy can ever be kept at (what the OS readers fetch).
+pub const READ_CHARS: usize = crate::limits::FULL.clipboard_chars;
 
 /// Clipboard formats that mark a copy as secret, or as not for history.
 pub const SECRET_MARKERS: &[&str] = &[
@@ -32,25 +34,40 @@ pub fn is_secret<S: AsRef<str>>(formats: &[S]) -> bool {
     formats.iter().any(|f| SECRET_MARKERS.iter().any(|m| f.as_ref().eq_ignore_ascii_case(m)))
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct History {
     items: VecDeque<String>,
+    max_items: usize,
+    max_chars: usize,
+}
+
+impl Default for History {
+    fn default() -> Self {
+        Self { items: VecDeque::new(), max_items: MAX_ITEMS, max_chars: MAX_CHARS }
+    }
 }
 
 impl History {
+    /// How many entries to keep, and how long each may be. Entries already
+    /// kept stay until newer copies push them out.
+    pub fn set_limits(&mut self, items: usize, chars: usize) {
+        self.max_items = items.max(1);
+        self.max_chars = chars.max(1);
+    }
+
     /// Record a copy. Returns false when nothing changed (blank, or already
     /// the newest entry). Copying an older entry again moves it to the top.
     pub fn push(&mut self, text: &str) -> bool {
         if text.trim().is_empty() {
             return false;
         }
-        let text: String = text.chars().take(MAX_CHARS).collect();
+        let text: String = text.chars().take(self.max_chars).collect();
         if self.items.front() == Some(&text) {
             return false;
         }
         self.items.retain(|t| *t != text);
         self.items.push_front(text);
-        self.items.truncate(MAX_ITEMS);
+        self.items.truncate(self.max_items);
         true
     }
 
@@ -116,6 +133,23 @@ mod tests {
         assert_eq!(h.get(0).unwrap().len(), MAX_CHARS);
         h.clear();
         assert!(h.is_empty());
+    }
+
+    #[test]
+    fn limits_can_be_lifted() {
+        let mut h = History::default();
+        h.set_limits(100, MAX_CHARS * 2);
+        for i in 0..60 {
+            h.push(&i.to_string());
+        }
+        assert_eq!(h.len(), 60);
+        h.push(&"y".repeat(MAX_CHARS + 50));
+        assert_eq!(h.get(0).unwrap().len(), MAX_CHARS + 50);
+        // Back to the light limits: nothing is thrown away until the next copy.
+        h.set_limits(MAX_ITEMS, MAX_CHARS);
+        assert_eq!(h.len(), 61);
+        h.push("newest");
+        assert_eq!(h.len(), MAX_ITEMS);
     }
 
     #[test]

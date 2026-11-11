@@ -15,6 +15,7 @@ use islet_core::island::{
     spring_for, target_size, Island, Presentation, Signal, AUTO_COLLAPSE_SECS, LONG_PRESS_SECS, MINIMAL_CIRCLE,
     MINIMAL_GAP,
 };
+use islet_core::limits::Limits;
 use islet_core::prefs::IslandPrefs;
 use islet_core::spring::{Animated, Spring};
 use islet_core::stopwatch::{Stopwatch, StopwatchCommand};
@@ -35,6 +36,9 @@ const SMOOTHING: f32 = 0.6;
 pub const FRAME: Duration = Duration::from_micros(16_667);
 /// …and while only the waveform moves (30 fps).
 pub const WAVE_FRAME: Duration = Duration::from_micros(33_333);
+/// With Power saver the waveform is still, but an open music card's
+/// progress bar must keep moving: once a second.
+pub const SAVER_TICK: Duration = Duration::from_secs(1);
 
 /// Distance from the pill's round end to the centre of the detached circle
 /// in Minimal: half the circle, the gap, and the other half.
@@ -724,7 +728,8 @@ impl App {
 
     /// Files were dropped on the island: (path, is a folder).
     pub fn drop_files(&mut self, dropped: Vec<(String, bool)>, t: f64) -> bool {
-        islet_core::shelf::add(&mut self.shelf, &dropped);
+        let room = self.limits().shelf;
+        islet_core::shelf::add(&mut self.shelf, &dropped, room);
         self.shelf_dirty = true;
         self.dragging = false;
         self.drag_opened = false;
@@ -1473,11 +1478,34 @@ impl App {
     /// Islet Pro is on (its features show; see `islet_core::pro`).
     pub fn set_pro(&mut self, on: bool) {
         self.pro = on;
+        self.apply_limits();
+    }
+
+    /// How much is kept and how smoothly things move: the light limits in
+    /// the free app, none of them with Islet Pro, and with Pro's Power
+    /// saver the light ones again with the island held still.
+    pub fn limits(&self) -> Limits {
+        Limits::pick(self.pro, self.prefs.power_saver)
+    }
+
+    fn apply_limits(&mut self) {
+        let l = self.limits();
+        self.clip.set_limits(l.clipboard_items, l.clipboard_chars);
+        self.activities.set_note_history(l.notes);
+        crate::providers::art::set_size(l.art_px);
+        content::set_still(l.ambient_fps == 0);
+    }
+
+    /// The pause between frames while something moves on its own; None
+    /// when Power saver holds it still.
+    fn ambient_frame(&self) -> Option<Duration> {
+        self.limits().ambient_frame_micros().map(Duration::from_micros)
     }
 
     pub fn set_prefs(&mut self, prefs: IslandPrefs) {
         content::set_accent(prefs.accent_rgb());
         self.prefs = prefs;
+        self.apply_limits();
         if !self.prefs.lyrics {
             self.lyrics = None;
         }
@@ -2531,7 +2559,8 @@ impl App {
     }
 
     /// How often to draw while something moves on its own: 60 fps for the
-    /// shape, 30 fps for a waveform; None when nothing moves (zero wakeups).
+    /// shape, 30 fps for a waveform (60 with Islet Pro, and not at all with
+    /// Power saver); None when nothing moves (zero wakeups).
     pub fn frame_interval(&self, t: f64) -> Option<Duration> {
         if self.animating(t) {
             return Some(FRAME);
@@ -2541,33 +2570,39 @@ impl App {
         if self.shown.value(t) < 0.01 {
             return None;
         }
+        let ambient = self.ambient_frame();
         let live = self.live(t);
         // An activity without a known amount animates its ring while shown.
         if self.activities.custom().first().is_some_and(|c| c.progress.is_none())
             && matches!(live.first(), Some(Live::Custom(_)))
             && self.has_content(t)
         {
-            return Some(WAVE_FRAME);
+            return ambient;
         }
         // The bell swings while an alarm rings and is on screen.
         if self.activities.alarm().is_some() && self.has_content(t) {
-            return Some(WAVE_FRAME);
+            return ambient;
         }
         let playing = self.activities.media().is_some_and(|m| m.playing);
         // Lyrics glide at 60 fps while they move: sliding to the next line,
         // or scrolling across one too long for the bar (about 7 px a letter).
+        // Power saver halves that; the lines still have to change.
         if let (true, Some(l), Some(m)) = (playing, self.song_lyrics(), self.activities.media()) {
             let pos = self.lyrics_pos(m, t);
             let long = self.lyrics_in_bar(&live)
                 && l.current(pos)
                     .is_some_and(|i| l.text(i).chars().count() as f64 * 7.0 > content::COMPACT_LYRICS_W - 90.0);
             if (islet_core::lyrics::sliding(l, pos) || long) && self.has_content(t) {
-                return Some(FRAME);
+                return Some(if ambient.is_some() { FRAME } else { WAVE_FRAME });
             }
         }
         let compact_wave = matches!(live.first(), Some(Live::Media(_))) && self.compact_opacity(t, &live) > 0.0;
         let card_wave = self.expanded_opacity(t) > 0.0 && matches!(self.open_content(&live), OpenContent::Media(_));
-        (playing && (compact_wave || card_wave)).then_some(WAVE_FRAME)
+        match (playing, card_wave, compact_wave) {
+            (true, true, _) => ambient.or(Some(SAVER_TICK)),
+            (true, false, true) => ambient,
+            _ => None,
+        }
     }
 
     /// Seconds from `t` until the next timer, if any.
@@ -4286,6 +4321,65 @@ mod tests {
         let app = App::new(Demo::None, false);
         assert!(!app.animating(0.0));
         assert_eq!(app.next_timer(0.0), None);
+    }
+
+    #[test]
+    fn pro_lifts_the_limits_and_power_saver_stills_the_island() {
+        use islet_core::limits::{FULL, LIGHT, SAVER};
+        // The free app: the light limits, a waveform at 30 fps.
+        let mut app = App::new(Demo::None, false);
+        app.report(Report::Media(Some(song(true))), 0.0);
+        assert_eq!(app.limits(), LIGHT);
+        assert_eq!(app.frame_interval(5.0), Some(WAVE_FRAME));
+        // Power saver is a Pro switch: alone it changes nothing.
+        app.set_prefs(IslandPrefs { power_saver: true, ..IslandPrefs::default() });
+        assert_eq!(app.limits(), LIGHT);
+        assert_eq!(app.frame_interval(5.0), Some(WAVE_FRAME));
+
+        // Islet Pro: no limits, and the waveform moves at 60 fps.
+        app.set_prefs(IslandPrefs { clipboard: true, ..IslandPrefs::default() });
+        app.set_pro(true);
+        assert_eq!(app.limits(), FULL);
+        assert_eq!(app.frame_interval(5.0), Some(FRAME));
+        for i in 0..(LIGHT.clipboard_items + 30) {
+            app.report(Report::Clipboard(format!("copy {i}")), 5.0);
+        }
+        assert_eq!(app.clip.len(), LIGHT.clipboard_items + 30, "history runs past the free cap");
+        let files: Vec<(String, bool)> = (0..LIGHT.shelf + 8).map(|i| (format!("/tmp/f{i}"), false)).collect();
+        let mut shelf = App::new(Demo::None, false);
+        shelf.drop_files(files.clone(), 6.0);
+        assert_eq!(shelf.shelf.len(), LIGHT.shelf, "the free shelf is full at twelve");
+        shelf.set_pro(true);
+        shelf.drop_files(files, 7.0);
+        assert_eq!(shelf.shelf.len(), LIGHT.shelf + 8, "with Pro all twenty fit");
+        // Power saver never drops a file that is already there.
+        shelf.set_prefs(IslandPrefs { power_saver: true, ..IslandPrefs::default() });
+        shelf.drop_files(vec![("/tmp/one-more".into(), false)], 8.0);
+        assert_eq!(shelf.shelf.len(), LIGHT.shelf + 9);
+
+        // Power saver: the light limits again, and nothing moves by itself.
+        app.set_prefs(IslandPrefs { power_saver: true, clipboard: true, ..IslandPrefs::default() });
+        assert_eq!(app.limits(), SAVER);
+        assert_eq!(app.presentation(), Compact);
+        assert_eq!(app.frame_interval(20.0), None, "a still waveform wakes nothing");
+        let mut engine = TextEngine::new();
+        let bars = |app: &App, t: f64, engine: &mut TextEngine| -> Vec<f32> {
+            app.elements(t, engine)
+                .iter()
+                .filter_map(|e| if let Element::Bar { h, .. } = e { Some(*h) } else { None })
+                .collect()
+        };
+        let still = bars(&app, 20.0, &mut engine);
+        assert_eq!(still.len(), 4);
+        assert_eq!(still, bars(&app, 20.7, &mut engine), "the bars hold their shape");
+        assert!(still.iter().any(|h| *h > 4.0), "and still look like music playing");
+        // The open music card keeps its progress bar moving, once a second.
+        click(&mut app, 21.0);
+        assert_eq!(app.frame_interval(30.0), Some(SAVER_TICK));
+        // Leaving Power saver brings the motion back.
+        app.set_prefs(IslandPrefs::default());
+        assert_eq!(app.frame_interval(30.0), Some(FRAME));
+        assert_ne!(bars(&app, 30.0, &mut engine), bars(&app, 30.7, &mut engine));
     }
 
     #[test]

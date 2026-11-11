@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// The list holds at most this many items; the oldest finished ones go first.
-pub const MAX: usize = 50;
+pub const MAX: usize = 1000;
 /// The longest item, in characters.
 pub const MAX_LEN: usize = 200;
 

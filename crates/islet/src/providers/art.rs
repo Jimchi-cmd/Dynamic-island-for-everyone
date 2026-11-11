@@ -7,7 +7,18 @@ use std::sync::Arc;
 use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
 /// Edge length art is stored at (physical px).
-pub const ART_PX: u32 = 112;
+pub const ART_PX: u32 = islet_core::limits::LIGHT.art_px;
+
+/// The size album art is stored at from now on (see `islet_core::limits`).
+static SIZE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(ART_PX);
+
+pub fn set_size(px: u32) {
+    SIZE.store(px.clamp(16, 1024), std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn size() -> u32 {
+    SIZE.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 // Used by the OS media providers; allowed while some platforms lack one.
 #[cfg_attr(not(test), allow(dead_code))]
@@ -36,17 +47,23 @@ fn decode_jpeg(bytes: &[u8]) -> Option<Pixmap> {
     Some(pm)
 }
 
-/// Centre-crop to a square, scale to `ART_PX`, and pick the dominant colour.
+/// Centre-crop to a square, scale to `size()`, and pick the dominant colour.
 pub fn from_pixmap(src: &Pixmap) -> ArtImage {
+    from_pixmap_at(src, size())
+}
+
+fn from_pixmap_at(src: &Pixmap, px: u32) -> ArtImage {
     let side = src.width().min(src.height()).max(1) as f32;
-    let k = ART_PX as f32 / side;
+    // Never blow a small cover up: it would only cost memory.
+    let px = px.min(side as u32).max(ART_PX.min(px));
+    let k = px as f32 / side;
     let (ox, oy) = ((src.width() as f32 - side) / 2.0, (src.height() as f32 - side) / 2.0);
-    let mut out = Pixmap::new(ART_PX, ART_PX).expect("non-zero art size");
+    let mut out = Pixmap::new(px, px).expect("non-zero art size");
     let paint = PixmapPaint { quality: FilterQuality::Bicubic, ..PixmapPaint::default() };
     let ts = Transform::from_scale(k, k).pre_translate(-ox, -oy);
     out.draw_pixmap(0, 0, src.as_ref(), &paint, ts, None);
     let dominant = dominant_colour(out.data());
-    ArtImage { width: ART_PX, height: ART_PX, rgba: Arc::new(out.take()), dominant }
+    ArtImage { width: px, height: px, rgba: Arc::new(out.take()), dominant }
 }
 
 /// Average of the most colourful pixels (falls back to the overall average).
@@ -79,10 +96,25 @@ mod tests {
     fn crops_scales_and_finds_the_colour() {
         let mut src = Pixmap::new(300, 200).unwrap();
         src.fill(tiny_skia::Color::from_rgba8(200, 40, 40, 255));
-        let art = from_pixmap(&src);
+        let art = from_pixmap_at(&src, ART_PX);
         assert_eq!((art.width, art.height), (ART_PX, ART_PX));
         assert_eq!(art.rgba.len(), (ART_PX * ART_PX * 4) as usize);
         assert_eq!(art.dominant, [200, 40, 40]);
+    }
+
+    #[test]
+    fn keeps_more_detail_when_asked_but_never_enlarges() {
+        let full = islet_core::limits::FULL.art_px;
+        let mut big = Pixmap::new(640, 640).unwrap();
+        big.fill(tiny_skia::Color::from_rgba8(10, 120, 220, 255));
+        assert_eq!(from_pixmap_at(&big, full).width, full);
+        // A 200 px cover stays 200 px: enlarging it only costs memory.
+        let small = Pixmap::new(300, 200).unwrap();
+        assert_eq!(from_pixmap_at(&small, full).width, 200);
+        // A tiny thumbnail is still brought up to the usual size.
+        let tiny = Pixmap::new(8, 8).unwrap();
+        assert_eq!(from_pixmap_at(&tiny, full).width, ART_PX);
+        assert_eq!(from_pixmap_at(&tiny, ART_PX).width, ART_PX);
     }
 
     #[test]

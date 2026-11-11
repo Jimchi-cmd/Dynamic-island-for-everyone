@@ -299,7 +299,8 @@ pub fn hint(key: &str) -> String {
 }
 
 /// What Pro unlocks, for Settings and the docs.
-pub const FEATURES: [&str; 8] = [
+pub const FEATURES: [&str; 9] = [
+    "No low-end limits: smoother motion, sharper album art, longer history",
     "Screenshot preview on the island",
     "Live music visualizer in the album's colours",
     "Quick notes and to-do list",
