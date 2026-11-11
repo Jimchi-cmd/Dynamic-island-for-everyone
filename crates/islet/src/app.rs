@@ -3739,6 +3739,38 @@ mod tests {
     }
 
     #[test]
+    fn labels_are_never_cut_short_on_a_crowded_clock_card() {
+        let mut engine = TextEngine::new();
+        // The fullest row: a shelf, clipboard history and Pro's buttons.
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        app.set_pro(true);
+        let mut p = app.prefs().clone();
+        p.clipboard = true;
+        app.set_prefs(p);
+        app.set_shelf(vec![islet_core::shelf::ShelfItem { path: "/tmp/a.pdf".into(), dir: false }]);
+        click(&mut app, 0.0);
+        let shown = texts(&app, 5.0, &mut engine);
+        assert!(!shown.iter().any(|s| s.contains('…')), "nothing is shortened: {shown:?}");
+        let cr = app.content_rect(app.pill_rect(5.0));
+        let chips = content::clock_chips(cr, app.clock_row());
+        assert!(chips.iter().any(|(r, p)| *p == Panel::Shelf && r.w < 40.0), "the shelf is a round button");
+        assert!(chips.windows(2).all(|w| w[0].0.right() <= w[1].0.x + 0.01), "no chip overlaps the next");
+
+        // The lists' footers fit their line whatever they say.
+        use islet_render::text::TextStyle;
+        let wide = content::list_footer(cr, 3).w as f32;
+        let button = TextStyle { size: 13.0, weight: 600, ..TextStyle::default() };
+        let note = TextStyle { size: 12.5, ..TextStyle::default() };
+        let (shelf_line, _) = content::shelf_footer(3, false).unwrap();
+        assert!(engine.measure(&shelf_line, &note) <= wide, "{shelf_line}");
+        let mut c = islet_core::connectivity::Connectivity::default();
+        c.failure = Some(("needs a password".into(), Some("A very long network name indeed 5G".into())));
+        let (wifi_line, is_button) = content::wifi_footer(&c).unwrap();
+        assert!(is_button && engine.measure(&wifi_line, &button) <= wide - 20.0, "{wifi_line}");
+    }
+
+    #[test]
     fn todo_list_ticks_and_removes_from_the_island() {
         let mut app = App::new(Demo::None, false);
         let mut engine = TextEngine::new();

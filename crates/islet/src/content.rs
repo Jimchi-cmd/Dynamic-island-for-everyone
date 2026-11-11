@@ -1668,10 +1668,13 @@ pub const WORLD_H: f64 = 22.0;
 pub fn clock_chips(pill: Rect, row: ClockRow) -> Vec<(Rect, Panel)> {
     let (x, w) = (pill.x + PAD, pill.w - 2.0 * PAD);
     let y = pill.y + 122.0 + if row.world { WORLD_H } else { 0.0 };
-    let panels: &[Panel] =
-        if row.shelf { &[Panel::Wifi, Panel::Bluetooth, Panel::Shelf] } else { &[Panel::Wifi, Panel::Bluetooth] };
-    // Labelled chips share the row; the tools are round icons at the end.
+    let panels: &[Panel] = &[Panel::Wifi, Panel::Bluetooth];
+    // Wi-Fi and Bluetooth share the row with their names; the tools are
+    // round icons at the end (three labelled chips never fitted their names).
     let mut icons = Vec::new();
+    if row.shelf {
+        icons.push(Panel::Shelf);
+    }
     if row.pro {
         icons.push(Panel::Todo);
         icons.push(Panel::Stopwatch);
@@ -1717,18 +1720,32 @@ pub fn clock_chip_elements(
                 c.connected_device().map_or_else(|| "Bluetooth".into(), |d| d.name.clone()),
                 c.connected_device().is_some(),
             ),
-            Panel::Shelf => (Icon::Folder, format!("Shelf · {shelf}"), false),
-            Panel::System | Panel::Clipboard | Panel::Stopwatch | Panel::Todo | Panel::Calendar => {
+            Panel::Shelf | Panel::System | Panel::Clipboard | Panel::Stopwatch | Panel::Todo | Panel::Calendar => {
                 let icon = match panel {
+                    Panel::Shelf => Icon::Folder,
                     Panel::System => Icon::Gauge,
                     Panel::Clipboard => Icon::Clipboard,
                     Panel::Todo => Icon::Checklist,
                     Panel::Calendar => Icon::Calendar,
                     _ => Icon::Stopwatch,
                 };
-                if panel == Panel::Todo && row.todo_left > 0 {
-                    // How many are left, in a badge on the corner.
-                    let n = if row.todo_left > 9 { "9+".to_string() } else { row.todo_left.to_string() };
+                v.push(Element::Bar { x, y, w, h, color: WHITE, opacity: o * 0.14 });
+                v.push(Element::Icon {
+                    icon,
+                    x: x + w / 2.0 - 9.0,
+                    y: y + h / 2.0 - 9.0,
+                    size: 18.0,
+                    color: WHITE,
+                    opacity: o,
+                });
+                // How many files or to-dos, in a badge on the corner.
+                let count = match panel {
+                    Panel::Shelf => shelf,
+                    Panel::Todo => row.todo_left,
+                    _ => 0,
+                };
+                if count > 0 {
+                    let n = if count > 9 { "9+".to_string() } else { count.to_string() };
                     let badge = TextStyle {
                         size: 10.0,
                         weight: 700,
@@ -1749,22 +1766,15 @@ pub fn clock_chip_elements(
                     });
                     v.push(text(n, badge, bx, by + 3.6));
                 }
-                v.push(Element::Bar { x, y, w, h, color: WHITE, opacity: o * 0.14 });
-                v.push(Element::Icon {
-                    icon,
-                    x: x + w / 2.0 - 9.0,
-                    y: y + h / 2.0 - 9.0,
-                    size: 18.0,
-                    color: WHITE,
-                    opacity: o,
-                });
                 continue;
             }
         };
         let bg = if on { accent() } else { WHITE };
         v.push(Element::Bar { x, y, w, h, color: bg, opacity: o * if on { 0.9 } else { 0.14 } });
-        if w < 84.0 {
-            // Too narrow for a name (a crowded row): the icon alone.
+        // "Wi-Fi" and "Bluetooth" are never cut short: a crowded row shows
+        // the icon alone. A network's or device's name may be shortened.
+        let fits = engine.measure(&label, &style) <= w - 44.0;
+        if w < 84.0 || (!on && !fits) {
             v.push(Element::Icon {
                 icon,
                 x: x + w / 2.0 - 9.0,
@@ -1893,7 +1903,9 @@ fn radio_header(pill: Rect, on: Option<bool>, status: Option<&str>, o: f32, engi
 /// What the Wi-Fi list's footer says, and whether it is a Settings button.
 pub fn wifi_footer(c: &Connectivity) -> Option<(String, bool)> {
     match (&c.failure, &c.wifi.note) {
-        (Some((_, Some(ssid))), _) => Some((format!("Enter the password for {ssid} in Settings"), true)),
+        // Short enough to fit the button whatever the network is called;
+        // Settings opens with that network chosen.
+        (Some((_, Some(_))), _) => Some(("Enter the password in Settings".into(), true)),
         (Some((msg, None)), _) => Some((msg.clone(), false)),
         (None, Some(note)) => Some((note.clone(), false)),
         _ => None,
@@ -2154,7 +2166,7 @@ pub fn shelf_footer(items: usize, dragging: bool) -> Option<(String, bool)> {
     if dragging {
         Some(("Drop to keep here".into(), true))
     } else if items > 0 {
-        Some(("Files stay where they are; the shelf keeps a shortcut".into(), false))
+        Some(("Shortcuts only: your files stay where they are".into(), false))
     } else {
         None
     }
@@ -2191,10 +2203,12 @@ pub fn expanded_bluetooth(
             color: WHITE,
             opacity: o,
         });
-        let name = engine.ellipsize(&d.name, &name_style, rw - 140.0);
-        v.push(text(name, name_style, x + 40.0, cy + 5.0));
         let (label, color, alpha) =
             if d.connected { ("Connected", accent_text(), 1.0) } else { ("Not connected", WHITE, 0.6) };
+        // A long name stops clear of its status.
+        let room = rw - 40.0 - 10.0 - engine.measure(label, &state_style) - 12.0;
+        let name = engine.ellipsize(&d.name, &name_style, room);
+        v.push(text(name, name_style, x + 40.0, cy + 5.0));
         v.push(text(label, TextStyle { color, opacity: o * alpha, ..state_style }, x + rw - 10.0, cy + 4.5));
     }
     if b.devices.is_empty() {
