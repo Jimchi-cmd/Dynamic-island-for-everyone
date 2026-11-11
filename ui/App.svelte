@@ -26,15 +26,63 @@
   } from './lib/settings';
 
   type Page = 'general' | 'connections' | 'alarms' | 'timer' | 'navigation' | 'pro' | 'updates' | 'about';
-  const PAGES: { id: Page; label: string }[] = [
-    { id: 'general', label: 'General' },
-    { id: 'connections', label: 'Wi-Fi & Bluetooth' },
-    { id: 'alarms', label: 'Alarms' },
-    { id: 'timer', label: 'Timer & focus' },
-    { id: 'navigation', label: 'Navigation' },
-    { id: 'pro', label: 'Islet Pro' },
-    { id: 'updates', label: 'Updates' },
-    { id: 'about', label: 'About' },
+  // Each section's icon is a few strokes on a 24×24 grid, drawn for Islet,
+  // on a coloured tile (`tint`).
+  const PAGES: { id: Page; label: string; tint: string; icon: string; dots?: [number, number, number][] }[] = [
+    {
+      id: 'general',
+      label: 'General',
+      tint: 'linear-gradient(160deg, #a2a2a9, #77777e)',
+      icon: 'M4 8h8M18 8h2M4 16h2M12 16h8',
+      dots: [
+        [15, 8, 2.2],
+        [9, 16, 2.2],
+      ],
+    },
+    {
+      id: 'connections',
+      label: 'Wi-Fi & Bluetooth',
+      tint: 'linear-gradient(160deg, #46a4ff, #0a6fe8)',
+      icon: 'M4.5 10.5a10.6 10.6 0 0 1 15 0M7.8 14a6 6 0 0 1 8.4 0',
+      dots: [[12, 17.6, 1.5]],
+    },
+    {
+      id: 'alarms',
+      label: 'Alarms',
+      tint: 'linear-gradient(160deg, #ffb340, #ff8a00)',
+      icon: 'M6.5 16.5v-5.2a5.5 5.5 0 0 1 11 0v5.2l1.5 1.8h-14zM10.4 20.4a1.7 1.7 0 0 0 3.2 0',
+    },
+    {
+      id: 'timer',
+      label: 'Timer & focus',
+      tint: 'linear-gradient(160deg, #8a86ff, #5a55e0)',
+      icon: 'M12 6.5a7 7 0 1 0 0 14a7 7 0 0 0 0-14zM12 13.5V9.8M10 3.2h4',
+    },
+    {
+      id: 'navigation',
+      label: 'Navigation',
+      tint: 'linear-gradient(160deg, #4cd97b, #1fa64d)',
+      icon: 'M5.5 19.5L12 4.5l6.5 15l-6.5-4z',
+    },
+    {
+      id: 'pro',
+      label: 'Islet Pro',
+      tint: 'linear-gradient(135deg, #ff9f0a, #ff375f)',
+      icon: 'M12 3.5l2 6.5l6.5 2l-6.5 2l-2 6.5l-2-6.5l-6.5-2l6.5-2z',
+    },
+    {
+      id: 'updates',
+      label: 'Updates',
+      tint: 'linear-gradient(160deg, #54d3e6, #1a9fbd)',
+      icon: 'M5 11.5a7 7 0 0 1 12.3-4.2L19.5 9.5M19.5 4.5v5h-5M19 12.5a7 7 0 0 1-12.3 4.2L4.5 14.5M4.5 19.5v-5h5',
+    },
+    {
+      id: 'about',
+      label: 'About',
+      tint: 'linear-gradient(160deg, #8f97a8, #5d6475)',
+      icon: 'M12 4a8 8 0 1 0 0 16a8 8 0 0 0 0-16zM12 11v5.5',
+      dots: [[12, 7.9, 1.2]],
+    },
   ];
 
   let page: Page = $state('general');
@@ -628,12 +676,23 @@
 {:else}
   <div class="layout">
     <nav aria-label="Settings sections">
-      <div class="brand">Islet</div>
+      <div class="brand">
+        <span class="logo" aria-hidden="true"></span>
+        <span>Islet</span>
+      </div>
       {#each PAGES as p (p.id)}
         <button class="tab" class:active={page === p.id} aria-current={page === p.id} onclick={() => (page = p.id)}>
+          <span class="tile" style:background={p.tint} aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <path d={p.icon} />
+              {#each p.dots ?? [] as [cx, cy, r] (`${cx},${cy}`)}<circle {cx} {cy} {r} fill="currentColor" stroke="none" />{/each}
+            </svg>
+          </span>
           {p.label}
         </button>
       {/each}
+      <div class="grow"></div>
+      {#if info}<div class="version muted">Version {info.version}</div>{/if}
     </nav>
     <main>
       {#if problem}<p class="error" role="alert">{problem}</p>{/if}
@@ -1509,35 +1568,97 @@
   }
   .layout {
     display: grid;
-    grid-template-columns: 180px 1fr;
+    grid-template-columns: 216px 1fr;
     height: 100%;
   }
   nav {
     background: var(--sidebar);
-    border-right: 1px solid var(--line);
-    padding: 18px 10px;
+    backdrop-filter: blur(30px) saturate(1.6);
+    border-right: 1px solid var(--sidebar-edge);
+    padding: 20px 10px 14px;
     display: flex;
     flex-direction: column;
     gap: 2px;
   }
   .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     font-weight: 700;
-    font-size: 16px;
-    padding: 0 10px 14px;
+    font-size: 17px;
+    letter-spacing: -0.01em;
+    padding: 0 10px 18px;
+  }
+  /* Islet's mark: the island itself, with a glint. */
+  .logo {
+    position: relative;
+    width: 38px;
+    height: 15px;
+    border-radius: 8px;
+    background: #000;
+    box-shadow:
+      0 0 0 0.5px rgba(255, 255, 255, 0.25),
+      0 2px 6px rgba(0, 0, 0, 0.25);
+  }
+  .logo::after {
+    content: '';
+    position: absolute;
+    right: 6px;
+    top: 4.5px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #7fd0ff, #2a6fd6 60%, #0b2a66);
   }
   .tab {
-    border: 0;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    box-shadow: none;
     background: none;
     text-align: left;
-    padding: 7px 10px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    font-weight: 500;
+  }
+  .tab:hover:not(.active) {
+    background: var(--hover);
+    filter: none;
   }
   .tab.active {
-    background: var(--panel);
+    background: linear-gradient(180deg, var(--accent-2), var(--accent));
+    color: #fff;
     font-weight: 600;
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  .tile {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6.5px;
+    color: #fff;
+    flex: none;
+    box-shadow:
+      inset 0 0.5px 0 rgba(255, 255, 255, 0.35),
+      0 0.5px 1.5px rgba(0, 0, 0, 0.25);
+  }
+  .grow {
+    flex: 1;
+  }
+  .version {
+    font-size: 11.5px;
+    padding: 0 10px;
   }
   main {
-    padding: 24px 28px;
+    padding: 30px 34px 40px;
     overflow-y: auto;
+  }
+  main > :global(*) {
+    max-width: 680px;
+  }
+  main :global(h1) {
+    animation: rise 0.22s ease both;
   }
   .welcome {
     max-width: 560px;
@@ -1546,10 +1667,11 @@
   }
   .card {
     background: var(--panel);
-    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
     border-radius: var(--radius);
     padding: 14px 16px;
     margin: 12px 0;
+    animation: rise 0.28s ease both;
   }
   .card p:last-child {
     margin-bottom: 0;
@@ -1579,6 +1701,18 @@
   }
   .actions.left {
     justify-content: flex-start;
+  }
+  .actions + p {
+    margin-top: 10px;
+  }
+  /* A text field and its button on one line. */
+  form.actions {
+    flex-wrap: nowrap;
+    margin-top: 8px;
+  }
+  form.actions input {
+    flex: 1;
+    min-width: 0;
   }
   .small {
     font-size: 12.5px;
@@ -1642,10 +1776,46 @@
     color: var(--accent-text);
     font-weight: 600;
   }
+  /* On/off switches: a sliding knob, green when on. */
   .switch {
-    width: 20px;
-    height: 20px;
+    appearance: none;
+    position: relative;
+    width: 42px;
+    height: 26px;
     flex: none;
-    accent-color: var(--accent);
+    margin: 0;
+    padding: 0;
+    border-radius: 13px;
+    background: var(--off);
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+  .switch:hover {
+    background: var(--off);
+  }
+  .switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow:
+      0 0 0 0.5px rgba(0, 0, 0, 0.06),
+      0 2px 4px rgba(0, 0, 0, 0.22);
+    transition: transform 0.22s cubic-bezier(0.3, 1.25, 0.5, 1);
+  }
+  .switch:checked,
+  .switch:checked:hover {
+    background: var(--on);
+  }
+  .switch:checked::after {
+    transform: translateX(16px);
+  }
+  .switch:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 </style>
