@@ -18,6 +18,25 @@ pub fn control_file() -> Option<PathBuf> {
     file("control.json")
 }
 
+/// Read a JSON file from the config folder.
+pub fn load_json<T: serde::de::DeserializeOwned>(name: &str) -> Option<T> {
+    serde_json::from_slice(&std::fs::read(file(name)?).ok()?).ok()
+}
+
+/// Write a JSON file to the config folder (atomically).
+pub fn save_json<T: serde::Serialize>(name: &str, value: &T) -> Result<(), String> {
+    let path = file(name).ok_or("no config folder")?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
+pub fn remove(name: &str) {
+    if let Some(p) = file(name) {
+        let _ = std::fs::remove_file(p);
+    }
+}
+
 /// The active trip survives restarts until it is stopped.
 pub fn load_trip() -> Option<Trip> {
     serde_json::from_slice(&std::fs::read(file("trip.json")?).ok()?).ok()

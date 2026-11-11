@@ -51,6 +51,34 @@ export function parseStatus(json: string): Status {
   };
 }
 
+export interface ProStatus {
+  active: boolean;
+  forSale: boolean;
+  buyUrl: string | null;
+  keyHint: string;
+  /** The store stopped accepting the key (refunded, revoked). */
+  refused: boolean;
+  checkedAt: number;
+  expiresAt: number | null;
+  features: string[];
+}
+
+/** `islet pro status --json`. Anything missing reads as "Pro is off". */
+export function parsePro(json: string): ProStatus {
+  const v = JSON.parse(json);
+  const buy = typeof v.buyUrl === 'string' && v.buyUrl.startsWith('https://') ? v.buyUrl : null;
+  return {
+    active: v.active === true,
+    forSale: v.forSale === true,
+    buyUrl: buy,
+    keyHint: typeof v.keyHint === 'string' ? v.keyHint : '',
+    refused: v.refused === true,
+    checkedAt: Number(v.checkedAt) || 0,
+    expiresAt: typeof v.expiresAt === 'number' ? v.expiresAt : null,
+    features: Array.isArray(v.features) ? v.features.map(String) : [],
+  };
+}
+
 /** Arguments for `islet nav start`, or an error to show next to the form. */
 export function navStartArgs(t: Trip): string[] | { error: string } {
   const destination = t.destination.trim();
@@ -237,20 +265,47 @@ export interface IslandPrefs {
   downloads: boolean;
   hotkey: string;
   accent: string;
+  style: string;
+  cardHidden: string[];
   size: string;
   offset: number;
   display: string;
 }
 
+/** Accent colours, as in `islet_core::prefs::ACCENTS` (a test checks they match). */
 export const ACCENTS: Record<string, string> = {
   blue: '#0a84ff',
+  indigo: '#6260ee',
   purple: '#a064ff',
   pink: '#ff468c',
   red: '#ff453a',
   orange: '#ff961e',
+  yellow: '#fac814',
+  lime: '#96d728',
   green: '#28c864',
+  mint: '#46d7b4',
   teal: '#28bec8',
+  graphite: '#9698a2',
 };
+
+/** The clock card's optional buttons, as in `islet_core::prefs::CARD_BUTTONS`. */
+export const CARD_BUTTONS: { id: string; label: string; pro: boolean }[] = [
+  { id: 'timer', label: 'Quick timer', pro: false },
+  { id: 'calendar', label: 'Calendar', pro: false },
+  { id: 'screenshot', label: 'Screenshot', pro: false },
+  { id: 'lock', label: 'Lock', pro: false },
+  { id: 'system', label: 'System monitor', pro: false },
+  { id: 'todo', label: 'To-do list', pro: true },
+  { id: 'stopwatch', label: 'Stopwatch', pro: true },
+];
+
+/** What the island is made of, as in `islet_core::prefs::STYLES`. All but black are Islet Pro. */
+export const STYLES: { id: string; label: string; pro: boolean }[] = [
+  { id: 'black', label: 'Black', pro: false },
+  { id: 'tinted', label: 'Tinted', pro: true },
+  { id: 'glass', label: 'Glass', pro: true },
+  { id: 'tinted-glass', label: 'Tinted glass', pro: true },
+];
 
 /** Each switch's name for `islet set <name> on|off`. */
 export const SWITCH_NAMES: Record<string, string> = {

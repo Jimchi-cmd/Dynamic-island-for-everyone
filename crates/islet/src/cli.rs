@@ -26,6 +26,23 @@ Usage:
   islet key routes                         store your Google Routes API key in the OS
                                            keychain (reads one line from stdin)
   islet key routes --clear                 remove it
+  islet stopwatch start|pause|resume|lap|reset
+                                           a stopwatch on the island (Islet Pro)
+  islet todo add                           add a note or to-do (one line from stdin; Islet Pro)
+  islet todo [--json]                      your list
+  islet todo done|remove <id>              tick an item (again to untick), or delete it
+  islet todo clear-done                    delete the finished ones
+  islet shortcut add --name <name> --target <folder, file, script or https link>
+                                           a button of your own on the island (Islet Pro)
+  islet shortcut [--json]                  your shortcuts
+  islet shortcut remove <number>           delete one
+  islet world add|remove <city>            world clocks on the clock card (Islet Pro)
+  islet world [--json]                     your world clocks
+  islet world cities                       the cities to choose from
+  islet pro activate                       turn on Islet Pro with your key (read from stdin)
+  islet pro status [--json]                is Pro on?
+  islet pro check                          ask the store again whether the key is valid
+  islet pro deactivate                     turn Pro off here (frees the key for another computer)
   islet alarm add <time> [--label <name>] [--days <days>]
                                            set an alarm: 7:30, 19:30 or 7:30pm; days:
                                            once (default), daily, weekdays, weekends, mon,wed,…
@@ -64,7 +81,12 @@ Usage:
   islet media hide|show <app>              hide (or show again) one app's Now Playing
   islet toggle                             open the island, or close it
   islet caps-lock on|off                   show the Caps Lock pop-up (used by the GNOME extension)
-  islet look accent <colour>               blue, purple, pink, red, orange, green, teal
+  islet look accent <colour>               blue, indigo, purple, pink, red, orange, yellow, lime,
+                                           green, mint, teal or graphite
+  islet look style <style>                 what the island is made of: black, or with Islet Pro
+                                           tinted, glass or tinted-glass
+  islet card                               the clock card's buttons
+  islet card show|hide <button>            timer, calendar, screenshot, lock, system, todo, stopwatch
   islet look size small|medium|large       the island's size
   islet look offset <px>                   gap above the island, 0–40 px
   islet look display <name>|primary|all    which display (names from `islet displays`), or all
@@ -94,6 +116,48 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["nav", "start", rest @ ..] => parse_trip(rest).and_then(start_trip),
         ["nav", "stop"] => stop_trip(),
         ["key", "routes"] => store_key(),
+        ["stopwatch", cmd] => stopwatch(cmd),
+        ["todo"] => Ok(todo_text()),
+        ["todo", "--json"] => serde_json::to_string(&load_todo().items).map_err(|e| e.to_string()),
+        ["todo", "add"] => read_line("Type a note and press Enter:").and_then(|line| {
+            needs_pro()?;
+            edit_todo(|t| t.add(&line).map(|_| "Added.".to_string()))
+        }),
+        ["todo", "done", id] => todo_id(id)
+            .and_then(|id| edit_todo(|t| if t.toggle(id) { Ok("Done.".into()) } else { Err(format!("no item {id}")) })),
+        ["todo", "remove", id] => todo_id(id).and_then(|id| {
+            edit_todo(|t| if t.remove(id) { Ok("Removed.".into()) } else { Err(format!("no item {id}")) })
+        }),
+        ["todo", "clear-done"] => edit_todo(|t| Ok(format!("Removed {} finished.", t.clear_done()))),
+        ["shortcut"] => Ok(shortcuts_text()),
+        ["shortcut", "--json"] => serde_json::to_string(&config::load_prefs().shortcuts).map_err(|e| e.to_string()),
+        ["shortcut", "add", "--name", name, "--target", target] => shortcut_add(name, target),
+        ["shortcut", "remove", n] => shortcut_remove(n),
+        ["world"] => Ok(config::load_prefs().world_clocks.join("\n")),
+        ["world", "--json"] => serde_json::to_string(&config::load_prefs().world_clocks).map_err(|e| e.to_string()),
+        ["world", "cities"] => Ok(islet_core::worldclock::CITIES.iter().map(|c| c.0).collect::<Vec<_>>().join("\n")),
+        ["world", "cities", "--json"] => {
+            serde_json::to_string(&islet_core::worldclock::CITIES.iter().map(|c| c.0).collect::<Vec<_>>())
+                .map_err(|e| e.to_string())
+        }
+        ["world", "add", city @ ..] if !city.is_empty() => world(true, &city.join(" ")),
+        ["world", "remove", city @ ..] if !city.is_empty() => world(false, &city.join(" ")),
+        ["pro", "activate"] => read_line("Paste your Islet Pro key and press Enter:").and_then(|k| {
+            let r = crate::pro::activate(&k);
+            prefs_changed();
+            r
+        }),
+        ["pro", "status"] => Ok(crate::pro::status_text()),
+        ["pro", "status", "--json"] => Ok(crate::pro::status_json()),
+        ["pro", "check"] => crate::pro::check(true).map(|on| {
+            prefs_changed();
+            if on {
+                "Your key is valid. Islet Pro is on.".into()
+            } else {
+                crate::pro::status_text()
+            }
+        }),
+        ["pro", "deactivate"] => crate::pro::deactivate().inspect(|_| prefs_changed()),
         ["key", "routes", "--clear"] => secrets::clear_routes_key().map(|()| "Removed.".into()),
         ["autostart", "on"] => autostart::set(true).map(|()| "Islet will start when you log in.".into()),
         ["autostart", "off"] => autostart::set(false).map(|()| "Islet will no longer start at login.".into()),
@@ -176,6 +240,12 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
                 .ok_or_else(|| format!("accent is one of: {}", accent_names()))?;
             p.accent = (*n).into();
             Ok(format!("Accent: {n}."))
+        }),
+        ["look", "style", name] => set_style(name),
+        ["card"] => Ok(card_text()),
+        ["card", show @ ("show" | "hide"), button] => set_look(|p| {
+            p.set_card_button(button, *show == "show")?;
+            Ok(format!("{button}: {}.", if *show == "show" { "shown" } else { "hidden" }))
         }),
         ["look", "size", name] => set_look(|p| {
             let (n, _) = islet_core::prefs::SIZES
@@ -767,14 +837,156 @@ fn update_check(json: bool) -> Result<String, String> {
     })
 }
 
-fn store_key() -> Result<String, String> {
+/// Islet Pro features say so when Pro is off.
+fn needs_pro() -> Result<(), String> {
+    if crate::pro::active() {
+        Ok(())
+    } else {
+        Err("That's an Islet Pro feature. See Settings → Islet Pro.".into())
+    }
+}
+
+/// The clock card's buttons and whether each shows.
+fn card_text() -> String {
+    let p = config::load_prefs();
+    islet_core::prefs::CARD_BUTTONS
+        .iter()
+        .map(|(id, name)| format!("{id:<11} {:<7} {name}", if p.hides(id) { "hidden" } else { "shown" }))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// What the island is made of. Everything but black is an Islet Pro look.
+fn set_style(name: &str) -> Result<String, String> {
+    let styles = islet_core::prefs::STYLES;
+    let style = styles
+        .iter()
+        .find(|s| s.eq_ignore_ascii_case(name))
+        .ok_or_else(|| format!("style is one of: {}", styles.join(", ")))?;
+    if *style != "black" {
+        needs_pro()?;
+    }
+    set_look(|p| {
+        p.style = (*style).into();
+        Ok(format!("Style: {style}."))
+    })
+}
+
+fn shortcuts_text() -> String {
+    let list = config::load_prefs().shortcuts;
+    if list.is_empty() {
+        return "No shortcuts.".into();
+    }
+    list.iter()
+        .enumerate()
+        .map(|(i, s)| format!("{:>2}  {}  →  {}", i + 1, s.name, s.target))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn shortcut_add(name: &str, target: &str) -> Result<String, String> {
+    use islet_core::prefs::{Shortcut, MAX_SHORTCUTS};
+    needs_pro()?;
+    let s = Shortcut::new(name, target)?;
+    let mut p = config::load_prefs();
+    if p.shortcuts.len() >= MAX_SHORTCUTS {
+        return Err(format!("You can have up to {MAX_SHORTCUTS} shortcuts. Remove one first."));
+    }
+    p.shortcuts.push(s);
+    config::save_prefs(&p)?;
+    prefs_changed();
+    Ok("Added.".into())
+}
+
+/// Remove shortcut number `n` (1-based, as listed).
+fn shortcut_remove(n: &str) -> Result<String, String> {
+    let mut p = config::load_prefs();
+    let i = n.parse::<usize>().ok().filter(|i| (1..=p.shortcuts.len()).contains(i));
+    let i = i.ok_or_else(|| format!("{n:?} isn't one of your shortcuts (see: islet shortcut)"))?;
+    p.shortcuts.remove(i - 1);
+    config::save_prefs(&p)?;
+    prefs_changed();
+    Ok("Removed.".into())
+}
+
+fn load_todo() -> islet_core::todo::Todo {
+    config::load_json("todo.json").unwrap_or_default()
+}
+
+fn todo_id(s: &str) -> Result<u32, String> {
+    s.parse().map_err(|_| format!("{s:?} isn't an item number (see: islet todo)"))
+}
+
+/// Change the to-do list, save it and tell the island.
+fn edit_todo(f: impl FnOnce(&mut islet_core::todo::Todo) -> Result<String, String>) -> Result<String, String> {
+    let mut todo = load_todo();
+    let msg = f(&mut todo)?;
+    config::save_json("todo.json", &todo)?;
+    prefs_changed();
+    Ok(msg)
+}
+
+fn todo_text() -> String {
+    let todo = load_todo();
+    if todo.items.is_empty() {
+        return "Nothing to do.".into();
+    }
+    todo.ordered()
+        .iter()
+        .map(|i| format!("{:>3} [{}] {}", i.id, if i.done { "x" } else { " " }, i.text))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn stopwatch(cmd: &str) -> Result<String, String> {
+    use islet_core::stopwatch::StopwatchCommand as S;
+    let (cmd, msg) = match cmd {
+        "start" => (S::Start, "Started."),
+        "pause" => (S::Pause, "Paused."),
+        "resume" => (S::Resume, "Resumed."),
+        "lap" => (S::Lap, "Lap."),
+        "reset" => (S::Reset, "Reset."),
+        other => return Err(format!("unknown stopwatch command {other:?} (start, pause, resume, lap or reset)")),
+    };
+    needs_pro()?;
+    control::send(&Control::Stopwatch(cmd)).map(|()| msg.into())
+}
+
+/// Add or remove a world clock.
+fn world(add: bool, city: &str) -> Result<String, String> {
+    use islet_core::worldclock::{find, MAX};
+    let mut p = config::load_prefs();
+    if add {
+        needs_pro()?;
+        let (name, _, _) = find(city).ok_or_else(|| format!("{city:?} isn't in the list (see: islet world cities)"))?;
+        if !p.world_clocks.iter().any(|c| c.eq_ignore_ascii_case(name)) {
+            if p.world_clocks.len() >= MAX {
+                return Err(format!("You can show up to {MAX} world clocks. Remove one first."));
+            }
+            p.world_clocks.push(name.to_string());
+        }
+    } else {
+        p.world_clocks.retain(|c| !c.eq_ignore_ascii_case(city.trim()));
+    }
+    config::save_prefs(&p)?;
+    prefs_changed();
+    Ok(if p.world_clocks.is_empty() { "No world clocks.".into() } else { p.world_clocks.join(", ") })
+}
+
+/// One line from stdin (with a prompt when typed at a terminal).
+fn read_line(prompt: &str) -> Result<String, String> {
     use std::io::IsTerminal;
     if std::io::stdin().is_terminal() {
-        eprintln!("Paste your Google Routes API key and press Enter:");
+        eprintln!("{prompt}");
     }
-    let mut key = String::new();
-    std::io::stdin().read_line(&mut key).map_err(|e| e.to_string())?;
-    let key = key.trim();
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line).map_err(|e| e.to_string())?;
+    Ok(line.trim().to_string())
+}
+
+fn store_key() -> Result<String, String> {
+    let key = read_line("Paste your Google Routes API key and press Enter:")?;
+    let key = key.as_str();
     if key.is_empty() {
         return Err("no key given".into());
     }

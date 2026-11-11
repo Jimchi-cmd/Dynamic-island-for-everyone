@@ -437,6 +437,49 @@ pub fn relative(start: i64, now: i64) -> String {
     }
 }
 
+/// Days in a month (1–12).
+pub fn days_in_month(year: i32, month: u8) -> u8 {
+    match month {
+        4 | 6 | 9 | 11 => 30,
+        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+        2 => 28,
+        _ => 31,
+    }
+}
+
+/// Day of the week of a date: 0 = Sunday … 6 = Saturday.
+pub fn weekday_of(year: i32, month: u8, day: u8) -> u8 {
+    (crate::alarm::days_from_civil(year, month, day) + 4).rem_euclid(7) as u8
+}
+
+/// The month `delta` months from (year, month).
+pub fn shift_month(year: i32, month: u8, delta: i32) -> (i32, u8) {
+    let n = year * 12 + i32::from(month) - 1 + delta;
+    (n.div_euclid(12), (n.rem_euclid(12) + 1) as u8)
+}
+
+/// Days of (year, month) on which an event falls, in local time
+/// (`utc_offset` seconds). Multi-day events mark each of their days.
+pub fn event_days(events: &[CalEvent], year: i32, month: u8, utc_offset: i64) -> Vec<u8> {
+    let first = crate::alarm::days_from_civil(year, month, 1);
+    let last = first + i64::from(days_in_month(year, month)) - 1;
+    let mut days = Vec::new();
+    for e in events {
+        // All-day events are stored on UTC midnights; timed ones shift to local time.
+        let off = if e.all_day { 0 } else { utc_offset };
+        let from = (e.start + off).div_euclid(86_400);
+        let to = (e.end.max(e.start + 1) - 1 + off).div_euclid(86_400);
+        for d in from.max(first)..=to.min(last) {
+            let day = (d - first + 1) as u8;
+            if !days.contains(&day) {
+                days.push(day);
+            }
+        }
+    }
+    days.sort_unstable();
+    days
+}
+
 /// "webcal://…" links are plain HTTPS.
 pub fn feed_url(link: &str) -> String {
     let l = link.trim();
@@ -452,6 +495,37 @@ mod tests {
 
     fn utc(y: i32, m: u8, d: u8, hh: i64, mm: i64) -> i64 {
         naive(y, m, d, hh, mm, 0)
+    }
+
+    #[test]
+    fn month_grids() {
+        assert_eq!(days_in_month(2026, 2), 28);
+        assert_eq!(days_in_month(2028, 2), 29);
+        assert_eq!(days_in_month(2100, 2), 28);
+        assert_eq!(days_in_month(2026, 11), 30);
+        assert_eq!(weekday_of(2026, 11, 4), 3, "4 November 2026 is a Wednesday");
+        assert_eq!(weekday_of(2026, 11, 1), 0, "and the 1st a Sunday");
+        assert_eq!(shift_month(2026, 12, 1), (2027, 1));
+        assert_eq!(shift_month(2026, 1, -1), (2025, 12));
+        assert_eq!(shift_month(2026, 11, -14), (2025, 9));
+    }
+
+    #[test]
+    fn marks_the_days_events_fall_on() {
+        let e = |start, end, all_day| CalEvent { summary: "x".into(), start, end, all_day, location: None };
+        let events = [
+            // 23:30–00:30 UTC on the 4th: at UTC+3 it is all on the 5th.
+            e(utc(2026, 11, 4, 23, 30), utc(2026, 11, 5, 0, 30), false),
+            // An all-day event on the 10th and 11th (ends at the 12th's midnight).
+            e(utc(2026, 11, 10, 0, 0), utc(2026, 11, 12, 0, 0), true),
+            // Last month into this one.
+            e(utc(2026, 10, 30, 9, 0), utc(2026, 11, 1, 9, 0), false),
+            // Next month: not shown.
+            e(utc(2026, 12, 2, 9, 0), utc(2026, 12, 2, 10, 0), false),
+        ];
+        assert_eq!(event_days(&events, 2026, 11, 3 * 3600), vec![1, 5, 10, 11]);
+        assert_eq!(event_days(&events, 2026, 11, 0), vec![1, 4, 5, 10, 11]);
+        assert_eq!(event_days(&events, 2026, 12, 0), vec![2]);
     }
 
     const ZONE: &str = "BEGIN:VTIMEZONE\r\nTZID:Europe/Berlin\r\nBEGIN:DAYLIGHT\r\nTZOFFSETFROM:+0100\r\nTZOFFSETTO:+0200\r\nDTSTART:19700329T020000\r\nRRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\r\nEND:DAYLIGHT\r\nBEGIN:STANDARD\r\nTZOFFSETFROM:+0200\r\nTZOFFSETTO:+0100\r\nDTSTART:19701025T030000\r\nRRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\n";

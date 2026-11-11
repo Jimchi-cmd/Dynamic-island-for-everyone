@@ -2,7 +2,9 @@
 //! state machine → springs → frame and content. No OS calls in here, so all
 //! of it is unit-tested.
 
-use crate::content::{self, AlarmControl, ConnHit, Control, NavControl, Panel, TimerControl, TIMER_ALARM_ID};
+use crate::content::{
+    self, AlarmControl, ClockRow, ConnHit, Control, NavControl, Panel, StopwatchControl, TimerControl, TIMER_ALARM_ID,
+};
 use crate::platform::{Button, Event, Key};
 use islet_core::activity::{Activities, Call, Hud, Live, MediaCommand, MediaInfo, MicCommand, NavInfo, Report};
 use islet_core::alarm::{Alarm, AlarmClock, AlarmEvent};
@@ -15,6 +17,7 @@ use islet_core::island::{
 };
 use islet_core::prefs::IslandPrefs;
 use islet_core::spring::{Animated, Spring};
+use islet_core::stopwatch::{Stopwatch, StopwatchCommand};
 use islet_core::timer::{Timer, TimerCommand, TimerEvent};
 use islet_render::elements::Element;
 use islet_render::text::TextEngine;
@@ -55,7 +58,7 @@ const PRIVACY_DOT: f32 = 6.0;
 /// At most one activity switch per this many seconds of scrolling.
 const SWITCH_COOLDOWN: f64 = 0.35;
 /// Height of the expanded clock and media cards.
-const CLOCK_H: f64 = 168.0;
+const CLOCK_H: f64 = 168.0 + content::QUICK_H;
 const MEDIA_H: f64 = 160.0;
 /// How quickly the empty island fades in and out when it hides until
 /// hovered (Settings → Look).
@@ -141,6 +144,12 @@ pub enum UiAction {
     Settings(String),
     /// Turn a setting on or off and save it (`islet set <key> on|off`).
     SetSwitch(&'static str, bool),
+    /// Start the OS's own screenshot tool.
+    Screenshot,
+    /// Lock the computer.
+    Lock,
+    /// Open one of the user's shortcuts: a path or a web link.
+    Shortcut(String),
 }
 
 /// Windows has no public API to connect Bluetooth devices: its settings do.
@@ -162,6 +171,8 @@ enum OpenContent<'a> {
     Alarm(&'a Alarm),
     Panel(Panel),
     Timer(&'a Timer),
+    /// The stopwatch card (None: not started yet).
+    Stopwatch(Option<&'a Stopwatch>),
     Nav(&'a NavInfo),
     Media(&'a MediaInfo),
     Battery,
@@ -196,12 +207,26 @@ pub struct App {
     timer_ringing: bool,
     timer_control: Option<TimerControl>,
     timer_sec: i64,
+    /// The stopwatch (Islet Pro), the card button being pressed, and the
+    /// last tenth/second drawn.
+    stopwatch: Option<Stopwatch>,
+    stopwatch_control: Option<StopwatchControl>,
+    stopwatch_shown: i64,
     /// The file shelf; whether files are being dragged over the island (and
     /// whether that opened it); and a pending save.
     shelf: Vec<islet_core::shelf::ShelfItem>,
     dragging: bool,
     drag_opened: bool,
     shelf_dirty: bool,
+    /// Notes and to-dos (Islet Pro; todo.json), and whether to save them.
+    todo: islet_core::todo::Todo,
+    todo_dirty: bool,
+    /// When the sleep timer pauses what's playing (None: off).
+    sleep_at: Option<f64>,
+    /// The quick timer's length (an index into `content::QUICK_MINUTES`).
+    quick: usize,
+    /// The month the calendar card shows (None: this month).
+    cal_view: Option<(i32, u8)>,
     /// Clipboard history (in memory only; empty while the feature is off).
     clip: islet_core::clipboard::History,
     /// Entries to put back on the clipboard (for main to hand over).
@@ -213,6 +238,7 @@ pub struct App {
     notes_open: bool,
     /// island.json: which pop-ups are on, weather, calendar…
     prefs: IslandPrefs,
+    pro: bool,
     /// Unix time and UTC offset at the last `set_wall` (for calendar events).
     wall: f64,
     utc_offset: i64,
@@ -307,15 +333,24 @@ impl App {
             timer_ringing: false,
             timer_control: None,
             timer_sec: -1,
+            stopwatch: None,
+            stopwatch_control: None,
+            stopwatch_shown: -1,
             shelf: Vec::new(),
             dragging: false,
             drag_opened: false,
             shelf_dirty: false,
+            todo: Default::default(),
+            todo_dirty: false,
+            sleep_at: None,
+            quick: content::QUICK_DEFAULT,
+            cal_view: None,
             clip: Default::default(),
             clip_out: Vec::new(),
             top: TOP_GAP,
             notes_open: false,
             prefs: IslandPrefs::default(),
+            pro: false,
             wall: 0.0,
             utc_offset: 0,
             panel: None,
@@ -516,6 +551,39 @@ impl App {
         changed
     }
 
+    /// Start, pause, lap or reset the stopwatch (Islet Pro only).
+    pub fn stopwatch_command(&mut self, cmd: StopwatchCommand, t: f64) -> bool {
+        if !self.pro {
+            return false;
+        }
+        match (&mut self.stopwatch, cmd) {
+            (None, StopwatchCommand::Start | StopwatchCommand::Resume) => self.stopwatch = Some(Stopwatch::started(t)),
+            (Some(sw), StopwatchCommand::Start | StopwatchCommand::Resume) => sw.resume(t),
+            (Some(sw), StopwatchCommand::Pause) => sw.pause(t),
+            (Some(sw), StopwatchCommand::Lap) => sw.lap(t),
+            (_, StopwatchCommand::Reset) => {
+                self.stopwatch = None;
+                if self.panel.is_none() && self.island.presentation().is_open() {
+                    // Stay on the (now empty) stopwatch card.
+                    self.panel = Some(Panel::Stopwatch);
+                }
+            }
+            (None, _) => return false,
+        }
+        self.stopwatch_shown = -1;
+        self.report(Report::Stopwatch(self.stopwatch.clone()), t)
+    }
+
+    /// The Lap/Reset or Start/Pause button under (x, y) on the stopwatch card.
+    fn stopwatch_control_at(&self, x: f64, y: f64, t: f64) -> Option<StopwatchControl> {
+        if !self.island.presentation().is_open()
+            || !matches!(self.open_content(&self.live(t)), OpenContent::Stopwatch(_))
+        {
+            return None;
+        }
+        content::stopwatch_controls(self.card_rect(t)).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, c)| c)
+    }
+
     /// Start, pause, resume or stop the timer.
     pub fn timer_command(&mut self, cmd: TimerCommand, t: f64) -> bool {
         match &cmd {
@@ -645,6 +713,15 @@ impl App {
         std::mem::take(&mut self.shelf_dirty).then(|| self.shelf.clone())
     }
 
+    pub fn set_todo(&mut self, todo: islet_core::todo::Todo) {
+        self.todo = todo;
+    }
+
+    /// The to-do list after a tick or removal on the island, to save.
+    pub fn take_todo_changes(&mut self) -> Option<islet_core::todo::Todo> {
+        std::mem::take(&mut self.todo_dirty).then(|| self.todo.clone())
+    }
+
     /// Files were dropped on the island: (path, is a folder).
     pub fn drop_files(&mut self, dropped: Vec<(String, bool)>, t: f64) -> bool {
         islet_core::shelf::add(&mut self.shelf, &dropped);
@@ -725,10 +802,21 @@ impl App {
             return Some(ConnHit::Menu(i));
         }
         match open {
-            OpenContent::Clock => content::clock_chips(cr, !self.shelf.is_empty(), self.prefs.clipboard)
+            OpenContent::Clock => content::clock_chips(cr, self.clock_row())
                 .into_iter()
                 .find(|(r, _)| r.contains(x, y))
-                .map(|(_, p)| ConnHit::Open(p)),
+                .map(|(_, p)| ConnHit::Open(p))
+                .or_else(|| {
+                    content::quick_row(cr, self.clock_row())
+                        .into_iter()
+                        .find(|(r, _)| r.contains(x, y))
+                        .map(|(_, q)| ConnHit::Quick(q))
+                }),
+            OpenContent::Panel(Panel::Calendar) => content::calendar_arrows(cr)
+                .into_iter()
+                .find(|(r, _)| r.contains(x, y))
+                .map(|(_, dir)| ConnHit::Month(dir))
+                .or_else(|| content::list_header(cr).contains(x, y).then_some(ConnHit::Back)),
             OpenContent::Panel(p) => {
                 let (total, footer) = self.panel_list(p);
                 let scroll = self.scroll_of(p);
@@ -746,7 +834,7 @@ impl App {
                 }
                 let list = content::list_rows(cr, rows);
                 if let Some(i) = list.iter().position(|r| r.contains(x, y)) {
-                    if p == Panel::Shelf && content::shelf_remove_hit(list[i], x) {
+                    if matches!(p, Panel::Shelf | Panel::Todo) && content::shelf_remove_hit(list[i], x) {
                         return Some(ConnHit::Remove(i + scroll));
                     }
                     return Some(ConnHit::Row(i + scroll));
@@ -782,6 +870,11 @@ impl App {
             let detail = if d == 0.0 { "On time".to_string() } else { format!("{d:+.1} s") };
             v.push(MenuItem { detail: Some(detail), ..item(MenuAction::LyricsTiming, Icon::Music, "Lyrics timing") });
         }
+        // The sleep timer: offered while something plays (or one is set).
+        if self.sleep_at.is_some() || self.activities.media().is_some_and(|m| m.playing) {
+            let detail = self.sleep_at.map_or("Off".to_string(), left);
+            v.push(MenuItem { detail: Some(detail), ..item(MenuAction::Sleep, Icon::Moon, "Sleep timer") });
+        }
         v.push(item(MenuAction::Quit, Icon::Close, "Quit Islet"));
         v
     }
@@ -813,6 +906,16 @@ impl App {
                 self.ui_actions.push(UiAction::SetSwitch("lyrics", on));
             }
             MenuAction::LyricsTiming => {}
+            MenuAction::Sleep => {
+                // Each tap picks the next length; after the longest, off.
+                let steps = content::SLEEP_MINUTES;
+                let now = self.sleep_at.map(|at| ((at - t) / 60.0).ceil() as u32);
+                let next = match now {
+                    None => Some(steps[0]),
+                    Some(left) => steps.iter().copied().find(|m| *m > left),
+                };
+                self.sleep_at = next.map(|m| t + f64::from(m) * 60.0);
+            }
             MenuAction::Quit => self.quit = true,
         }
         self.sync_live(t);
@@ -879,7 +982,9 @@ impl App {
             Panel::Wifi => (c.wifi.networks.len(), content::wifi_footer(c)),
             Panel::Bluetooth => (c.bt.devices.len(), content::bt_footer(c)),
             Panel::Shelf => (self.shelf.len(), content::shelf_footer(self.shelf.len(), self.dragging)),
-            Panel::System => (0, None),
+            Panel::System | Panel::Stopwatch | Panel::Calendar => (0, None),
+            Panel::Todo => (self.todo.items.len(), Some((content::TODO_ADD.to_string(), true))),
+            Panel::Shortcuts => (self.prefs.shortcuts.len(), Some((content::SHORTCUTS_EDIT.to_string(), true))),
             Panel::Clipboard => {
                 let n = self.clip.len();
                 (n, (n > 0).then(|| (content::CLIPBOARD_CLEAR.to_string(), true)))
@@ -919,7 +1024,51 @@ impl App {
                 match p {
                     Panel::Wifi => self.conn_commands.push(ConnCommand::ScanWifi),
                     Panel::Bluetooth => self.conn_commands.push(ConnCommand::ListBluetooth),
-                    Panel::Shelf | Panel::System | Panel::Clipboard => {}
+                    Panel::Shelf
+                    | Panel::System
+                    | Panel::Clipboard
+                    | Panel::Stopwatch
+                    | Panel::Todo
+                    | Panel::Calendar
+                    | Panel::Shortcuts => {}
+                }
+            }
+            ConnHit::Quick(q) => {
+                use content::Quick;
+                match q {
+                    Quick::Step(dir) => {
+                        let max = content::QUICK_MINUTES.len() - 1;
+                        self.quick = if dir < 0 { self.quick.saturating_sub(1) } else { (self.quick + 1).min(max) };
+                    }
+                    Quick::Start => {
+                        let secs = f64::from(content::QUICK_MINUTES[self.quick]) * 60.0;
+                        // The island shows the new timer's card instead of Control Centre.
+                        self.home = false;
+                        return self.timer_command(TimerCommand::Start { secs, label: String::new() }, t);
+                    }
+                    Quick::Calendar => {
+                        self.panel = Some(Panel::Calendar);
+                        self.cal_view = None;
+                    }
+                    // The island gets out of the way (and out of the picture).
+                    Quick::Screenshot => {
+                        self.ui_actions.push(UiAction::Screenshot);
+                        return self.signal(Signal::Escape, t);
+                    }
+                    Quick::Lock => {
+                        self.ui_actions.push(UiAction::Lock);
+                        return self.signal(Signal::Escape, t);
+                    }
+                }
+            }
+            ConnHit::Month(dir) => {
+                let (y, m) = self.cal_month();
+                self.cal_view = Some(islet_core::calendar::shift_month(y, m, i32::from(dir)));
+            }
+            ConnHit::Remove(i) if self.panel == Some(Panel::Todo) => {
+                if let Some(id) = self.todo.ordered().get(i).map(|item| item.id) {
+                    self.todo.remove(id);
+                    self.todo_dirty = true;
                 }
             }
             ConnHit::Remove(i) => {
@@ -966,6 +1115,13 @@ impl App {
                 _ => {}
             },
             ConnHit::Row(i) => match self.panel {
+                Some(Panel::Shortcuts) => {
+                    if let Some(s) = self.prefs.shortcuts.get(i) {
+                        // Open it and get out of the way.
+                        self.ui_actions.push(UiAction::Shortcut(s.target.clone()));
+                        return self.signal(Signal::Escape, t);
+                    }
+                }
                 Some(Panel::Wifi) => {
                     if let Some(n) = c.wifi.networks.get(i).filter(|n| !n.active) {
                         self.conn_commands.push(ConnCommand::ConnectWifi { ssid: n.ssid.clone(), password: None });
@@ -993,7 +1149,13 @@ impl App {
                         self.clip_out.push(text);
                     }
                 }
-                Some(Panel::System) | None => {}
+                Some(Panel::Todo) => {
+                    if let Some(id) = self.todo.ordered().get(i).map(|item| item.id) {
+                        self.todo.toggle(id);
+                        self.todo_dirty = true;
+                    }
+                }
+                Some(Panel::System | Panel::Stopwatch | Panel::Calendar) | None => {}
             },
             ConnHit::Footer => match (self.panel, &c.failure) {
                 (Some(Panel::Wifi), Some((_, Some(ssid)))) => {
@@ -1001,6 +1163,7 @@ impl App {
                 }
                 (Some(Panel::Bluetooth), _) => self.ui_actions.push(UiAction::Url(BLUETOOTH_SETTINGS.into())),
                 (Some(Panel::Clipboard), _) => self.clip.clear(),
+                (Some(Panel::Todo | Panel::Shortcuts), _) => self.ui_actions.push(UiAction::Settings("pro".into())),
                 _ => {}
             },
         }
@@ -1045,6 +1208,11 @@ impl App {
                 Some(p) => format!("{}, {}%", c.title, (p * 100.0).round() as i32),
                 None => format!("{}, in progress", c.title),
             },
+            Some(Live::Stopwatch(sw)) => format!(
+                "Stopwatch, {}{}",
+                islet_core::stopwatch::format(sw.elapsed(t), false),
+                if sw.running() { "" } else { ", paused" }
+            ),
             Some(Live::Timer(tm)) => format!(
                 "{}, {} left{}",
                 tm.title(),
@@ -1137,7 +1305,7 @@ impl App {
                     }
                 }
                 OpenContent::Clock => {
-                    for (r, p) in content::clock_chips(cr, !self.shelf.is_empty(), self.prefs.clipboard) {
+                    for (r, p) in content::clock_chips(cr, self.clock_row()) {
                         let name = match p {
                             Panel::Wifi => {
                                 format!("Wi-Fi{}", c.wifi.current.as_ref().map_or(String::new(), |n| format!(", {n}")))
@@ -1150,13 +1318,34 @@ impl App {
                             }
                             Panel::Shelf => format!("Shelf, {} items", self.shelf.len()),
                             Panel::System => "System monitor".into(),
+                            Panel::Stopwatch => "Stopwatch".into(),
+                            Panel::Todo => format!("To-do, {} left", self.todo.left()),
+                            Panel::Calendar => "Calendar".into(),
+                            Panel::Shortcuts => "Shortcuts".into(),
                             Panel::Clipboard => format!("Clipboard history, {} items", self.clip.len()),
+                        };
+                        buttons.push((name, r));
+                    }
+                    let minutes = content::QUICK_MINUTES[self.quick];
+                    for (r, q) in content::quick_row(cr, self.clock_row()) {
+                        let name = match q {
+                            content::Quick::Step(d) if d < 0 => "Shorter timer".to_string(),
+                            content::Quick::Step(_) => "Longer timer".to_string(),
+                            content::Quick::Start => format!("Start a {minutes}-minute timer"),
+                            content::Quick::Calendar => "Calendar".to_string(),
+                            content::Quick::Screenshot => "Take a screenshot".to_string(),
+                            content::Quick::Lock => "Lock the computer".to_string(),
                         };
                         buttons.push((name, r));
                     }
                 }
                 OpenContent::Panel(p) => {
                     buttons.push(("Back".into(), content::list_header(cr)));
+                    if p == Panel::Calendar {
+                        for (r, dir) in content::calendar_arrows(cr) {
+                            buttons.push((if dir < 0 { "Previous month" } else { "Next month" }.into(), r));
+                        }
+                    }
                     let radio = match p {
                         Panel::Wifi if c.wifi.available => Some(("Wi-Fi", c.wifi.enabled)),
                         Panel::Bluetooth if c.bt.available => Some(("Bluetooth", c.bt.powered)),
@@ -1192,7 +1381,14 @@ impl App {
                             .map(|d| format!("{}, {}", d.name, if d.connected { "connected" } else { "not connected" }))
                             .collect(),
                         Panel::Shelf => self.shelf.iter().map(|i| format!("Open {}", i.name())).collect(),
-                        Panel::System => Vec::new(),
+                        Panel::System | Panel::Stopwatch | Panel::Calendar => Vec::new(),
+                        Panel::Shortcuts => self.prefs.shortcuts.iter().map(|s| format!("Open {}", s.name)).collect(),
+                        Panel::Todo => self
+                            .todo
+                            .ordered()
+                            .iter()
+                            .map(|i| format!("{}{}", i.text, if i.done { ", done" } else { ", to do" }))
+                            .collect(),
                         Panel::Clipboard => {
                             self.clip.items().map(|t| format!("Copy {}", islet_core::clipboard::preview(t))).collect()
                         }
@@ -1272,6 +1468,11 @@ impl App {
     /// Move the island down from the top edge (the window grows to match).
     pub fn set_top(&mut self, top: f64) {
         self.top = top;
+    }
+
+    /// Islet Pro is on (its features show; see `islet_core::pro`).
+    pub fn set_pro(&mut self, on: bool) {
+        self.pro = on;
     }
 
     pub fn set_prefs(&mut self, prefs: IslandPrefs) {
@@ -1505,6 +1706,8 @@ impl App {
             OpenContent::Alarm(a)
         } else if self.menu {
             OpenContent::Menu
+        } else if self.panel == Some(Panel::Stopwatch) {
+            OpenContent::Stopwatch(self.activities.stopwatch())
         } else if let Some(p) = self.panel {
             OpenContent::Panel(p)
         } else if home {
@@ -1519,6 +1722,8 @@ impl App {
             OpenContent::Call(c.clone())
         } else if let (Some(Live::Timer(_)), Some(tm)) = (live.first(), self.activities.timer()) {
             OpenContent::Timer(tm)
+        } else if let (Some(Live::Stopwatch(_)), Some(sw)) = (live.first(), self.activities.stopwatch()) {
+            OpenContent::Stopwatch(Some(sw))
         } else if matches!(live.first(), Some(Live::Battery { .. })) {
             OpenContent::Battery
         } else if let (Some(Live::Navigation(_)) | None, Some(n)) = (live.first(), self.activities.nav()) {
@@ -1528,6 +1733,92 @@ impl App {
         } else {
             OpenContent::Clock
         }
+    }
+
+    /// What the clock card shows besides the time.
+    fn clock_row(&self) -> ClockRow {
+        ClockRow {
+            shelf: !self.shelf.is_empty(),
+            clipboard: self.prefs.clipboard,
+            pro: self.pro,
+            todo_left: self.todo.left(),
+            shortcuts: self.pro && !self.prefs.shortcuts.is_empty(),
+            world: self.pro && self.prefs.world_clocks.iter().any(|c| islet_core::worldclock::find(c).is_some()),
+            no_timer: self.prefs.hides("timer"),
+            no_calendar: self.prefs.hides("calendar"),
+            no_screenshot: self.prefs.hides("screenshot"),
+            no_lock: self.prefs.hides("lock"),
+            no_system: self.prefs.hides("system"),
+            no_todo: self.prefs.hides("todo"),
+            no_stopwatch: self.prefs.hides("stopwatch"),
+        }
+    }
+
+    /// The chosen world clocks (Islet Pro): name, local time, days ahead.
+    fn world_clocks(&self) -> Vec<(String, islet_core::clock::LocalTime, i32)> {
+        if !self.pro {
+            return Vec::new();
+        }
+        let here = (self.utc_offset / 60) as i32;
+        self.prefs
+            .world_clocks
+            .iter()
+            .take(islet_core::worldclock::MAX)
+            .filter_map(|c| {
+                let (name, _, _) = islet_core::worldclock::find(c)?;
+                let (now, days) = islet_core::worldclock::city_time(name, self.wall as i64, here)?;
+                Some((name.to_string(), now, days))
+            })
+            .collect()
+    }
+
+    /// The month on the calendar card.
+    fn cal_month(&self) -> (i32, u8) {
+        self.cal_view.or(self.clock.map(|now| (now.year, now.month))).unwrap_or((1970, 1))
+    }
+
+    /// The next alarm for the clock card: "7:30 · in 8 h 15 min".
+    fn next_alarm_label(&self) -> Option<String> {
+        let now = self.clock?;
+        let (a, mins) = self.alarms.upcoming(&now)?;
+        Some(format!("{} · {}", islet_core::alarm::format_hm(a.hour, a.minute, self.h24), content::until_label(mins)))
+    }
+
+    /// The next few events for the calendar card: (when, what).
+    fn upcoming_events(&self) -> Vec<(String, String)> {
+        let now = self.wall as i64;
+        let today = (now + self.utc_offset).div_euclid(86_400);
+        self.activities
+            .calendar()
+            .iter()
+            .filter(|e| e.end > now)
+            .take(4)
+            .map(|e| {
+                let local = e.start + if e.all_day { 0 } else { self.utc_offset };
+                let day = local.div_euclid(86_400);
+                let (_, month, d) = islet_core::calendar::civil_from_days(day);
+                let date = match day - today {
+                    i64::MIN..=0 => "Today".to_string(),
+                    1 => "Tomorrow".to_string(),
+                    _ => {
+                        let name = islet_core::clock::month_name(month);
+                        format!("{d} {}", &name[..name.len().min(3)])
+                    }
+                };
+                let when = if e.all_day {
+                    date
+                } else {
+                    let secs = local.rem_euclid(86_400);
+                    let hm = islet_core::alarm::format_hm((secs / 3600) as u8, (secs / 60 % 60) as u8, self.h24);
+                    format!("{date} · {hm}")
+                };
+                (when, e.summary.clone())
+            })
+            .collect()
+    }
+
+    fn stopwatch_card_open(&self, t: f64) -> bool {
+        self.island.presentation().is_open() && matches!(self.open_content(&self.live(t)), OpenContent::Stopwatch(_))
     }
 
     fn clock_shown(&self, t: f64) -> bool {
@@ -1630,6 +1921,7 @@ impl App {
                 OpenContent::Call(c) => out.extend(content::expanded_call(card, &c, t, eo, engine)),
                 OpenContent::Alarm(a) => out.extend(content::expanded_alarm(cr, a, self.h24, t, eo, engine)),
                 OpenContent::Timer(tm) => out.extend(content::expanded_timer(card, tm, t, eo, engine)),
+                OpenContent::Stopwatch(sw) => out.extend(content::expanded_stopwatch(card, sw, t, eo, engine)),
                 OpenContent::Agenda => out.extend(content::expanded_agenda(card, &self.agenda(), eo, engine)),
                 OpenContent::Custom(c) => out.extend(content::expanded_custom(card, c, t, eo, engine)),
                 OpenContent::Notes => out.extend(content::expanded_notes(card, self.activities.notes(), eo, engine)),
@@ -1657,6 +1949,41 @@ impl App {
                 OpenContent::Panel(Panel::System) => {
                     out.extend(content::expanded_system(cr, self.activities.system(), eo, engine))
                 }
+                // Shown as OpenContent::Stopwatch instead.
+                OpenContent::Panel(Panel::Stopwatch) => {}
+                OpenContent::Panel(Panel::Calendar) => {
+                    let (year, month) = self.cal_month();
+                    let days =
+                        islet_core::calendar::event_days(self.activities.calendar(), year, month, self.utc_offset);
+                    let today = self.clock.unwrap_or(islet_core::clock::LocalTime {
+                        year: 1970,
+                        month: 1,
+                        day: 1,
+                        weekday: 4,
+                        hour: 0,
+                        minute: 0,
+                        second: 0,
+                    });
+                    out.extend(content::expanded_calendar(
+                        cr,
+                        (year, month),
+                        &today,
+                        &days,
+                        &self.upcoming_events(),
+                        eo,
+                        engine,
+                    ));
+                }
+                OpenContent::Panel(Panel::Shortcuts) => out.extend(content::expanded_shortcuts(
+                    cr,
+                    &self.prefs.shortcuts,
+                    self.scroll_of(Panel::Shortcuts),
+                    eo,
+                    engine,
+                )),
+                OpenContent::Panel(Panel::Todo) => {
+                    out.extend(content::expanded_todo(cr, &self.todo, self.scroll_of(Panel::Todo), eo, engine))
+                }
                 OpenContent::Panel(Panel::Shelf) => out.extend(content::expanded_shelf(
                     cr,
                     &self.shelf,
@@ -1682,13 +2009,20 @@ impl App {
                 )),
                 OpenContent::Clock => {
                     if let Some(now) = self.clock {
-                        out.extend(content::expanded_clock(cr, &now, self.h24, eo, engine));
+                        let alarm = self.next_alarm_label();
+                        out.extend(content::expanded_clock(cr, &now, self.h24, alarm.as_deref(), eo, engine));
+                    }
+                    let minutes = content::QUICK_MINUTES[self.quick];
+                    out.extend(content::quick_row_elements(cr, self.clock_row(), minutes, eo));
+                    let world = self.world_clocks();
+                    if !world.is_empty() {
+                        out.extend(content::world_clocks(cr, &world, self.h24, eo, engine));
                     }
                     out.extend(content::clock_chip_elements(
                         cr,
                         self.activities.connectivity(),
                         self.shelf.len(),
-                        self.prefs.clipboard,
+                        self.clock_row(),
                         eo,
                         engine,
                     ));
@@ -1778,6 +2112,7 @@ impl App {
                         OpenContent::Call(_) => content::CALL_H,
                         OpenContent::Alarm(_) => content::ALARM_H,
                         OpenContent::Timer(_) => content::TIMER_H,
+                        OpenContent::Stopwatch(_) => content::STOPWATCH_H,
                         OpenContent::Agenda => content::agenda_height(self.agenda().len()),
                         OpenContent::Custom(_) => content::CUSTOM_H,
                         OpenContent::Notes => content::notes_height(self.activities.notes().count()),
@@ -1791,6 +2126,10 @@ impl App {
                                     content::list_height(c.bt.devices.len(), content::bt_footer(c).is_some())
                                 }
                                 Panel::System => content::SYSTEM_H,
+                                Panel::Stopwatch => content::STOPWATCH_H,
+                                Panel::Todo => content::list_height(self.todo.items.len(), true),
+                                Panel::Calendar => content::CALENDAR_H,
+                                Panel::Shortcuts => content::list_height(self.prefs.shortcuts.len(), true),
                                 Panel::Clipboard => content::list_height(self.clip.len(), !self.clip.is_empty()),
                                 Panel::Shelf => content::list_height(
                                     self.shelf.len(),
@@ -1800,7 +2139,13 @@ impl App {
                         }
                         OpenContent::Media(_) if self.song_lyrics().is_some() => MEDIA_H + content::CARD_LYRICS_H,
                         OpenContent::Media(_) | OpenContent::Nav(_) => MEDIA_H,
-                        OpenContent::Clock => CLOCK_H,
+                        OpenContent::Clock => {
+                            let row = self.clock_row();
+                            // Shorter when every quick button is switched off.
+                            CLOCK_H - content::QUICK_H
+                                + content::quick_h(row)
+                                + if row.world { content::WORLD_H } else { 0.0 }
+                        }
                         OpenContent::Battery => {
                             let rows =
                                 self.activities.devices().len() + usize::from(self.activities.laptop().is_some());
@@ -1940,6 +2285,10 @@ impl App {
                     self.timer_control = Some(c);
                     return true;
                 }
+                if let Some(c) = self.stopwatch_control_at(x, y, t) {
+                    self.stopwatch_control = Some(c);
+                    return true;
+                }
                 if self.call_mute_at(x, y, t) {
                     self.call_press = true;
                     return true;
@@ -1979,6 +2328,27 @@ impl App {
                         return self.toggle_mic(t);
                     }
                     return true;
+                }
+                if let Some(c) = self.stopwatch_control.take() {
+                    if self.stopwatch_control_at(x, y, t) != Some(c) {
+                        return true;
+                    }
+                    let (exists, running) = match &self.stopwatch {
+                        Some(sw) => (true, sw.running()),
+                        None => (false, false),
+                    };
+                    let cmd = match c {
+                        StopwatchControl::LapReset if running => StopwatchCommand::Lap,
+                        StopwatchControl::LapReset if exists => StopwatchCommand::Reset,
+                        StopwatchControl::LapReset => return true,
+                        StopwatchControl::StartPause if running => StopwatchCommand::Pause,
+                        StopwatchControl::StartPause => StopwatchCommand::Start,
+                    };
+                    if cmd == StopwatchCommand::Start && self.panel == Some(Panel::Stopwatch) {
+                        // From Control Centre: once started it is a live activity.
+                        self.panel = None;
+                    }
+                    return self.stopwatch_command(cmd, t);
                 }
                 if let Some(c) = self.timer_control.take() {
                     if self.timer_control_at(x, y, t) != Some(c) {
@@ -2089,8 +2459,33 @@ impl App {
             self.quiet_until = None;
             changed = true;
         }
+        // The sleep timer: pause what's playing, once.
+        if self.sleep_at.is_some_and(|at| t >= at) {
+            self.sleep_at = None;
+            if self.activities.media().is_some_and(|m| m.playing && m.caps.play_pause) {
+                self.commands.push(MediaCommand::PlayPause);
+            }
+            changed = true;
+        }
         changed |= self.sync_live(t);
         changed |= self.update_shown(t);
+        // A running stopwatch redraws as its shown digits change: tenths on
+        // its card, seconds on the pill.
+        let shown = match &self.stopwatch {
+            Some(sw) if sw.running() && self.shown.value(t) > 0.01 => {
+                let e = sw.elapsed(t);
+                if self.stopwatch_card_open(t) {
+                    (e * 10.0).floor() as i64 * 2 + 1
+                } else {
+                    e.floor() as i64 * 2
+                }
+            }
+            _ => -1,
+        };
+        if shown != self.stopwatch_shown {
+            self.stopwatch_shown = shown;
+            changed = true;
+        }
         // A call on screen shows its length: redraw as each second passes.
         let sec = match self.live(t).iter().find_map(|l| if let Live::Call(c) = l { Some(c.since) } else { None }) {
             Some(since) if self.shown.value(t) > 0.01 => (t - since).floor() as i64,
@@ -2204,6 +2599,11 @@ impl App {
                 at(since + (t - since).floor() + 1.0);
             }
         }
+        if let Some(sw) = self.stopwatch.as_ref().filter(|_| self.shown.value(t) > 0.01) {
+            if let Some(next) = sw.next_tick(t, self.stopwatch_card_open(t)) {
+                at(next);
+            }
+        }
         // A running timer redraws as each second passes (and ends on time).
         if let Some(tm) = self.timer.as_ref().filter(|tm| tm.running()) {
             let rem = tm.remaining(t);
@@ -2224,7 +2624,7 @@ impl App {
                 }
             }
         }
-        for deadline in [self.hidden_until, self.quiet_until].into_iter().flatten() {
+        for deadline in [self.hidden_until, self.quiet_until, self.sleep_at].into_iter().flatten() {
             at(deadline);
         }
         // Alarms are checked each minute, only while one is set.
@@ -2306,6 +2706,16 @@ impl App {
         r.inflate(1.0)
     }
 
+    /// What the island is made of: black, or with Islet Pro the chosen
+    /// style (tinted, glass…). A notched Mac stays black to match its notch.
+    fn skin(&self) -> islet_render::Skin {
+        if !self.pro || self.notch.is_some() {
+            return islet_render::Skin::default();
+        }
+        let (color, alpha, glass) = islet_core::prefs::style_body(&self.prefs.style, self.prefs.accent_rgb());
+        islet_render::Skin { color, alpha, glass }
+    }
+
     pub fn frame(&self, t: f64) -> PillFrame {
         let r = self.pill_rect(t);
         PillFrame {
@@ -2321,6 +2731,7 @@ impl App {
             highlight: 0.0,
             flat_top: self.notch.is_some(),
             opacity: self.shown.value(t).clamp(0.0, 1.0) as f32,
+            skin: self.skin(),
         }
     }
 }
@@ -2511,7 +2922,7 @@ mod tests {
 
         // Into the Wi-Fi list; its back button returns to Control Centre.
         let cr = app.content_rect(app.pill_rect(t));
-        press(&mut app, content::clock_chips(cr, false, false)[0].0, t);
+        press(&mut app, content::clock_chips(cr, ClockRow::default())[0].0, t);
         let t = 12.0;
         assert!(texts(&app, t, &mut engine).iter().any(|s| s == "Wi-Fi"));
         let r = content::back_button(app.content_rect(app.pill_rect(t)));
@@ -2635,6 +3046,53 @@ mod tests {
         let items = app.menu_items(t);
         let i = items.iter().position(|m| m.action == action).expect("in the menu");
         content::menu_rows(app.content_rect(app.pill_rect(t)), items.len())[i]
+    }
+
+    #[test]
+    fn sleep_timer_pauses_the_music_once() {
+        use content::MenuAction;
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        right_click(&mut app, 0.0);
+        assert!(!app.menu_items(1.0).iter().any(|m| m.action == MenuAction::Sleep), "nothing playing: no sleep timer");
+        app.handle(Event::Key(Key::Escape), 1.0);
+
+        app.report(Report::Media(Some(song(true))), 2.0);
+        app.tick(2.0);
+        right_click(&mut app, 3.0);
+        let detail = |app: &App, t: f64| {
+            app.menu_items(t).into_iter().find(|m| m.action == MenuAction::Sleep).and_then(|m| m.detail)
+        };
+        assert_eq!(detail(&app, 6.0).as_deref(), Some("Off"));
+        // Taps step through 15, 30, 45 and 60 minutes, then off again.
+        for want in ["15 min left", "30 min left", "45 min left", "60 min left", "Off"] {
+            let row = menu_row(&app, 6.0, MenuAction::Sleep);
+            press(&mut app, row, 6.0);
+            assert_eq!(detail(&app, 6.1).as_deref(), Some(want));
+        }
+        let row = menu_row(&app, 6.0, MenuAction::Sleep);
+        press(&mut app, row, 6.0);
+        assert!(texts(&app, 10.0, &mut engine).contains(&"Sleep timer".to_string()));
+        assert_eq!(app.presentation(), Expanded, "choosing a length keeps the menu open");
+        assert!(content::menu_height(7) <= WINDOW.1, "the longest menu fits the window");
+
+        // It wakes the island exactly then, pauses once, and is done.
+        app.handle(Event::Key(Key::Escape), 11.0);
+        let due = 6.05 + 15.0 * 60.0; // the tap's release is what counts
+        assert!(app.next_timer(due - 5.0).is_some_and(|w| w <= 5.0 + 1e-6));
+        app.tick(due - 1.0);
+        assert!(app.take_commands().is_empty());
+        app.tick(due + 0.1);
+        assert_eq!(app.take_commands(), [MediaCommand::PlayPause]);
+        app.tick(due + 5.0);
+        assert!(app.take_commands().is_empty() && app.sleep_at.is_none());
+
+        // Already paused when it's due: nothing to do.
+        app.sleep_at = Some(due + 10.0);
+        app.report(Report::Media(Some(song(false))), due + 6.0);
+        app.tick(due + 11.0);
+        assert!(app.take_commands().is_empty());
     }
 
     #[test]
@@ -2763,7 +3221,7 @@ mod tests {
         let r = content::home_button(list.content_rect(list.pill_rect(4.0)));
         press(&mut list, r, 4.0);
         let cr = list.content_rect(list.pill_rect(8.0));
-        press(&mut list, content::clock_chips(cr, false, false)[0].0, 8.0);
+        press(&mut list, content::clock_chips(cr, ClockRow::default())[0].0, 8.0);
         let mut idle = App::new(Demo::None, false);
         idle.set_time(NOW, 0.0);
         let mut idle12 = App::new(Demo::None, false);
@@ -3154,7 +3612,7 @@ mod tests {
 
         // Open the Wi-Fi list.
         let cr = app.content_rect(app.pill_rect(5.0));
-        press(&mut app, content::clock_chips(cr, false, false)[0].0, 5.0);
+        press(&mut app, content::clock_chips(cr, ClockRow::default())[0].0, 5.0);
         assert_eq!(app.take_conn_commands(), [ConnCommand::ScanWifi]);
         let rows = content::list_rows(app.content_rect(app.pill_rect(9.0)), 2);
         assert!(texts(&app, 9.0, &mut engine).iter().any(|s| s == "Cafe"));
@@ -3198,7 +3656,7 @@ mod tests {
             14.0,
         );
         let cr = app.content_rect(app.pill_rect(18.0));
-        press(&mut app, content::clock_chips(cr, false, false)[1].0, 18.0);
+        press(&mut app, content::clock_chips(cr, ClockRow::default())[1].0, 18.0);
         assert_eq!(app.take_conn_commands(), [ConnCommand::ListBluetooth]);
         let rows = content::list_rows(app.content_rect(app.pill_rect(22.0)), 1);
         press(&mut app, rows[0], 22.0);
@@ -3236,6 +3694,363 @@ mod tests {
         press(&mut app, repeat, 104.0);
         assert_eq!(app.take_alarm_out(), [AlarmOut::Sound(false)]);
         assert!(app.timer.as_ref().is_some_and(|tm| tm.remaining(105.0) > 88.0), "Repeat starts it again");
+    }
+
+    #[test]
+    fn stopwatch_is_pro_and_starts_from_control_centre() {
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        assert!(!app.stopwatch_command(StopwatchCommand::Start, 0.0), "free: no stopwatch");
+        click(&mut app, 0.0);
+        let cr = app.content_rect(app.pill_rect(5.0));
+        assert!(!content::clock_chips(cr, app.clock_row()).iter().any(|(_, p)| *p == Panel::Stopwatch));
+
+        app.set_pro(true);
+        let chips = content::clock_chips(cr, app.clock_row());
+        let (button, _) = *chips.iter().find(|(_, p)| *p == Panel::Stopwatch).expect("Pro: a stopwatch button");
+        press(&mut app, button, 5.0);
+        let shown = texts(&app, 9.0, &mut engine);
+        assert!(shown.contains(&"0:00.0".to_string()) && shown.contains(&"Start".to_string()), "{shown:?}");
+
+        // Start: it becomes a live activity, ticking in tenths on its card.
+        let [(lap, _), (start, _)] = content::stopwatch_controls(app.card_rect(9.0));
+        press(&mut app, start, 9.0);
+        assert!(app.stopwatch.as_ref().is_some_and(Stopwatch::running));
+        assert!(matches!(app.live(9.5).first(), Some(Live::Stopwatch(_))));
+        let wake = app.next_timer(10.33).unwrap();
+        assert!(wake > 0.0 && wake <= 0.1 + 1e-9, "tenths while the card is open: {wake}");
+        assert!(texts(&app, 10.5, &mut engine).iter().any(|s| s == "0:01.4"), "{:?}", texts(&app, 10.5, &mut engine));
+
+        // Lap, then pause: Lap turns into Reset.
+        let [(lap2, _), (pause, _)] = content::stopwatch_controls(app.card_rect(12.0));
+        assert_eq!(lap, lap2);
+        press(&mut app, lap2, 12.0);
+        assert_eq!(app.stopwatch.as_ref().unwrap().lap_count(), 1);
+        press(&mut app, pause, 14.0);
+        assert!(!app.stopwatch.as_ref().unwrap().running());
+        assert!(texts(&app, 15.0, &mut engine).iter().any(|s| s == "Reset"));
+        assert!(app.next_timer(15.0).is_none_or(|w| w > 1.0), "paused: no ticking");
+
+        // Closed: the pill shows whole seconds.
+        app.handle(Event::Key(Key::Escape), 16.0);
+        app.tick(20.0);
+        assert_eq!(app.presentation(), Compact);
+        assert!(texts(&app, 20.0, &mut engine).iter().any(|s| s == "0:05"), "{:?}", texts(&app, 20.0, &mut engine));
+        app.stopwatch_command(StopwatchCommand::Reset, 21.0);
+        app.tick(21.0);
+        assert!(app.live(21.0).is_empty());
+    }
+
+    fn quick_button(app: &App, t: f64, q: content::Quick) -> Rect {
+        let cr = app.content_rect(app.pill_rect(t));
+        content::quick_row(cr, app.clock_row()).into_iter().find(|(_, b)| *b == q).unwrap().0
+    }
+
+    fn press_quick(app: &mut App, t: f64, q: content::Quick) {
+        let r = quick_button(app, t, q);
+        press(app, r, t);
+    }
+
+    #[test]
+    fn quick_timer_starts_from_the_clock_card() {
+        use content::Quick;
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        click(&mut app, 0.0);
+        // 5 → 10 → 15 minutes, back to 10, and it stops at the ends.
+        let plus = quick_button(&app, 5.0, Quick::Step(1));
+        press(&mut app, plus, 5.0);
+        press(&mut app, plus, 5.2);
+        press_quick(&mut app, 5.4, Quick::Step(-1));
+        assert!(texts(&app, 6.0, &mut engine).contains(&"10 min".to_string()));
+        assert_eq!(app.presentation(), Expanded, "stepping doesn't close the island");
+        for i in 0..20 {
+            press_quick(&mut app, 6.0 + f64::from(i) * 0.1, Quick::Step(-1));
+        }
+        assert!(texts(&app, 9.0, &mut engine).contains(&"1 min".to_string()));
+        assert!(app.accessibility(9.0).buttons.iter().any(|(n, _)| n == "Start a 1-minute timer"));
+
+        press_quick(&mut app, 9.0, Quick::Start);
+        assert!(app.timer.as_ref().is_some_and(|tm| (tm.remaining(9.1) - 60.0).abs() < 1.0));
+        assert!(texts(&app, 13.0, &mut engine).iter().any(|s| s == "Pause"), "the island shows the timer's card");
+    }
+
+    #[test]
+    fn screenshot_and_lock_close_the_island_first() {
+        use content::Quick;
+        for (button, action) in [(Quick::Screenshot, UiAction::Screenshot), (Quick::Lock, UiAction::Lock)] {
+            let mut app = App::new(Demo::None, false);
+            app.set_time(NOW, 0.0);
+            click(&mut app, 0.0);
+            press_quick(&mut app, 5.0, button);
+            assert_eq!(app.take_ui_actions(), [action]);
+            assert_eq!(app.presentation(), Idle, "out of the picture");
+        }
+    }
+
+    #[test]
+    fn calendar_card_shows_months_and_events() {
+        use content::Quick;
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        // 4 November 2026, 14:05 UTC.
+        app.set_wall(1_793_801_100.0, 0, 0.0);
+        let at = |d: i64, h: i64| 1_793_750_400 + (d - 4) * 86_400 + h * 3600;
+        app.report(
+            Report::Calendar(Some(vec![
+                islet_core::calendar::CalEvent {
+                    summary: "Dentist".into(),
+                    start: at(4, 16),
+                    end: at(4, 17),
+                    all_day: false,
+                    location: None,
+                },
+                islet_core::calendar::CalEvent {
+                    summary: "Trip".into(),
+                    start: at(20, 0),
+                    end: at(22, 0),
+                    all_day: true,
+                    location: None,
+                },
+            ])),
+            0.0,
+        );
+        click(&mut app, 0.0);
+        press_quick(&mut app, 5.0, Quick::Calendar);
+        let shown = texts(&app, 9.0, &mut engine);
+        assert!(shown.contains(&"November 2026".to_string()), "{shown:?}");
+        assert!(shown.contains(&"30".to_string()) && !shown.contains(&"31".to_string()), "30 days: {shown:?}");
+        assert!(shown.contains(&"Today · 16:00".to_string()) && shown.contains(&"Dentist".to_string()), "{shown:?}");
+        assert!(shown.contains(&"20 Nov".to_string()) && shown.contains(&"Trip".to_string()), "{shown:?}");
+        assert!((app.pill_rect(9.0).h - content::CALENDAR_H).abs() < 0.5);
+
+        // › twice: January 2027 (31 days); ‹ goes back; the header returns to Control Centre.
+        let cr = app.content_rect(app.pill_rect(9.0));
+        let [(prev, _), (next, _)] = content::calendar_arrows(cr);
+        press(&mut app, next, 9.0);
+        press(&mut app, next, 9.2);
+        let shown = texts(&app, 9.5, &mut engine);
+        assert!(shown.contains(&"January 2027".to_string()) && shown.contains(&"31".to_string()), "{shown:?}");
+        press(&mut app, prev, 9.6);
+        assert!(texts(&app, 9.8, &mut engine).contains(&"December 2026".to_string()));
+        press(&mut app, content::back_button(cr), 10.0);
+        assert!(texts(&app, 14.0, &mut engine).contains(&"Timer".to_string()), "back on the clock card");
+    }
+
+    #[test]
+    fn clock_card_names_the_next_alarm() {
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        app.set_alarms(vec![Alarm { id: 1, hour: 7, minute: 30, label: "Up".into(), days: 0, enabled: true }]);
+        click(&mut app, 0.0);
+        let shown = texts(&app, 5.0, &mut engine);
+        // 14:05 → 07:30 tomorrow is 17 h 25 min away.
+        assert!(shown.contains(&"07:30 · in 17 h 25 min".to_string()), "{shown:?}");
+        assert!(shown.contains(&"Wed 4 Nov".to_string()), "the date shortens to make room: {shown:?}");
+        assert_eq!(content::until_label(45), "in 45 min");
+        assert_eq!(content::until_label(120), "in 2 h");
+        assert_eq!(content::until_label(30 * 60), "tomorrow");
+        assert_eq!(content::until_label(3 * 1440 + 5), "in 3 days");
+    }
+
+    #[test]
+    fn labels_are_never_cut_short_on_a_crowded_clock_card() {
+        let mut engine = TextEngine::new();
+        // The fullest row: a shelf, clipboard history and Pro's buttons.
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        app.set_pro(true);
+        let mut p = app.prefs().clone();
+        p.clipboard = true;
+        app.set_prefs(p);
+        app.set_shelf(vec![islet_core::shelf::ShelfItem { path: "/tmp/a.pdf".into(), dir: false }]);
+        click(&mut app, 0.0);
+        let shown = texts(&app, 5.0, &mut engine);
+        assert!(!shown.iter().any(|s| s.contains('…')), "nothing is shortened: {shown:?}");
+        let cr = app.content_rect(app.pill_rect(5.0));
+        let chips = content::clock_chips(cr, app.clock_row());
+        assert!(chips.iter().any(|(r, p)| *p == Panel::Shelf && r.w < 40.0), "the shelf is a round button");
+        assert!(chips.windows(2).all(|w| w[0].0.right() <= w[1].0.x + 0.01), "no chip overlaps the next");
+
+        // The lists' footers fit their line whatever they say.
+        use islet_render::text::TextStyle;
+        let wide = content::list_footer(cr, 3).w as f32;
+        let button = TextStyle { size: 13.0, weight: 600, ..TextStyle::default() };
+        let note = TextStyle { size: 12.5, ..TextStyle::default() };
+        let (shelf_line, _) = content::shelf_footer(3, false).unwrap();
+        assert!(engine.measure(&shelf_line, &note) <= wide, "{shelf_line}");
+        let c = islet_core::connectivity::Connectivity {
+            failure: Some(("needs a password".into(), Some("A very long network name indeed 5G".into()))),
+            ..Default::default()
+        };
+        let (wifi_line, is_button) = content::wifi_footer(&c).unwrap();
+        assert!(is_button && engine.measure(&wifi_line, &button) <= wide - 20.0, "{wifi_line}");
+    }
+
+    #[test]
+    fn clock_card_buttons_can_be_switched_off() {
+        use content::Quick;
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        click(&mut app, 0.0);
+        let full = app.pill_rect(5.0).h;
+
+        // Without the timer and the lock: the rest keep to the right, nothing overlaps.
+        let mut p = app.prefs().clone();
+        p.set_card_button("timer", false).unwrap();
+        p.set_card_button("lock", false).unwrap();
+        p.set_card_button("system", false).unwrap();
+        assert!(p.set_card_button("rocket", false).is_err());
+        app.set_prefs(p);
+        app.sync_live(5.0);
+        let cr = app.content_rect(app.pill_rect(9.0));
+        let row = content::quick_row(cr, app.clock_row());
+        assert_eq!(row.iter().map(|(_, q)| *q).collect::<Vec<_>>(), [Quick::Calendar, Quick::Screenshot]);
+        assert!((row[1].0.right() - (cr.right() - 20.0)).abs() < 0.01, "packed to the right edge");
+        assert!(!texts(&app, 9.0, &mut engine).iter().any(|s| s == "Timer" || s == "5 min"));
+        assert!(!content::clock_chips(cr, app.clock_row()).iter().any(|(_, p)| *p == Panel::System));
+        assert!((app.pill_rect(9.0).h - full).abs() < 0.5, "the row is still there");
+        press_quick(&mut app, 9.0, Quick::Calendar);
+        assert!(matches!(app.open_content(&app.live(9.5)), OpenContent::Panel(Panel::Calendar)));
+
+        // With every quick button off the card loses the row's height.
+        let mut p = app.prefs().clone();
+        p.set_card_button("calendar", false).unwrap();
+        p.set_card_button("screenshot", false).unwrap();
+        app.set_prefs(p);
+        app.handle(Event::Key(Key::Escape), 10.0);
+        click(&mut app, 12.0);
+        assert!((full - app.pill_rect(16.0).h - content::QUICK_H).abs() < 0.5);
+
+        // Switching one back on brings it back.
+        let mut p = app.prefs().clone();
+        p.set_card_button("timer", true).unwrap();
+        app.set_prefs(p);
+        assert!(texts(&app, 17.0, &mut engine).iter().any(|s| s == "Timer"));
+    }
+
+    #[test]
+    fn island_styles_are_pro_and_a_notched_mac_stays_black() {
+        use islet_render::Skin;
+        let mut app = App::new(Demo::None, false);
+        let mut p = app.prefs().clone();
+        p.style = "tinted-glass".into();
+        p.accent = "pink".into();
+        app.set_prefs(p);
+        assert_eq!(app.frame(0.0).skin, Skin::default(), "free: solid black whatever the file says");
+
+        app.set_pro(true);
+        let skin = app.frame(0.0).skin;
+        assert!(skin.glass && skin.alpha < 1.0 && skin.color[0] > skin.color[1], "pink-tinted glass: {skin:?}");
+        let mut p = app.prefs().clone();
+        p.style = "tinted".into();
+        app.set_prefs(p);
+        let skin = app.frame(0.0).skin;
+        assert!(!skin.glass && skin.alpha == 1.0 && skin.color != [0, 0, 0]);
+
+        // The island grows out of a Mac's notch: it has to match it.
+        app.set_notch(Some((180.0, 32.0)), 0.0);
+        assert_eq!(app.frame(0.0).skin, Skin::default());
+    }
+
+    #[test]
+    fn shortcuts_open_from_control_centre_with_pro() {
+        use islet_core::prefs::Shortcut;
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        let mut p = app.prefs().clone();
+        p.shortcuts = vec![
+            Shortcut::new("Homework", "/home/me/School").unwrap(),
+            Shortcut::new("Mail", "https://mail.example.com").unwrap(),
+        ];
+        app.set_prefs(p);
+        click(&mut app, 0.0);
+        let cr = app.content_rect(app.pill_rect(5.0));
+        assert!(!content::clock_chips(cr, app.clock_row()).iter().any(|(_, p)| *p == Panel::Shortcuts), "free: none");
+
+        app.set_pro(true);
+        let (button, _) = *content::clock_chips(cr, app.clock_row())
+            .iter()
+            .find(|(_, p)| *p == Panel::Shortcuts)
+            .expect("Pro: a shortcuts button");
+        press(&mut app, button, 5.0);
+        let shown = texts(&app, 9.0, &mut engine);
+        assert!(shown.contains(&"Homework".to_string()) && shown.contains(&"Mail".to_string()), "{shown:?}");
+        assert!(app.accessibility(9.0).buttons.iter().any(|(n, _)| n == "Open Mail"));
+
+        // A tap opens it and closes the island.
+        let rows = content::list_rows(app.content_rect(app.pill_rect(9.0)), 2);
+        press(&mut app, rows[1], 9.0);
+        assert_eq!(app.take_ui_actions(), [UiAction::Shortcut("https://mail.example.com".into())]);
+        assert_eq!(app.presentation(), Idle);
+    }
+
+    #[test]
+    fn todo_list_ticks_and_removes_from_the_island() {
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        app.set_pro(true);
+        let mut todo = islet_core::todo::Todo::default();
+        let milk = todo.add("Buy milk").unwrap();
+        todo.add("Call mum").unwrap();
+        app.set_todo(todo);
+        click(&mut app, 0.0);
+        let cr = app.content_rect(app.pill_rect(5.0));
+        assert!(texts(&app, 5.0, &mut engine).iter().any(|s| s == "2"), "the button's badge counts what's left");
+        let (button, _) =
+            *content::clock_chips(cr, app.clock_row()).iter().find(|(_, p)| *p == Panel::Todo).expect("a to-do button");
+        press(&mut app, button, 5.0);
+        let shown = texts(&app, 9.0, &mut engine);
+        assert!(shown.contains(&"Buy milk".to_string()) && shown.contains(&"2 to do".to_string()), "{shown:?}");
+
+        // Tap the first row: ticked, saved, and it moves below the other.
+        let rows = content::list_rows(app.content_rect(app.pill_rect(9.0)), 2);
+        press(&mut app, rows[0], 9.0);
+        let saved = app.take_todo_changes().expect("saved after a tick");
+        assert!(saved.items.iter().find(|i| i.id == milk).unwrap().done);
+        assert_eq!(app.todo.ordered()[1].id, milk);
+        assert!(texts(&app, 10.0, &mut engine).contains(&"1 to do".to_string()));
+
+        // The × on a row deletes it.
+        let r = rows[1];
+        let (x, y) = (r.x + r.w - 20.0, r.y + r.h / 2.0);
+        app.handle(Event::PointerDown { x, y, button: Button::Primary }, 11.0);
+        app.handle(Event::PointerUp { x, y, button: Button::Primary }, 11.05);
+        assert_eq!(app.take_todo_changes().map(|t| t.items.len()), Some(1));
+
+        // Typing happens in Settings: the footer opens it.
+        let footer = content::list_footer(app.content_rect(app.pill_rect(12.0)), 1);
+        press(&mut app, footer, 12.0);
+        assert_eq!(app.take_ui_actions(), [UiAction::Settings("pro".into())]);
+    }
+
+    #[test]
+    fn world_clocks_show_on_the_clock_card_with_pro() {
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        // 4 November 2026, 14:05 UTC; here is UTC.
+        app.set_wall(1_793_801_100.0, 0, 0.0);
+        let mut p = app.prefs().clone();
+        p.world_clocks = vec!["Tokyo".into(), "Atlantis".into(), "New York".into()];
+        app.set_prefs(p);
+        click(&mut app, 0.0);
+        let free_h = app.pill_rect(5.0).h;
+        assert!(!texts(&app, 5.0, &mut engine).iter().any(|s| s.starts_with("Tokyo")), "free: none");
+
+        app.set_pro(true);
+        app.sync_live(5.0);
+        let shown = texts(&app, 9.0, &mut engine);
+        assert!(shown.contains(&"Tokyo ".to_string()) && shown.contains(&"23:05".to_string()), "{shown:?}");
+        assert!(shown.contains(&"09:05".to_string()), "New York is on EST in November: {shown:?}");
+        assert!(app.pill_rect(9.0).h > free_h, "the card grows a line");
     }
 
     #[test]
@@ -3443,7 +4258,10 @@ mod tests {
         app.set_time(NOW, 0.0);
         click(&mut app, 0.0);
         let mut engine = TextEngine::new();
-        assert_eq!(texts(&app, 5.0, &mut engine), ["14:05", "Wednesday, 4 November", "Wi-Fi", "Bluetooth"]);
+        assert_eq!(
+            texts(&app, 5.0, &mut engine),
+            ["14:05", "Wednesday, 4 November", "5 min", "Timer", "Wi-Fi", "Bluetooth"]
+        );
         assert!((app.next_timer(5.0).unwrap() - 18.0).abs() < 1e-9, "wakes at the next minute");
         let later = LocalTime { minute: 6, second: 0, ..NOW };
         assert!(app.set_time(later, 23.0), "a new minute redraws");
@@ -3578,7 +4396,7 @@ mod tests {
         app.report(bt_list(true), 0.0);
         click(&mut app, 0.0);
         let cr = app.content_rect(app.pill_rect(5.0));
-        press(&mut app, content::clock_chips(cr, false, false)[1].0, 5.0);
+        press(&mut app, content::clock_chips(cr, ClockRow::default())[1].0, 5.0);
         app.take_conn_commands();
         // Five devices and the footer: four rows show, the card fits the
         // window, and scrolling reaches the fifth.
@@ -3672,7 +4490,8 @@ mod tests {
         app.set_time(NOW, t);
         click(app, t);
         let cr = app.content_rect(app.pill_rect(t + 4.0));
-        let (r, _) = content::clock_chips(cr, false, false).into_iter().find(|(_, p)| *p == Panel::System).unwrap();
+        let (r, _) =
+            content::clock_chips(cr, ClockRow::default()).into_iter().find(|(_, p)| *p == Panel::System).unwrap();
         let (x, y) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
         app.handle(Event::PointerMove { x, y }, t + 4.0);
         app.handle(Event::PointerDown { x, y, button: Button::Primary }, t + 4.0);
@@ -3826,7 +4645,7 @@ mod tests {
         app.set_time(NOW, 0.0);
         click(&mut app, 0.0);
         let cr = app.content_rect(app.pill_rect(5.0));
-        let chips = content::clock_chips(cr, false, true);
+        let chips = content::clock_chips(cr, ClockRow { clipboard: true, ..ClockRow::default() });
         let (chip, _) = chips.iter().find(|(_, p)| *p == Panel::Clipboard).copied().unwrap();
         press(&mut app, chip, 5.0);
         let mut engine = TextEngine::new();
@@ -4231,6 +5050,155 @@ mod tests {
         sheet.save_png(out).unwrap();
     }
 
+    /// The island's styles over a bright wallpaper, for visual review:
+    /// `ISLET_STYLE_SHEET=/path/out.png cargo test -p islet style_sheet`
+    #[test]
+    fn style_sheet() {
+        let Some(out) = std::env::var_os("ISLET_STYLE_SHEET") else { return };
+        use tiny_skia::{
+            Color, FillRule, GradientStop, LinearGradient, Paint, PathBuilder, Pixmap, PixmapPaint, Point,
+            Rect as SkRect, SpreadMode, Transform,
+        };
+        let mut engine = TextEngine::new();
+        let looks = [("black", "blue"), ("tinted", "blue"), ("glass", "blue"), ("tinted-glass", "pink")];
+        let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
+        let mut sheet = Pixmap::new(cw * 2, ch * 3).unwrap();
+        // A wallpaper with light and dark parts and a few bright shapes.
+        let wall = LinearGradient::new(
+            Point::from_xy(0.0, 0.0),
+            Point::from_xy(cw as f32 * 2.0, ch as f32 * 3.0),
+            vec![
+                GradientStop::new(0.0, Color::from_rgba8(255, 190, 120, 255)),
+                GradientStop::new(0.5, Color::from_rgba8(240, 110, 160, 255)),
+                GradientStop::new(1.0, Color::from_rgba8(70, 110, 230, 255)),
+            ],
+            SpreadMode::Pad,
+            Transform::identity(),
+        )
+        .unwrap();
+        let all = SkRect::from_xywh(0.0, 0.0, cw as f32 * 2.0, ch as f32 * 3.0).unwrap();
+        sheet.fill_rect(all, &Paint { shader: wall, ..Paint::default() }, Transform::identity(), None);
+        for (i, color) in [(255, 255, 255), (30, 30, 60), (255, 240, 120)].into_iter().enumerate() {
+            let mut p = Paint::default();
+            p.set_color_rgba8(color.0, color.1, color.2, 200);
+            p.anti_alias = true;
+            let circle = PathBuilder::from_circle(200.0 + i as f32 * 260.0, 60.0 + i as f32 * 250.0, 110.0).unwrap();
+            sheet.fill_path(&circle, &p, FillRule::Winding, Transform::identity(), None);
+        }
+        let make = |style: &str, accent: &str, music: bool| {
+            let mut a = App::new(Demo::None, false);
+            a.set_time(NOW, 0.0);
+            a.set_pro(true);
+            let mut p = a.prefs().clone();
+            p.style = style.into();
+            p.accent = accent.into();
+            a.set_prefs(p);
+            if music {
+                a.report(Report::Media(Some(song(true))), 0.0);
+                a.tick(0.0);
+            } else {
+                click(&mut a, 0.0);
+            }
+            a
+        };
+        let mut apps: Vec<App> = looks.iter().map(|(s, c)| make(s, c, false)).collect();
+        apps.push(make("glass", "blue", true));
+        apps.push(make("tinted-glass", "green", true));
+        for (i, a) in apps.iter().enumerate() {
+            let t = 250.0;
+            let mut cell = Pixmap::new(cw, ch).unwrap();
+            let frame = a.frame(t);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, ch, 1.0);
+            let els = a.elements(t, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            let (x, y) = ((i % 2) as i32 * cw as i32, (i / 2) as i32 * ch as i32 + 12);
+            sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+        }
+        sheet.save_png(out).unwrap();
+    }
+
+    /// The clock card, calendar, stopwatch and to-do list for visual review:
+    /// `ISLET_PRO_SHEET=/path/out.png cargo test -p islet pro_sheet`
+    #[test]
+    fn pro_sheet() {
+        let Some(out) = std::env::var_os("ISLET_PRO_SHEET") else { return };
+        use content::Quick;
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let mut engine = TextEngine::new();
+        let open = |pro: bool| {
+            let mut a = App::new(Demo::None, false);
+            a.set_time(NOW, 0.0);
+            a.set_wall(1_793_801_100.0, 0, 0.0);
+            a.set_pro(pro);
+            a.set_alarms(vec![Alarm { id: 1, hour: 7, minute: 30, label: "Up".into(), days: 0, enabled: true }]);
+            let mut p = a.prefs().clone();
+            p.world_clocks = vec!["London".into(), "Tokyo".into()];
+            a.set_prefs(p);
+            let mut todo = islet_core::todo::Todo::default();
+            for (i, s) in ["Buy milk", "Call mum", "Finish the essay"].iter().enumerate() {
+                let id = todo.add(s).unwrap();
+                if i == 0 {
+                    todo.toggle(id);
+                }
+            }
+            a.set_todo(todo);
+            let at = |d: i64, h: i64| 1_793_750_400 + (d - 4) * 86_400 + h * 3600;
+            let ev = |summary: &str, start, end, all_day| islet_core::calendar::CalEvent {
+                summary: summary.into(),
+                start,
+                end,
+                all_day,
+                location: None,
+            };
+            let events = vec![
+                ev("Dentist", at(4, 16), at(4, 17), false),
+                ev("Football practice", at(5, 9), at(5, 10), false),
+                ev("Trip to Jinja", at(20, 0), at(22, 0), true),
+            ];
+            a.report(Report::Calendar(Some(events)), 0.0);
+            click(&mut a, 0.0);
+            a
+        };
+        let free = open(false);
+        let pro = open(true);
+        let mut calendar = open(true);
+        press_quick(&mut calendar, 5.0, Quick::Calendar);
+        let panel = |p: Panel| {
+            let mut a = open(true);
+            let cr = a.content_rect(a.pill_rect(5.0));
+            let (r, _) = *content::clock_chips(cr, a.clock_row()).iter().find(|(_, x)| *x == p).unwrap();
+            press(&mut a, r, 5.0);
+            a
+        };
+        let todo = panel(Panel::Todo);
+        let mut stopwatch = panel(Panel::Stopwatch);
+        let [_, (start, _)] = content::stopwatch_controls(stopwatch.card_rect(9.0));
+        press(&mut stopwatch, start, 9.0);
+        let [(lap, _), _] = content::stopwatch_controls(stopwatch.card_rect(40.0));
+        press(&mut stopwatch, lap, 40.0);
+        let mut pill = open(true);
+        pill.stopwatch_command(StopwatchCommand::Start, 6.0);
+        pill.handle(Event::Key(Key::Escape), 7.0);
+        pill.tick(8.0);
+        let apps = [free, pro, calendar, todo, stopwatch, pill];
+        let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
+        let mut sheet = Pixmap::new(cw * 2, ch * 3).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        for (i, a) in apps.iter().enumerate() {
+            let t = 250.0;
+            let mut cell = Pixmap::new(cw, ch).unwrap();
+            let frame = a.frame(t);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, ch, 1.0);
+            let els = a.elements(t, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            let (x, y) = ((i % 2) as i32 * cw as i32, (i / 2) as i32 * ch as i32);
+            sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+        }
+        sheet.save_png(out).unwrap();
+    }
+
     /// Wi-Fi and Bluetooth screens for visual review:
     /// `ISLET_CONN_SHEET=/path/out.png cargo test -p islet conn_sheet`
     #[test]
@@ -4280,7 +5248,7 @@ mod tests {
             click(&mut a, 0.0);
             if let Some(i) = panel {
                 let cr = a.content_rect(a.pill_rect(5.0));
-                press(&mut a, content::clock_chips(cr, false, false)[i].0, 5.0);
+                press(&mut a, content::clock_chips(cr, ClockRow::default())[i].0, 5.0);
                 if fail {
                     a.report(
                         Report::Connectivity(ConnUpdate::Failed {

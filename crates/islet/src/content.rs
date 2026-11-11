@@ -10,6 +10,7 @@ use islet_core::connectivity::{self, BtState, Connectivity, WifiState};
 use islet_core::geometry::Rect;
 use islet_core::lyrics::{self, Lyrics};
 use islet_core::nav;
+use islet_core::stopwatch::{self, Stopwatch};
 use islet_core::timer::{self, Phase, Timer};
 use islet_render::elements::{Element, Icon};
 use islet_render::text::{Align, TextEngine, TextItem, TextStyle};
@@ -60,6 +61,14 @@ pub enum Panel {
     System,
     /// Recently copied texts (when clipboard history is on).
     Clipboard,
+    /// The stopwatch before it starts (Islet Pro).
+    Stopwatch,
+    /// Quick notes and to-dos (Islet Pro).
+    Todo,
+    /// A month's days, with the calendar link's events.
+    Calendar,
+    /// The user's own buttons (Islet Pro).
+    Shortcuts,
 }
 
 /// What a tap on the clock card or a list lands on.
@@ -84,6 +93,217 @@ pub enum ConnHit {
     Menu(usize),
     /// Lyrics timing: earlier (−1) or later (+1).
     LyricsShift(i8),
+    /// The clock card's second row: quick timer, calendar, screenshot, lock.
+    Quick(Quick),
+    /// The calendar card: the month before (−1) or after (+1).
+    Month(i8),
+}
+
+/// The clock card's quick actions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Quick {
+    /// The quick timer: fewer (−1) or more (+1) minutes.
+    Step(i8),
+    /// Start the quick timer.
+    Start,
+    Calendar,
+    Screenshot,
+    Lock,
+}
+
+/// The quick timer's lengths, in minutes.
+pub const QUICK_MINUTES: [u32; 12] = [1, 2, 3, 5, 10, 15, 20, 25, 30, 45, 60, 90];
+/// Where the quick timer starts (5 minutes).
+pub const QUICK_DEFAULT: usize = 3;
+/// Height the quick row adds to the clock card.
+pub const QUICK_H: f64 = 42.0;
+
+/// The clock card's second row: − 5 min + and Start on the left; calendar,
+/// screenshot and lock on the right.
+/// The buttons the user switched off in Settings are left out; the round
+/// ones keep to the right.
+pub fn quick_row(pill: Rect, row: ClockRow) -> Vec<(Rect, Quick)> {
+    let (x, w) = (pill.x + PAD, pill.w - 2.0 * PAD);
+    let y = pill.y + 164.0 + if row.world { WORLD_H } else { 0.0 };
+    let (h, right) = (32.0, x + w);
+    let mut v = Vec::new();
+    if !row.no_timer {
+        v.push((Rect::new(x, y, 30.0, h), Quick::Step(-1)));
+        v.push((Rect::new(x + 88.0, y, 30.0, h), Quick::Step(1)));
+        v.push((Rect::new(x + 124.0, y, 76.0, h), Quick::Start));
+    }
+    let round: Vec<Quick> =
+        [(row.no_calendar, Quick::Calendar), (row.no_screenshot, Quick::Screenshot), (row.no_lock, Quick::Lock)]
+            .into_iter()
+            .filter(|(hidden, _)| !hidden)
+            .map(|(_, q)| q)
+            .collect();
+    for (i, q) in round.iter().enumerate() {
+        let from_right = (round.len() - i) as f64;
+        v.push((Rect::new(right - from_right * 32.0 - (from_right - 1.0) * 10.0, y, 32.0, h), *q));
+    }
+    v
+}
+
+/// The height the quick row takes: none when every button in it is off.
+pub fn quick_h(row: ClockRow) -> f64 {
+    if row.no_timer && row.no_calendar && row.no_screenshot && row.no_lock {
+        0.0
+    } else {
+        QUICK_H
+    }
+}
+
+pub fn quick_row_elements(pill: Rect, row: ClockRow, minutes: u32, o: f32) -> Vec<Element> {
+    let mut v = Vec::new();
+    let buttons = quick_row(pill, row);
+    // The stepper: one capsule holding −, the length and +.
+    let find = |q: Quick| buttons.iter().find(|(_, b)| *b == q).map(|(r, _)| *r);
+    if let (Some(minus), Some(plus)) = (find(Quick::Step(-1)), find(Quick::Step(1))) {
+        v.extend(quick_stepper(minus, plus, minutes, o));
+    }
+    v.extend(quick_buttons(&buttons, o));
+    v
+}
+
+/// − 5 min + in one capsule.
+fn quick_stepper(minus: Rect, plus: Rect, minutes: u32, o: f32) -> Vec<Element> {
+    let mut v = Vec::new();
+    let (sx, sy, sw, sh) = (minus.x as f32, minus.y as f32, (plus.right() - minus.x) as f32, minus.h as f32);
+    v.push(Element::Bar { x: sx, y: sy, w: sw, h: sh, color: WHITE, opacity: o * 0.14 });
+    v.push(Element::Bar { x: sx + 10.0, y: sy + sh / 2.0 - 1.0, w: 10.0, h: 2.0, color: WHITE, opacity: o });
+    v.push(Element::Icon {
+        icon: Icon::Plus,
+        x: plus.x as f32 + 8.0,
+        y: sy + 9.0,
+        size: 14.0,
+        color: WHITE,
+        opacity: o,
+    });
+    let label =
+        TextStyle { size: 13.0, weight: 600, opacity: o, align: Align::Center, tabular: true, ..TextStyle::default() };
+    v.push(text(format!("{minutes} min"), label, sx + sw / 2.0, sy + sh / 2.0 + 4.5));
+    v
+}
+
+/// Start, and the round calendar, screenshot and lock buttons.
+fn quick_buttons(buttons: &[(Rect, Quick)], o: f32) -> Vec<Element> {
+    let mut v = Vec::new();
+    let label =
+        TextStyle { size: 13.0, weight: 600, opacity: o, align: Align::Center, tabular: true, ..TextStyle::default() };
+    for (r, q) in buttons.iter().copied() {
+        let (x, y, w, h) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
+        let icon = match q {
+            Quick::Step(_) => continue,
+            Quick::Start => {
+                v.push(Element::Bar { x, y, w, h, color: ORANGE, opacity: o });
+                v.push(Element::Icon {
+                    icon: Icon::Play,
+                    x: x + 9.0,
+                    y: y + 9.0,
+                    size: 14.0,
+                    color: [0, 0, 0],
+                    opacity: o,
+                });
+                let style = TextStyle { color: [0, 0, 0], align: Align::Left, ..label };
+                v.push(text("Timer", style, x + 27.0, y + h / 2.0 + 4.5));
+                continue;
+            }
+            Quick::Calendar => Icon::Calendar,
+            Quick::Screenshot => Icon::Screenshot,
+            Quick::Lock => Icon::Lock,
+        };
+        v.push(Element::Bar { x, y, w, h, color: WHITE, opacity: o * 0.14 });
+        v.push(Element::Icon {
+            icon,
+            x: x + w / 2.0 - 9.0,
+            y: y + h / 2.0 - 9.0,
+            size: 18.0,
+            color: WHITE,
+            opacity: o,
+        });
+    }
+    v
+}
+
+/// Height of the calendar card.
+pub const CALENDAR_H: f64 = LIST_TOP + 16.0 + 6.0 * CAL_ROW + 12.0;
+const CAL_ROW: f64 = 23.0;
+
+/// The calendar card's ‹ and › buttons.
+pub fn calendar_arrows(pill: Rect) -> [(Rect, i8); 2] {
+    let y = pill.y + 15.0;
+    [
+        (Rect::new(pill.right() - PAD - 62.0, y, 28.0, 28.0), -1),
+        (Rect::new(pill.right() - PAD - 28.0, y, 28.0, 28.0), 1),
+    ]
+}
+
+/// A month: its days in a Monday-first grid, today ringed, days with events
+/// dotted; the next events beside it.
+#[allow(clippy::too_many_arguments)]
+pub fn expanded_calendar(
+    pill: Rect,
+    (year, month): (i32, u8),
+    today: &LocalTime,
+    event_days: &[u8],
+    upcoming: &[(String, String)],
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
+    use islet_core::calendar::{days_in_month, weekday_of};
+    let title = format!("{} {year}", islet_core::clock::month_name(month));
+    let mut v = list_header_elements(pill, Icon::Calendar, &title, None, o, engine);
+    for (r, dir) in calendar_arrows(pill) {
+        let (x, y, s) = (r.x as f32, r.y as f32, r.w as f32);
+        v.push(Element::Bar { x, y, w: s, h: s, color: WHITE, opacity: o * 0.16 });
+        let icon = if dir < 0 { Icon::Back } else { Icon::Forward };
+        v.push(Element::Icon { icon, x: x + 6.0, y: y + 6.0, size: 16.0, color: WHITE, opacity: o });
+    }
+    let (left, top) = (pill.x as f32 + PAD as f32, (pill.y + LIST_TOP) as f32);
+    let col = 28.0f32;
+    let head = TextStyle { size: 10.5, weight: 600, opacity: o * 0.45, align: Align::Center, ..TextStyle::default() };
+    for (i, d) in ["M", "T", "W", "T", "F", "S", "S"].iter().enumerate() {
+        v.push(text(*d, head, left + col * (i as f32 + 0.5), top + 9.0));
+    }
+    // Monday-first column of the 1st.
+    let first = (weekday_of(year, month, 1) + 6) % 7;
+    let is_now = today.year == year && today.month == month;
+    let day =
+        TextStyle { size: 12.5, weight: 500, opacity: o, align: Align::Center, tabular: true, ..TextStyle::default() };
+    for d in 1..=days_in_month(year, month) {
+        let cell = usize::from(first) + usize::from(d) - 1;
+        let (cx, cy) =
+            (left + col * ((cell % 7) as f32 + 0.5), top + 16.0 + CAL_ROW as f32 * ((cell / 7) as f32 + 0.5));
+        let today_cell = is_now && today.day == d;
+        if today_cell {
+            v.push(Element::Ring { cx, cy, r: 5.0, width: 10.0, fraction: 1.0, color: accent(), opacity: o });
+        }
+        let weekend = cell % 7 >= 5;
+        let style = TextStyle {
+            weight: if today_cell { 700 } else { 500 },
+            opacity: if weekend && !today_cell { o * 0.55 } else { o },
+            ..day
+        };
+        v.push(text(d.to_string(), style, cx, cy + 4.5));
+        if event_days.contains(&d) && !today_cell {
+            v.push(Element::Ring { cx, cy: cy + 9.5, r: 0.8, width: 1.6, fraction: 1.0, color: RED, opacity: o });
+        }
+    }
+    // What's coming up, beside the grid.
+    let (ex, ew) = (left + col * 7.0 + 14.0, pill.right() as f32 - PAD as f32 - (left + col * 7.0 + 14.0));
+    let when = TextStyle { size: 11.0, weight: 600, opacity: o * 0.55, ..TextStyle::default() };
+    let what = TextStyle { size: 12.5, weight: 600, opacity: o, ..TextStyle::default() };
+    if upcoming.is_empty() {
+        v.push(text("No events", when, ex, top + 26.0));
+    }
+    for (i, (time, name)) in upcoming.iter().take(4).enumerate() {
+        let y = top + 12.0 + i as f32 * 36.0;
+        v.push(Element::Bar { x: ex, y, w: 2.5, h: 28.0, color: RED, opacity: o });
+        v.push(text(engine.ellipsize(time, &when, ew - 10.0), when, ex + 9.0, y + 11.0));
+        v.push(text(engine.ellipsize(name, &what, ew - 10.0), what, ex + 9.0, y + 25.0));
+    }
+    v
 }
 
 pub const ROW_H: f64 = 36.0;
@@ -402,6 +622,7 @@ pub fn compact_width(live: &Live) -> f64 {
         | Live::Navigation(_)
         | Live::Alarm(_)
         | Live::Timer(_)
+        | Live::Stopwatch(_)
         | Live::Hud(_)
         | Live::Event { .. }
         | Live::Call(_) => COMPACT_MEDIA_W,
@@ -490,6 +711,9 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
     let cy = (pill.y + pill.h / 2.0) as f32;
     match live {
         Live::Timer(tm) => vec![timer_ring(tm, x + 20.0, cy, 8.5, t, o), countdown(tm, right - 14.0, cy, 15.0, t, o)],
+        Live::Stopwatch(sw) => {
+            vec![stopwatch_icon(sw, x + 10.0, cy, o), stopwatch_time(sw, right - 14.0, cy, 15.0, false, t, o)]
+        }
         Live::Custom(c) => {
             let color = custom_color(c);
             let title = TextStyle { size: 13.5, weight: 600, opacity: o, ..TextStyle::default() };
@@ -706,6 +930,9 @@ pub fn minimal(
     if let Live::Timer(tm) = primary {
         v.push(countdown(tm, pill.right() as f32 - 13.0, cy, 14.0, t, o));
     }
+    if let Live::Stopwatch(sw) = primary {
+        v.push(stopwatch_time(sw, pill.right() as f32 - 13.0, cy, 14.0, false, t, o));
+    }
     if let Live::Hud(h) = primary {
         v.extend(hud_trailing(h, pill.right() as f32 - 14.0, cy, 56.0, o));
     }
@@ -738,6 +965,7 @@ pub fn minimal(
             }),
             Live::Alarm(_) => v.push(bell(b.x, b.y, 20.0, t, o)),
             Live::Timer(tm) => v.push(timer_ring(tm, b.x, b.y, b.r - 7.5, t, o)),
+            Live::Stopwatch(sw) => v.push(stopwatch_icon(sw, b.x - 9.0, b.y, o)),
             Live::Custom(c) => v.push(custom_ring(c, b.x, b.y, b.r - 7.5, t, o)),
             Live::Note(_) => v.push(Element::Icon {
                 icon: Icon::Message,
@@ -817,6 +1045,7 @@ fn leading(live: &Live, x: f32, cy: f32, o: f32, h24: bool) -> Vec<Element> {
         Live::Hud(h) => {
             vec![Element::Icon { icon: hud_icon(h), x: x + 3.0, y: cy - 10.0, size: 20.0, color: WHITE, opacity: o }]
         }
+        Live::Stopwatch(sw) => vec![stopwatch_icon(sw, x + 3.0, cy, o)],
         Live::Timer(tm) => vec![Element::Ring {
             cx: x + 12.0,
             cy,
@@ -1040,6 +1269,105 @@ pub fn expanded_timer(pill: Rect, tm: &Timer, t: f64, o: f32, engine: &mut TextE
     v
 }
 
+/// The stopwatch's colour.
+pub const STOPWATCH: [u8; 3] = [100, 210, 255];
+
+/// The stopwatch icon, 18 px, its left edge at `x`, centred on `cy`.
+fn stopwatch_icon(sw: &Stopwatch, x: f32, cy: f32, o: f32) -> Element {
+    let opacity = o * if sw.running() { 1.0 } else { 0.6 };
+    Element::Icon { icon: Icon::Stopwatch, x, y: cy - 9.0, size: 18.0, color: STOPWATCH, opacity }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn stopwatch_time(sw: &Stopwatch, right: f32, cy: f32, size: f32, tenths: bool, t: f64, o: f32) -> Element {
+    let style = TextStyle {
+        size,
+        weight: 600,
+        opacity: o * if sw.running() { 1.0 } else { 0.6 },
+        tabular: true,
+        color: STOPWATCH,
+        align: Align::Right,
+    };
+    text(stopwatch::format(sw.elapsed(t), tenths), style, right, cy + size * 0.36)
+}
+
+/// Buttons of the stopwatch card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopwatchControl {
+    /// Lap while running; Reset while paused.
+    LapReset,
+    /// Start, Pause or Resume.
+    StartPause,
+}
+
+pub const STOPWATCH_H: f64 = 132.0;
+
+pub fn stopwatch_controls(pill: Rect) -> [(Rect, StopwatchControl); 2] {
+    let [(a, _), (b, _)] = alarm_controls(pill);
+    [(a, StopwatchControl::LapReset), (b, StopwatchControl::StartPause)]
+}
+
+/// The stopwatch card: the time to a tenth, the current lap and the last
+/// two, Lap/Reset and Start/Pause. `sw` is None before it is started.
+pub fn expanded_stopwatch(pill: Rect, sw: Option<&Stopwatch>, t: f64, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
+    let pad = PAD as f32;
+    let running = sw.is_some_and(Stopwatch::running);
+    let mut v = vec![Element::Icon {
+        icon: Icon::Stopwatch,
+        x: x + pad,
+        y: y + 25.0,
+        size: 26.0,
+        color: STOPWATCH,
+        opacity: o,
+    }];
+    let title_style = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
+    v.push(text("Stopwatch", title_style, x + pad + 38.0, y + 34.0));
+    let small = TextStyle { size: 13.0, opacity: o * 0.6, tabular: true, ..TextStyle::default() };
+    let sub = match sw {
+        None => "Ready".to_string(),
+        Some(sw) if sw.lap_count() == 0 => if running { "Running" } else { "Paused" }.to_string(),
+        Some(sw) => {
+            let mut parts = vec![format!("Lap {} {}", sw.lap_count() + 1, stopwatch::format(sw.current_lap(t), true))];
+            parts.extend(sw.laps().take(1).map(|(n, d)| format!("Lap {n} {}", stopwatch::format(d, true))));
+            parts.join("  ·  ")
+        }
+    };
+    v.push(text(engine.ellipsize(&sub, &small, w * 0.5), small, x + pad + 38.0, y + 53.0));
+    let big = TextStyle {
+        size: 34.0,
+        weight: 600,
+        opacity: o * if running || sw.is_none() { 1.0 } else { 0.6 },
+        tabular: true,
+        color: STOPWATCH,
+        align: Align::Right,
+    };
+    let elapsed = sw.map_or(0.0, |s| s.elapsed(t));
+    v.push(text(stopwatch::format(elapsed, true), big, x + w - pad, y + 38.0 + 34.0 * 0.36));
+    let label = TextStyle { size: 14.0, weight: 600, opacity: o, align: Align::Center, ..TextStyle::default() };
+    for (r, c) in stopwatch_controls(pill) {
+        let (bx, by, bw, bh) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
+        let (fill, alpha, word, color) = match c {
+            StopwatchControl::LapReset => {
+                let word = if running { "Lap" } else { "Reset" };
+                (WHITE, if sw.is_some() { 0.16 } else { 0.08 }, word, WHITE)
+            }
+            StopwatchControl::StartPause => {
+                let word = match sw {
+                    None => "Start",
+                    Some(_) if running => "Pause",
+                    Some(_) => "Resume",
+                };
+                (if running { ORANGE } else { GREEN }, 1.0, word, [0, 0, 0])
+            }
+        };
+        v.push(Element::Bar { x: bx, y: by, w: bw, h: bh, color: fill, opacity: o * alpha });
+        let text_o = if c == StopwatchControl::LapReset && sw.is_none() { 0.4 } else { 1.0 };
+        v.push(text(word, TextStyle { color, opacity: o * text_o, ..label }, bx + bw / 2.0, by + 22.0));
+    }
+    v
+}
+
 /// Height of the ringing-alarm card.
 pub const ALARM_H: f64 = 132.0;
 
@@ -1238,7 +1566,16 @@ fn parts_label(parts: &[(Part, u8)]) -> String {
 }
 
 /// The expanded clock (an open island with nothing live).
-pub fn expanded_clock(pill: Rect, now: &LocalTime, h24: bool, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+/// `alarm`: the next alarm, as "7:30 · in 8 h 15 min" (the date shortens to
+/// make room for it).
+pub fn expanded_clock(
+    pill: Rect,
+    now: &LocalTime,
+    h24: bool,
+    alarm: Option<&str>,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
     let rise = (1.0 - o) * 8.0; // content settles upward into place
     let (left, top) = (pill.x as f32 + 26.0, pill.y as f32 + rise);
     let (time, suffix) = format_time(now, h24);
@@ -1249,7 +1586,65 @@ pub fn expanded_clock(pill: Rect, now: &LocalTime, h24: bool, o: f32, engine: &m
         v.push(text(suffix, TextStyle { size: 20.0, ..time_style }, x, top + 74.0));
     }
     let date_style = TextStyle { size: 15.0, opacity: o * 0.6, ..TextStyle::default() };
-    v.push(text(format_date(now), date_style, left + 2.0, top + 102.0));
+    let Some(alarm) = alarm else {
+        v.push(text(format_date(now), date_style, left + 2.0, top + 102.0));
+        return v;
+    };
+    let date = islet_core::clock::format_date_short(now);
+    let x = left + 2.0 + engine.measure(&date, &date_style) + 10.0;
+    v.push(text(date, date_style, left + 2.0, top + 102.0));
+    v.push(Element::Icon { icon: Icon::Bell(0), x, y: top + 90.0, size: 14.0, color: ORANGE, opacity: o });
+    let alarm_style =
+        TextStyle { size: 13.0, weight: 600, opacity: o, color: ORANGE, tabular: true, ..TextStyle::default() };
+    // Stops short of the weather's credit line in the corner.
+    let room = (pill.right() - PAD) as f32 - 66.0 - (x + 18.0);
+    v.push(text(engine.ellipsize(alarm, &alarm_style, room), alarm_style, x + 18.0, top + 101.5));
+    v
+}
+
+/// "in 8 h 15 min", "in 12 min", "in 2 days".
+pub fn until_label(minutes: i64) -> String {
+    match minutes {
+        m if m < 60 => format!("in {m} min"),
+        m if m < 24 * 60 && m % 60 == 0 => format!("in {} h", m / 60),
+        m if m < 24 * 60 => format!("in {} h {} min", m / 60, m % 60),
+        m if m < 48 * 60 => "tomorrow".into(),
+        m => format!("in {} days", m / (24 * 60)),
+    }
+}
+
+/// World clocks under the date: "London 14:05 · Tokyo 22:05 +1".
+pub fn world_clocks(
+    pill: Rect,
+    clocks: &[(String, LocalTime, i32)],
+    h24: bool,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
+    let (left, top) = (pill.x as f32 + 28.0, pill.y as f32 + (1.0 - o) * 8.0);
+    let name = TextStyle { size: 13.0, opacity: o * 0.6, ..TextStyle::default() };
+    let time = TextStyle { size: 13.0, weight: 600, opacity: o, tabular: true, ..TextStyle::default() };
+    let mut v = Vec::new();
+    let mut x = left;
+    let max = (pill.right() - PAD) as f32;
+    for (i, (city, now, days)) in clocks.iter().enumerate() {
+        let (hm, suffix) = format_time(now, h24);
+        let when = match (suffix, days) {
+            (Some(s), 0) => format!("{hm} {s}"),
+            (Some(s), d) => format!("{hm} {s} {d:+}"),
+            (None, 0) => hm,
+            (None, d) => format!("{hm} {d:+}"),
+        };
+        let lead = if i == 0 { format!("{city} ") } else { format!("  ·  {city} ") };
+        let need = engine.measure(&lead, &name) + engine.measure(&when, &time);
+        if x + need > max {
+            break;
+        }
+        v.push(text(lead.clone(), name, x, top + 126.0));
+        x += engine.measure(&lead, &name);
+        v.push(text(when.clone(), time, x, top + 126.0));
+        x += engine.measure(&when, &time);
+    }
     v
 }
 
@@ -1293,14 +1688,58 @@ pub fn clock_weather(pill: Rect, w: &islet_core::weather::Weather, fahrenheit: b
 /// The Wi-Fi and Bluetooth buttons along the bottom of the clock card.
 /// The clock card's buttons: Wi-Fi and Bluetooth, plus the shelf when it
 /// has something on it.
-pub fn clock_chips(pill: Rect, shelf: bool, clipboard: bool) -> Vec<(Rect, Panel)> {
+/// What the clock card shows besides the time.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ClockRow {
+    /// The shelf has files on it.
+    pub shelf: bool,
+    pub clipboard: bool,
+    /// Islet Pro: the stopwatch and to-do buttons.
+    pub pro: bool,
+    /// To-dos left (a badge on the to-do button).
+    pub todo_left: usize,
+    /// The user has shortcuts of their own (Islet Pro).
+    pub shortcuts: bool,
+    /// A line of world clocks under the date.
+    pub world: bool,
+    /// Buttons the user switched off in Settings.
+    pub no_timer: bool,
+    pub no_calendar: bool,
+    pub no_screenshot: bool,
+    pub no_lock: bool,
+    pub no_system: bool,
+    pub no_todo: bool,
+    pub no_stopwatch: bool,
+}
+
+/// Height of the world-clock line.
+pub const WORLD_H: f64 = 22.0;
+
+pub fn clock_chips(pill: Rect, row: ClockRow) -> Vec<(Rect, Panel)> {
     let (x, w) = (pill.x + PAD, pill.w - 2.0 * PAD);
-    let y = pill.y + 122.0;
-    let panels: &[Panel] =
-        if shelf { &[Panel::Wifi, Panel::Bluetooth, Panel::Shelf] } else { &[Panel::Wifi, Panel::Bluetooth] };
-    // Labelled chips share the row; clipboard and system monitor are round
-    // icons at the end.
-    let icons: &[Panel] = if clipboard { &[Panel::Clipboard, Panel::System] } else { &[Panel::System] };
+    let y = pill.y + 122.0 + if row.world { WORLD_H } else { 0.0 };
+    let panels: &[Panel] = &[Panel::Wifi, Panel::Bluetooth];
+    // Wi-Fi and Bluetooth share the row with their names; the tools are
+    // round icons at the end (three labelled chips never fitted their names).
+    let mut icons = Vec::new();
+    if row.shelf {
+        icons.push(Panel::Shelf);
+    }
+    if row.shortcuts {
+        icons.push(Panel::Shortcuts);
+    }
+    if row.pro && !row.no_todo {
+        icons.push(Panel::Todo);
+    }
+    if row.pro && !row.no_stopwatch {
+        icons.push(Panel::Stopwatch);
+    }
+    if row.clipboard {
+        icons.push(Panel::Clipboard);
+    }
+    if !row.no_system {
+        icons.push(Panel::System);
+    }
     let n = panels.len() as f64;
     let icons_w = icons.len() as f64 * (SYSTEM_CHIP + 10.0);
     let cw = (w - icons_w - 10.0 * (n - 1.0)) / n;
@@ -1319,13 +1758,13 @@ pub fn clock_chip_elements(
     pill: Rect,
     c: &Connectivity,
     shelf: usize,
-    clipboard: bool,
+    row: ClockRow,
     o: f32,
     engine: &mut TextEngine,
 ) -> Vec<Element> {
     let mut v = Vec::new();
     let style = TextStyle { size: 13.0, weight: 600, opacity: o, ..TextStyle::default() };
-    for (r, panel) in clock_chips(pill, shelf > 0, clipboard) {
+    for (r, panel) in clock_chips(pill, row) {
         let (x, y, w, h) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
         let (icon, label, on) = match panel {
             Panel::Wifi => (
@@ -1338,9 +1777,22 @@ pub fn clock_chip_elements(
                 c.connected_device().map_or_else(|| "Bluetooth".into(), |d| d.name.clone()),
                 c.connected_device().is_some(),
             ),
-            Panel::Shelf => (Icon::Folder, format!("Shelf · {shelf}"), false),
-            Panel::System | Panel::Clipboard => {
-                let icon = if panel == Panel::System { Icon::Gauge } else { Icon::Clipboard };
+            Panel::Shelf
+            | Panel::System
+            | Panel::Clipboard
+            | Panel::Stopwatch
+            | Panel::Todo
+            | Panel::Calendar
+            | Panel::Shortcuts => {
+                let icon = match panel {
+                    Panel::Shelf => Icon::Folder,
+                    Panel::Shortcuts => Icon::Bolt,
+                    Panel::System => Icon::Gauge,
+                    Panel::Clipboard => Icon::Clipboard,
+                    Panel::Todo => Icon::Checklist,
+                    Panel::Calendar => Icon::Calendar,
+                    _ => Icon::Stopwatch,
+                };
                 v.push(Element::Bar { x, y, w, h, color: WHITE, opacity: o * 0.14 });
                 v.push(Element::Icon {
                     icon,
@@ -1350,11 +1802,53 @@ pub fn clock_chip_elements(
                     color: WHITE,
                     opacity: o,
                 });
+                // How many files or to-dos, in a badge on the corner.
+                let count = match panel {
+                    Panel::Shelf => shelf,
+                    Panel::Todo => row.todo_left,
+                    _ => 0,
+                };
+                if count > 0 {
+                    let n = if count > 9 { "9+".to_string() } else { count.to_string() };
+                    let badge = TextStyle {
+                        size: 10.0,
+                        weight: 700,
+                        opacity: o,
+                        align: Align::Center,
+                        tabular: true,
+                        ..TextStyle::default()
+                    };
+                    let (bx, by) = (x + w - 3.0, y + 3.0);
+                    v.push(Element::Ring {
+                        cx: bx,
+                        cy: by,
+                        r: 4.0,
+                        width: 8.0,
+                        fraction: 1.0,
+                        color: accent(),
+                        opacity: o,
+                    });
+                    v.push(text(n, badge, bx, by + 3.6));
+                }
                 continue;
             }
         };
         let bg = if on { accent() } else { WHITE };
         v.push(Element::Bar { x, y, w, h, color: bg, opacity: o * if on { 0.9 } else { 0.14 } });
+        // "Wi-Fi" and "Bluetooth" are never cut short: a crowded row shows
+        // the icon alone. A network's or device's name may be shortened.
+        let fits = engine.measure(&label, &style) <= w - 44.0;
+        if w < 84.0 || (!on && !fits) {
+            v.push(Element::Icon {
+                icon,
+                x: x + w / 2.0 - 9.0,
+                y: y + h / 2.0 - 9.0,
+                size: 18.0,
+                color: WHITE,
+                opacity: o,
+            });
+            continue;
+        }
         v.push(Element::Icon { icon, x: x + 10.0, y: y + h / 2.0 - 9.0, size: 18.0, color: WHITE, opacity: o });
         let label = engine.ellipsize(&label, &style, w - 44.0);
         v.push(text(label, style, x + 34.0, y + h / 2.0 + 4.5));
@@ -1473,7 +1967,9 @@ fn radio_header(pill: Rect, on: Option<bool>, status: Option<&str>, o: f32, engi
 /// What the Wi-Fi list's footer says, and whether it is a Settings button.
 pub fn wifi_footer(c: &Connectivity) -> Option<(String, bool)> {
     match (&c.failure, &c.wifi.note) {
-        (Some((_, Some(ssid))), _) => Some((format!("Enter the password for {ssid} in Settings"), true)),
+        // Short enough to fit the button whatever the network is called;
+        // Settings opens with that network chosen.
+        (Some((_, Some(_))), _) => Some(("Enter the password in Settings".into(), true)),
         (Some((msg, None)), _) => Some((msg.clone(), false)),
         (None, Some(note)) => Some((note.clone(), false)),
         _ => None,
@@ -1598,6 +2094,95 @@ pub fn expanded_shelf(
     v
 }
 
+/// The shortcuts list's footer button.
+pub const SHORTCUTS_EDIT: &str = "Edit shortcuts in Settings";
+
+/// Your own buttons: a tap opens the folder, file, script or page.
+pub fn expanded_shortcuts(
+    pill: Rect,
+    items: &[islet_core::prefs::Shortcut],
+    scroll: usize,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
+    let mut v = list_header_elements(pill, Icon::Bolt, "Shortcuts", None, o, engine);
+    let shown = shown_rows(items.len(), scroll, true);
+    let rows = list_rows(pill, shown);
+    v.extend(scroll_bar(pill, items.len(), scroll, true, o));
+    let name_style = TextStyle { size: 15.0, weight: 600, opacity: o, ..TextStyle::default() };
+    let small = TextStyle { size: 12.0, opacity: o * 0.5, align: Align::Right, ..TextStyle::default() };
+    for (r, item) in rows.iter().zip(items.iter().skip(scroll)) {
+        let (x, cy, rw) = (r.x as f32, (r.y + r.h / 2.0) as f32, r.w as f32);
+        let icon = if item.is_link() { Icon::Navigation } else { Icon::Folder };
+        v.push(Element::Icon { icon, x: x + 10.0, y: cy - 10.0, size: 20.0, color: accent_text(), opacity: o });
+        let kind = if item.is_link() { "Web" } else { "Open" };
+        let room = rw - 40.0 - 10.0 - engine.measure(kind, &small) - 12.0;
+        v.push(text(engine.ellipsize(&item.name, &name_style, room), name_style, x + 40.0, cy + 5.0));
+        v.push(text(kind, small, x + rw - 10.0, cy + 4.5));
+    }
+    if items.is_empty() {
+        let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
+        v.push(text("No shortcuts yet", style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
+    }
+    v.extend(list_footer_elements(pill, shown, SHORTCUTS_EDIT, true, o, engine));
+    v
+}
+
+/// The to-do list's footer button.
+pub const TODO_ADD: &str = "Add a note in Settings";
+
+/// Notes and to-dos: to do first, then done (dimmed). A tap ticks an item;
+/// × removes it. Typing happens in Settings (the island never takes the keyboard).
+pub fn expanded_todo(
+    pill: Rect,
+    todo: &islet_core::todo::Todo,
+    scroll: usize,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
+    let items = todo.ordered();
+    let left = todo.left();
+    let status = (!items.is_empty()).then(|| if left == 0 { "All done".to_string() } else { format!("{left} to do") });
+    let mut v = list_header_elements(pill, Icon::Checklist, "To-do", status.as_deref(), o, engine);
+    let shown = shown_rows(items.len(), scroll, true);
+    let rows = list_rows(pill, shown);
+    v.extend(scroll_bar(pill, items.len(), scroll, true, o));
+    let style = TextStyle { size: 14.5, weight: 500, opacity: o, ..TextStyle::default() };
+    for (r, item) in rows.iter().zip(items.iter().skip(scroll)) {
+        let (x, cy, rw) = (r.x as f32, (r.y + r.h / 2.0) as f32, r.w as f32);
+        if item.done {
+            v.push(Element::Ring { cx: x + 20.0, cy, r: 8.0, width: 8.0, fraction: 1.0, color: accent(), opacity: o });
+            v.push(Element::Icon { icon: Icon::Check, x: x + 14.0, y: cy - 6.0, size: 12.0, color: WHITE, opacity: o });
+        } else {
+            v.push(Element::Ring {
+                cx: x + 20.0,
+                cy,
+                r: 8.0,
+                width: 1.6,
+                fraction: 1.0,
+                color: WHITE,
+                opacity: o * 0.6,
+            });
+        }
+        let line = TextStyle { opacity: if item.done { o * 0.45 } else { o }, ..style };
+        v.push(text(engine.ellipsize(&item.text, &line, rw - 90.0), line, x + 40.0, cy + 5.0));
+        v.push(Element::Icon {
+            icon: Icon::Close,
+            x: x + rw - 28.0,
+            y: cy - 8.0,
+            size: 16.0,
+            color: WHITE,
+            opacity: o * 0.5,
+        });
+    }
+    if items.is_empty() {
+        let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
+        v.push(text("Nothing to do. Nice!", style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
+    }
+    v.extend(list_footer_elements(pill, shown, TODO_ADD, true, o, engine));
+    v
+}
+
 /// Clipboard history: newest first; a tap copies an entry again.
 pub fn expanded_clipboard(
     pill: Rect,
@@ -1679,7 +2264,7 @@ pub fn shelf_footer(items: usize, dragging: bool) -> Option<(String, bool)> {
     if dragging {
         Some(("Drop to keep here".into(), true))
     } else if items > 0 {
-        Some(("Files stay where they are; the shelf keeps a shortcut".into(), false))
+        Some(("Shortcuts only: your files stay where they are".into(), false))
     } else {
         None
     }
@@ -1716,10 +2301,12 @@ pub fn expanded_bluetooth(
             color: WHITE,
             opacity: o,
         });
-        let name = engine.ellipsize(&d.name, &name_style, rw - 140.0);
-        v.push(text(name, name_style, x + 40.0, cy + 5.0));
         let (label, color, alpha) =
             if d.connected { ("Connected", accent_text(), 1.0) } else { ("Not connected", WHITE, 0.6) };
+        // A long name stops clear of its status.
+        let room = rw - 40.0 - 10.0 - engine.measure(label, &state_style) - 12.0;
+        let name = engine.ellipsize(&d.name, &name_style, room);
+        v.push(text(name, name_style, x + 40.0, cy + 5.0));
         v.push(text(label, TextStyle { color, opacity: o * alpha, ..state_style }, x + rw - 10.0, cy + 4.5));
     }
     if b.devices.is_empty() {
@@ -1747,8 +2334,13 @@ pub enum MenuAction {
     Lyrics,
     /// Lyrics timing: − / + buttons at the row's right.
     LyricsTiming,
+    /// The sleep timer: off → 15 → 30 → 45 → 60 minutes → off.
+    Sleep,
     Quit,
 }
+
+/// The sleep timer's choices, in minutes.
+pub const SLEEP_MINUTES: [u32; 4] = [15, 30, 45, 60];
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MenuItem {
@@ -1764,14 +2356,22 @@ pub struct MenuItem {
 const MENU_TOP: f64 = 14.0;
 const MENU_ROW: f64 = 34.0;
 
+/// A row's height: the longest menu (seven rows) tightens up to fit the window.
+fn menu_row(rows: usize) -> f64 {
+    if rows > 6 {
+        MENU_ROW - 2.0
+    } else {
+        MENU_ROW
+    }
+}
+
 pub fn menu_height(rows: usize) -> f64 {
-    MENU_TOP + rows as f64 * MENU_ROW + 12.0
+    MENU_TOP + rows as f64 * menu_row(rows) + 12.0
 }
 
 pub fn menu_rows(pill: Rect, rows: usize) -> Vec<Rect> {
-    (0..rows)
-        .map(|i| Rect::new(pill.x + 14.0, pill.y + MENU_TOP + i as f64 * MENU_ROW, pill.w - 28.0, MENU_ROW))
-        .collect()
+    let h = menu_row(rows);
+    (0..rows).map(|i| Rect::new(pill.x + 14.0, pill.y + MENU_TOP + i as f64 * h, pill.w - 28.0, h)).collect()
 }
 
 /// The − and + buttons of the lyrics-timing row.

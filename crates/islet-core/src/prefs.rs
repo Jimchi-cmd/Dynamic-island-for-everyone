@@ -52,6 +52,9 @@ pub struct IslandPrefs {
     pub hotkey: String,
     /// Accent colour for buttons and highlights (see `ACCENTS`).
     pub accent: String,
+    /// What the island is made of (see `STYLES`): "black", or with Islet
+    /// Pro "tinted", "glass" or "tinted-glass".
+    pub style: String,
     /// Island size: "small", "medium" or "large" (applies on restart).
     pub size: String,
     /// Gap between the top of the screen and the island, in px (0–40;
@@ -60,18 +63,95 @@ pub struct IslandPrefs {
     /// The display to show the island on, by name ("" = the primary one,
     /// `ALL_DISPLAYS` = one island on every display).
     pub display: String,
+    /// World clocks on the clock card (Islet Pro): city names from
+    /// `worldclock::CITIES`, at most `worldclock::MAX`.
+    pub world_clocks: Vec<String>,
+    /// Your own buttons (Islet Pro): each opens a folder, file, script or
+    /// web page. At most `MAX_SHORTCUTS`.
+    pub shortcuts: Vec<Shortcut>,
+    /// Clock-card buttons the user switched off (ids from `CARD_BUTTONS`).
+    pub card_hidden: Vec<String>,
+}
+
+/// The clock card's optional buttons: id and name. Wi-Fi and Bluetooth
+/// always show.
+pub const CARD_BUTTONS: [(&str, &str); 7] = [
+    ("timer", "Quick timer"),
+    ("calendar", "Calendar"),
+    ("screenshot", "Screenshot"),
+    ("lock", "Lock"),
+    ("system", "System monitor"),
+    ("todo", "To-do list"),
+    ("stopwatch", "Stopwatch"),
+];
+
+/// A button of your own: a name, and what it opens (a path or an
+/// `https://` link). Paths open as they would from the file manager, so a
+/// script or program runs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Shortcut {
+    pub name: String,
+    pub target: String,
+}
+
+pub const MAX_SHORTCUTS: usize = 8;
+
+impl Shortcut {
+    /// A shortcut from what the user typed, or why it can't be one.
+    pub fn new(name: &str, target: &str) -> Result<Shortcut, String> {
+        let (name, target) = (name.trim(), target.trim());
+        if name.is_empty() || name.chars().count() > 40 {
+            return Err("Give the shortcut a short name.".into());
+        }
+        if target.is_empty() || target.len() > 1024 || target.starts_with('-') || target.contains(['\n', '\r', '\0']) {
+            return Err("Enter a folder, a file or an https:// link.".into());
+        }
+        // Links must be web links; anything else is a path on this computer.
+        if target.contains("://") && !target.starts_with("https://") && !target.starts_with("http://") {
+            return Err("Only https:// and http:// links can be opened.".into());
+        }
+        Ok(Shortcut { name: name.to_string(), target: target.to_string() })
+    }
+
+    pub fn is_link(&self) -> bool {
+        self.target.starts_with("https://") || self.target.starts_with("http://")
+    }
 }
 
 /// Accent colours: name and RGB.
-pub const ACCENTS: [(&str, [u8; 3]); 7] = [
+pub const ACCENTS: [(&str, [u8; 3]); 12] = [
     ("blue", [10, 132, 255]),
+    ("indigo", [98, 96, 238]),
     ("purple", [160, 100, 255]),
     ("pink", [255, 70, 140]),
     ("red", [255, 69, 58]),
     ("orange", [255, 150, 30]),
+    ("yellow", [250, 200, 20]),
+    ("lime", [150, 215, 40]),
     ("green", [40, 200, 100]),
+    ("mint", [70, 215, 180]),
     ("teal", [40, 190, 200]),
+    ("graphite", [150, 152, 162]),
 ];
+
+/// What the island is made of. "black" is free; the others are Islet Pro.
+/// - "tinted": a deep shade of the accent colour.
+/// - "glass": see-through dark glass with a bright rim.
+/// - "tinted-glass": the same, coloured by the accent.
+pub const STYLES: [&str; 4] = ["black", "tinted", "glass", "tinted-glass"];
+
+/// A style's body: colour, how solid it is (0..=1) and whether it has the
+/// glass sheen. Text stays white, so every body is dark enough to read on.
+pub fn style_body(style: &str, accent: [u8; 3]) -> ([u8; 3], f32, bool) {
+    // A deep shade: `share` of the accent over near-black.
+    let shade = |share: f32| accent.map(|c| (f32::from(c) * share + 6.0).round().min(255.0) as u8);
+    match style {
+        "tinted" => (shade(0.26), 1.0, false),
+        "glass" => ([22, 22, 26], 0.62, true),
+        "tinted-glass" => (shade(0.22), 0.66, true),
+        _ => ([0, 0, 0], 1.0, false),
+    }
+}
 
 /// `display` value for an island on every display.
 pub const ALL_DISPLAYS: &str = "all";
@@ -101,9 +181,13 @@ impl Default for IslandPrefs {
             downloads: false,
             hotkey: String::new(),
             accent: "blue".into(),
+            style: "black".into(),
             size: "medium".into(),
             offset: 0,
             display: String::new(),
+            world_clocks: Vec::new(),
+            shortcuts: Vec::new(),
+            card_hidden: Vec::new(),
         }
     }
 }
@@ -171,6 +255,24 @@ impl IslandPrefs {
 }
 
 impl IslandPrefs {
+    /// Did the user switch this clock-card button off?
+    pub fn hides(&self, button: &str) -> bool {
+        self.card_hidden.iter().any(|b| b == button)
+    }
+
+    /// Show or hide a clock-card button (see `CARD_BUTTONS`).
+    pub fn set_card_button(&mut self, button: &str, show: bool) -> Result<(), String> {
+        let (id, _) = CARD_BUTTONS
+            .iter()
+            .find(|(id, _)| *id == button)
+            .ok_or_else(|| format!("no such button: {button} (see: islet card)"))?;
+        self.card_hidden.retain(|b| b != id);
+        if !show {
+            self.card_hidden.push((*id).to_string());
+        }
+        Ok(())
+    }
+
     pub fn accent_rgb(&self) -> [u8; 3] {
         ACCENTS.iter().find(|(n, _)| n.eq_ignore_ascii_case(&self.accent)).map_or(ACCENTS[0].1, |(_, c)| *c)
     }
@@ -218,6 +320,43 @@ mod tests {
         assert!(p.volume_hud && !p.notifications && p.weather.is_none() && !p.calendar && !p.lyrics && !p.auto_hide);
         let p: IslandPrefs = serde_json::from_str(r#"{"volumeHud":false,"unknownKey":1}"#).unwrap();
         assert!(!p.volume_hud);
+    }
+
+    #[test]
+    fn every_style_stays_dark_enough_for_white_text() {
+        for (name, accent) in ACCENTS {
+            for style in STYLES {
+                let (c, alpha, glass) = style_body(style, accent);
+                // Relative luminance of the body itself (the worst case for
+                // glass is a white desktop behind it, checked below).
+                let lum = |c: [u8; 3]| {
+                    (0.2126 * f32::from(c[0]) + 0.7152 * f32::from(c[1]) + 0.0722 * f32::from(c[2])) / 255.0
+                };
+                assert!(lum(c) < 0.25, "{style} in {name} is too light: {c:?}");
+                let over_white = lum(c) * alpha + (1.0 - alpha);
+                assert!(over_white < 0.5, "{style} in {name} washes out on white: {over_white}");
+                assert_eq!(glass, style.contains("glass"));
+            }
+        }
+        assert_eq!(style_body("black", [255, 0, 0]), ([0, 0, 0], 1.0, false));
+        assert_eq!(style_body("nonsense", [255, 0, 0]).0, [0, 0, 0], "unknown styles are black");
+        assert_eq!(serde_json::from_str::<IslandPrefs>("{}").unwrap().style, "black");
+    }
+
+    #[test]
+    fn shortcuts_take_paths_and_web_links_only() {
+        let s = Shortcut::new("  Homework ", " /home/me/School ").unwrap();
+        assert_eq!((s.name.as_str(), s.target.as_str(), s.is_link()), ("Homework", "/home/me/School", false));
+        assert!(Shortcut::new("Docs", r"C:\Users\me\Documents").is_ok_and(|s| !s.is_link()));
+        assert!(Shortcut::new("Mail", "https://mail.example.com/inbox").is_ok_and(|s| s.is_link()));
+        // No other schemes, no option-looking targets, no empty names.
+        for bad in ["javascript://alert(1)", "file:///etc/passwd", "ms-settings://x", "--help", "", "a\nb"] {
+            assert!(Shortcut::new("x", bad).is_err(), "{bad:?}");
+        }
+        assert!(Shortcut::new(" ", "/tmp").is_err());
+        assert!(Shortcut::new(&"n".repeat(41), "/tmp").is_err());
+        // Old settings files have none.
+        assert!(serde_json::from_str::<IslandPrefs>("{}").unwrap().shortcuts.is_empty());
     }
 
     #[test]

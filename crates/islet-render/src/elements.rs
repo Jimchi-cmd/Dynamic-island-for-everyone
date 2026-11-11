@@ -63,6 +63,15 @@ pub enum Icon {
     Controls,
     /// A microphone; struck through when muted.
     Mic(bool),
+    /// A stopwatch: a dial with a button on top and a hand.
+    Stopwatch,
+    /// A checklist: three rows, the first ticked.
+    Checklist,
+    /// A screenshot: four corner brackets around a frame.
+    Screenshot,
+    /// A rubbish bin.
+    Trash,
+    Plus,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -409,6 +418,48 @@ impl IconPainter<'_> {
                 self.line((8.5, 12.0), (15.5, 12.0), 1.6);
                 self.line((8.5, 15.5), (13.5, 15.5), 1.6);
             }
+            Icon::Stopwatch => {
+                let dial = self.circle(12.0, 13.5, 7.5);
+                self.stroke(dial, 2.0);
+                self.line((10.0, 3.2), (14.0, 3.2), 2.0);
+                self.line((12.0, 3.2), (12.0, 6.0), 2.0);
+                self.line((17.6, 6.6), (18.9, 7.9), 2.0);
+                self.line((12.0, 13.5), (12.0, 9.2), 2.0);
+            }
+            Icon::Checklist => {
+                self.line((3.5, 6.8), (5.3, 8.6), 1.8);
+                self.line((5.3, 8.6), (8.3, 5.2), 1.8);
+                let a = self.circle(5.5, 12.5, 1.6);
+                self.stroke(a, 1.5);
+                let b = self.circle(5.5, 18.0, 1.6);
+                self.stroke(b, 1.5);
+                for y in [7.0, 12.5, 18.0] {
+                    self.line((10.5, y), (20.5, y), 1.8);
+                }
+            }
+            Icon::Screenshot => {
+                for (cx, cy, dx, dy) in
+                    [(4.0, 5.0, 1.0, 1.0), (20.0, 5.0, -1.0, 1.0), (4.0, 19.0, 1.0, -1.0), (20.0, 19.0, -1.0, -1.0)]
+                {
+                    self.line((cx, cy), (cx + 4.5 * dx, cy), 1.9);
+                    self.line((cx, cy), (cx, cy + 4.0 * dy), 1.9);
+                }
+                self.fill(rounded_rect(8.0, 9.0, 8.0, 6.0, 1.5));
+            }
+            Icon::Trash => {
+                self.line((4.5, 6.5), (19.5, 6.5), 1.9);
+                self.line((9.5, 6.5), (10.0, 3.8), 1.8);
+                self.line((10.0, 3.8), (14.0, 3.8), 1.8);
+                self.line((14.0, 3.8), (14.5, 6.5), 1.8);
+                let body = Self::poly(&[(6.3, 6.5), (17.7, 6.5), (16.6, 20.0), (7.4, 20.0)]);
+                self.stroke(body, 1.8);
+                self.line((10.2, 10.0), (10.4, 16.5), 1.6);
+                self.line((13.8, 10.0), (13.6, 16.5), 1.6);
+            }
+            Icon::Plus => {
+                self.line((12.0, 5.0), (12.0, 19.0), 2.2);
+                self.line((5.0, 12.0), (19.0, 12.0), 2.2);
+            }
             Icon::Gauge => {
                 // A three-quarter dial open at the bottom, needle up-right.
                 let mut pb = PathBuilder::new();
@@ -708,7 +759,12 @@ mod tests {
         p.pixels().iter().filter(|c| c.alpha() > 0).count()
     }
 
-    const ALL: [Icon; 48] = [
+    const ALL: [Icon; 53] = [
+        Icon::Stopwatch,
+        Icon::Checklist,
+        Icon::Screenshot,
+        Icon::Trash,
+        Icon::Plus,
         Icon::Mic(false),
         Icon::Mic(true),
         Icon::Back,

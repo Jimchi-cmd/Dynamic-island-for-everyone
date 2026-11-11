@@ -1,35 +1,51 @@
+/* Islet Settings: a calm, native-feeling look. System fonts only; every
+   icon is drawn in this project. */
 :root {
   color-scheme: light dark;
-  --bg: #f5f5f7;
+  --bg: #f2f2f6;
   --panel: #ffffff;
-  --sidebar: #ebebef;
+  --sidebar: rgba(226, 226, 233, 0.72);
+  --sidebar-edge: rgba(60, 60, 67, 0.12);
+  --field: rgba(118, 118, 128, 0.12);
+  --hover: rgba(118, 118, 128, 0.1);
   --text: #1d1d1f;
   --muted: #6e6e73;
-  --line: #d9d9de;
-  --accent: #0a66d8;
+  --line: rgba(60, 60, 67, 0.14);
+  --accent: #0a6fe8;
+  --accent-2: #3d8ef5;
   --accent-text: #ffffff;
+  --on: #2fb656;
+  --off: rgba(120, 120, 128, 0.3);
   --ok: #1e8e3e;
   --warn: #b25e00;
   --danger: #c5221f;
-  --radius: 10px;
-  font-family: system-ui, -apple-system, 'Segoe UI', Ubuntu, Cantarell, 'Noto Sans', sans-serif;
+  --shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 14px rgba(0, 0, 0, 0.03);
+  --radius: 12px;
+  font-family: system-ui, -apple-system, 'Segoe UI Variable Text', 'Segoe UI', Ubuntu, Cantarell, 'Noto Sans', sans-serif;
   font-size: 14px;
   line-height: 1.45;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1c1c1e;
-    --panel: #2c2c2e;
-    --sidebar: #232325;
+    --bg: #1b1b1f;
+    --panel: #29292e;
+    --sidebar: rgba(36, 36, 41, 0.78);
+    --sidebar-edge: rgba(255, 255, 255, 0.07);
+    --field: rgba(118, 118, 128, 0.24);
+    --hover: rgba(255, 255, 255, 0.07);
     --text: #f5f5f7;
-    --muted: #a1a1a6;
-    --line: #3a3a3c;
-    --accent: #4c9bff;
-    --accent-text: #0b1a2e;
+    --muted: #a1a1a8;
+    --line: rgba(255, 255, 255, 0.1);
+    --accent: #3b93ff;
+    --accent-2: #63aaff;
+    --accent-text: #ffffff;
+    --on: #32c95f;
+    --off: rgba(120, 120, 128, 0.42);
     --ok: #5ad27a;
     --warn: #ffb340;
     --danger: #ff6961;
+    --shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.3);
   }
 }
 
@@ -44,6 +60,15 @@ body {
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* A soft wash of colour behind everything, like light through a window. */
+body {
+  background:
+    radial-gradient(1100px 520px at 12% -12%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
+    radial-gradient(900px 480px at 110% 110%, color-mix(in srgb, #ff7ab8 10%, transparent), transparent 70%), var(--bg);
+  background-attachment: fixed;
 }
 
 #app {
@@ -57,10 +82,15 @@ h3 {
   font-weight: 650;
 }
 h1 {
-  font-size: 22px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 14px;
 }
 h2 {
-  font-size: 17px;
+  font-size: 15px;
+  letter-spacing: -0.005em;
+  margin-bottom: 4px;
 }
 p {
   margin: 0 0 10px;
@@ -68,45 +98,82 @@ p {
 
 button {
   font: inherit;
+  font-weight: 500;
   border-radius: 8px;
-  border: 1px solid var(--line);
+  border: 0;
   background: var(--panel);
+  box-shadow:
+    0 0 0 0.5px var(--line),
+    0 1px 1.5px rgba(0, 0, 0, 0.08);
   color: var(--text);
   padding: 6px 14px;
   cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    filter 0.12s ease,
+    background 0.15s ease;
+}
+button:hover:not(:disabled) {
+  filter: brightness(0.97);
+}
+button:active:not(:disabled) {
+  transform: scale(0.97);
 }
 button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: linear-gradient(180deg, var(--accent-2), var(--accent));
+  box-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--accent) 70%, #000),
+    0 1px 2px color-mix(in srgb, var(--accent) 40%, transparent);
   color: var(--accent-text);
   font-weight: 600;
 }
+button.primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
 button.link {
-  border: 0;
+  box-shadow: none;
   background: none;
   color: var(--accent);
   padding: 0;
 }
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: default;
 }
 button:focus-visible,
 input:focus-visible,
 select:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 1px;
 }
 
 input,
 select {
   font: inherit;
   color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--line);
+  background: var(--field);
+  border: 0;
   border-radius: 8px;
   padding: 7px 10px;
   width: 100%;
+  transition: background 0.15s ease;
+}
+input:hover,
+select:hover {
+  background: color-mix(in srgb, var(--field) 80%, var(--text) 6%);
+}
+input::placeholder {
+  color: color-mix(in srgb, var(--muted) 75%, transparent);
+}
+input[type='checkbox'],
+input[type='radio'] {
+  width: auto;
+  accent-color: var(--accent);
+}
+input[type='range'] {
+  padding: 0;
+  background: none;
+  accent-color: var(--accent);
 }
 
 label {
@@ -126,6 +193,23 @@ label {
 }
 .error {
   color: var(--danger);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 35%, transparent);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

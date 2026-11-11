@@ -22,6 +22,17 @@ pub fn allowed(args: &[String]) -> bool {
     match a.as_slice() {
         ["status", "--json"] | ["autostart", "on" | "off"] | ["nav", "stop"] | ["quit"] => true,
         ["key", "routes"] | ["key", "routes", "--clear"] | ["update", "check", "--json"] => true,
+        ["pro", "activate" | "check" | "deactivate"] | ["pro", "status", "--json"] => true,
+        ["stopwatch", "start" | "pause" | "resume" | "lap" | "reset"] => true,
+        ["world", "--json"] | ["world", "cities", "--json"] => true,
+        ["todo", "--json"] | ["todo", "add" | "clear-done"] => true,
+        ["todo", "done" | "remove", id] => id.parse::<u32>().is_ok(),
+        ["shortcut", "--json"] => true,
+        ["shortcut", "remove", n] => n.parse::<u8>().is_ok(),
+        ["shortcut", "add", "--name", name, "--target", target] => {
+            !name.starts_with('-') && islet_core::prefs::Shortcut::new(name, target).is_ok()
+        }
+        ["world", "add" | "remove", city] => islet_core::worldclock::find(city).is_some(),
         ["alarm", "list", "--json"] | ["alarm", "stop" | "snooze"] => true,
         ["wifi", "list", "--json"] | ["wifi", "list", "--scan", "--json"] | ["bt", "list", "--json"] => true,
         ["wifi", "connect", ssid] | ["wifi", "connect", ssid, "--password-stdin"] => !ssid.starts_with('-'),
@@ -40,6 +51,8 @@ pub fn allowed(args: &[String]) -> bool {
         ["hotkey", "off"] | ["wifi" | "bt", "on" | "off"] => true,
         ["hotkey", combo] => islet_core::hotkey::Hotkey::parse(combo).is_ok(),
         ["look", "accent", name] => islet_core::prefs::ACCENTS.iter().any(|(n, _)| n == name),
+        ["look", "style", name] => islet_core::prefs::STYLES.contains(name),
+        ["card", "show" | "hide", button] => islet_core::prefs::CARD_BUTTONS.iter().any(|(id, _)| id == button),
         ["look", "size", name] => islet_core::prefs::SIZES.iter().any(|(n, _)| n == name),
         ["displays", "--json"] | ["look", "display", "primary"] => true,
         ["places", q, "--json"] => !q.starts_with('-'),
@@ -344,6 +357,8 @@ mod tests {
         assert!(allowed(&args(&["wifi", "connect", "Cafe", "--password-stdin"])));
         assert!(!allowed(&args(&["wifi", "connect", "--evil"])));
         assert!(!allowed(&args(&[])), "running the island itself goes through start_island");
+        assert!(allowed(&args(&["pro", "activate"])) && allowed(&args(&["pro", "status", "--json"])));
+        assert!(!allowed(&args(&["pro", "activate", "KEY-ON-THE-COMMAND-LINE"])), "keys go through stdin");
     }
 
     #[test]
