@@ -319,6 +319,8 @@ Shows your arrival time with live traffic, and hands off to Google Maps or Waze.
 **Settings → General → Look**
 
 - **Show the island only when I point at it** (hover-only mode): the empty island disappears until you move the pointer to the top centre of the screen. Music, timers, pop-ups and anything else going on always show.
+- **Controls** (the sliders button on the clock card): a volume slider, a brightness slider where the computer lets Islet read and set the screen's brightness (Windows laptops, and Linux with GNOME or `brightnessctl`; not macOS), and a button that switches between the dark and the light look. Brightness is set when you let go of the slider and never goes all the way to black. On macOS the first switch of the look asks whether Islet may control System Events.
+- **Too many buttons:** the clock card's row holds Wi-Fi, Bluetooth and five tool buttons. With more switched on, hide the ones you don't use under **Clock card buttons**.
 - **Show the time when nothing is playing:** the time in the empty pill (on by default).
 - **Show weather, battery and processor when you point at it:** point at the empty island and it widens into a status strip: the weather (if you chose a place), the laptop's battery (green while charging, red at 20% or less) and how busy the processor is (orange from 90%), either side of the time. The processor is read only while you point, and the reading shows up after about a second. Not on a Mac with a notch, where the notch is in the way. On by default.
 - **Accent colour:** for buttons and switches on the island.

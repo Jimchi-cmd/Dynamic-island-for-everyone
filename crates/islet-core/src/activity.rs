@@ -193,6 +193,8 @@ pub enum Report {
     Stopwatch(Option<crate::stopwatch::Stopwatch>),
     /// Volume, brightness or caps lock changed.
     Hud(Hud),
+    /// The screen's brightness as read on request (no pop-up), 0..=1.
+    Brightness(f32),
     /// Current weather (None when weather is turned off).
     Weather(Option<crate::weather::Weather>),
     /// Upcoming calendar events (None when calendar is turned off).
@@ -552,7 +554,7 @@ impl Activities {
                 true
             }
             // The island keeps the history (it knows whether it's on).
-            Report::Clipboard(_) | Report::Lyrics(..) | Report::Volume(..) => false,
+            Report::Clipboard(_) | Report::Lyrics(..) | Report::Volume(..) | Report::Brightness(_) => false,
             Report::System(s) => {
                 self.system = s;
                 true

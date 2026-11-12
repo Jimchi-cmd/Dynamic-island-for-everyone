@@ -67,6 +67,8 @@ pub enum Panel {
     Todo,
     /// A month's days, with the calendar link's events.
     Calendar,
+    /// Volume and brightness sliders, and the dark-mode switch.
+    Controls,
     /// The user's own buttons (Islet Pro).
     Shortcuts,
 }
@@ -97,6 +99,8 @@ pub enum ConnHit {
     Quick(Quick),
     /// The calendar card: the month before (−1) or after (+1).
     Month(i8),
+    /// The Controls panel's dark / light switch.
+    DarkMode,
 }
 
 /// The clock card's quick actions.
@@ -1772,6 +1776,7 @@ pub struct ClockRow {
     pub no_screenshot: bool,
     pub no_lock: bool,
     pub no_system: bool,
+    pub no_controls: bool,
     pub no_todo: bool,
     pub no_stopwatch: bool,
 }
@@ -1785,24 +1790,31 @@ pub fn clock_chips(pill: Rect, row: ClockRow) -> Vec<(Rect, Panel)> {
     let panels: &[Panel] = &[Panel::Wifi, Panel::Bluetooth];
     // Wi-Fi and Bluetooth share the row with their names; the tools are
     // round icons at the end (three labelled chips never fitted their names).
-    let mut icons = Vec::new();
-    if row.shelf {
-        icons.push(Panel::Shelf);
-    }
-    if row.shortcuts {
-        icons.push(Panel::Shortcuts);
-    }
-    if row.pro && !row.no_todo {
-        icons.push(Panel::Todo);
-    }
-    if row.pro && !row.no_stopwatch {
-        icons.push(Panel::Stopwatch);
-    }
-    if row.clipboard {
-        icons.push(Panel::Clipboard);
-    }
-    if !row.no_system {
-        icons.push(Panel::System);
+    let wanted = [
+        (Panel::Shelf, row.shelf),
+        (Panel::Shortcuts, row.shortcuts),
+        (Panel::Todo, row.pro && !row.no_todo),
+        (Panel::Stopwatch, row.pro && !row.no_stopwatch),
+        (Panel::Clipboard, row.clipboard),
+        (Panel::System, !row.no_system),
+        (Panel::Controls, !row.no_controls),
+    ];
+    let mut icons: Vec<Panel> = wanted.iter().filter(|(_, on)| *on).map(|(p, _)| *p).collect();
+    // The row holds Wi-Fi, Bluetooth and at most `MAX_TOOLS` tools. With
+    // more switched on, the ones nearest the front of `KEEP` stay (the
+    // rest can be chosen in Settings → General → Clock card buttons).
+    if icons.len() > MAX_TOOLS {
+        const KEEP: [Panel; 7] = [
+            Panel::Shelf,
+            Panel::Controls,
+            Panel::System,
+            Panel::Todo,
+            Panel::Stopwatch,
+            Panel::Shortcuts,
+            Panel::Clipboard,
+        ];
+        let kept: Vec<Panel> = KEEP.iter().copied().filter(|p| icons.contains(p)).take(MAX_TOOLS).collect();
+        icons.retain(|p| kept.contains(p));
     }
     let n = panels.len() as f64;
     let icons_w = icons.len() as f64 * (SYSTEM_CHIP + 10.0);
@@ -1815,6 +1827,9 @@ pub fn clock_chips(pill: Rect, row: ClockRow) -> Vec<(Rect, Panel)> {
     }
     v
 }
+
+/// The most tool buttons the clock card's row has room for.
+pub const MAX_TOOLS: usize = 5;
 
 const SYSTEM_CHIP: f64 = 32.0;
 
@@ -1843,6 +1858,7 @@ pub fn clock_chip_elements(
             ),
             Panel::Shelf
             | Panel::System
+            | Panel::Controls
             | Panel::Clipboard
             | Panel::Stopwatch
             | Panel::Todo
@@ -1850,6 +1866,7 @@ pub fn clock_chip_elements(
             | Panel::Shortcuts => {
                 let icon = match panel {
                     Panel::Shelf => Icon::Folder,
+                    Panel::Controls => Icon::Controls,
                     Panel::Shortcuts => Icon::Bolt,
                     Panel::System => Icon::Gauge,
                     Panel::Clipboard => Icon::Clipboard,
@@ -2563,6 +2580,122 @@ pub fn idle_clock(pill: Rect, now: &LocalTime, h24: bool, o: f32, engine: &mut T
     if let Some(s) = suffix {
         v.push(text(s, small, left + tw + 3.0, baseline));
     }
+    v
+}
+
+// ---- Volume, brightness and dark mode -----------------------------------------
+
+/// A slider on the Controls panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tune {
+    Volume,
+    Brightness,
+}
+
+const TUNE_ROW: f64 = 40.0;
+
+/// The panel's height with one or two sliders above its button.
+pub fn controls_height(sliders: usize) -> f64 {
+    LIST_TOP + sliders.max(1) as f64 * TUNE_ROW + 50.0
+}
+
+/// Each slider's track: where it starts, where it ends, and its middle line.
+fn tune_track(pill: Rect, row: usize) -> (f64, f64, f64) {
+    (pill.x + PAD + 34.0, pill.right() - PAD - 50.0, pill.y + LIST_TOP + row as f64 * TUNE_ROW + TUNE_ROW / 2.0)
+}
+
+/// The sliders shown (volume first), with the area that grabs each.
+pub fn tune_sliders(pill: Rect, volume: bool, brightness: bool) -> Vec<(Rect, Tune)> {
+    [(Tune::Volume, volume), (Tune::Brightness, brightness)]
+        .into_iter()
+        .filter(|(_, on)| *on)
+        .enumerate()
+        .map(|(row, (tune, _))| {
+            let (left, right, cy) = tune_track(pill, row);
+            (Rect::new(left - 10.0, cy - 16.0, right - left + 20.0, 32.0), tune)
+        })
+        .collect()
+}
+
+/// The level (0..=1) for a pointer x on a slider (they share their span).
+pub fn tune_fraction(pill: Rect, x: f64) -> f32 {
+    let (left, right, _) = tune_track(pill, 0);
+    ((x - left) / (right - left)).clamp(0.0, 1.0) as f32
+}
+
+/// The button that switches between the dark and the light look.
+pub fn dark_mode_button(pill: Rect, sliders: usize) -> Rect {
+    Rect::new(pill.x + PAD, pill.y + LIST_TOP + sliders.max(1) as f64 * TUNE_ROW + 4.0, pill.w - 2.0 * PAD, 32.0)
+}
+
+/// The Controls panel: a slider each for volume and brightness (when the
+/// computer tells Islet the level), and the dark-mode switch.
+pub fn expanded_controls(
+    pill: Rect,
+    volume: Option<(f32, bool)>,
+    brightness: Option<f32>,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
+    let mut v = list_header_elements(pill, Icon::Controls, "Controls", None, o, engine);
+    let value = TextStyle {
+        size: 13.0,
+        weight: 600,
+        opacity: o * 0.7,
+        tabular: true,
+        align: Align::Right,
+        ..TextStyle::default()
+    };
+    let sliders = tune_sliders(pill, volume.is_some(), brightness.is_some());
+    for (row, (_, tune)) in sliders.iter().enumerate() {
+        let (left, right, cy) = tune_track(pill, row);
+        let (level, icon, dim) = match tune {
+            Tune::Volume => {
+                let (level, muted) = volume.unwrap_or((0.0, false));
+                let icon = if muted {
+                    Icon::Volume(255)
+                } else if level <= 0.001 {
+                    Icon::Volume(0)
+                } else {
+                    Icon::Volume(if level < 0.34 {
+                        1
+                    } else if level < 0.67 {
+                        2
+                    } else {
+                        3
+                    })
+                };
+                (level, icon, muted)
+            }
+            Tune::Brightness => (brightness.unwrap_or(0.0), Icon::Sun, false),
+        };
+        let x = (pill.x + PAD) as f32;
+        v.push(Element::Icon { icon, x, y: cy as f32 - 10.0, size: 20.0, color: WHITE, opacity: o });
+        v.extend(level_bar(level, right as f32, cy as f32, (right - left) as f32, dim, o));
+        // A round handle where the level is.
+        let hx = left as f32 + (right - left) as f32 * level.clamp(0.0, 1.0);
+        v.push(Element::Ring { cx: hx, cy: cy as f32, r: 3.5, width: 7.0, fraction: 1.0, color: WHITE, opacity: o });
+        let pct = format!("{}%", (level.clamp(0.0, 1.0) * 100.0).round() as i32);
+        v.push(text(pct, value, (pill.right() - PAD) as f32, cy as f32 + 4.5));
+    }
+    if sliders.is_empty() {
+        let note = TextStyle { size: 13.0, opacity: o * 0.6, ..TextStyle::default() };
+        v.push(text(
+            "No volume or brightness to set here",
+            note,
+            (pill.x + PAD) as f32,
+            (pill.y + LIST_TOP) as f32 + 24.0,
+        ));
+    }
+    let b = dark_mode_button(pill, sliders.len());
+    let (bx, by, bw, bh) = (b.x as f32, b.y as f32, b.w as f32, b.h as f32);
+    let label = TextStyle { size: 13.5, weight: 600, opacity: o, ..TextStyle::default() };
+    let words = "Switch dark / light mode";
+    let tw = engine.measure(words, &label);
+    let start = bx + (bw - tw - 24.0) / 2.0;
+    v.push(Element::Bar { x: bx, y: by, w: bw, h: bh, color: WHITE, opacity: o * 0.14 });
+    v.push(Element::Icon { icon: Icon::Moon, x: start, y: by + bh / 2.0 - 8.0, size: 16.0, color: WHITE, opacity: o });
+    v.push(text(words, label, start + 24.0, by + bh / 2.0 + 4.5));
     v
 }
 

@@ -316,6 +316,11 @@ fn run() -> platform::Result<()> {
         if let Some(level) = app.take_volume() {
             providers.set_volume(level);
         }
+        if let Some(level) = app.take_brightness() {
+            if !scripted {
+                quick::set_brightness(level);
+            }
+        }
         // A call started: read the microphone's mute switch for its card.
         if app.call_active() != call_on {
             call_on = !call_on;
@@ -441,7 +446,13 @@ fn run() -> platform::Result<()> {
                 UiAction::Screenshot if !scripted => quick::screenshot(),
                 UiAction::Lock if !scripted => quick::lock(),
                 UiAction::Shortcut(target) if !scripted => quick::open_shortcut(&target),
-                UiAction::Screenshot | UiAction::Lock | UiAction::Shortcut(_) => {}
+                UiAction::ReadBrightness if !scripted => quick::read_brightness(providers.sink()),
+                UiAction::DarkMode if !scripted => quick::toggle_dark_mode(),
+                UiAction::Screenshot
+                | UiAction::Lock
+                | UiAction::Shortcut(_)
+                | UiAction::ReadBrightness
+                | UiAction::DarkMode => {}
             }
         }
         let open = app.nav_card_open(t);

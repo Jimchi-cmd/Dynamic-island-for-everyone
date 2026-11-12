@@ -301,6 +301,7 @@ export const CARD_BUTTONS: { id: string; label: string; pro: boolean }[] = [
   { id: 'screenshot', label: 'Screenshot', pro: false },
   { id: 'lock', label: 'Lock', pro: false },
   { id: 'system', label: 'System monitor', pro: false },
+  { id: 'controls', label: 'Volume and brightness', pro: false },
   { id: 'todo', label: 'To-do list', pro: true },
   { id: 'stopwatch', label: 'Stopwatch', pro: true },
 ];

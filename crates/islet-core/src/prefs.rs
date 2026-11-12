@@ -84,12 +84,13 @@ pub struct IslandPrefs {
 
 /// The clock card's optional buttons: id and name. Wi-Fi and Bluetooth
 /// always show.
-pub const CARD_BUTTONS: [(&str, &str); 7] = [
+pub const CARD_BUTTONS: [(&str, &str); 8] = [
     ("timer", "Quick timer"),
     ("calendar", "Calendar"),
     ("screenshot", "Screenshot"),
     ("lock", "Lock"),
     ("system", "System monitor"),
+    ("controls", "Volume and brightness"),
     ("todo", "To-do list"),
     ("stopwatch", "Stopwatch"),
 ];

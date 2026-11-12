@@ -154,6 +154,10 @@ pub enum UiAction {
     Lock,
     /// Open one of the user's shortcuts: a path or a web link.
     Shortcut(String),
+    /// Read the screen's brightness for the Controls panel's slider.
+    ReadBrightness,
+    /// Switch between the dark and the light look.
+    DarkMode,
 }
 
 /// Windows has no public API to connect Bluetooth devices: its settings do.
@@ -311,6 +315,13 @@ pub struct App {
     volume: Option<(f32, bool)>,
     volume_out: Option<f32>,
     volume_set_at: f64,
+    /// The screen's brightness (0..=1), once the computer has told us; what
+    /// the slider asked for; and when (so its own change shows no pop-up).
+    brightness: Option<f32>,
+    brightness_out: Option<f32>,
+    brightness_set_at: f64,
+    /// The Controls slider being dragged.
+    tune: Option<content::Tune>,
     /// Microphone requests (mute, read), and the call's second shown.
     mic_commands: Vec<MicCommand>,
     call_sec: i64,
@@ -409,6 +420,10 @@ impl App {
             volume: None,
             volume_out: None,
             volume_set_at: f64::NEG_INFINITY,
+            brightness: None,
+            brightness_out: None,
+            brightness_set_at: f64::NEG_INFINITY,
+            tune: None,
             mic_commands: Vec::new(),
             call_sec: -1,
             streak: Default::default(),
@@ -957,6 +972,13 @@ impl App {
                 .find(|(r, _)| r.contains(x, y))
                 .map(|(_, dir)| ConnHit::Month(dir))
                 .or_else(|| content::list_header(cr).contains(x, y).then_some(ConnHit::Back)),
+            OpenContent::Panel(Panel::Controls) => {
+                if content::dark_mode_button(cr, self.tune_count()).contains(x, y) {
+                    Some(ConnHit::DarkMode)
+                } else {
+                    content::list_header(cr).contains(x, y).then_some(ConnHit::Back)
+                }
+            }
             OpenContent::Panel(p) => {
                 let (total, footer) = self.panel_list(p);
                 let scroll = self.scroll_of(p);
@@ -1103,6 +1125,49 @@ impl App {
         self.volume_out.take()
     }
 
+    /// The brightness its slider was let go at, since the last call.
+    pub fn take_brightness(&mut self) -> Option<f32> {
+        self.brightness_out.take()
+    }
+
+    /// How many sliders the Controls panel has to show.
+    fn tune_count(&self) -> usize {
+        usize::from(self.volume.is_some()) + usize::from(self.brightness.is_some())
+    }
+
+    /// The Controls slider under (x, y), while that panel is open.
+    fn tune_at(&self, x: f64, y: f64, t: f64) -> Option<content::Tune> {
+        if !self.island.presentation().is_open()
+            || !matches!(self.open_content(&self.live(t)), OpenContent::Panel(Panel::Controls))
+        {
+            return None;
+        }
+        let cr = self.content_rect(self.settled_pill());
+        content::tune_sliders(cr, self.volume.is_some(), self.brightness.is_some())
+            .into_iter()
+            .find(|(r, _)| r.contains(x, y))
+            .map(|(_, tune)| tune)
+    }
+
+    /// A Controls slider dragged to x. Volume follows the pointer; the
+    /// screen's brightness is set once, when the slider is let go.
+    fn tune_to(&mut self, tune: content::Tune, x: f64, t: f64) -> bool {
+        let level = content::tune_fraction(self.content_rect(self.settled_pill()), x);
+        match tune {
+            content::Tune::Volume => {
+                self.volume = Some((level, false));
+                self.volume_out = Some(level);
+                self.volume_set_at = t;
+            }
+            content::Tune::Brightness => {
+                // Never all the way to black: the screen must stay readable.
+                self.brightness = Some(level.max(0.05));
+                self.brightness_set_at = t;
+            }
+        }
+        true
+    }
+
     /// The playing song's key (`Track::key`).
     fn song_key(&self) -> Option<String> {
         let m = self.activities.media()?;
@@ -1122,7 +1187,7 @@ impl App {
             Panel::Wifi => (c.wifi.networks.len(), content::wifi_footer(c)),
             Panel::Bluetooth => (c.bt.devices.len(), content::bt_footer(c)),
             Panel::Shelf => (self.shelf.len(), content::shelf_footer(self.shelf.len(), self.dragging)),
-            Panel::System | Panel::Stopwatch | Panel::Calendar => (0, None),
+            Panel::System | Panel::Stopwatch | Panel::Calendar | Panel::Controls => (0, None),
             Panel::Todo => (self.todo.items.len(), Some((content::TODO_ADD.to_string(), true))),
             Panel::Shortcuts => (self.prefs.shortcuts.len(), Some((content::SHORTCUTS_EDIT.to_string(), true))),
             Panel::Clipboard => {
@@ -1164,6 +1229,8 @@ impl App {
                 match p {
                     Panel::Wifi => self.conn_commands.push(ConnCommand::ScanWifi),
                     Panel::Bluetooth => self.conn_commands.push(ConnCommand::ListBluetooth),
+                    // The slider needs the screen's brightness: ask for it.
+                    Panel::Controls => self.ui_actions.push(UiAction::ReadBrightness),
                     Panel::Shelf
                     | Panel::System
                     | Panel::Clipboard
@@ -1201,6 +1268,7 @@ impl App {
                     }
                 }
             }
+            ConnHit::DarkMode => self.ui_actions.push(UiAction::DarkMode),
             ConnHit::Month(dir) => {
                 let (y, m) = self.cal_month();
                 self.cal_view = Some(islet_core::calendar::shift_month(y, m, i32::from(dir)));
@@ -1295,7 +1363,7 @@ impl App {
                         self.todo_dirty = true;
                     }
                 }
-                Some(Panel::System | Panel::Stopwatch | Panel::Calendar) | None => {}
+                Some(Panel::System | Panel::Stopwatch | Panel::Calendar | Panel::Controls) | None => {}
             },
             ConnHit::Footer => match (self.panel, &c.failure) {
                 (Some(Panel::Wifi), Some((_, Some(ssid)))) => {
@@ -1465,6 +1533,7 @@ impl App {
                             }
                             Panel::Shelf => format!("Shelf, {} items", self.shelf.len()),
                             Panel::System => "System monitor".into(),
+                            Panel::Controls => "Volume and brightness".into(),
                             Panel::Stopwatch => "Stopwatch".into(),
                             Panel::Todo => format!("To-do, {} left", self.todo.left()),
                             Panel::Calendar => "Calendar".into(),
@@ -1488,6 +1557,17 @@ impl App {
                 }
                 OpenContent::Panel(p) => {
                     buttons.push(("Back".into(), content::list_header(cr)));
+                    if p == Panel::Controls {
+                        for (r, tune) in content::tune_sliders(cr, self.volume.is_some(), self.brightness.is_some()) {
+                            let (name, level) = match tune {
+                                content::Tune::Volume => ("Volume", self.volume.map_or(0.0, |v| v.0)),
+                                content::Tune::Brightness => ("Brightness", self.brightness.unwrap_or(0.0)),
+                            };
+                            buttons.push((format!("{name}, {}%", (level * 100.0).round() as i32), r));
+                        }
+                        let dark = content::dark_mode_button(cr, self.tune_count());
+                        buttons.push(("Switch dark / light mode".into(), dark));
+                    }
                     if p == Panel::Calendar {
                         for (r, dir) in content::calendar_arrows(cr) {
                             buttons.push((if dir < 0 { "Previous month" } else { "Next month" }.into(), r));
@@ -1528,7 +1608,7 @@ impl App {
                             .map(|d| format!("{}, {}", d.name, if d.connected { "connected" } else { "not connected" }))
                             .collect(),
                         Panel::Shelf => self.shelf.iter().map(|i| format!("Open {}", i.name())).collect(),
-                        Panel::System | Panel::Stopwatch | Panel::Calendar => Vec::new(),
+                        Panel::System | Panel::Stopwatch | Panel::Calendar | Panel::Controls => Vec::new(),
                         Panel::Shortcuts => self.prefs.shortcuts.iter().map(|s| format!("Open {}", s.name)).collect(),
                         Panel::Todo => self
                             .todo
@@ -1816,6 +1896,19 @@ impl App {
                 return self.island.presentation().is_open();
             }
         }
+        if let Report::Brightness(level) = r {
+            self.brightness = Some(level);
+            // The Controls panel grows a second slider.
+            self.sync_live(t);
+            return self.island.presentation().is_open();
+        }
+        if let Report::Hud(Hud::Brightness(level)) = &r {
+            // The slider's own change: keep its value, and no pop-up.
+            if t - self.brightness_set_at < 2.0 {
+                return self.island.presentation().is_open();
+            }
+            self.brightness = Some(*level);
+        }
         if let Report::Lyrics(key, l) = r {
             self.lyrics = Some((key, l));
             self.sync_live(t);
@@ -1948,6 +2041,7 @@ impl App {
             no_screenshot: self.prefs.hides("screenshot"),
             no_lock: self.prefs.hides("lock"),
             no_system: self.prefs.hides("system"),
+            no_controls: self.prefs.hides("controls"),
             no_todo: self.prefs.hides("todo"),
             no_stopwatch: self.prefs.hides("stopwatch"),
         }
@@ -2170,6 +2264,9 @@ impl App {
                 OpenContent::Panel(Panel::System) => {
                     out.extend(content::expanded_system(cr, self.activities.system(), eo, engine))
                 }
+                OpenContent::Panel(Panel::Controls) => {
+                    out.extend(content::expanded_controls(cr, self.volume, self.brightness, eo, engine))
+                }
                 // Shown as OpenContent::Stopwatch instead.
                 OpenContent::Panel(Panel::Stopwatch) => {}
                 OpenContent::Panel(Panel::Calendar) => {
@@ -2379,6 +2476,7 @@ impl App {
                                     content::list_height(c.bt.devices.len(), content::bt_footer(c).is_some())
                                 }
                                 Panel::System => content::SYSTEM_H,
+                                Panel::Controls => content::controls_height(self.tune_count()),
                                 Panel::Stopwatch => content::STOPWATCH_H,
                                 Panel::Todo => content::list_height(self.todo.items.len(), true),
                                 Panel::Calendar => content::CALENDAR_H,
@@ -2528,6 +2626,10 @@ impl App {
     pub fn handle(&mut self, e: Event, t: f64) -> bool {
         match e {
             Event::PointerMove { x, .. } if self.control == Some(Control::Volume) => self.volume_from(x, t),
+            Event::PointerMove { x, .. } if self.tune.is_some() => {
+                let tune = self.tune.unwrap_or(content::Tune::Volume);
+                self.tune_to(tune, x, t)
+            }
             Event::PointerMove { x, .. } if self.control == Some(Control::Scrub) => {
                 self.scrub = Some(content::scrub_fraction(self.card_rect(t), x));
                 true
@@ -2550,6 +2652,10 @@ impl App {
                 if let Some(link) = self.join_at(x, y, t) {
                     self.join_press = Some(link);
                     return true;
+                }
+                if let Some(tune) = self.tune_at(x, y, t) {
+                    self.tune = Some(tune);
+                    return self.tune_to(tune, x, t);
                 }
                 if let Some(h) = self.conn_hit_at(x, y, t) {
                     self.conn_hit = Some(h);
@@ -2627,6 +2733,14 @@ impl App {
                         TimerControl::Stop => TimerCommand::Stop,
                     };
                     return self.timer_command(cmd, t);
+                }
+                if let Some(tune) = self.tune.take() {
+                    self.tune_to(tune, x, t);
+                    if tune == content::Tune::Brightness {
+                        self.brightness_out = self.brightness;
+                        self.brightness_set_at = t;
+                    }
+                    return true;
                 }
                 if let Some(h) = self.conn_hit.take() {
                     return if self.conn_hit_at(x, y, t) == Some(h) { self.conn_act(h, t) } else { true };
@@ -4598,6 +4712,45 @@ mod tests {
         assert!(!texts(&playing, 5.0, &mut engine).contains(&"82%".to_string()));
     }
 
+    /// The Controls panel, for visual review:
+    /// `ISLET_CONTROLS_SHEET=/path/out.png cargo test -p islet controls_sheet`
+    #[test]
+    fn controls_sheet() {
+        let Some(out) = std::env::var_os("ISLET_CONTROLS_SHEET") else { return };
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let mut engine = TextEngine::new();
+        let mut both = App::new(Demo::None, false);
+        both.set_time(NOW, 0.0);
+        both.report(Report::Volume(0.45, false), 0.0);
+        open_panel(&mut both, Panel::Controls, 0.0);
+        both.report(Report::Brightness(0.8), 6.0);
+        let mut card = App::new(Demo::None, false);
+        card.set_time(NOW, 0.0);
+        card.set_pro(true);
+        click(&mut card, 0.0);
+        let apps = [both, card];
+        let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
+        let mut sheet = Pixmap::new(cw * 2, ch).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        for (i, a) in apps.iter().enumerate() {
+            let mut cell = Pixmap::new(cw, ch).unwrap();
+            let frame = a.frame(30.0);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, ch, 1.0);
+            let els = a.elements(30.0, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            sheet.draw_pixmap(
+                (i as u32 * cw) as i32,
+                0,
+                cell.as_ref(),
+                &PixmapPaint::default(),
+                Transform::identity(),
+                None,
+            );
+        }
+        sheet.save_png(out).unwrap();
+    }
+
     /// The hovered island's status strip, for visual review:
     /// `ISLET_STRIP_SHEET=/path/out.png cargo test -p islet strip_sheet`
     #[test]
@@ -4657,6 +4810,94 @@ mod tests {
             );
         }
         sheet.save_png(out).unwrap();
+    }
+
+    fn open_panel(app: &mut App, p: Panel, t: f64) {
+        click(app, t);
+        let cr = app.content_rect(app.pill_rect(t + 5.0));
+        let (r, _) = content::clock_chips(cr, app.clock_row()).into_iter().find(|(_, x)| *x == p).unwrap();
+        press(app, r, t + 5.0);
+    }
+
+    #[test]
+    fn the_controls_panel_sets_volume_brightness_and_the_look() {
+        use content::Tune;
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        app.report(Report::Volume(0.3, false), 0.0);
+        open_panel(&mut app, Panel::Controls, 0.0);
+        assert_eq!(app.take_ui_actions(), [UiAction::ReadBrightness], "opening asks for the screen's brightness");
+        let shown = texts(&app, 9.0, &mut engine);
+        assert!(shown.contains(&"Controls".to_string()) && shown.contains(&"30%".to_string()), "{shown:?}");
+        assert!((app.pill_rect(9.0).h - content::controls_height(1)).abs() < 0.5, "one slider so far");
+
+        // The reading arrives: a second slider, without a pop-up.
+        app.report(Report::Brightness(0.6), 9.5);
+        assert!(app.live(9.6).is_empty());
+        assert!((app.pill_rect(14.0).h - content::controls_height(2)).abs() < 0.5);
+        assert!(texts(&app, 14.0, &mut engine).contains(&"60%".to_string()));
+
+        // Dragging volume follows the pointer.
+        let cr = app.content_rect(app.pill_rect(14.0));
+        let sliders = content::tune_sliders(cr, true, true);
+        let (vol, _) = sliders.iter().find(|(_, t)| *t == Tune::Volume).unwrap();
+        let y = vol.y + vol.h / 2.0;
+        app.handle(Event::PointerDown { x: vol.x + 10.0, y, button: Button::Primary }, 15.0);
+        assert_eq!(app.take_volume(), Some(0.0));
+        app.handle(Event::PointerMove { x: vol.right() - 10.0, y }, 15.1);
+        assert_eq!(app.take_volume(), Some(1.0));
+        app.handle(Event::PointerUp { x: vol.right() - 10.0, y, button: Button::Primary }, 15.2);
+        assert_eq!(app.presentation(), Expanded, "the panel stays open");
+        // Brightness is set once, when the slider is let go, and never to black.
+        let (bri, _) = sliders.iter().find(|(_, t)| *t == Tune::Brightness).unwrap();
+        let by = bri.y + bri.h / 2.0;
+        app.handle(Event::PointerDown { x: bri.right() - 10.0, y: by, button: Button::Primary }, 16.0);
+        app.handle(Event::PointerMove { x: bri.x + 10.0, y: by }, 16.1);
+        assert_eq!(app.take_brightness(), None, "not while dragging");
+        app.handle(Event::PointerUp { x: bri.x + 10.0, y: by, button: Button::Primary }, 16.2);
+        assert_eq!(app.take_brightness(), Some(0.05));
+        // The computer's echo of that change shows no pop-up.
+        app.report(Report::Hud(Hud::Brightness(0.05)), 16.5);
+        assert!(app.live(16.6).is_empty());
+
+        // The button switches the look.
+        press(&mut app, content::dark_mode_button(cr, 2), 20.0);
+        assert_eq!(app.take_ui_actions(), [UiAction::DarkMode]);
+        let names: Vec<String> = app.accessibility(21.0).buttons.into_iter().map(|(n, _)| n).collect();
+        assert!(
+            names.contains(&"Volume, 100%".to_string()) && names.contains(&"Brightness, 5%".to_string()),
+            "{names:?}"
+        );
+
+        // Hidden in Settings, the button is gone from the clock card.
+        let mut off = App::new(Demo::None, false);
+        off.set_time(NOW, 0.0);
+        let mut p = IslandPrefs::default();
+        p.set_card_button("controls", false).unwrap();
+        off.set_prefs(p);
+        click(&mut off, 0.0);
+        let cr = off.content_rect(off.pill_rect(5.0));
+        assert!(!content::clock_chips(cr, off.clock_row()).iter().any(|(_, p)| *p == Panel::Controls));
+    }
+
+    #[test]
+    fn the_clock_card_never_squeezes_wifi_and_bluetooth_away() {
+        let pill = Rect::new(24.0, 0.0, 372.0, 232.0);
+        let everything = ClockRow { shelf: true, clipboard: true, pro: true, shortcuts: true, ..ClockRow::default() };
+        let chips = content::clock_chips(pill, everything);
+        let tools = chips.iter().filter(|(_, p)| !matches!(p, Panel::Wifi | Panel::Bluetooth)).count();
+        assert_eq!(tools, content::MAX_TOOLS, "seven are on, five fit");
+        assert!(chips.iter().all(|(r, _)| r.w >= 32.0), "every button keeps its size: {chips:?}");
+        for pair in chips.windows(2) {
+            assert!(pair[0].0.right() <= pair[1].0.x + 0.01, "no overlap: {pair:?}");
+        }
+        // The shelf (it only shows with files on it) and the newest tools stay.
+        for keep in [Panel::Shelf, Panel::Controls, Panel::System] {
+            assert!(chips.iter().any(|(_, p)| *p == keep), "{keep:?}");
+        }
+        // With few tools, nothing is dropped.
+        assert_eq!(content::clock_chips(pill, ClockRow::default()).len(), 4);
     }
 
     #[test]

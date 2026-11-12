@@ -179,6 +179,7 @@ fn describe(r: &Report) -> String {
             format!("lyrics for {key:?}: {}", l.as_ref().map_or(0, |l| l.lines.len()))
         }
         Report::Volume(level, muted) => format!("volume {level:.2} muted={muted}"),
+        Report::Brightness(level) => format!("brightness {level:.2}"),
         Report::MicMuted(m) => format!("microphone muted={m}"),
         Report::UpNext(u) => format!("up next: {:?}", u.as_ref().map(|(e, _)| &e.summary)),
     }
@@ -306,6 +307,11 @@ impl Providers {
     }
 
     /// Start or stop the system monitor (it runs only while its panel is open).
+    /// A way for one-off readers (the Controls panel's brightness) to report.
+    pub fn sink(&self) -> Sink {
+        self.sink.clone()
+    }
+
     pub fn sysmon(&self, on: bool) {
         let _ = self.sysmon.send(on);
     }
