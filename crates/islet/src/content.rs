@@ -563,6 +563,46 @@ pub fn expanded_custom(pill: Rect, c: &Custom, t: f64, o: f32, engine: &mut Text
     v
 }
 
+/// The performance alert is a script-style activity with this id, and a
+/// card of its own: two buttons where the progress bar would be.
+pub const HOG_ID: &str = "islet.hog";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HogButton {
+    Close,
+    Ignore,
+}
+
+pub fn hog_buttons(pill: Rect) -> [(Rect, HogButton); 2] {
+    let (x, y, w) = (pill.x + PAD, pill.y + 66.0, (pill.w - 2.0 * PAD - 10.0) / 2.0);
+    [(Rect::new(x, y, w, 34.0), HogButton::Ignore), (Rect::new(x + w + 10.0, y, w, 34.0), HogButton::Close)]
+}
+
+/// The alert's card: which program, what it is using, and what to do.
+pub fn expanded_hog(pill: Rect, c: &Custom, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+    let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
+    let pad = PAD as f32;
+    let title = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
+    let small = TextStyle { size: 13.0, opacity: o * 0.6, ..TextStyle::default() };
+    let room = w - 2.0 * pad - 38.0;
+    let mut v = vec![
+        Element::Icon { icon: Icon::Gauge, x: x + pad, y: y + 22.0, size: 26.0, color: ORANGE, opacity: o },
+        text(engine.ellipsize(&c.title, &title, room), title, x + pad + 38.0, y + 34.0),
+        text(engine.ellipsize(&c.subtitle, &small, room), small, x + pad + 38.0, y + 53.0),
+    ];
+    let label = TextStyle { size: 14.0, weight: 600, opacity: o, align: Align::Center, ..TextStyle::default() };
+    for (r, b) in hog_buttons(pill) {
+        let (bx, by, bw, bh) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
+        let (fill, alpha, word, color) = match b {
+            HogButton::Ignore => (WHITE, 0.16, "Ignore", WHITE),
+            HogButton::Close => (ORANGE, 1.0, "Close it", [0, 0, 0]),
+        };
+        v.push(Element::Bar { x: bx, y: by, w: bw, h: bh, color: fill, opacity: o * alpha });
+        v.push(text(word, TextStyle { color, ..label }, bx + bw / 2.0, by + 22.0));
+    }
+    v
+}
+
 /// Buttons of the timer card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimerControl {
@@ -2297,12 +2337,36 @@ pub const CLIPBOARD_CLEAR: &str = "Clear history";
 
 /// Height of the system monitor panel.
 pub const SYSTEM_H: f64 = LIST_TOP + 3.0 * METER_H + 14.0;
+/// A line under the meters (network speed, battery health).
+const SYSTEM_LINE_H: f64 = 20.0;
+
+/// The System panel's height with `lines` extra lines under the meters.
+pub fn system_height(lines: usize) -> f64 {
+    SYSTEM_H + lines as f64 * SYSTEM_LINE_H
+}
+
+/// The lines under the meters: (label, value), for what is known.
+pub fn system_lines(
+    stats: Option<&islet_core::sysmon::Stats>,
+    health: Option<islet_core::sysmon::BatteryHealth>,
+) -> Vec<(&'static str, String)> {
+    use islet_core::sysmon::format_rate;
+    let mut v = Vec::new();
+    if let Some((down, up)) = stats.and_then(|s| s.net) {
+        v.push(("Network", format!("{} down · {} up", format_rate(down), format_rate(up))));
+    }
+    if let Some(h) = health {
+        v.push(("Battery health", h.describe()));
+    }
+    v
+}
 const METER_H: f64 = 46.0;
 
 /// CPU, memory and disk meters (dashes until the first reading).
 pub fn expanded_system(
     pill: Rect,
     stats: Option<&islet_core::sysmon::Stats>,
+    health: Option<islet_core::sysmon::BatteryHealth>,
     o: f32,
     engine: &mut TextEngine,
 ) -> Vec<Element> {
@@ -2337,6 +2401,12 @@ pub fn expanded_system(
         if frac > 0.0 {
             v.push(Element::Bar { x, y: top + 25.0, w: (w * frac).max(6.0), h: 6.0, color, opacity: o });
         }
+    }
+    for (i, (name, shown)) in system_lines(stats, health).into_iter().enumerate() {
+        let base = (pill.y + LIST_TOP + 3.0 * METER_H + 14.0 + i as f64 * SYSTEM_LINE_H) as f32;
+        v.push(text(name, label, x, base));
+        let vw = engine.measure(&shown, &value);
+        v.push(text(shown, value, x + w - vw, base));
     }
     v
 }

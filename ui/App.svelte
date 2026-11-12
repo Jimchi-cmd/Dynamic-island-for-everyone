@@ -950,6 +950,21 @@
             />
           </div>
           <div class="net">
+            <span class="name">Tell me when a program slows the computer down</span>
+            <input
+              type="checkbox"
+              class="switch"
+              aria-label="Tell me when a program slows the computer down"
+              checked={islandPrefs?.performanceAlert ?? false}
+              disabled={!islandPrefs}
+              onchange={(e) => setSwitch('performanceAlert', e.currentTarget.checked)}
+            />
+          </div>
+          <p class="muted small">
+            When one program has had more than half the processor for a minute, or 40% of the memory, the island says
+            so and offers to close it. Islet looks at the running programs every 20 seconds while this is on.
+          </p>
+          <div class="net">
             <span class="name">Show weather, battery and processor when you point at it</span>
             <input
               type="checkbox"

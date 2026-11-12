@@ -269,6 +269,8 @@ export interface IslandPrefs {
   focusQuiet: boolean;
   /** Weather, battery and processor beside the time when you point at the island. */
   hoverStatus: boolean;
+  /** Say when a program hogs the processor or memory. */
+  performanceAlert: boolean;
   hotkey: string;
   accent: string;
   style: string;
@@ -334,6 +336,7 @@ export const SWITCH_NAMES: Record<string, string> = {
   powerSaver: 'power-saver',
   focusQuiet: 'focus-quiet',
   hoverStatus: 'hover-status',
+  performanceAlert: 'performance-alert',
 };
 
 /** `islet focus streak --json`. */

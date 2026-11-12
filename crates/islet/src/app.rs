@@ -156,6 +156,10 @@ pub enum UiAction {
     Shortcut(String),
     /// Read the screen's brightness for the Controls panel's slider.
     ReadBrightness,
+    /// Ask a program to close (the performance alert's button).
+    CloseProgram(u32),
+    /// Read how worn the laptop's battery is, for the System panel.
+    ReadBatteryHealth,
     /// Switch between the dark and the light look.
     DarkMode,
 }
@@ -322,6 +326,13 @@ pub struct App {
     brightness_set_at: f64,
     /// The Controls slider being dragged.
     tune: Option<content::Tune>,
+    /// The program the performance alert is about; the alert button being
+    /// pressed; and programs not to mention again (name, until when).
+    /// How worn the laptop's battery is, once read (the System panel).
+    battery_health: Option<islet_core::sysmon::BatteryHealth>,
+    hog: Option<islet_core::hog::Hog>,
+    hog_press: Option<content::HogButton>,
+    hog_ignored: Vec<(String, f64)>,
     /// Microphone requests (mute, read), and the call's second shown.
     mic_commands: Vec<MicCommand>,
     call_sec: i64,
@@ -424,6 +435,10 @@ impl App {
             brightness_out: None,
             brightness_set_at: f64::NEG_INFINITY,
             tune: None,
+            battery_health: None,
+            hog: None,
+            hog_press: None,
+            hog_ignored: Vec::new(),
             mic_commands: Vec::new(),
             call_sec: -1,
             streak: Default::default(),
@@ -1125,6 +1140,58 @@ impl App {
         self.volume_out.take()
     }
 
+    /// A program is hogging the processor or the memory (or no longer):
+    /// show it as an activity, unless the user said to leave that one be.
+    fn set_hog(&mut self, hog: Option<islet_core::hog::Hog>, t: f64) -> bool {
+        use islet_core::activity::Custom;
+        self.hog_ignored.retain(|(_, until)| t < *until);
+        let hog = hog.filter(|h| !self.hog_ignored.iter().any(|(name, _)| *name == h.name));
+        let report = match &hog {
+            Some(h) => Report::Custom(Custom {
+                id: content::HOG_ID.into(),
+                title: h.name.clone(),
+                subtitle: h.describe(),
+                progress: Some(h.share()),
+                color: Some(content::ORANGE),
+                open: None,
+            }),
+            None => Report::CustomEnded(content::HOG_ID.into()),
+        };
+        self.hog = hog;
+        let changed = self.activities.report(report, t);
+        self.sync_live(t) || changed
+    }
+
+    /// The alert button under (x, y), while its card is open.
+    fn hog_button_at(&self, x: f64, y: f64, t: f64) -> Option<content::HogButton> {
+        if !self.island.presentation().is_open() || !self.hog_card(&self.open_content(&self.live(t))) {
+            return None;
+        }
+        content::hog_buttons(self.card_rect(t)).into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, b)| b)
+    }
+
+    fn hog_card(&self, open: &OpenContent<'_>) -> bool {
+        matches!(open, OpenContent::Custom(c) if c.id == content::HOG_ID)
+    }
+
+    /// Close the program (it is asked politely, so it can save), or leave
+    /// it alone: either way it isn't mentioned again for a while.
+    fn hog_act(&mut self, b: content::HogButton, t: f64) -> bool {
+        let Some(h) = self.hog.take() else { return false };
+        let quiet = match b {
+            content::HogButton::Close => {
+                self.ui_actions.push(UiAction::CloseProgram(h.pid));
+                10.0 * 60.0
+            }
+            // "Ignore" lasts until Islet restarts, near enough.
+            content::HogButton::Ignore => 12.0 * 3600.0,
+        };
+        self.hog_ignored.push((h.name, t + quiet));
+        self.set_hog(None, t);
+        self.signal(Signal::Escape, t);
+        true
+    }
+
     /// The brightness its slider was let go at, since the last call.
     pub fn take_brightness(&mut self) -> Option<f32> {
         self.brightness_out.take()
@@ -1231,8 +1298,9 @@ impl App {
                     Panel::Bluetooth => self.conn_commands.push(ConnCommand::ListBluetooth),
                     // The slider needs the screen's brightness: ask for it.
                     Panel::Controls => self.ui_actions.push(UiAction::ReadBrightness),
+                    // How worn the battery is: read once each time the panel opens.
+                    Panel::System => self.ui_actions.push(UiAction::ReadBatteryHealth),
                     Panel::Shelf
-                    | Panel::System
                     | Panel::Clipboard
                     | Panel::Stopwatch
                     | Panel::Todo
@@ -1496,6 +1564,15 @@ impl App {
                     let [(snooze, _), (stop, _)] = content::alarm_controls(cr);
                     buttons.push((if a.id == TIMER_ALARM_ID { "Repeat" } else { "Snooze" }.into(), snooze));
                     buttons.push(("Stop".into(), stop));
+                }
+                OpenContent::Custom(c) if c.id == content::HOG_ID => {
+                    for (r, b) in content::hog_buttons(cr) {
+                        let name = match b {
+                            content::HogButton::Ignore => "Ignore".to_string(),
+                            content::HogButton::Close => format!("Close {}", c.title),
+                        };
+                        buttons.push((name, r));
+                    }
                 }
                 OpenContent::Agenda => {
                     for (i, e) in self.agenda_events().enumerate() {
@@ -1896,6 +1973,14 @@ impl App {
                 return self.island.presentation().is_open();
             }
         }
+        if let Report::Hog(hog) = r {
+            return self.set_hog(hog, t);
+        }
+        if let Report::BatteryHealth(h) = r {
+            self.battery_health = h;
+            self.sync_live(t);
+            return self.island.presentation().is_open();
+        }
         if let Report::Brightness(level) = r {
             self.brightness = Some(level);
             // The Controls panel grows a second slider.
@@ -2238,6 +2323,9 @@ impl App {
                 }
                 OpenContent::Stopwatch(sw) => out.extend(content::expanded_stopwatch(card, sw, t, eo, engine)),
                 OpenContent::Agenda => out.extend(content::expanded_agenda(card, &self.agenda(), eo, engine)),
+                OpenContent::Custom(c) if c.id == content::HOG_ID => {
+                    out.extend(content::expanded_hog(card, c, eo, engine))
+                }
                 OpenContent::Custom(c) => out.extend(content::expanded_custom(card, c, t, eo, engine)),
                 OpenContent::Notes => out.extend(content::expanded_notes(card, self.activities.notes(), eo, engine)),
                 OpenContent::Panel(Panel::Wifi) => out.extend(content::expanded_wifi(
@@ -2262,7 +2350,7 @@ impl App {
                     engine,
                 )),
                 OpenContent::Panel(Panel::System) => {
-                    out.extend(content::expanded_system(cr, self.activities.system(), eo, engine))
+                    out.extend(content::expanded_system(cr, self.activities.system(), self.battery_health, eo, engine))
                 }
                 OpenContent::Panel(Panel::Controls) => {
                     out.extend(content::expanded_controls(cr, self.volume, self.brightness, eo, engine))
@@ -2475,7 +2563,9 @@ impl App {
                                 Panel::Bluetooth => {
                                     content::list_height(c.bt.devices.len(), content::bt_footer(c).is_some())
                                 }
-                                Panel::System => content::SYSTEM_H,
+                                Panel::System => content::system_height(
+                                    content::system_lines(self.activities.system(), self.battery_health).len(),
+                                ),
                                 Panel::Controls => content::controls_height(self.tune_count()),
                                 Panel::Stopwatch => content::STOPWATCH_H,
                                 Panel::Todo => content::list_height(self.todo.items.len(), true),
@@ -2657,6 +2747,10 @@ impl App {
                     self.tune = Some(tune);
                     return self.tune_to(tune, x, t);
                 }
+                if let Some(b) = self.hog_button_at(x, y, t) {
+                    self.hog_press = Some(b);
+                    return true;
+                }
                 if let Some(h) = self.conn_hit_at(x, y, t) {
                     self.conn_hit = Some(h);
                     return true;
@@ -2733,6 +2827,9 @@ impl App {
                         TimerControl::Stop => TimerCommand::Stop,
                     };
                     return self.timer_command(cmd, t);
+                }
+                if let Some(b) = self.hog_press.take() {
+                    return if self.hog_button_at(x, y, t) == Some(b) { self.hog_act(b, t) } else { true };
                 }
                 if let Some(tune) = self.tune.take() {
                     self.tune_to(tune, x, t);
@@ -4645,6 +4742,7 @@ mod tests {
             mem_total: 16 * gb,
             disk_used: 400 * gb,
             disk_total: 512 * gb,
+            net: None,
         }
     }
 
@@ -4728,9 +4826,21 @@ mod tests {
         card.set_time(NOW, 0.0);
         card.set_pro(true);
         click(&mut card, 0.0);
-        let apps = [both, card];
+        let mut system = App::new(Demo::None, false);
+        system.set_time(NOW, 0.0);
+        open_panel(&mut system, Panel::System, 0.0);
+        let busy = islet_core::sysmon::Stats { net: Some((1_258_291, 80 * 1024)), ..stats(0.37) };
+        system.report(Report::System(Some(busy)), 6.0);
+        let health = islet_core::sysmon::BatteryHealth { percent: 87, cycles: Some(312) };
+        system.report(Report::BatteryHealth(Some(health)), 6.5);
+        let mut alert = App::new(Demo::None, false);
+        alert.set_time(NOW, 0.0);
+        let hog = islet_core::hog::Hog { pid: 1, name: "Video Tool".into(), kind: islet_core::hog::Kind::Cpu(0.62) };
+        alert.report(Report::Hog(Some(hog)), 1.0);
+        click(&mut alert, 2.0);
+        let apps = [both, card, system, alert];
         let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
-        let mut sheet = Pixmap::new(cw * 2, ch).unwrap();
+        let mut sheet = Pixmap::new(cw * 2, ch * 2).unwrap();
         sheet.fill(Color::from_rgba8(226, 230, 236, 255));
         for (i, a) in apps.iter().enumerate() {
             let mut cell = Pixmap::new(cw, ch).unwrap();
@@ -4739,14 +4849,8 @@ mod tests {
             let clip = islet_render::clip_mask(&frame, cw, ch, 1.0);
             let els = a.elements(30.0, &mut engine);
             islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
-            sheet.draw_pixmap(
-                (i as u32 * cw) as i32,
-                0,
-                cell.as_ref(),
-                &PixmapPaint::default(),
-                Transform::identity(),
-                None,
-            );
+            let (x, y) = ((i as u32 % 2 * cw) as i32, (i as u32 / 2 * ch) as i32);
+            sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
         }
         sheet.save_png(out).unwrap();
     }
@@ -4898,6 +5002,74 @@ mod tests {
         }
         // With few tools, nothing is dropped.
         assert_eq!(content::clock_chips(pill, ClockRow::default()).len(), 4);
+    }
+
+    #[test]
+    fn the_system_panel_adds_network_speed_and_battery_health() {
+        use islet_core::sysmon::BatteryHealth;
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        open_panel(&mut app, Panel::System, 0.0);
+        assert_eq!(app.take_ui_actions(), [UiAction::ReadBatteryHealth], "opening reads the battery's health once");
+        app.report(Report::System(Some(stats(0.2))), 6.0);
+        assert!((app.pill_rect(10.0).h - content::system_height(0)).abs() < 0.5, "no extra lines yet");
+        // The second reading knows the traffic; the battery answers too.
+        let busy = islet_core::sysmon::Stats { net: Some((1_258_291, 80 * 1024)), ..stats(0.2) };
+        app.report(Report::System(Some(busy)), 11.0);
+        app.report(Report::BatteryHealth(Some(BatteryHealth { percent: 87, cycles: Some(312) })), 11.5);
+        assert!((app.pill_rect(16.0).h - content::system_height(2)).abs() < 0.5);
+        let shown = texts(&app, 16.0, &mut engine);
+        for want in ["Network", "1.2 MB/s down · 80 KB/s up", "Battery health", "87% · 312 cycles"] {
+            assert!(shown.iter().any(|s| s == want), "{want}: {shown:?}");
+        }
+        assert!(content::system_height(2) + 16.0 <= WINDOW.1, "it still fits the window");
+        // A desktop has no battery line.
+        app.report(Report::BatteryHealth(None), 17.0);
+        assert!(!texts(&app, 20.0, &mut engine).iter().any(|s| s == "Battery health"));
+    }
+
+    #[test]
+    fn a_program_hogging_the_computer_gets_an_alert_with_a_way_out() {
+        use islet_core::hog::{Hog, Kind};
+        let mut engine = TextEngine::new();
+        let hog = |name: &str, pid| Hog { pid, name: name.into(), kind: Kind::Cpu(0.62) };
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        assert!(app.report(Report::Hog(Some(hog("Video Tool", 812))), 1.0));
+        app.tick(1.0);
+        assert_eq!(app.presentation(), Compact, "it shows like any other activity");
+        click(&mut app, 2.0);
+        let card = texts(&app, 6.0, &mut engine);
+        for want in ["Video Tool", "is using 62% of the processor", "Ignore", "Close it"] {
+            assert!(card.iter().any(|s| s == want), "{want}: {card:?}");
+        }
+        assert!(app.accessibility(6.0).buttons.iter().any(|(n, _)| n == "Close Video Tool"));
+
+        // Close asks that program to quit, and the alert goes.
+        let [_, (close, _)] = content::hog_buttons(app.card_rect(6.0));
+        press(&mut app, close, 7.0);
+        assert_eq!(app.take_ui_actions(), [UiAction::CloseProgram(812)]);
+        app.tick(8.0);
+        assert!(app.live(8.0).is_empty());
+        // While it shuts down it isn't announced again; another program is.
+        assert!(!app.report(Report::Hog(Some(hog("Video Tool", 812))), 30.0));
+        assert!(app.live(30.0).is_empty());
+        app.report(Report::Hog(Some(hog("Browser", 900))), 40.0);
+        assert_eq!(app.live(40.5).len(), 1);
+
+        // Ignore leaves the program alone and stays quiet about it.
+        click(&mut app, 41.0);
+        let [(ignore, _), _] = content::hog_buttons(app.card_rect(45.0));
+        press(&mut app, ignore, 45.0);
+        assert!(app.take_ui_actions().is_empty(), "nothing is closed");
+        app.report(Report::Hog(Some(hog("Browser", 900))), 3600.0);
+        assert!(app.live(3600.5).is_empty());
+        // When the program calms down by itself, the alert goes too.
+        let mut calm = App::new(Demo::None, false);
+        calm.report(Report::Hog(Some(hog("Game", 5))), 0.0);
+        calm.report(Report::Hog(None), 20.0);
+        assert!(calm.live(20.5).is_empty());
     }
 
     #[test]
@@ -5622,6 +5794,7 @@ mod tests {
             mem_total: 16 * gb,
             disk_used: 400 * gb,
             disk_total: 512 * gb,
+            net: None,
         };
         assert!(app.report(Report::System(Some(stats)), 9.0));
         let mut engine = TextEngine::new();
@@ -5671,6 +5844,7 @@ mod tests {
             mem_total: 16 * gb,
             disk_used: 470 * gb,
             disk_total: 512 * gb,
+            net: None,
         };
         system.report(Report::System(Some(stats)), 0.0);
         let mut idle = App::new(Demo::None, false);

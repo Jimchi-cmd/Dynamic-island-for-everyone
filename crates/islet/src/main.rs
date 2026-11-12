@@ -219,6 +219,7 @@ fn run() -> platform::Result<()> {
     providers.spotify(app.prefs().spotify && !scripted);
     providers.clipboard(app.prefs().clipboard && !scripted);
     providers.downloads(app.prefs().downloads && !scripted);
+    providers.hog(app.prefs().performance_alert && !scripted);
     let mut alarm_sound = sound::AlarmSound::default();
     // Windows' screen-reader adapter must exist before the window shows.
     let mut access = a11y::Bridge::new(win.native_handle(), win.waker());
@@ -384,6 +385,7 @@ fn run() -> platform::Result<()> {
                     providers.spotify(app.prefs().spotify);
                     providers.clipboard(app.prefs().clipboard);
                     providers.downloads(app.prefs().downloads);
+                    providers.hog(app.prefs().performance_alert);
                 }
                 Control::PrefsChanged => {}
                 Control::ShelfChanged if !scripted => app.set_shelf(config::load_shelf()),
@@ -447,6 +449,10 @@ fn run() -> platform::Result<()> {
                 UiAction::Lock if !scripted => quick::lock(),
                 UiAction::Shortcut(target) if !scripted => quick::open_shortcut(&target),
                 UiAction::ReadBrightness if !scripted => quick::read_brightness(providers.sink()),
+                UiAction::CloseProgram(pid) if !scripted => providers::hog::close(pid),
+                UiAction::CloseProgram(_) => {}
+                UiAction::ReadBatteryHealth if !scripted => providers::sysmon::read_battery_health(providers.sink()),
+                UiAction::ReadBatteryHealth => {}
                 UiAction::DarkMode if !scripted => quick::toggle_dark_mode(),
                 UiAction::Screenshot
                 | UiAction::Lock

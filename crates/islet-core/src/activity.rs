@@ -195,6 +195,10 @@ pub enum Report {
     Hud(Hud),
     /// The screen's brightness as read on request (no pop-up), 0..=1.
     Brightness(f32),
+    /// How worn the laptop's battery is, as read on request.
+    BatteryHealth(Option<crate::sysmon::BatteryHealth>),
+    /// A program hogging the processor or the memory (None: no longer).
+    Hog(Option<crate::hog::Hog>),
     /// Current weather (None when weather is turned off).
     Weather(Option<crate::weather::Weather>),
     /// Upcoming calendar events (None when calendar is turned off).
@@ -554,7 +558,12 @@ impl Activities {
                 true
             }
             // The island keeps the history (it knows whether it's on).
-            Report::Clipboard(_) | Report::Lyrics(..) | Report::Volume(..) | Report::Brightness(_) => false,
+            Report::Clipboard(_)
+            | Report::Lyrics(..)
+            | Report::Volume(..)
+            | Report::Brightness(_)
+            | Report::BatteryHealth(_)
+            | Report::Hog(_) => false,
             Report::System(s) => {
                 self.system = s;
                 true

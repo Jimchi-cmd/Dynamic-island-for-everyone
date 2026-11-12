@@ -11,6 +11,7 @@ pub mod connectivity;
 mod dbus_util;
 mod demo;
 pub mod downloads;
+pub mod hog;
 #[cfg(target_os = "linux")]
 mod linux_battery;
 #[cfg(target_os = "linux")]
@@ -43,7 +44,7 @@ mod macos_volume;
 pub mod mic;
 pub mod navigation;
 pub mod spotify;
-mod sysmon;
+pub mod sysmon;
 pub mod weather;
 #[cfg(target_os = "windows")]
 mod windows_battery;
@@ -180,6 +181,8 @@ fn describe(r: &Report) -> String {
         }
         Report::Volume(level, muted) => format!("volume {level:.2} muted={muted}"),
         Report::Brightness(level) => format!("brightness {level:.2}"),
+        Report::BatteryHealth(h) => format!("battery health {:?}", h.map(|h| h.percent)),
+        Report::Hog(h) => format!("hog {:?}", h.as_ref().map(|h| (&h.name, h.share()))),
         Report::MicMuted(m) => format!("microphone muted={m}"),
         Report::UpNext(u) => format!("up next: {:?}", u.as_ref().map(|(e, _)| &e.summary)),
     }
@@ -194,6 +197,7 @@ pub struct Providers {
     calendar: Sender<bool>,
     spotify: Sender<spotify::SpotifyMsg>,
     sysmon: Sender<bool>,
+    hog: Sender<bool>,
     lyrics: Sender<Option<islet_core::lyrics::Track>>,
     mic: Sender<islet_core::activity::MicCommand>,
     clipboard: Option<clipboard::Watcher>,
@@ -217,6 +221,7 @@ impl Providers {
         let calendar = calendar::start(sink.clone());
         let spotify = spotify::start(sink.clone());
         let sysmon = sysmon::start(sink.clone());
+        let hog = hog::start(sink.clone());
         let lyrics = lyrics::start(sink.clone());
         let mic = mic::start(sink.clone());
         let media = if std::env::var("ISLET_DEMO").as_deref() == Ok("media") {
@@ -233,6 +238,7 @@ impl Providers {
             calendar,
             spotify,
             sysmon,
+            hog,
             lyrics,
             mic,
             clipboard: None,
@@ -314,6 +320,12 @@ impl Providers {
 
     pub fn sysmon(&self, on: bool) {
         let _ = self.sysmon.send(on);
+    }
+
+    /// Watch for a program hogging the processor or memory (the opt-in
+    /// performance alert), or stop.
+    pub fn hog(&self, on: bool) {
+        let _ = self.hog.send(on);
     }
 
     /// Read or set the microphone's mute switch (the call card).

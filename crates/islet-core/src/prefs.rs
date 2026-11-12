@@ -50,6 +50,9 @@ pub struct IslandPrefs {
     /// Pointing at the empty island shows the weather, the battery and
     /// how busy the processor is, either side of the time.
     pub hover_status: bool,
+    /// Say when one program hogs the processor or the memory, and offer
+    /// to close it. Looks at the running programs every 20 seconds.
+    pub performance_alert: bool,
     /// Hold pop-ups (notifications, volume, battery, calendar) while a
     /// focus session's work round runs; breaks let them through.
     pub focus_quiet: bool,
@@ -192,6 +195,7 @@ impl Default for IslandPrefs {
             power_saver: false,
             focus_quiet: false,
             hover_status: true,
+            performance_alert: false,
             hotkey: String::new(),
             accent: "blue".into(),
             style: "black".into(),
@@ -206,7 +210,7 @@ impl Default for IslandPrefs {
 }
 
 /// The switches `islet set <key> on|off` understands.
-pub const SWITCHES: [&str; 18] = [
+pub const SWITCHES: [&str; 19] = [
     "volume-hud",
     "brightness-hud",
     "caps-lock-hud",
@@ -225,6 +229,7 @@ pub const SWITCHES: [&str; 18] = [
     "power-saver",
     "focus-quiet",
     "hover-status",
+    "performance-alert",
 ];
 
 impl IslandPrefs {
@@ -268,6 +273,7 @@ impl IslandPrefs {
             "power-saver" => &mut self.power_saver,
             "focus-quiet" => &mut self.focus_quiet,
             "hover-status" => &mut self.hover_status,
+            "performance-alert" => &mut self.performance_alert,
             _ => return Err(format!("unknown setting {key:?} (one of: {})", SWITCHES.join(", "))),
         })
     }

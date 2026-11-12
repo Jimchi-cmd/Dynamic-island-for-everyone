@@ -22,6 +22,9 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 - **Notifications** on the island (Linux, opt-in).
 - **Calendar:** what's next, ten minutes before it starts, and today's agenda (Google, Outlook or iCloud via their private iCal link). A **Join** button appears when the event has a video-call link. Deadlines and exams count down ("Due in 6 days").
 - **Timer and focus sessions:** a countdown ring on the island, or Pomodoro rounds of work and breaks. A streak counts the days in a row you finished a round.
+- **Controls:** volume and brightness sliders and a dark-mode switch, one tap from the clock card.
+- **Performance alert** (opt-in): says when one program hogs the processor or the memory, with a Close button.
+- **System panel:** processor, memory, disk, network speed and battery health.
 - **Status at a glance:** point at the empty island and it widens to show the weather, your battery and how busy the processor is, either side of the time.
 - **Class timetable:** enter your week once; the island counts down to the next lesson and shows your free gaps.
 - **Alarms:** one-time or repeating. When one rings, the island opens with a swinging bell and a chime until you snooze or stop it.

@@ -18,8 +18,9 @@ pub fn start(sink: Sink) -> Sender<bool> {
                 continue;
             }
             let mut before = cpu_times();
-            // Report memory and disk at once; CPU needs two readings.
-            sink.send(Report::System(Some(sample(None, &mut before))));
+            let mut net = Net::default();
+            // Report memory and disk at once; CPU and traffic need two readings.
+            sink.send(Report::System(Some(sample(None, &mut before, &mut net))));
             loop {
                 match rx.recv_timeout(EVERY) {
                     Ok(true) => continue,
@@ -29,7 +30,7 @@ pub fn start(sink: Sink) -> Sender<bool> {
                     }
                     Err(RecvTimeoutError::Timeout) => {
                         let prev = before;
-                        sink.send(Report::System(Some(sample(prev, &mut before))));
+                        sink.send(Report::System(Some(sample(prev, &mut before, &mut net))));
                     }
                     Err(RecvTimeoutError::Disconnected) => return,
                 }
@@ -39,7 +40,36 @@ pub fn start(sink: Sink) -> Sender<bool> {
     tx
 }
 
-fn sample(prev: Option<CpuTimes>, before: &mut Option<CpuTimes>) -> Stats {
+/// All the memory this computer has, in bytes (0 if it can't be read).
+pub fn memory_total() -> u64 {
+    memory().map_or(0, |(_, total)| total)
+}
+
+/// Network traffic between readings. Where the totals come from a tool
+/// (macOS, Windows) they are read every other second, not every second.
+#[derive(Default)]
+struct Net {
+    before: Option<((u64, u64), std::time::Instant)>,
+    rate: Option<(u64, u64)>,
+    tick: u32,
+}
+
+impl Net {
+    fn sample(&mut self) -> Option<(u64, u64)> {
+        self.tick = self.tick.wrapping_add(1);
+        if NET_SLOWLY && self.tick % 2 == 0 {
+            return self.rate;
+        }
+        let now = (net_totals()?, std::time::Instant::now());
+        if let Some((totals, at)) = self.before {
+            self.rate = islet_core::sysmon::net_rate(totals, now.0, now.1.duration_since(at).as_secs_f64());
+        }
+        self.before = Some(now);
+        self.rate
+    }
+}
+
+fn sample(prev: Option<CpuTimes>, before: &mut Option<CpuTimes>, net: &mut Net) -> Stats {
     let now = cpu_times();
     let cpu = match (prev, now) {
         (Some(a), Some(b)) => b.load_since(&a),
@@ -48,7 +78,20 @@ fn sample(prev: Option<CpuTimes>, before: &mut Option<CpuTimes>) -> Stats {
     *before = now;
     let (mem_used, mem_total) = memory().unwrap_or_default();
     let (disk_used, disk_total) = disk().unwrap_or_default();
-    Stats { cpu, mem_used, mem_total, disk_used, disk_total }
+    Stats { cpu, mem_used, mem_total, disk_used, disk_total, net: net.sample() }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn tool_output(program: &str, args: &[&str]) -> Option<String> {
+    use std::process::{Command, Stdio};
+    let out = Command::new(program).args(args).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// Read how worn the laptop's battery is, on another thread, and report it
+/// (None on a computer without a battery, or where it can't be told).
+pub fn read_battery_health(sink: Sink) {
+    std::thread::spawn(move || sink.send(Report::BatteryHealth(battery_health())));
 }
 
 // ---- Linux -----------------------------------------------------------------
@@ -61,6 +104,32 @@ fn cpu_times() -> Option<CpuTimes> {
 #[cfg(target_os = "linux")]
 fn memory() -> Option<(u64, u64)> {
     islet_core::sysmon::parse_meminfo(&std::fs::read_to_string("/proc/meminfo").ok()?)
+}
+
+/// Whether traffic is read every other second only (where it takes a tool).
+#[cfg(target_os = "linux")]
+const NET_SLOWLY: bool = false;
+
+#[cfg(target_os = "linux")]
+fn net_totals() -> Option<(u64, u64)> {
+    islet_core::sysmon::parse_proc_net_dev(&std::fs::read_to_string("/proc/net/dev").ok()?)
+}
+
+#[cfg(target_os = "linux")]
+fn battery_health() -> Option<islet_core::sysmon::BatteryHealth> {
+    let dir = std::fs::read_dir("/sys/class/power_supply").ok()?;
+    dir.filter_map(Result::ok).find_map(|e| {
+        let path = e.path();
+        let read = |name: &str| std::fs::read_to_string(path.join(name)).ok()?.trim().parse::<u64>().ok();
+        if std::fs::read_to_string(path.join("type")).ok()?.trim() != "Battery" {
+            return None;
+        }
+        let (full, design) = match (read("energy_full"), read("energy_full_design")) {
+            (Some(f), Some(d)) => (f, d),
+            _ => (read("charge_full")?, read("charge_full_design")?),
+        };
+        islet_core::sysmon::BatteryHealth::from_capacity(full, design, read("cycle_count").map(|c| c as u32))
+    })
 }
 
 #[cfg(unix)]
@@ -120,6 +189,39 @@ fn disk() -> Option<(u64, u64)> {
 }
 
 // ---- macOS -----------------------------------------------------------------
+
+#[cfg(target_os = "windows")]
+const NET_SLOWLY: bool = true;
+
+#[cfg(target_os = "windows")]
+fn net_totals() -> Option<(u64, u64)> {
+    islet_core::sysmon::parse_netstat_e(&tool_output("netstat", &["-e"])?)
+}
+
+#[cfg(target_os = "windows")]
+fn battery_health() -> Option<islet_core::sysmon::BatteryHealth> {
+    // Full-charge and design capacity, in mWh, on one line.
+    let script = "$f=(Get-CimInstance -Namespace root/WMI -ClassName BatteryFullChargedCapacity -ErrorAction Stop | \
+                  Select-Object -First 1).FullChargedCapacity; \
+                  $d=(Get-CimInstance -Namespace root/WMI -ClassName BatteryStaticData -ErrorAction Stop | \
+                  Select-Object -First 1).DesignedCapacity; \"$f $d\"";
+    let out = tool_output("powershell", &["-NoProfile", "-NonInteractive", "-Command", script])?;
+    let mut n = out.split_whitespace().filter_map(|v| v.parse::<u64>().ok());
+    islet_core::sysmon::BatteryHealth::from_capacity(n.next()?, n.next()?, None)
+}
+
+#[cfg(target_os = "macos")]
+const NET_SLOWLY: bool = true;
+
+#[cfg(target_os = "macos")]
+fn net_totals() -> Option<(u64, u64)> {
+    islet_core::sysmon::parse_netstat_ib(&tool_output("/usr/sbin/netstat", &["-ib"])?)
+}
+
+#[cfg(target_os = "macos")]
+fn battery_health() -> Option<islet_core::sysmon::BatteryHealth> {
+    islet_core::sysmon::parse_ioreg_battery(&tool_output("/usr/sbin/ioreg", &["-rn", "AppleSmartBattery"])?)
+}
 
 #[cfg(target_os = "macos")]
 mod mach {
@@ -216,4 +318,19 @@ fn memory() -> Option<(u64, u64)> {
 fn disk() -> Option<(u64, u64)> {
     // The writable data volume (the system volume is sealed and small).
     statvfs("/System/Volumes/Data").or_else(|| statvfs("/"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Runs on every system in CI: each one must be able to count traffic.
+    #[test]
+    fn reads_the_network_counters_and_memory() {
+        let totals = net_totals();
+        assert!(totals.is_some(), "no network counters on this system");
+        assert!(memory_total() > 0);
+        // No battery on a CI machine is fine; the call just mustn't hang or panic.
+        let _ = battery_health();
+    }
 }
