@@ -268,7 +268,7 @@ class IsletListener : NotificationListenerService(), LinkListener {
         val playing = state?.state == PlaybackState.STATE_PLAYING
         // The position is as of its last update: bring it up to now.
         var position = (state?.position ?: 0L).coerceAtLeast(0L) / 1000.0
-        if (playing && state != null && state.lastPositionUpdateTime > 0) {
+        if (state != null && playing && state.lastPositionUpdateTime > 0) {
             position += (SystemClock.elapsedRealtime() - state.lastPositionUpdateTime) / 1000.0 * state.playbackSpeed
         }
         if (duration > 0) position = position.coerceIn(0.0, duration)

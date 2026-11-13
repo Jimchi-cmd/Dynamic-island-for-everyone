@@ -278,8 +278,13 @@ mod tests {
         }
 
         fn say(&mut self, json: &str) {
+            self.try_say(json).unwrap();
+        }
+
+        /// Fails once the island has hung up.
+        fn try_say(&mut self, json: &str) -> std::io::Result<()> {
             let frame = self.seal.seal(json.as_bytes());
-            write_frame(&mut self.stream, &frame).unwrap();
+            write_frame(&mut self.stream, &frame)
         }
 
         fn hear(&mut self) -> ToPhone {
@@ -306,8 +311,10 @@ mod tests {
 
         // A stranger without the key: nothing it says is reported.
         let mut stranger = FakePhone::connect(link.port, &[1u8; KEY_LEN]);
-        stranger.say(r#"{"t":"hello","name":"Mallory"}"#);
-        stranger.say(r#"{"t":"note","app":"x","title":"fake","text":"fake"}"#);
+        // (The island may hang up before the second message is even sent:
+        // on Windows that write then fails, which is the point.)
+        let _ = stranger.try_say(r#"{"t":"hello","name":"Mallory"}"#);
+        let _ = stranger.try_say(r#"{"t":"note","app":"x","title":"fake","text":"fake"}"#);
         let mut end = [0u8; 1];
         assert!(matches!(stranger.stream.read(&mut end), Ok(0) | Err(_)), "the connection is dropped");
 
