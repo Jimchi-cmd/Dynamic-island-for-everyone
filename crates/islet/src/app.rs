@@ -154,6 +154,10 @@ pub enum UiAction {
     Lock,
     /// Open one of the user's shortcuts: a path or a web link.
     Shortcut(String),
+    /// The launcher's shortcut: open the launcher.
+    Launcher,
+    /// The quick-note shortcut: open the quick-note box.
+    QuickNote,
     /// Read the screen's brightness for the Controls panel's slider.
     ReadBrightness,
     /// Ask a program to close (the performance alert's button).
@@ -2935,7 +2939,15 @@ impl App {
                 }
             }
             Event::Key(Key::Escape) => self.signal(Signal::Escape, t),
-            Event::Hotkey => self.toggle(t),
+            Event::Hotkey(crate::platform::HOTKEY_LAUNCHER) => {
+                self.ui_actions.push(UiAction::Launcher);
+                false
+            }
+            Event::Hotkey(crate::platform::HOTKEY_NOTE) => {
+                self.ui_actions.push(UiAction::QuickNote);
+                false
+            }
+            Event::Hotkey(_) => self.toggle(t),
             Event::Fullscreen(on) => {
                 self.fullscreen = on;
                 self.update_shown(t)
@@ -3871,11 +3883,21 @@ mod tests {
     }
 
     #[test]
+    fn the_launcher_and_note_shortcuts_open_their_boxes() {
+        let mut app = App::new(Demo::None, false);
+        assert!(!app.handle(Event::Hotkey(crate::platform::HOTKEY_LAUNCHER), 0.0), "the island itself stays put");
+        assert_eq!(app.take_ui_actions(), [UiAction::Launcher]);
+        app.handle(Event::Hotkey(crate::platform::HOTKEY_NOTE), 1.0);
+        assert_eq!(app.take_ui_actions(), [UiAction::QuickNote]);
+        assert_eq!(app.presentation(), Idle);
+    }
+
+    #[test]
     fn shortcut_opens_and_closes() {
         let mut app = App::new(Demo::None, false);
-        assert!(app.handle(Event::Hotkey, 0.0));
+        assert!(app.handle(Event::Hotkey(0), 0.0));
         assert_eq!(app.presentation(), Expanded);
-        app.handle(Event::Hotkey, 5.0);
+        app.handle(Event::Hotkey(0), 5.0);
         assert_eq!(app.presentation(), Idle);
     }
 

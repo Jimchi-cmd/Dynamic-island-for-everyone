@@ -82,8 +82,8 @@ pub struct X11 {
     /// eventfd that other threads write to wake `poll`.
     wake_fd: Arc<OwnedFd>,
     root: Window,
-    /// The grabbed global shortcut: key code and modifiers.
-    hotkey: Option<(Keycode, u16)>,
+    /// The grabbed global shortcuts, by slot: key code and modifiers.
+    hotkey: [Option<(Keycode, u16)>; crate::platform::HOTKEY_SLOTS],
     /// The island's display (root coordinates), the active window being
     /// watched, and whether it's fullscreen on that display.
     monitor: (i32, i32, u32, u32),
@@ -313,7 +313,7 @@ impl Backend for X11 {
             buf: Vec::new(),
             wake_fd,
             root: screen.root,
-            hotkey: None,
+            hotkey: [None; crate::platform::HOTKEY_SLOTS],
             monitor: (mx, my, mw, mh),
             active: std::cell::Cell::new(x11rb::NONE),
             fullscreen: std::cell::Cell::new(false),
@@ -321,8 +321,12 @@ impl Backend for X11 {
         })
     }
 
-    fn set_hotkey(&mut self, hotkey: Option<islet_core::hotkey::Hotkey>) -> Result<()> {
-        if let Some((code, mods)) = self.hotkey.take() {
+    fn set_hotkey(&mut self, slot: u8, hotkey: Option<islet_core::hotkey::Hotkey>) -> Result<()> {
+        let i = usize::from(slot);
+        if i >= self.hotkey.len() {
+            return Err("no such shortcut".into());
+        }
+        if let Some((code, mods)) = self.hotkey[i].take() {
             for lock in LOCK_MODS {
                 let _ = self.conn.ungrab_key(code, self.root, ModMask::from(mods | lock));
             }
@@ -350,7 +354,7 @@ impl Backend for X11 {
                 return Err(format!("{} is already used by another app", hk.label()));
             }
         }
-        self.hotkey = Some((code, mods));
+        self.hotkey[i] = Some((code, mods));
         self.conn.flush().map_err(xe)
     }
 
@@ -572,13 +576,8 @@ impl X11 {
             XEvent::ButtonRelease(e) => {
                 Event::PointerUp { x: e.event_x as f64 / s, y: e.event_y as f64 / s, button: button(e.detail)? }
             }
-            XEvent::KeyPress(e)
-                if e.event == self.root
-                    && self.hotkey.is_some_and(|(code, mods)| {
-                        e.detail == code && (u16::from(e.state) & SHORTCUT_MODS) == mods
-                    }) =>
-            {
-                Event::Hotkey
+            XEvent::KeyPress(e) if e.event == self.root && self.hotkey_slot(e.detail, e.state).is_some() => {
+                Event::Hotkey(self.hotkey_slot(e.detail, e.state)?)
             }
             XEvent::KeyPress(e) if Some(e.detail) == self.esc_keycode => Event::Key(Key::Escape),
             XEvent::XkbStateNotify(e) => {
@@ -668,6 +667,14 @@ impl X11 {
     }
 }
 
+impl X11 {
+    /// Which grabbed shortcut a key press is, if any.
+    fn hotkey_slot(&self, code: Keycode, state: x11rb::protocol::xproto::KeyButMask) -> Option<u8> {
+        let held = u16::from(state) & SHORTCUT_MODS;
+        self.hotkey.iter().position(|h| *h == Some((code, held))).map(|i| i as u8)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::parse_xft_dpi;
@@ -691,7 +698,7 @@ mod tests {
             eprintln!("skipping: can't open the X display");
             return;
         };
-        island.set_hotkey(Some(islet_core::hotkey::Hotkey::parse("Ctrl+Alt+I").unwrap())).unwrap();
+        island.set_hotkey(0, Some(islet_core::hotkey::Hotkey::parse("Ctrl+Alt+I").unwrap())).unwrap();
         let (kb, _) = x11rb::connect(None).unwrap();
         let code = |sym: u32| find_keycode(&kb, sym).unwrap();
         let (ctrl, alt, i) = (code(0xffe3), code(0xffe9), code(u32::from(b'i')));
@@ -717,10 +724,18 @@ mod tests {
             kb.flush().unwrap();
             pump(island)
         };
-        assert!(chord(&mut island, &[ctrl, alt, i]).contains(&Event::Hotkey));
-        assert!(!chord(&mut island, &[ctrl, i]).contains(&Event::Hotkey), "only the exact combination");
-        island.set_hotkey(None).unwrap();
-        assert!(!chord(&mut island, &[ctrl, alt, i]).contains(&Event::Hotkey), "removed");
+        assert!(chord(&mut island, &[ctrl, alt, i]).contains(&Event::Hotkey(0)));
+        assert!(!chord(&mut island, &[ctrl, i]).contains(&Event::Hotkey(0)), "only the exact combination");
+        // A second shortcut in another slot says which one it is.
+        island.set_hotkey(1, Some(islet_core::hotkey::Hotkey::parse("Ctrl+Alt+Space").unwrap())).unwrap();
+        let space = code(0x20);
+        let heard = chord(&mut island, &[ctrl, alt, space]);
+        assert!(heard.contains(&Event::Hotkey(1)) && !heard.contains(&Event::Hotkey(0)), "{heard:?}");
+        assert!(chord(&mut island, &[ctrl, alt, i]).contains(&Event::Hotkey(0)), "the first still works");
+        island.set_hotkey(0, None).unwrap();
+        island.set_hotkey(1, None).unwrap();
+        assert!(!chord(&mut island, &[ctrl, alt, i]).contains(&Event::Hotkey(0)), "removed");
+        assert!(!chord(&mut island, &[ctrl, alt, space]).contains(&Event::Hotkey(1)));
     }
 
     #[test]

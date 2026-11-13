@@ -234,6 +234,23 @@
     const q = launcherText.trim();
     if (!q) return [];
     const rows: LauncherRow[] = [];
+    // "note: …" saves a quick note (Islet Pro) instead of searching.
+    const note = /^note:\s*(.*)$/i.exec(q);
+    if (note) {
+      const text = note[1]!.trim();
+      return [
+        {
+          kind: 'answer',
+          title: text ? `Save the note “${text}”` : 'Type your note after “note:”',
+          detail: 'Islet notes.txt',
+          run: text
+            ? async () => {
+                launcherNote = await api.islet(['note'], text);
+              }
+            : undefined,
+        },
+      ];
+    }
     const sum = calculate(q);
     if (sum !== null) rows.push({ kind: 'answer', title: formatNumber(sum), detail: `${q} =` });
     const converted = convert(q);
@@ -258,9 +275,9 @@
   async function runLauncherRow(row: LauncherRow | undefined) {
     if (!row?.run) return;
     try {
+      launcherNote = '';
       await row.run();
       launcherText = '';
-      launcherNote = '';
     } catch (e) {
       launcherNote = api.message(e);
     }
@@ -293,6 +310,38 @@
 
   // Global shortcut: press the keys in the field to record them.
   let hotkeyDraft = $state('');
+
+  // The launcher's and the quick note's shortcuts, recorded the same way.
+  let extraDraft = $state<Record<'launcher' | 'note', string>>({ launcher: '', note: '' });
+
+  function comboOf(e: KeyboardEvent): string {
+    if (e.key === 'Tab') return '';
+    e.preventDefault();
+    if (['Control', 'Alt', 'Shift', 'Meta', 'OS'].includes(e.key)) return '';
+    let key = '';
+    if (/^Key[A-Z]$/.test(e.code)) key = e.code.slice(3);
+    else if (/^Digit[0-9]$/.test(e.code)) key = e.code.slice(5);
+    else if (e.code === 'Space') key = 'Space';
+    else if (/^F([1-9]|1[0-2])$/.test(e.code)) key = e.code;
+    if (!key) return '';
+    const parts = [];
+    if (e.ctrlKey) parts.push('Ctrl');
+    if (e.altKey) parts.push('Alt');
+    if (e.shiftKey) parts.push('Shift');
+    if (e.metaKey) parts.push('Super');
+    parts.push(key);
+    return parts.join('+');
+  }
+
+  async function saveExtraHotkey(which: 'launcher' | 'note', combo: string) {
+    try {
+      await api.islet(['hotkey', which, combo || 'off']);
+      extraDraft[which] = '';
+      await loadIslandPrefs();
+    } catch (e) {
+      problem = api.message(e);
+    }
+  }
 
   function captureHotkey(e: KeyboardEvent) {
     if (e.key === 'Tab') return;
@@ -875,6 +924,11 @@
     await loadIslandPrefs();
     const wanted = parsePage(await api.initialPage().catch(() => null));
     if (wanted?.page === 'launcher') page = 'launcher';
+    // The quick-note shortcut: the launcher, ready to save a note.
+    if (wanted?.page === 'note') {
+      page = 'launcher';
+      launcherText = 'note: ';
+    }
     if (wanted?.page === 'connections') {
       page = 'connections';
       joining = wanted.ssid;
@@ -1261,10 +1315,36 @@
               <button type="button" onclick={() => saveHotkey('')}>Remove</button>
             {/if}
           </form>
+          {#each [['launcher', 'Open the launcher', islandPrefs?.launcherHotkey], ['note', 'Write a quick note (Islet Pro)', islandPrefs?.noteHotkey]] as [which, label, current] (which)}
+            <p class="muted small">{label}. Current: <strong>{current || 'none'}</strong></p>
+            <form
+              class="join"
+              onsubmit={(e) => {
+                e.preventDefault();
+                void saveExtraHotkey(which as 'launcher' | 'note', extraDraft[which as 'launcher' | 'note']);
+              }}
+            >
+              <input
+                placeholder="Click here, then press e.g. Ctrl+Alt+Space"
+                value={extraDraft[which as 'launcher' | 'note']}
+                onkeydown={(e) => {
+                  const combo = comboOf(e);
+                  if (combo) extraDraft[which as 'launcher' | 'note'] = combo;
+                }}
+                readonly
+                aria-label={`Press the keys to ${String(label).toLowerCase()}`}
+              />
+              <button type="submit" disabled={!extraDraft[which as 'launcher' | 'note']}>Save</button>
+              {#if current}
+                <button type="button" onclick={() => saveExtraHotkey(which as 'launcher' | 'note', '')}>Remove</button>
+              {/if}
+            </form>
+          {/each}
           {#if info?.os === 'linux'}
             <p class="muted small">
               On native Wayland (KDE Plasma, sway, Hyprland) only the desktop can watch keys: add a shortcut in its
-              keyboard settings that runs <code>islet toggle</code>.
+              keyboard settings that runs <code>islet toggle</code>, <code>islet launcher</code> or
+              <code>islet note</code>.
             </p>
           {/if}
         </div>
@@ -1757,7 +1837,7 @@
         <h1>Launcher</h1>
         <p class="muted">
           Type an app’s name, a sum (12 * 7.5), a conversion (5 km in miles) or anything to search the web for. Enter
-          opens the first result.
+          opens the first result. Start with <code>note:</code> to save a quick note.
         </p>
         <div class="card">
           <input
@@ -1790,8 +1870,8 @@
           {#if launcherNote}<p class="small" role="status">{launcherNote}</p>{/if}
         </div>
         <p class="muted small">
-          To open the launcher with a key, bind one to <code>islet launcher</code> in your system’s keyboard settings.
-          Web searches go to DuckDuckGo, and only when you choose that row.
+          Give the launcher and quick notes their own keys in General → Shortcut. Web searches go to DuckDuckGo, and
+          only when you choose that row.
         </p>
       {:else if page === 'pro'}
         <h1>Islet Pro {#if pro?.active}<span class="badge">Supporter</span>{/if}</h1>

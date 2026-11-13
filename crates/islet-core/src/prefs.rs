@@ -78,6 +78,9 @@ pub struct IslandPrefs {
     /// The global shortcut that opens and closes the island ("" = none),
     /// e.g. "Ctrl+Alt+I".
     pub hotkey: String,
+    /// Shortcuts for the quick launcher and for a quick note ("" = none).
+    pub launcher_hotkey: String,
+    pub note_hotkey: String,
     /// Accent colour for buttons and highlights (see `ACCENTS`).
     pub accent: String,
     /// What the island is made of (see `STYLES`): "black", or with Islet
@@ -229,6 +232,8 @@ impl Default for IslandPrefs {
             shape: "pill".into(),
             clock_face: "time".into(),
             hotkey: String::new(),
+            launcher_hotkey: String::new(),
+            note_hotkey: String::new(),
             accent: "blue".into(),
             style: "black".into(),
             size: "medium".into(),

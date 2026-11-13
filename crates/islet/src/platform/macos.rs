@@ -527,8 +527,8 @@ impl Backend for Mac {
         self.notch
     }
 
-    fn set_hotkey(&mut self, hotkey: Option<islet_core::hotkey::Hotkey>) -> Result<()> {
-        carbon::set(hotkey)
+    fn set_hotkey(&mut self, slot: u8, hotkey: Option<islet_core::hotkey::Hotkey>) -> Result<()> {
+        carbon::set(slot, hotkey)
     }
 
     fn wait(&mut self, deadline: Option<Instant>, out: &mut Vec<Event>) -> Result<()> {
@@ -1012,12 +1012,47 @@ mod carbon {
     const OPTION: u32 = 1 << 11;
     const CONTROL: u32 = 1 << 12;
 
-    thread_local! {
-        static STATE: std::cell::Cell<(bool, *mut c_void)> = const { std::cell::Cell::new((false, std::ptr::null_mut())) };
+    #[link(name = "Carbon", kind = "framework")]
+    extern "C" {
+        fn GetEventParameter(
+            event: *mut c_void,
+            name: u32,
+            desired_type: u32,
+            actual_type: *mut u32,
+            size: usize,
+            actual_size: *mut usize,
+            data: *mut c_void,
+        ) -> i32;
     }
 
-    unsafe extern "C" fn pressed(_call: *mut c_void, _event: *mut c_void, _data: *mut c_void) -> i32 {
-        push(Event::Hotkey);
+    const PARAM_DIRECT_OBJECT: u32 = u32::from_be_bytes(*b"----");
+    const TYPE_HOT_KEY_ID: u32 = u32::from_be_bytes(*b"hkid");
+    const SIGNATURE: u32 = u32::from_be_bytes(*b"islt");
+
+    thread_local! {
+        /// Whether the handler is installed, and each slot's registration.
+        static INSTALLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        static KEYS: std::cell::RefCell<[*mut c_void; crate::platform::HOTKEY_SLOTS]> =
+            const { std::cell::RefCell::new([std::ptr::null_mut(); crate::platform::HOTKEY_SLOTS]) };
+    }
+
+    unsafe extern "C" fn pressed(_call: *mut c_void, event: *mut c_void, _data: *mut c_void) -> i32 {
+        let mut id = EventHotKeyId { signature: 0, id: 0 };
+        // SAFETY: Carbon fills `id`, whose size we pass.
+        let r = unsafe {
+            GetEventParameter(
+                event,
+                PARAM_DIRECT_OBJECT,
+                TYPE_HOT_KEY_ID,
+                std::ptr::null_mut(),
+                std::mem::size_of::<EventHotKeyId>(),
+                std::ptr::null_mut(),
+                (&mut id as *mut EventHotKeyId).cast(),
+            )
+        };
+        if r == 0 && id.signature == SIGNATURE && id.id >= 1 {
+            push(Event::Hotkey((id.id - 1) as u8));
+        }
         0
     }
 
@@ -1038,17 +1073,20 @@ mod carbon {
         }
     }
 
-    pub fn set(hotkey: Option<Hotkey>) -> Result<()> {
-        let (installed, current) = STATE.with(|s| s.get());
+    pub fn set(slot: u8, hotkey: Option<Hotkey>) -> Result<()> {
+        let i = usize::from(slot);
+        if i >= crate::platform::HOTKEY_SLOTS {
+            return Err("no such shortcut".into());
+        }
         // SAFETY: Carbon calls on the main thread with valid arguments.
         unsafe {
+            let current = KEYS.with(|k| std::mem::replace(&mut k.borrow_mut()[i], std::ptr::null_mut()));
             if !current.is_null() {
                 UnregisterEventHotKey(current);
             }
-            STATE.with(|s| s.set((installed, std::ptr::null_mut())));
             let Some(hk) = hotkey else { return Ok(()) };
             let code = key_code(hk.key).ok_or("that key can't be a shortcut")?;
-            if !installed {
+            if !INSTALLED.with(|c| c.get()) {
                 let spec = EventTypeSpec { class: KEYBOARD, kind: HOT_KEY_PRESSED };
                 let r = InstallEventHandler(
                     GetApplicationEventTarget(),
@@ -1061,6 +1099,7 @@ mod carbon {
                 if r != 0 {
                     return Err(format!("couldn't install the shortcut handler ({r})"));
                 }
+                INSTALLED.with(|c| c.set(true));
             }
             let mut mods = 0;
             for (on, m) in [(hk.logo, CMD), (hk.shift, SHIFT), (hk.alt, OPTION), (hk.ctrl, CONTROL)] {
@@ -1069,12 +1108,12 @@ mod carbon {
                 }
             }
             let mut out = std::ptr::null_mut();
-            let id = EventHotKeyId { signature: u32::from_be_bytes(*b"islt"), id: 1 };
+            let id = EventHotKeyId { signature: SIGNATURE, id: u32::from(slot) + 1 };
             let r = RegisterEventHotKey(code, mods, id, GetApplicationEventTarget(), 0, &mut out);
-            STATE.with(|s| s.set((true, if r == 0 { out } else { std::ptr::null_mut() })));
             if r != 0 {
                 return Err(format!("{} is already used by another app", hk.label()));
             }
+            KEYS.with(|k| k.borrow_mut()[i] = out);
         }
         Ok(())
     }

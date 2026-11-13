@@ -108,6 +108,7 @@ Usage:
   islet look display <name>|primary|all    which display (names from `islet displays`), or all
   islet displays [--json]                  connected displays, primary first
   islet hotkey [<keys>|off]                the shortcut for that, e.g. Ctrl+Alt+I
+  islet hotkey launcher|note [<keys>|off]  shortcuts for the launcher and for a quick note
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
                                            notifications, calendar, fahrenheit, web-artwork,
                                            spotify, privacy-dots, clipboard, lyrics, auto-hide, calls, downloads,
@@ -276,6 +277,13 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
             Ok(if h.is_empty() { "No shortcut.".into() } else { h })
         }
         ["hotkey", "off"] => set_hotkey(""),
+        ["hotkey", which @ ("launcher" | "note")] => {
+            let p = config::load_prefs();
+            let h = if *which == "launcher" { p.launcher_hotkey } else { p.note_hotkey };
+            Ok(if h.is_empty() { "No shortcut.".into() } else { h })
+        }
+        ["hotkey", which @ ("launcher" | "note"), "off"] => set_extra_hotkey(which, ""),
+        ["hotkey", which @ ("launcher" | "note"), combo] => set_extra_hotkey(which, combo),
         ["look", "accent", name] => set_look(|p| {
             let (n, _) = islet_core::prefs::ACCENTS
                 .iter()
@@ -693,6 +701,27 @@ fn set_hotkey(combo: &str) -> Result<String, String> {
     config::save_prefs(&p)?;
     prefs_changed();
     Ok(if label.is_empty() { "Shortcut removed.".into() } else { format!("{label} opens and closes the island.") })
+}
+
+/// The launcher's or the quick note's shortcut.
+fn set_extra_hotkey(which: &str, combo: &str) -> Result<String, String> {
+    let label = if combo.is_empty() { String::new() } else { islet_core::hotkey::Hotkey::parse(combo)?.label() };
+    let mut p = config::load_prefs();
+    // One combination does one thing.
+    let taken = [&p.hotkey, &p.launcher_hotkey, &p.note_hotkey];
+    let mine = if which == "launcher" { &p.launcher_hotkey } else { &p.note_hotkey };
+    if !label.is_empty() && taken.iter().any(|t| **t == label) && *mine != label {
+        return Err(format!("{label} is already one of Islet's shortcuts"));
+    }
+    if which == "launcher" {
+        p.launcher_hotkey = label.clone();
+    } else {
+        p.note_hotkey = label.clone();
+    }
+    config::save_prefs(&p)?;
+    prefs_changed();
+    let does = if which == "launcher" { "opens the launcher" } else { "opens a quick note" };
+    Ok(if label.is_empty() { "Shortcut removed.".into() } else { format!("{label} {does}.") })
 }
 
 fn set_switch(key: &str, value: &str) -> Result<String, String> {

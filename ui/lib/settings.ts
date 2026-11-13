@@ -281,6 +281,8 @@ export interface IslandPrefs {
   shape: string;
   clockFace: string;
   hotkey: string;
+  launcherHotkey: string;
+  noteHotkey: string;
   accent: string;
   style: string;
   cardHidden: string[];

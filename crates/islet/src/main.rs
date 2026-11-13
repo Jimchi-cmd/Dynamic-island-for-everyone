@@ -211,7 +211,7 @@ fn run() -> platform::Result<()> {
     }
     win.watch_caps_lock(app.prefs().caps_lock_hud);
     trace("caps lock watched");
-    apply_hotkey(&mut win, &app.prefs().hotkey);
+    apply_hotkeys(&mut win, app.prefs());
     providers.weather(app.prefs().weather.clone());
     providers.calendar(app.prefs().calendar);
     providers.notifications(app.prefs().notifications);
@@ -381,7 +381,7 @@ fn run() -> platform::Result<()> {
                         }
                     }
                     win.watch_caps_lock(app.prefs().caps_lock_hud);
-                    apply_hotkey(&mut win, &app.prefs().hotkey);
+                    apply_hotkeys(&mut win, app.prefs());
                     providers.weather(app.prefs().weather.clone());
                     providers.calendar(app.prefs().calendar);
                     providers.notifications(app.prefs().notifications);
@@ -455,6 +455,9 @@ fn run() -> platform::Result<()> {
                 UiAction::Lock if !scripted => quick::lock(),
                 UiAction::Shortcut(target) if !scripted => quick::open_shortcut(&target),
                 UiAction::ReadBrightness if !scripted => quick::read_brightness(providers.sink()),
+                UiAction::Launcher if !scripted => open_settings("launcher"),
+                UiAction::QuickNote if !scripted => open_settings("note"),
+                UiAction::Launcher | UiAction::QuickNote => {}
                 UiAction::CloseProgram(pid) if !scripted => providers::hog::close(pid),
                 UiAction::CloseProgram(_) => {}
                 UiAction::ReadBatteryHealth if !scripted => providers::sysmon::read_battery_health(providers.sink()),
@@ -583,6 +586,8 @@ impl FrameStats {
 /// and network features shouldn't run twice.
 fn mirror_prefs(mut p: islet_core::prefs::IslandPrefs) -> islet_core::prefs::IslandPrefs {
     p.hotkey.clear();
+    p.launcher_hotkey.clear();
+    p.note_hotkey.clear();
     p.weather = None;
     p.calendar = false;
     p.spotify = false;
@@ -645,21 +650,27 @@ fn open_path(path: &str) {
     }
 }
 
-/// Register the global shortcut from the preferences ("" removes it).
-fn apply_hotkey(win: &mut Native, spec: &str) {
-    let hotkey = match spec.trim() {
-        "" => None,
-        s => match islet_core::hotkey::Hotkey::parse(s) {
-            Ok(h) => Some(h),
-            Err(e) => {
-                providers::debug_log(&format!("shortcut: {e}"));
-                return;
-            }
-        },
-    };
-    if let Err(e) = win.set_hotkey(hotkey) {
-        eprintln!("islet: shortcut: {e}");
-        providers::debug_log(&format!("shortcut: {e}"));
+/// Register the global shortcuts from the preferences ("" removes one):
+/// open the island, the launcher, and a quick note.
+fn apply_hotkeys(win: &mut Native, p: &islet_core::prefs::IslandPrefs) {
+    use platform::{HOTKEY_LAUNCHER, HOTKEY_NOTE, HOTKEY_TOGGLE};
+    for (slot, spec) in
+        [(HOTKEY_TOGGLE, &p.hotkey), (HOTKEY_LAUNCHER, &p.launcher_hotkey), (HOTKEY_NOTE, &p.note_hotkey)]
+    {
+        let hotkey = match spec.trim() {
+            "" => None,
+            s => match islet_core::hotkey::Hotkey::parse(s) {
+                Ok(h) => Some(h),
+                Err(e) => {
+                    providers::debug_log(&format!("shortcut: {e}"));
+                    continue;
+                }
+            },
+        };
+        if let Err(e) = win.set_hotkey(slot, hotkey) {
+            eprintln!("islet: shortcut: {e}");
+            providers::debug_log(&format!("shortcut: {e}"));
+        }
     }
 }
 

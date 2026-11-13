@@ -105,8 +105,8 @@ pub enum Event {
     Drop(Vec<String>),
     /// A screen reader pressed the island (None) or one of its buttons.
     A11yPress(Option<usize>),
-    /// The global shortcut was pressed (open or close the island).
-    Hotkey,
+    /// A global shortcut was pressed: which one (see `HOTKEY_SLOTS`).
+    Hotkey(u8),
     /// An app went fullscreen on the island's display (a video, a game,
     /// a presentation), or stopped being fullscreen.
     Fullscreen(bool),
@@ -115,6 +115,12 @@ pub enum Event {
     ScaleChanged(f64),
     Quit,
 }
+
+/// Global shortcuts: open or close the island, the launcher, a quick note.
+pub const HOTKEY_SLOTS: usize = 3;
+pub const HOTKEY_TOGGLE: u8 = 0;
+pub const HOTKEY_LAUNCHER: u8 = 1;
+pub const HOTKEY_NOTE: u8 = 2;
 
 /// Size of the overlay window in logical px.
 #[derive(Debug, Clone, Copy)]
@@ -178,9 +184,10 @@ pub trait Backend: Sized {
         (0.0, 0.0)
     }
 
-    /// Register the global shortcut (None removes it). Fails when the OS
-    /// or another app already uses that combination.
-    fn set_hotkey(&mut self, hotkey: Option<islet_core::hotkey::Hotkey>) -> Result<()> {
+    /// Register global shortcut `slot` (None removes it). Fails when the
+    /// OS or another app already uses that combination.
+    fn set_hotkey(&mut self, slot: u8, hotkey: Option<islet_core::hotkey::Hotkey>) -> Result<()> {
+        let _ = slot;
         match hotkey {
             None => Ok(()),
             Some(_) => Err("global shortcuts aren't available here".into()),

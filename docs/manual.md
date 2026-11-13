@@ -334,6 +334,8 @@ Islet restarts itself to apply a new size, gap or display.
 
 **Settings → General → Shortcut:** click the box, press the keys you want (for example **Ctrl+Alt+I**) and click **Save**; they then open and close the island from the keyboard. It needs Ctrl, Alt or the Windows/Command key. On native Wayland desktops, set a shortcut in your desktop's keyboard settings that runs `islet toggle` instead.
 
+Two more shortcuts sit under it: one opens the **launcher**, and one opens it ready for a **quick note** (Islet Pro): type the note and press Enter, and it is added to `Islet notes.txt`. In the launcher, starting with `note:` does the same. On native Wayland, bind keys to `islet launcher` and `islet note` instead.
+
 **Settings → General → Start at login:** start Islet when you log in, or not.
 
 ---

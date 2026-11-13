@@ -21,6 +21,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - **Performance alert** (opt-in): names a program hogging the processor or memory, with Close it and Ignore.
 - **System panel:** network speed and battery health.
 - **Navigation:** an arrow for the first turn.
+- **Wi-Fi pop-up:** "Connected" and the network's name when Wi-Fi joins a network.
+- **More shortcuts:** keys of your own for the launcher and for a quick note, beside the one that opens the island.
 - **Sleep timer** in the right-click menu; an "update available" pill; a quick **launcher** in Settings (`islet launcher`) for apps, web searches, sums and unit conversions.
 - **Settings:** a new look, with a page for Islet Pro, the timetable and the launcher.
 
@@ -29,7 +31,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - CI no longer fails when Ubuntu's package servers are unreachable.
 
 ### Not included
-- A speed test (it would need a third-party server), a built-in second global shortcut, clipboard images, dragging files out of the shelf, an app switcher, a per-app volume mixer, per-app rules, and placing the island at the bottom or side. These need per-system code that could not be verified on Windows and macOS.
+- A speed test (it would need a third-party server), clipboard images, dragging files out of the shelf, an app switcher, a per-app volume mixer, per-app rules, and placing the island at the bottom or side. These need per-system code that could not be verified on Windows and macOS.
 
 ## [0.2.0] - 2026-11-06
 

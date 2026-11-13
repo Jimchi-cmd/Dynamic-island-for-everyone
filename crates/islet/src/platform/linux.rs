@@ -74,9 +74,9 @@ impl Backend for Linux {
         }
     }
 
-    fn set_hotkey(&mut self, hotkey: Option<islet_core::hotkey::Hotkey>) -> Result<()> {
+    fn set_hotkey(&mut self, slot: u8, hotkey: Option<islet_core::hotkey::Hotkey>) -> Result<()> {
         match self {
-            Linux::X11(x) => x.set_hotkey(hotkey),
+            Linux::X11(x) => x.set_hotkey(slot, hotkey),
             // Wayland gives global keys only to the compositor: bind a key to
             // `islet toggle` in its settings instead.
             Linux::Wayland(_) if hotkey.is_some() => {
