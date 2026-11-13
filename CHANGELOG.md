@@ -2,6 +2,34 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - Unreleased
+
+### Added
+- **Islet Pro** (optional, one payment): a licence key checked with the store, kept in the system keychain, good on three computers; being offline never turns it off. Everything in 0.2.0 stays free. See [docs/pro.md](docs/pro.md).
+  - No low-end limits (60 fps waveform, sharper album art, 500 clipboard copies, 100 shelf files), and a **Power saver** switch that brings the light limits back and holds the waveform still.
+  - Stopwatch with laps, world clocks, a to-do list on the island, quick notes saved to a text file, shortcut buttons of your own (also in the right-click menu).
+  - Looks: tinted and glass styles, a notch shape, a glow in the album's colour, the song's progress as moving bars, clock faces with the day or with seconds.
+  - Screenshot preview: each new screenshot shows on the island; tap its card to open it.
+  - Early builds: `islet update check --early`.
+- **Clock card:** Wi-Fi and Bluetooth chips, round tool buttons you can show or hide, a quick timer, a month calendar, screenshot and lock buttons, and twelve accent colours.
+- **Controls panel:** volume and brightness sliders and a dark-mode switch.
+- **Status strip:** point at the empty island for the weather, battery and processor load beside the time.
+- **Calendar:** a Join button for events with a video-call link; deadlines and exams count down ("Due in 6 days"); the feed is read six weeks ahead.
+- **Class timetable:** enter your week once; lessons show ten minutes before, and the clock card counts down to the next one and shows free gaps.
+- **Focus:** a streak of days with a finished round, and "do not disturb while working".
+- **Performance alert** (opt-in): names a program hogging the processor or memory, with Close it and Ignore.
+- **System panel:** network speed and battery health.
+- **Navigation:** an arrow for the first turn.
+- **Sleep timer** in the right-click menu; an "update available" pill; a quick **launcher** in Settings (`islet launcher`) for apps, web searches, sums and unit conversions.
+- **Settings:** a new look, with a page for Islet Pro, the timetable and the launcher.
+
+### Fixed
+- Labels cut short on the clock card and in the Wi-Fi, Bluetooth and shelf lists.
+- CI no longer fails when Ubuntu's package servers are unreachable.
+
+### Not included
+- A speed test (it would need a third-party server), a built-in second global shortcut, clipboard images, dragging files out of the shelf, an app switcher, a per-app volume mixer, per-app rules, and placing the island at the bottom or side. These need per-system code that could not be verified on Windows and macOS.
+
 ## [0.2.0] - 2026-11-06
 
 The first published release: everything in 0.1.0 (below), plus:
