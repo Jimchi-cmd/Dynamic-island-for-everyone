@@ -12,6 +12,7 @@ accesskit = "0.25"
 getrandom = "0.3"
 islet-core = { path = "../islet-core" }
 islet-render = { path = "../islet-render" }
+qrcodegen = "1.8"
 serde = "1"
 serde_json = "1"
 sha2 = "0.11"

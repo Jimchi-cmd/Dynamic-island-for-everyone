@@ -43,6 +43,7 @@ mod macos_privacy;
 mod macos_volume;
 pub mod mic;
 pub mod navigation;
+pub mod phone;
 mod screenshots;
 pub mod spotify;
 pub mod sysmon;
@@ -204,6 +205,7 @@ pub struct Providers {
     clipboard: Option<clipboard::Watcher>,
     downloads: Option<downloads::Watcher>,
     screenshots: Option<screenshots::Watcher>,
+    phone: Option<phone::Link>,
     sink: Sink,
     #[cfg(target_os = "linux")]
     notifications: linux_notifications::Notifications,
@@ -246,6 +248,7 @@ impl Providers {
             clipboard: None,
             downloads: None,
             screenshots: None,
+            phone: None,
             sink,
             #[cfg(target_os = "linux")]
             notifications: linux_notifications::Notifications::default(),
@@ -365,9 +368,28 @@ impl Providers {
         let _ = self.spotify.send(spotify::SpotifyMsg::Enable(on));
     }
 
+    /// Listen for the paired phone (Islet Pro) with this pairing key, or
+    /// stop. Asking again with the link already up changes nothing.
+    pub fn phone(&mut self, pairing: Option<([u8; islet_core::phone::KEY_LEN], u16, String)>) {
+        match pairing {
+            Some((key, port, computer)) if self.phone.is_none() => {
+                self.phone = phone::start(self.sink.clone(), key, port, computer);
+                if self.phone.is_none() {
+                    debug_log("phone: no free port to listen on");
+                }
+            }
+            Some(_) => {}
+            None => self.phone = None,
+        }
+    }
+
     /// A playback command for the session the island shows.
     pub fn command_for(&self, source: &str, cmd: MediaCommand) {
-        if source == spotify::SOURCE {
+        if source == phone::SOURCE {
+            if let Some(link) = &self.phone {
+                link.command(cmd);
+            }
+        } else if source == spotify::SOURCE {
             let _ = self.spotify.send(spotify::SpotifyMsg::Command(cmd));
         } else {
             self.command(cmd);

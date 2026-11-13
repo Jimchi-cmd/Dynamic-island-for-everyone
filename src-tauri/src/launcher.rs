@@ -113,7 +113,7 @@ pub fn list() -> Vec<AppEntry> {
     for root in roots() {
         scan(&root, 0, &mut out);
     }
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_cached_key(|a| a.name.to_lowercase());
     out.dedup_by(|a, b| a.name.eq_ignore_ascii_case(&b.name));
     out
 }

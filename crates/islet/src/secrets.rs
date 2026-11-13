@@ -6,13 +6,15 @@
 //!   development only);
 //! - the private calendar (ICS) link, which contains its own secret token;
 //! - the Spotify refresh token (and the user's own client id);
-//! - the Islet Pro key.
+//! - the Islet Pro key;
+//! - the phone companion's pairing key.
 
 const SERVICE: &str = "islet";
 const ROUTES: &str = "google-routes";
 const CALENDAR: &str = "calendar-ics";
 const SPOTIFY: &str = "spotify";
 const PRO: &str = "pro-key";
+const PHONE: &str = "phone-key";
 
 pub fn routes_key() -> Result<String, String> {
     if let Ok(k) = std::env::var("ISLET_GOOGLE_ROUTES_KEY") {
@@ -66,6 +68,19 @@ pub fn set_pro_key(key: &str) -> Result<(), String> {
 
 pub fn clear_pro_key() -> Result<(), String> {
     clear(PRO)
+}
+
+/// The key shared with the paired phone (base64url of 32 bytes).
+pub fn phone_key() -> Option<[u8; islet_core::phone::KEY_LEN]> {
+    islet_core::phone::base64url_decode(&get(PHONE)?)?.try_into().ok()
+}
+
+pub fn set_phone_key(key: &[u8; islet_core::phone::KEY_LEN]) -> Result<(), String> {
+    set(PHONE, &islet_core::phone::base64url(key), "Islet: phone pairing key")
+}
+
+pub fn clear_phone_key() -> Result<(), String> {
+    clear(PHONE)
 }
 
 fn get(account: &str) -> Option<String> {

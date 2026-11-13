@@ -50,6 +50,9 @@ pub struct IslandPrefs {
     /// Pointing at the empty island shows the weather, the battery and
     /// how busy the processor is, either side of the time.
     pub hover_status: bool,
+    /// Islet Pro: listen for the paired phone (its notifications, music
+    /// and battery). Set by `islet phone pair`; nothing listens without it.
+    pub phone: bool,
     /// Islet Pro: show each new screenshot on the island for a moment.
     pub screenshot_preview: bool,
     /// Islet Pro looks: a glow in the album's colour while music plays,
@@ -216,6 +219,7 @@ impl Default for IslandPrefs {
             focus_quiet: false,
             hover_status: true,
             performance_alert: false,
+            phone: false,
             screenshot_preview: true,
             album_glow: true,
             visualizer: true,
@@ -235,7 +239,7 @@ impl Default for IslandPrefs {
 }
 
 /// The switches `islet set <key> on|off` understands.
-pub const SWITCHES: [&str; 22] = [
+pub const SWITCHES: [&str; 23] = [
     "volume-hud",
     "brightness-hud",
     "caps-lock-hud",
@@ -258,6 +262,7 @@ pub const SWITCHES: [&str; 22] = [
     "album-glow",
     "visualizer",
     "screenshot-preview",
+    "phone",
 ];
 
 impl IslandPrefs {
@@ -305,6 +310,7 @@ impl IslandPrefs {
             "album-glow" => &mut self.album_glow,
             "visualizer" => &mut self.visualizer,
             "screenshot-preview" => &mut self.screenshot_preview,
+            "phone" => &mut self.phone,
             _ => return Err(format!("unknown setting {key:?} (one of: {})", SWITCHES.join(", "))),
         })
     }

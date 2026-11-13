@@ -44,8 +44,7 @@ fn label() -> String {
         "windows" => "Windows",
         _ => "Linux",
     };
-    let host = std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_default();
-    let host: String = host.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(32).collect();
+    let host = computer_name();
     if host.is_empty() {
         format!("Islet on {os}")
     } else {
@@ -140,4 +139,10 @@ pub fn status_text() -> String {
     } else {
         "Islet Pro is off.".into()
     }
+}
+
+/// This computer's name, as far as the environment says (may be empty).
+pub fn computer_name() -> String {
+    let host = std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_default();
+    host.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(32).collect()
 }

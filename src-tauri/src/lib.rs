@@ -31,6 +31,8 @@ pub fn allowed(args: &[String]) -> bool {
         ["stopwatch", "start" | "pause" | "resume" | "lap" | "reset"] => true,
         ["world", "--json"] | ["world", "cities", "--json"] => true,
         ["note"] | ["note", "--where"] => true,
+        ["phone", "pair", "--json"] | ["phone", "pair", "--new", "--json"] => true,
+        ["phone", "status", "--json"] | ["phone", "unpair"] => true,
         // The "update available" pill on the island.
         ["activity", "end", "islet-update"] => true,
         ["activity", "start", "islet-update", "--title", title, "--subtitle", sub, "--progress", "100", "--open", link] => {

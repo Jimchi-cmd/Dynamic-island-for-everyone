@@ -275,6 +275,7 @@ export interface IslandPrefs {
   albumGlow: boolean;
   visualizer: boolean;
   screenshotPreview: boolean;
+  phone: boolean;
   shape: string;
   clockFace: string;
   hotkey: string;
@@ -346,6 +347,7 @@ export const SWITCH_NAMES: Record<string, string> = {
   albumGlow: 'album-glow',
   visualizer: 'visualizer',
   screenshotPreview: 'screenshot-preview',
+  phone: 'phone',
 };
 
 /** `islet focus streak --json`. */
@@ -425,4 +427,35 @@ export function lessonAddArgs(
   const args = ['class', 'add', DAY_ARGS[day] ?? 'mon', start.trim(), end.trim(), name.trim()];
   if (room.trim()) args.push('--room', room.trim());
   return args;
+}
+
+/** `islet phone pair --json`: what the phone scans. */
+export interface PhonePairing {
+  uri: string;
+  /** The QR code: one string of '1' (dark) and '0' per row. */
+  rows: string[];
+  hosts: string[];
+  port: number;
+}
+
+export function parsePairing(json: string): PhonePairing | null {
+  const v = JSON.parse(json);
+  const rows = Array.isArray(v.rows) ? v.rows.filter((r: unknown) => typeof r === 'string' && /^[01]+$/.test(r)) : [];
+  if (typeof v.uri !== 'string' || !v.uri.startsWith('islet://pair?') || rows.length < 21) return null;
+  if (rows.some((r: string) => r.length !== rows.length)) return null;
+  return {
+    uri: v.uri,
+    rows,
+    hosts: Array.isArray(v.hosts) ? v.hosts.map(String) : [],
+    port: Number(v.port) || 0,
+  };
+}
+
+/** The QR code as one SVG path (a unit square per dark module). */
+export function qrPath(rows: string[]): string {
+  let d = '';
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) if (row[x] === '1') d += `M${x} ${y}h1v1h-1z`;
+  });
+  return d;
 }

@@ -187,3 +187,22 @@ describe('class timetable', () => {
     expect(lessonAddArgs(0, '09:00', '10:00', '-x', '')).toEqual({ error: 'Names cannot start with "-".' });
   });
 });
+
+import { parsePairing, qrPath } from './settings';
+
+describe('phone pairing', () => {
+  const rows = Array.from({ length: 21 }, (_, y) => (y === 0 ? '1'.repeat(21) : '0'.repeat(21)));
+
+  it('reads what the phone scans and refuses anything odd', () => {
+    const ok = parsePairing(JSON.stringify({ uri: 'islet://pair?h=192.168.1.20&p=47821&k=abc', rows, hosts: ['192.168.1.20'], port: 47821 }));
+    expect(ok?.port).toBe(47821);
+    expect(ok?.rows.length).toBe(21);
+    expect(parsePairing(JSON.stringify({ uri: 'https://example.com', rows }))).toBeNull();
+    expect(parsePairing(JSON.stringify({ uri: 'islet://pair?x', rows: ['1<script>'] }))).toBeNull();
+    expect(parsePairing(JSON.stringify({ uri: 'islet://pair?x', rows: rows.slice(1).concat('01') }))).toBeNull();
+  });
+
+  it('draws a square for each dark module', () => {
+    expect(qrPath(['10', '01'])).toBe('M0 0h1v1h-1zM1 1h1v1h-1z');
+  });
+});

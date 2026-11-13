@@ -32,6 +32,10 @@ Usage:
                                            a lesson for your timetable (mon 9:00 10:00 Maths)
   islet class [--json]                     your timetable; the clock card counts down to lessons
   islet class remove <n>                   delete lesson n
+  islet phone pair [--new] [--json]        pair an Android phone (Islet Pro): shows the code the
+                                           Islet app scans; --new makes a fresh key
+  islet phone status [--json]              is a phone paired, and where the island listens
+  islet phone unpair                       forget the phone
   islet launcher                           open the quick launcher (apps, web, sums, conversions);
                                            bind it to a key in your system's keyboard settings
   islet note [<text>]                      add a line to Islet notes.txt in Documents (Islet Pro);
@@ -109,7 +113,7 @@ Usage:
                                            spotify, privacy-dots, clipboard, lyrics, auto-hide, calls, downloads,
                                            idle-clock, hover-status, focus-quiet, performance-alert,
                                            and with Islet Pro: power-saver, album-glow, visualizer,
-                                           screenshot-preview
+                                           screenshot-preview, phone
   islet prefs [--json]                     the island's settings
   islet autostart on|off                   start Islet when you log in (or stop doing so)
   islet status [--json]                    is Islet running, and how it is set up
@@ -136,6 +140,13 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["class", "--json"] => serde_json::to_string(&load_timetable().lessons).map_err(|e| e.to_string()),
         ["class", "add", day, start, end, name, rest @ ..] => class_add(day, start, end, name, rest),
         ["class", "remove", n] => class_remove(n),
+        ["phone", "pair"] => phone_pair(false, false),
+        ["phone", "pair", "--json"] => phone_pair(false, true),
+        ["phone", "pair", "--new"] => phone_pair(true, false),
+        ["phone", "pair", "--new", "--json"] => phone_pair(true, true),
+        ["phone", "status"] => Ok(phone_status(false)),
+        ["phone", "status", "--json"] => Ok(phone_status(true)),
+        ["phone", "unpair"] => phone_unpair(),
         ["launcher"] => {
             crate::open_settings("launcher");
             Ok(String::new())
@@ -1060,6 +1071,110 @@ fn class_text() -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Where the phone link listens (phone.json): the port the QR code named.
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct PhoneFile {
+    port: u16,
+}
+
+pub fn phone_port() -> u16 {
+    config::load_json::<PhoneFile>("phone.json")
+        .map(|f| f.port)
+        .filter(|p| *p != 0)
+        .unwrap_or(crate::providers::phone::PORT)
+}
+
+/// The QR code for a text, as rows of '1' (dark) and '0'.
+fn qr_rows(text: &str) -> Result<Vec<String>, String> {
+    let qr =
+        qrcodegen::QrCode::encode_text(text, qrcodegen::QrCodeEcc::Medium).map_err(|_| "too long for a QR code")?;
+    let n = qr.size();
+    Ok((0..n).map(|y| (0..n).map(|x| if qr.get_module(x, y) { '1' } else { '0' }).collect()).collect())
+}
+
+/// Pair a phone (Islet Pro): make the key if there is none (or a new one),
+/// switch the link on, and show what the phone must scan.
+fn phone_pair(new_key: bool, json: bool) -> Result<String, String> {
+    use islet_core::phone::{Pairing, KEY_LEN};
+    needs_pro()?;
+    let key = match secrets::phone_key().filter(|_| !new_key) {
+        Some(k) => k,
+        None => {
+            let mut k = [0u8; KEY_LEN];
+            getrandom::fill(&mut k).map_err(|e| e.to_string())?;
+            secrets::set_phone_key(&k)?;
+            k
+        }
+    };
+    // Settle on a port the phone can be told: the usual one, or the next free.
+    let port = match crate::providers::phone::bind(phone_port()) {
+        Some((_, port)) => port,
+        // Taken, most likely by the island already listening there.
+        None => phone_port(),
+    };
+    config::save_json("phone.json", &PhoneFile { port })?;
+    let hosts = crate::providers::phone::local_addresses();
+    if hosts.is_empty() {
+        return Err("This computer isn't on a network. Join the Wi-Fi your phone is on, then pair again.".into());
+    }
+    let name = match crate::pro::computer_name() {
+        n if n.is_empty() => "My computer".to_string(),
+        n => n,
+    };
+    let uri = Pairing { hosts: hosts.clone(), port, key, name }.to_uri();
+    let mut p = config::load_prefs();
+    p.phone = true;
+    config::save_prefs(&p)?;
+    prefs_changed();
+    let rows = qr_rows(&uri)?;
+    if json {
+        return Ok(serde_json::json!({ "uri": uri, "rows": rows, "hosts": hosts, "port": port }).to_string());
+    }
+    // Two rows of the code per line of text, with a quiet border.
+    let dark = |x: usize, y: usize| rows.get(y).and_then(|r| r.as_bytes().get(x)).is_some_and(|c| *c == b'1');
+    let n = rows.len();
+    let mut out = String::from("Scan this with the Islet app on your phone (same Wi-Fi):\n\n");
+    for y in (0..n + 2).step_by(2) {
+        out.push_str("  ");
+        for x in 0..n + 2 {
+            let (top, bottom) = (x > 0 && y > 0 && dark(x - 1, y - 1), x > 0 && dark(x - 1, y));
+            out.push(match (top, bottom) {
+                (true, true) => ' ',
+                (true, false) => '▄',
+                (false, true) => '▀',
+                (false, false) => '█',
+            });
+        }
+        out.push('\n');
+    }
+    out.push_str(&format!("\nOr paste this into the app:\n{uri}\n\nKeep it private: it holds the pairing key."));
+    Ok(out)
+}
+
+fn phone_status(json: bool) -> String {
+    let paired = secrets::phone_key().is_some();
+    let on = config::load_prefs().phone && paired && crate::pro::active();
+    let (hosts, port) = (crate::providers::phone::local_addresses(), phone_port());
+    if json {
+        return serde_json::json!({ "paired": paired, "on": on, "hosts": hosts, "port": port }).to_string();
+    }
+    match (paired, on) {
+        (false, _) => "No phone is paired. Pair one with: islet phone pair".into(),
+        (true, false) => "A phone is paired, but the link is off (islet set phone on; it needs Islet Pro).".into(),
+        (true, true) => format!("Listening for your phone on {} port {port}.", hosts.join(", ")),
+    }
+}
+
+fn phone_unpair() -> Result<String, String> {
+    secrets::clear_phone_key()?;
+    let mut p = config::load_prefs();
+    p.phone = false;
+    config::save_prefs(&p)?;
+    config::remove("phone.json");
+    prefs_changed();
+    Ok("Unpaired. The old code no longer works; forget this computer in the phone app too.".into())
 }
 
 /// The quick-notes file: "Islet notes.txt" in Documents (or the home

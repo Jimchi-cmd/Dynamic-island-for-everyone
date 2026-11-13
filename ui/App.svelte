@@ -21,6 +21,9 @@
     permissionsFor,
     signalBars,
     SWITCH_NAMES,
+    parsePairing,
+    qrPath,
+    type PhonePairing,
     parseStreak,
     streakLine,
     type FocusStreak,
@@ -621,6 +624,35 @@
   let todos: { id: number; text: string; done: boolean }[] = $state([]);
   let todoText = $state('');
 
+  // The Android companion: pairing shows a QR code the phone scans.
+  let pairing = $state<PhonePairing | null>(null);
+  let phoneState = $state<{ paired: boolean; on: boolean } | null>(null);
+  let phoneNote = $state('');
+  async function loadPhone() {
+    try {
+      const v = JSON.parse(await api.islet(['phone', 'status', '--json']));
+      phoneState = { paired: v.paired === true, on: v.on === true };
+    } catch {
+      phoneState = null;
+    }
+  }
+  async function phoneRun(args: string[]) {
+    phoneNote = '';
+    try {
+      const out = await api.islet(args);
+      if (args[1] === 'pair') {
+        pairing = parsePairing(out);
+        if (!pairing) phoneNote = 'The pairing code could not be drawn.';
+      } else {
+        pairing = null;
+        phoneNote = out;
+      }
+    } catch (e) {
+      phoneNote = api.message(e);
+    }
+    await loadPhone();
+  }
+
   // Quick notes: one line into a plain file (`islet note`).
   let quickNote = $state('');
   let quickNoteSaid = $state('');
@@ -689,6 +721,7 @@
     void loadWorld();
     void loadTodos();
     void loadNotesPath();
+    void loadPhone();
     void loadShortcuts();
     try {
       pro = parsePro(await api.islet(['pro', 'status', '--json']));
@@ -1855,6 +1888,43 @@
             {/if}
           </div>
           <div class="card">
+            <h2>Your Android phone</h2>
+            <p class="muted">
+              With the Islet app on your phone, its notifications, music and battery show on the island, and the
+              island’s music buttons control the phone. The two talk directly over your Wi-Fi, encrypted with a key
+              only they hold. Nothing goes through the internet.
+            </p>
+            {#if pairing}
+              <div class="pairing">
+                <svg class="qr" viewBox="-2 -2 {pairing.rows.length + 4} {pairing.rows.length + 4}" role="img" aria-label="Pairing code">
+                  <rect x="-2" y="-2" width={pairing.rows.length + 4} height={pairing.rows.length + 4} fill="#fff" />
+                  <path d={qrPath(pairing.rows)} fill="#000" />
+                </svg>
+                <ol>
+                  <li>Install the Islet app on your phone (the APK is on Islet’s download page).</li>
+                  <li>Join the same Wi-Fi as this computer.</li>
+                  <li>In the app, tap <b>Scan the code</b> and point the camera here.</li>
+                  <li>Allow notification access when the app asks.</li>
+                </ol>
+              </div>
+              <p class="small muted">
+                Keep this code to yourself: it holds the pairing key. This computer listens on
+                {pairing.hosts.join(', ')} port {pairing.port}; if your firewall asks, allow Islet on private networks.
+              </p>
+            {/if}
+            <div class="actions left">
+              <button class="primary" onclick={() => phoneRun(['phone', 'pair', '--json'])}>
+                {pairing ? 'Show the code again' : phoneState?.paired ? 'Show the pairing code' : 'Pair a phone'}
+              </button>
+              {#if phoneState?.paired}
+                <button onclick={() => phoneRun(['phone', 'pair', '--new', '--json'])}>New code</button>
+                <button onclick={() => phoneRun(['phone', 'unpair'])}>Unpair</button>
+              {/if}
+              <button onclick={() => api.openLink(`${info?.repo}/releases`)}>Get the app</button>
+            </div>
+            {#if phoneNote}<p class="small" role="status">{phoneNote}</p>{/if}
+          </div>
+          <div class="card">
             <h2>Quick notes</h2>
             <p class="muted">
               One line at a time, added with the date to a plain text file you can open anywhere:
@@ -2365,6 +2435,24 @@
   .path {
     font-weight: 600;
     overflow-wrap: anywhere;
+  }
+  .pairing {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    margin: 10px 0;
+  }
+  .pairing .qr {
+    flex: none;
+    width: 190px;
+    height: 190px;
+    border-radius: 10px;
+    shape-rendering: crispEdges;
+  }
+  .pairing ol {
+    margin: 0;
+    padding-left: 20px;
+    line-height: 1.7;
   }
   .launcher-input {
     width: 100%;

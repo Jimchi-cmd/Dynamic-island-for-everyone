@@ -16,6 +16,7 @@ pub mod limits;
 pub mod lyrics;
 pub mod nav;
 pub mod paths;
+pub mod phone;
 pub mod prefs;
 pub mod pro;
 pub mod quicknote;

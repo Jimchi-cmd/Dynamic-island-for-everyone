@@ -221,6 +221,7 @@ fn run() -> platform::Result<()> {
     providers.downloads(app.prefs().downloads && !scripted);
     providers.hog(app.prefs().performance_alert && !scripted);
     providers.screenshots(pro::active() && app.prefs().screenshot_preview && !scripted);
+    providers.phone(phone_pairing(app.prefs()).filter(|_| !scripted && mirror.is_none()));
     let mut alarm_sound = sound::AlarmSound::default();
     // Windows' screen-reader adapter must exist before the window shows.
     let mut access = a11y::Bridge::new(win.native_handle(), win.waker());
@@ -303,7 +304,9 @@ fn run() -> platform::Result<()> {
         }
         // Reports from the media and battery providers.
         while let Ok((mut report, sampled)) = providers.reports.try_recv() {
-            if let Report::Media(Some(m)) = &mut report {
+            // Positions are "as of when they were read", for music here and
+            // on another device alike.
+            if let Report::Media(Some(m)) | Report::RemoteMedia(Some(m)) = &mut report {
                 m.position_at = sampled.saturating_duration_since(epoch).as_secs_f64();
             }
             needs_frame |= app.report(report, t);
@@ -388,6 +391,7 @@ fn run() -> platform::Result<()> {
                     providers.downloads(app.prefs().downloads);
                     providers.hog(app.prefs().performance_alert);
                     providers.screenshots(pro::active() && app.prefs().screenshot_preview);
+                    providers.phone(phone_pairing(app.prefs()).filter(|_| mirror.is_none()));
                 }
                 Control::PrefsChanged => {}
                 Control::ShelfChanged if !scripted => app.set_shelf(config::load_shelf()),
@@ -598,6 +602,20 @@ fn attach_console() {
 }
 
 /// Open Islet Settings (installed next to the island) at a page.
+/// What the phone link needs to listen: the pairing key, the port and
+/// this computer's name. None unless a phone is paired, the link is on
+/// and Islet Pro is active.
+fn phone_pairing(prefs: &islet_core::prefs::IslandPrefs) -> Option<([u8; islet_core::phone::KEY_LEN], u16, String)> {
+    if !prefs.phone || !pro::active() {
+        return None;
+    }
+    let name = match pro::computer_name() {
+        n if n.is_empty() => "Computer".to_string(),
+        n => n,
+    };
+    Some((secrets::phone_key()?, cli::phone_port(), name))
+}
+
 fn open_settings(page: &str) {
     let Some(exe) = std::env::current_exe().ok().and_then(|e| {
         let p = e.parent()?.join(format!("islet-settings{}", std::env::consts::EXE_SUFFIX));
