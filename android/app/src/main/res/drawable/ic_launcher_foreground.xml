@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Islet's mark: a black pill with a blue dot, drawn for this app. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#000000"
+        android:pathData="M37,44h34a10,10 0 0 1 0,20h-34a10,10 0 0 1 0,-20z" />
+    <path
+        android:fillColor="#0A84FF"
+        android:pathData="M69,54m-4.5,0a4.5,4.5 0 1 0 9,0a4.5,4.5 0 1 0 -9,0" />
+</vector>

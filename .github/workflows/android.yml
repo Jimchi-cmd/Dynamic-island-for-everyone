@@ -1,0 +1,46 @@
+name: Android
+
+# The phone companion. Its link to the computer is tested against the same
+# vectors as the Rust side, and each run leaves a debug APK to try.
+
+on:
+  push:
+    branches: [dev, main]
+    paths: ['android/**', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['android/**', '.github/workflows/android.yml']
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Test and build the APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: '8.14.3'
+      - name: Protocol tests
+        run: gradle :protocol:test --no-daemon
+      - name: Build the app
+        run: gradle :app:assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v7
+        with:
+          name: islet-android-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
