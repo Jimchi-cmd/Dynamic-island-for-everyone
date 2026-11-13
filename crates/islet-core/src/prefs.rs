@@ -50,6 +50,15 @@ pub struct IslandPrefs {
     /// Pointing at the empty island shows the weather, the battery and
     /// how busy the processor is, either side of the time.
     pub hover_status: bool,
+    /// Islet Pro looks: a glow in the album's colour while music plays,
+    /// and the progress bar drawn as moving bars.
+    pub album_glow: bool,
+    pub visualizer: bool,
+    /// Islet Pro: the island's outline, "pill" or "notch" (square at the
+    /// top, as if it grew out of the screen's edge; see `SHAPES`).
+    pub shape: String,
+    /// Islet Pro: what the empty island shows (see `CLOCK_FACES`).
+    pub clock_face: String,
     /// Say when one program hogs the processor or the memory, and offer
     /// to close it. Looks at the running programs every 20 seconds.
     pub performance_alert: bool,
@@ -166,6 +175,15 @@ pub fn style_body(style: &str, accent: [u8; 3]) -> ([u8; 3], f32, bool) {
     }
 }
 
+/// The island's outline. "notch" (Islet Pro) has square top corners.
+pub const SHAPES: [&str; 2] = ["pill", "notch"];
+
+/// What the empty island shows. All but "time" are Islet Pro:
+/// - "time": 14:05
+/// - "date": Wed 4 · 14:05
+/// - "seconds": 14:05:09 (redraws every second while it shows)
+pub const CLOCK_FACES: [&str; 3] = ["time", "date", "seconds"];
+
 /// `display` value for an island on every display.
 pub const ALL_DISPLAYS: &str = "all";
 
@@ -196,6 +214,10 @@ impl Default for IslandPrefs {
             focus_quiet: false,
             hover_status: true,
             performance_alert: false,
+            album_glow: true,
+            visualizer: true,
+            shape: "pill".into(),
+            clock_face: "time".into(),
             hotkey: String::new(),
             accent: "blue".into(),
             style: "black".into(),
@@ -210,7 +232,7 @@ impl Default for IslandPrefs {
 }
 
 /// The switches `islet set <key> on|off` understands.
-pub const SWITCHES: [&str; 19] = [
+pub const SWITCHES: [&str; 21] = [
     "volume-hud",
     "brightness-hud",
     "caps-lock-hud",
@@ -230,6 +252,8 @@ pub const SWITCHES: [&str; 19] = [
     "focus-quiet",
     "hover-status",
     "performance-alert",
+    "album-glow",
+    "visualizer",
 ];
 
 impl IslandPrefs {
@@ -274,6 +298,8 @@ impl IslandPrefs {
             "focus-quiet" => &mut self.focus_quiet,
             "hover-status" => &mut self.hover_status,
             "performance-alert" => &mut self.performance_alert,
+            "album-glow" => &mut self.album_glow,
+            "visualizer" => &mut self.visualizer,
             _ => return Err(format!("unknown setting {key:?} (one of: {})", SWITCHES.join(", "))),
         })
     }

@@ -24,12 +24,15 @@ pub struct Skin {
     pub alpha: f32,
     /// A glassy sheen: light falling from the top edge and a bright rim.
     pub glass: bool,
+    /// A soft glow in this colour just inside the edge (the album's colour
+    /// while music plays). Inside, so the island's outline never changes.
+    pub glow: Option<[u8; 3]>,
 }
 
 impl Default for Skin {
     /// Solid black, like the real thing.
     fn default() -> Self {
-        Skin { color: [0, 0, 0], alpha: 1.0, glass: false }
+        Skin { color: [0, 0, 0], alpha: 1.0, glass: false, glow: None }
     }
 }
 
@@ -181,6 +184,33 @@ pub fn draw(pixmap: &mut Pixmap, frame: &PillFrame, scale: f32) {
         if let (Some(p), Some(shader)) = (rim_path, fall(0.55, 0.14, 1.0)) {
             let rim = Paint { shader, anti_alias: true, ..Paint::default() };
             pixmap.stroke_path(&p, &rim, &Stroke { width: 1.2, ..Stroke::default() }, ts, None);
+        }
+    }
+
+    if let Some([r, g, b]) = skin.glow.filter(|_| shown > 0.02) {
+        // Wide and faint first, then narrower and brighter: a glow that
+        // falls off towards the middle, ending in a bright rim.
+        let s = frame.shape;
+        for (width, alpha) in [(9.0f32, 0.07f32), (5.0, 0.12), (2.4, 0.22), (1.1, 0.75)] {
+            let inset = width / 2.0;
+            let inner = Squircle {
+                x: s.x + inset,
+                y: s.y + inset,
+                w: s.w - 2.0 * inset,
+                h: s.h - 2.0 * inset,
+                radius: (s.radius - inset).max(0.0),
+                smoothing: s.smoothing,
+            };
+            if inner.w <= 1.0 || inner.h <= 1.0 {
+                continue;
+            }
+            let ring = if frame.flat_top { inner.path_flat_top() } else { inner.path() };
+            if let Some(p) = ring {
+                let mut glow = Paint::default();
+                glow.set_color_rgba8(r, g, b, (alpha * shown * 255.0).round() as u8);
+                glow.anti_alias = true;
+                pixmap.stroke_path(&p, &glow, &Stroke { width, ..Stroke::default() }, ts, None);
+            }
         }
     }
 

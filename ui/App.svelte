@@ -265,7 +265,7 @@
     }
   }
 
-  async function setLook(what: 'accent' | 'style' | 'size' | 'offset' | 'display', value: string) {
+  async function setLook(what: 'accent' | 'style' | 'shape' | 'clock' | 'size' | 'offset' | 'display', value: string) {
     try {
       await api.islet(['look', what, value]);
       await loadIslandPrefs();
@@ -715,6 +715,22 @@
     }
   }
 
+  // Early builds (Islet Pro): the newest release of all, pre-releases included.
+  let early = $state<{ current: string; latest: string; newer: boolean; url: string } | null>(null);
+  let earlyNote = $state('');
+  async function checkEarly() {
+    earlyNote = 'Looking…';
+    try {
+      const v = JSON.parse(await api.islet(['update', 'check', '--early', '--json']));
+      const url = typeof v.url === 'string' && v.url.startsWith('https://') ? v.url : '';
+      early = { current: String(v.current), latest: String(v.latest), newer: v.newer === true && url !== '', url };
+      earlyNote = early.newer ? `Islet ${early.latest} is out as an early build.` : 'No early build newer than yours.';
+    } catch (e) {
+      early = null;
+      earlyNote = api.message(e);
+    }
+  }
+
   async function installUpdate() {
     updateNote = 'Downloading and installing…';
     try {
@@ -1029,6 +1045,46 @@
               </button>
             {/each}
           </div>
+          <div class="net">
+            <span class="name">Shape {#if !pro?.active}<span class="pro-tag">Pro</span>{/if}</span>
+            <select
+              aria-label="Island shape"
+              value={islandPrefs?.shape ?? 'pill'}
+              disabled={!islandPrefs}
+              onchange={(e) => (pro?.active ? setLook('shape', e.currentTarget.value) : (page = 'pro'))}
+            >
+              <option value="pill">Pill</option>
+              <option value="notch">Notch (square at the top)</option>
+            </select>
+          </div>
+          <div class="net">
+            <span class="name">Empty island shows {#if !pro?.active}<span class="pro-tag">Pro</span>{/if}</span>
+            <select
+              aria-label="What the empty island shows"
+              value={islandPrefs?.clockFace ?? 'time'}
+              disabled={!islandPrefs}
+              onchange={(e) => (pro?.active ? setLook('clock', e.currentTarget.value) : (page = 'pro'))}
+            >
+              <option value="time">The time</option>
+              <option value="date">The day and the time</option>
+              <option value="seconds">The time with seconds</option>
+            </select>
+          </div>
+          {#if pro?.active}
+            {#each [['albumGlow', 'Glow in the album’s colour while music plays'], ['visualizer', 'Moving bars as the song’s progress bar']] as [key, label] (key)}
+              <div class="net">
+                <span class="name">{label}</span>
+                <input
+                  type="checkbox"
+                  class="switch"
+                  aria-label={label}
+                  checked={islandPrefs ? Boolean(islandPrefs[key as keyof IslandPrefs]) : true}
+                  disabled={!islandPrefs}
+                  onchange={(e) => setSwitch(key as keyof IslandPrefs, e.currentTarget.checked)}
+                />
+              </div>
+            {/each}
+          {/if}
           <div class="net">
             <span class="name">Size</span>
             <select
@@ -1836,6 +1892,20 @@
           </div>
         {/if}
         {#if updateNote}<p class="small" role="status">{updateNote}</p>{/if}
+        <div class="card">
+          <h2>Early builds {#if !pro?.active}<span class="pro-tag">Pro</span>{/if}</h2>
+          <p class="muted">
+            New features before they are released to everyone. They can have rough edges; you install them by hand from
+            the download page.
+          </p>
+          <div class="actions left">
+            <button onclick={() => (pro?.active ? checkEarly() : (page = 'pro'))}>Look for an early build</button>
+            {#if early?.newer}
+              <button class="primary" onclick={() => early && api.openLink(early.url)}>Open the download page</button>
+            {/if}
+          </div>
+          {#if earlyNote}<p class="small" role="status">{earlyNote}</p>{/if}
+        </div>
       {:else}
         <h1>About Islet</h1>
         <p>Version {info?.version}</p>

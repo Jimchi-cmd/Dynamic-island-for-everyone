@@ -271,6 +271,11 @@ export interface IslandPrefs {
   hoverStatus: boolean;
   /** Say when a program hogs the processor or memory. */
   performanceAlert: boolean;
+  /** Islet Pro looks. */
+  albumGlow: boolean;
+  visualizer: boolean;
+  shape: string;
+  clockFace: string;
   hotkey: string;
   accent: string;
   style: string;
@@ -337,6 +342,8 @@ export const SWITCH_NAMES: Record<string, string> = {
   focusQuiet: 'focus-quiet',
   hoverStatus: 'hover-status',
   performanceAlert: 'performance-alert',
+  albumGlow: 'album-glow',
+  visualizer: 'visualizer',
 };
 
 /** `islet focus streak --json`. */

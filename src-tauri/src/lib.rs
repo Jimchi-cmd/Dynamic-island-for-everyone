@@ -21,7 +21,10 @@ pub fn allowed(args: &[String]) -> bool {
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
     match a.as_slice() {
         ["status", "--json"] | ["autostart", "on" | "off"] | ["nav", "stop"] | ["quit"] => true,
-        ["key", "routes"] | ["key", "routes", "--clear"] | ["update", "check", "--json"] => true,
+        ["key", "routes"]
+        | ["key", "routes", "--clear"]
+        | ["update", "check", "--json"]
+        | ["update", "check", "--early", "--json"] => true,
         ["pro", "activate" | "check" | "deactivate"] | ["pro", "status", "--json"] => true,
         ["stopwatch", "start" | "pause" | "resume" | "lap" | "reset"] => true,
         ["world", "--json"] | ["world", "cities", "--json"] => true,
@@ -60,6 +63,8 @@ pub fn allowed(args: &[String]) -> bool {
         ["hotkey", combo] => islet_core::hotkey::Hotkey::parse(combo).is_ok(),
         ["look", "accent", name] => islet_core::prefs::ACCENTS.iter().any(|(n, _)| n == name),
         ["look", "style", name] => islet_core::prefs::STYLES.contains(name),
+        ["look", "shape", name] => islet_core::prefs::SHAPES.contains(name),
+        ["look", "clock", name] => islet_core::prefs::CLOCK_FACES.contains(name),
         ["card", "show" | "hide", button] => islet_core::prefs::CARD_BUTTONS.iter().any(|(id, _)| id == button),
         ["look", "size", name] => islet_core::prefs::SIZES.iter().any(|(n, _)| n == name),
         ["displays", "--json"] | ["look", "display", "primary"] => true,

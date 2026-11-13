@@ -29,6 +29,35 @@ islet pro status
 islet pro deactivate
 ```
 
+## Looks
+
+In Settings → General:
+
+- **Style:** tinted, glass or tinted glass instead of black.
+- **Shape:** "Notch" squares the island's top corners, so it reads as growing out of the screen's edge. It applies while the gap above the island is 0.
+- **Empty island shows:** the time, the day and the time ("Wed 4 · 14:05"), or the time with seconds. Seconds redraw every second, so Power saver shows the plain time instead.
+- **Glow in the album's colour:** while music plays, the island's edge glows in the cover's main colour.
+- **Moving bars as the progress bar:** the song's progress is drawn as a row of moving bars. The motion is drawn, not measured: Islet does not listen to what is playing.
+
+From a terminal:
+
+```bash
+islet look shape notch
+```
+
+```bash
+islet look clock date
+```
+
+## Shortcuts in the right-click menu, and early builds
+
+- Your first two shortcut buttons also appear in the island's right-click menu, in the rows the menu has free.
+- **Early builds:** Settings → Updates → **Look for an early build** shows the newest pre-release. You install it by hand from the download page. From a terminal:
+
+```bash
+islet update check --early
+```
+
 ## Quick notes
 
 One line at a time, added with the date and time to a plain text file: `Islet notes.txt` in your Documents folder. Open it in any editor.

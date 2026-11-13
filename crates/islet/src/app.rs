@@ -1052,6 +1052,13 @@ impl App {
             let detail = self.sleep_at.map_or("Off".to_string(), left);
             v.push(MenuItem { detail: Some(detail), ..item(MenuAction::Sleep, Icon::Moon, "Sleep timer") });
         }
+        // Islet Pro: your first shortcuts, in the rows that are left.
+        if self.pro {
+            let room = content::MENU_MAX_ROWS.saturating_sub(v.len() + 1).min(2);
+            for (i, sc) in self.prefs.shortcuts.iter().enumerate().take(room) {
+                v.push(item(MenuAction::Shortcut(i as u8), Icon::Bolt, &sc.name));
+            }
+        }
         v.push(item(MenuAction::Quit, Icon::Close, "Quit Islet"));
         v
     }
@@ -1092,6 +1099,12 @@ impl App {
                     Some(left) => steps.iter().copied().find(|m| *m > left),
                 };
                 self.sleep_at = next.map(|m| t + f64::from(m) * 60.0);
+            }
+            MenuAction::Shortcut(i) => {
+                if let Some(sc) = self.prefs.shortcuts.get(usize::from(i)) {
+                    self.ui_actions.push(UiAction::Shortcut(sc.target.clone()));
+                }
+                return self.signal(Signal::Escape, t);
             }
             MenuAction::Quit => self.quit = true,
         }
@@ -2025,7 +2038,8 @@ impl App {
     /// Store the current wall-clock time. Returns true when the displayed
     /// minute changed while the clock is on screen (a redraw is needed).
     pub fn set_time(&mut self, now: LocalTime, t: f64) -> bool {
-        let changed = self.clock.is_none_or(|c| (c.hour, c.minute, c.day) != (now.hour, now.minute, now.day));
+        let ticked = self.clock.is_some_and(|c| c.second != now.second) && self.seconds_ticking(t);
+        let changed = ticked || self.clock.is_none_or(|c| (c.hour, c.minute, c.day) != (now.hour, now.minute, now.day));
         self.clock = Some(now);
         let alarm = changed && self.alarm_events(&now, t);
         (changed && self.clock_shown(t)) || alarm
@@ -2399,7 +2413,8 @@ impl App {
                     engine,
                 )),
                 OpenContent::Media(m) => {
-                    out.extend(content::expanded_media(card, m, t, eo, self.scrub, self.volume, engine));
+                    let visual = self.pro && self.prefs.visualizer;
+                    out.extend(content::expanded_media(card, m, t, eo, self.scrub, self.volume, visual, engine));
                     if let Some(l) = self.song_lyrics() {
                         let pos = self.lyrics_pos(m, t);
                         out.extend(content::card_lyrics(card, l, pos, eo, engine));
@@ -2504,7 +2519,7 @@ impl App {
                 inner.x += content::status_shift(items.len()) * f64::from(so);
                 out.extend(content::status_strip(inner, &items, so));
             }
-            out.extend(content::idle_clock(inner, &now, self.h24, io, engine));
+            out.extend(content::idle_clock(inner, &now, self.h24, self.clock_face(), io, engine));
         }
         let po = self.privacy_opacity(t);
         if po > 0.0 {
@@ -3076,6 +3091,10 @@ impl App {
         if let Some(now) = self.clock.filter(|_| self.clock_shown(t)) {
             at(t + secs_to_next_minute(&now));
         }
+        // The seconds face ticks, on the second.
+        if self.seconds_ticking(t) {
+            at(t + (1.0 - self.wall.fract()).max(0.02) + 0.01);
+        }
         // A call on screen ticks each second.
         if let Some(since) = self.live(t).iter().find_map(|l| if let Live::Call(c) = l { Some(c.since) } else { None })
         {
@@ -3197,7 +3216,37 @@ impl App {
             return islet_render::Skin::default();
         }
         let (color, alpha, glass) = islet_core::prefs::style_body(&self.prefs.style, self.prefs.accent_rgb());
-        islet_render::Skin { color, alpha, glass }
+        // While music plays, a glow in its cover's colour.
+        let glow = self
+            .activities
+            .media()
+            .filter(|m| self.prefs.album_glow && m.playing)
+            .and_then(|m| m.art.as_ref())
+            .map(|a| content::brighten(a.dominant));
+        islet_render::Skin { color, alpha, glass, glow }
+    }
+
+    /// What the empty island shows: the time, unless Islet Pro chose more.
+    fn clock_face(&self) -> content::ClockFace {
+        if self.pro {
+            content::ClockFace::from_pref(&self.prefs.clock_face)
+        } else {
+            content::ClockFace::Time
+        }
+    }
+
+    /// The seconds face is ticking on the empty island (not with Power
+    /// saver, which shows the plain time instead of waking every second).
+    fn seconds_ticking(&self, t: f64) -> bool {
+        self.clock_face() == content::ClockFace::Seconds
+            && self.limits().ambient_fps > 0
+            && self.idle_clock_opacity(t, &self.live(t)) > 0.0
+    }
+
+    /// Square top corners: a Mac's notch, or the "notch" shape (Islet Pro)
+    /// while the island touches the top of the screen.
+    fn flat_top(&self) -> bool {
+        self.notch.is_some() || (self.pro && self.prefs.shape == "notch" && self.top <= 0.0)
     }
 
     pub fn frame(&self, t: f64) -> PillFrame {
@@ -3213,7 +3262,7 @@ impl App {
             },
             bubble: self.bubble_circle(t),
             highlight: 0.0,
-            flat_top: self.notch.is_some(),
+            flat_top: self.flat_top(),
             opacity: self.shown.value(t).clamp(0.0, 1.0) as f32,
             skin: self.skin(),
         }
@@ -4810,6 +4859,45 @@ mod tests {
         assert!(!texts(&playing, 5.0, &mut engine).contains(&"82%".to_string()));
     }
 
+    /// The Pro looks, for visual review:
+    /// `ISLET_LOOKS_SHEET=/path/out.png cargo test -p islet looks_sheet`
+    #[test]
+    fn looks_sheet() {
+        let Some(out) = std::env::var_os("ISLET_LOOKS_SHEET") else { return };
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let mut engine = TextEngine::new();
+        let pro = |p: IslandPrefs| {
+            let mut a = App::new(Demo::None, false);
+            a.set_time(NOW, 0.0);
+            a.set_pro(true);
+            a.set_prefs(p);
+            a
+        };
+        let date = pro(IslandPrefs { clock_face: "date".into(), ..IslandPrefs::default() });
+        let seconds =
+            pro(IslandPrefs { clock_face: "seconds".into(), shape: "notch".into(), ..IslandPrefs::default() });
+        let mut glow = pro(IslandPrefs::default());
+        glow.report(Report::Media(Some(song_with_art(true))), 0.0);
+        let mut card = pro(IslandPrefs { shape: "notch".into(), ..IslandPrefs::default() });
+        card.report(Report::Media(Some(song_with_art(true))), 0.0);
+        click(&mut card, 1.0);
+        let apps = [date, seconds, glow, card];
+        let (cw, ch) = (WINDOW.0 as u32, 200u32);
+        let mut sheet = Pixmap::new(cw * 2, ch * 2).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        for (i, a) in apps.iter().enumerate() {
+            let mut cell = Pixmap::new(cw, ch).unwrap();
+            let frame = a.frame(30.3);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, ch, 1.0);
+            let els = a.elements(30.3, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            let (x, y) = ((i as u32 % 2 * cw) as i32, (i as u32 / 2 * ch) as i32);
+            sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+        }
+        sheet.save_png(out).unwrap();
+    }
+
     /// The Controls panel, for visual review:
     /// `ISLET_CONTROLS_SHEET=/path/out.png cargo test -p islet controls_sheet`
     #[test]
@@ -5027,6 +5115,107 @@ mod tests {
         // A desktop has no battery line.
         app.report(Report::BatteryHealth(None), 17.0);
         assert!(!texts(&app, 20.0, &mut engine).iter().any(|s| s == "Battery health"));
+    }
+
+    fn song_with_art(playing: bool) -> MediaInfo {
+        let art = islet_core::activity::ArtImage {
+            width: 2,
+            height: 2,
+            rgba: Arc::new([200, 60, 90, 255].repeat(4)),
+            dominant: [200, 60, 90],
+        };
+        MediaInfo { art: Some(art), duration: Some(200.0), position: Some(50.0), ..song(playing) }
+    }
+
+    #[test]
+    fn pro_looks_glow_visualizer_notch_and_clock_faces() {
+        let mut engine = TextEngine::new();
+        // Free: none of it, whatever the settings say.
+        let looks = IslandPrefs { shape: "notch".into(), clock_face: "date".into(), ..IslandPrefs::default() };
+        let mut free = App::new(Demo::None, false);
+        free.set_time(NOW, 0.0);
+        free.set_prefs(looks.clone());
+        assert_eq!(texts(&free, 1.0, &mut engine), ["14:05"]);
+        assert!(!free.frame(1.0).flat_top);
+        free.report(Report::Media(Some(song_with_art(true))), 2.0);
+        assert_eq!(free.frame(6.0).skin.glow, None);
+
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        app.set_pro(true);
+        app.set_prefs(looks);
+        // The date face, on a notch-shaped island.
+        assert_eq!(texts(&app, 1.0, &mut engine), ["Wed 4", "14:05"]);
+        assert!(app.frame(1.0).flat_top);
+        assert_eq!(app.next_timer(1.0).map(|w| w > 1.5), Some(true), "no ticking for the date face");
+        // Moved down from the top edge, it is a pill again.
+        app.set_top(12.0);
+        assert!(!app.frame(1.0).flat_top);
+        app.set_top(0.0);
+
+        // The seconds face ticks each second, but not with Power saver.
+        app.set_prefs(IslandPrefs { clock_face: "seconds".into(), ..IslandPrefs::default() });
+        assert_eq!(texts(&app, 1.0, &mut engine), ["14:05:42"]);
+        let wake = app.next_timer(1.0).unwrap();
+        assert!(wake - 1.0 <= 1.02, "wakes for the next second: {wake}");
+        assert!(app.set_time(LocalTime { second: 43, ..NOW }, 2.0), "a new second redraws");
+        app.set_prefs(IslandPrefs { clock_face: "seconds".into(), power_saver: true, ..IslandPrefs::default() });
+        assert!(!app.set_time(LocalTime { second: 44, ..NOW }, 3.0));
+        assert!(app.next_timer(3.0).unwrap() - 3.0 > 1.5);
+
+        // Music: the cover's colour glows, and the progress bar becomes moving bars.
+        app.set_prefs(IslandPrefs::default());
+        app.report(Report::Media(Some(song_with_art(true))), 4.0);
+        assert_eq!(app.frame(8.0).skin.glow, Some([200, 60, 90]));
+        click(&mut app, 8.0);
+        let bars = |a: &App, t: f64, e: &mut TextEngine| {
+            a.elements(t, e).iter().filter(|el| matches!(el, Element::Bar { .. })).count()
+        };
+        assert!(bars(&app, 12.0, &mut engine) > 40, "a bar for every slice of the song");
+        // Paused: no glow. Switched off: the plain bar again.
+        app.report(Report::Media(Some(song_with_art(false))), 13.0);
+        assert_eq!(app.frame(14.0).skin.glow, None);
+        app.report(Report::Media(Some(song_with_art(true))), 15.0);
+        app.set_prefs(IslandPrefs { visualizer: false, album_glow: false, ..IslandPrefs::default() });
+        assert!(bars(&app, 16.0, &mut engine) < 20);
+        assert_eq!(app.frame(16.0).skin.glow, None);
+    }
+
+    #[test]
+    fn the_right_click_menu_offers_your_shortcuts_with_pro() {
+        use content::MenuAction;
+        use islet_core::prefs::Shortcut;
+        let shortcuts: Vec<Shortcut> = ["Homework", "Timetable", "Music"]
+            .iter()
+            .map(|n| Shortcut::new(n, &format!("https://example.com/{n}")).unwrap())
+            .collect();
+        let prefs = IslandPrefs { shortcuts, ..IslandPrefs::default() };
+        let mut free = App::new(Demo::None, false);
+        free.set_prefs(prefs.clone());
+        assert!(!free.menu_items(1.0).iter().any(|m| matches!(m.action, MenuAction::Shortcut(_))));
+
+        let mut app = App::new(Demo::None, false);
+        app.set_pro(true);
+        app.set_prefs(prefs.clone());
+        let items = app.menu_items(1.0);
+        let names: Vec<&str> =
+            items.iter().filter(|m| matches!(m.action, MenuAction::Shortcut(_))).map(|m| m.label.as_str()).collect();
+        assert_eq!(names, ["Homework", "Timetable"], "the first two, above Quit");
+        assert_eq!(items.last().map(|m| m.action), Some(MenuAction::Quit));
+        // Tapping one opens it and closes the menu.
+        app.handle(Event::PointerDown { x: 210.0, y: 18.0, button: Button::Secondary }, 2.0);
+        app.handle(Event::PointerUp { x: 210.0, y: 18.0, button: Button::Secondary }, 2.05);
+        let row = menu_row(&app, 6.0, MenuAction::Shortcut(1));
+        press(&mut app, row, 6.0);
+        assert_eq!(app.take_ui_actions(), [UiAction::Shortcut("https://example.com/Timetable".into())]);
+        assert!(!app.presentation().is_open());
+
+        // With music and lyrics the menu is full: it never grows past the window.
+        let mut busy = App::new(Demo::None, false);
+        busy.set_pro(true);
+        busy.set_prefs(IslandPrefs { lyrics: true, ..prefs });
+        busy.report(Report::Media(Some(song(true))), 0.0);
+        assert!(busy.menu_items(1.0).len() <= content::MENU_MAX_ROWS);
     }
 
     #[test]

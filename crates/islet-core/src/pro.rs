@@ -301,13 +301,13 @@ pub fn hint(key: &str) -> String {
 /// What Pro unlocks, for Settings and the docs.
 pub const FEATURES: [&str; 9] = [
     "No low-end limits: smoother motion, sharper album art, longer history",
-    "Screenshot preview on the island",
-    "Live music visualizer in the album's colours",
-    "Quick notes and to-do list",
+    "Quick notes saved to a file, and a to-do list on the island",
     "Stopwatch with laps, and world clocks",
-    "Premium looks: album-art glow, frosted style, your own colour and shape",
-    "Animated clock faces on the empty island",
-    "Your own right-click actions, and a layout for each display",
+    "Looks: tinted and glass styles, the notch shape, a glow in the album's colour",
+    "Moving bars as the song's progress bar",
+    "Clock faces for the empty island: with the date, or with seconds",
+    "Shortcut buttons of your own, on the island and in its right-click menu",
+    "Power saver for long days on battery",
     "Supporter badge and early builds",
 ];
 

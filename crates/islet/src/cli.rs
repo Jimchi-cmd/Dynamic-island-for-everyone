@@ -93,6 +93,8 @@ Usage:
                                            green, mint, teal or graphite
   islet look style <style>                 what the island is made of: black, or with Islet Pro
                                            tinted, glass or tinted-glass
+  islet look shape pill|notch              the outline; notch (Islet Pro) is square at the top
+  islet look clock time|date|seconds       what the empty island shows (date, seconds: Islet Pro)
   islet card                               the clock card's buttons
   islet card show|hide <button>            timer, calendar, screenshot, lock, system, todo, stopwatch
   islet look size small|medium|large       the island's size
@@ -104,12 +106,13 @@ Usage:
                                            notifications, calendar, fahrenheit, web-artwork,
                                            spotify, privacy-dots, clipboard, lyrics, auto-hide, calls, downloads,
                                            idle-clock, hover-status, focus-quiet, performance-alert,
-                                           power-saver (Islet Pro)
+                                           and with Islet Pro: power-saver, album-glow, visualizer
   islet prefs [--json]                     the island's settings
   islet autostart on|off                   start Islet when you log in (or stop doing so)
   islet status [--json]                    is Islet running, and how it is set up
   islet quit                               close the running island
-  islet update check [--json]              ask GitHub for the latest release
+  islet update check [--early] [--json]    ask GitHub for the latest release (--early: early
+                                           builds too, Islet Pro)
   islet --version
   islet --help                             this text";
 
@@ -181,8 +184,10 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["autostart", "off"] => autostart::set(false).map(|()| "Islet will no longer start at login.".into()),
         ["status"] => Ok(status(false)),
         ["status", "--json"] => Ok(status(true)),
-        ["update", "check"] => update_check(false),
-        ["update", "check", "--json"] => update_check(true),
+        ["update", "check"] => update_check(false, false),
+        ["update", "check", "--json"] => update_check(true, false),
+        ["update", "check", "--early"] => update_check(false, true),
+        ["update", "check", "--early", "--json"] => update_check(true, true),
         ["alarm", "add", rest @ ..] => alarm_add(rest),
         ["alarm", "list"] => Ok(alarm_list(false)),
         ["alarm", "list", "--json"] => Ok(alarm_list(true)),
@@ -262,6 +267,8 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
             Ok(format!("Accent: {n}."))
         }),
         ["look", "style", name] => set_style(name),
+        ["look", "shape", name] => set_choice(name, &islet_core::prefs::SHAPES, "shape", |p, v| p.shape = v),
+        ["look", "clock", name] => set_choice(name, &islet_core::prefs::CLOCK_FACES, "clock", |p, v| p.clock_face = v),
         ["card"] => Ok(card_text()),
         ["card", show @ ("show" | "hide"), button] => set_look(|p| {
             p.set_card_button(button, *show == "show")?;
@@ -864,9 +871,15 @@ fn status(json: bool) -> String {
     )
 }
 
-fn update_check(json: bool) -> Result<String, String> {
+fn update_check(json: bool, early: bool) -> Result<String, String> {
     let current = env!("CARGO_PKG_VERSION");
-    let (latest, url) = net::latest_release()?;
+    // Early builds (pre-releases) are an Islet Pro perk.
+    let (latest, url) = if early {
+        needs_pro()?;
+        net::newest_release()?
+    } else {
+        net::latest_release()?
+    };
     let newer = islet_core::version::is_newer(&latest, current);
     Ok(if json {
         serde_json::json!({ "current": current, "latest": latest, "newer": newer, "url": url }).to_string()
@@ -909,6 +922,27 @@ fn set_style(name: &str) -> Result<String, String> {
     set_look(|p| {
         p.style = (*style).into();
         Ok(format!("Style: {style}."))
+    })
+}
+
+/// Set one of a few named looks. The first choice is free; the rest are
+/// Islet Pro.
+fn set_choice(
+    name: &str,
+    choices: &[&str],
+    what: &str,
+    set: impl FnOnce(&mut islet_core::prefs::IslandPrefs, String),
+) -> Result<String, String> {
+    let choice = choices
+        .iter()
+        .find(|c| c.eq_ignore_ascii_case(name))
+        .ok_or_else(|| format!("{what} is one of: {}", choices.join(", ")))?;
+    if *choice != choices[0] {
+        needs_pro()?;
+    }
+    set_look(|p| {
+        set(p, (*choice).to_string());
+        Ok(format!("{what}: {choice}."))
     })
 }
 

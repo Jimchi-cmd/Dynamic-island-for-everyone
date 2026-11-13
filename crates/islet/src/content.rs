@@ -790,6 +790,49 @@ pub fn waveform(x: f32, cy: f32, n: usize, t: f64, playing: bool, color: [u8; 3]
         .collect()
 }
 
+/// The progress bar as a row of moving bars (Islet Pro). The motion is
+/// drawn, not measured: Islet doesn't listen to what is playing.
+#[allow(clippy::too_many_arguments)]
+pub fn visualizer_track(
+    x: f32,
+    cy: f32,
+    w: f32,
+    played: f32,
+    t: f64,
+    playing: bool,
+    color: [u8; 3],
+    o: f32,
+) -> Vec<Element> {
+    const BARS: usize = 44;
+    let still = STILL.with(std::cell::Cell::get);
+    let t = if still { 0.37 } else { t };
+    let step = w / BARS as f32;
+    (0..BARS)
+        .map(|i| {
+            let f = i as f64;
+            // Three waves of different speeds, so neighbours move together
+            // but the row never repeats itself.
+            let h = if playing {
+                let a = (t * 2.1 + f * 0.55).sin();
+                let b = (t * 3.7 - f * 0.31).sin();
+                let c = (t * 1.3 + f * 1.7).sin();
+                (3.0 + 6.5 * (1.0 + 0.5 * a + 0.3 * b + 0.2 * c)) as f32
+            } else {
+                3.0
+            };
+            let done = (i as f32 + 0.5) / BARS as f32 <= played;
+            Element::Bar {
+                x: x + i as f32 * step,
+                y: cy - h / 2.0,
+                w: (step - 2.0).max(1.5),
+                h,
+                color: if done { color } else { WHITE },
+                opacity: o * if done { 1.0 } else { 0.25 },
+            }
+        })
+        .collect()
+}
+
 /// Compact: one activity beside the pill.
 pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine) -> Vec<Element> {
     let (x, right) = (pill.x as f32, pill.right() as f32);
@@ -1218,6 +1261,7 @@ pub fn scrub_fraction(pill: Rect, x: f64) -> f64 {
 }
 
 /// The expanded "Now Playing" card.
+#[allow(clippy::too_many_arguments)]
 pub fn expanded_media(
     pill: Rect,
     m: &MediaInfo,
@@ -1225,6 +1269,7 @@ pub fn expanded_media(
     o: f32,
     scrub: Option<f64>,
     volume: Option<(f32, bool)>,
+    visualizer: bool,
     engine: &mut TextEngine,
 ) -> Vec<Element> {
     let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
@@ -1250,14 +1295,21 @@ pub fn expanded_media(
     if let (Some(pos), Some(dur)) = (m.position_now(t), m.duration.filter(|d| *d > 0.0)) {
         let frac = scrub.unwrap_or(pos / dur).clamp(0.0, 1.0);
         let shown = frac * dur;
-        v.push(Element::Bar {
-            x: x + pad,
-            y: by - bh / 2.0 + 2.0,
-            w: (track_w * frac as f32).max(bh),
-            h: bh,
-            color: tint,
-            opacity: o,
-        });
+        if visualizer && scrub.is_none() {
+            // Islet Pro: the bar itself moves with the music. Bars up to
+            // the playhead take the album's colour; the rest wait in grey.
+            v.pop();
+            v.extend(visualizer_track(x + pad, by + 2.0, track_w, frac as f32, t, m.playing, tint, o));
+        } else {
+            v.push(Element::Bar {
+                x: x + pad,
+                y: by - bh / 2.0 + 2.0,
+                w: (track_w * frac as f32).max(bh),
+                h: bh,
+                color: tint,
+                opacity: o,
+            });
+        }
         let time_style = TextStyle { size: 11.0, opacity: o * 0.6, tabular: true, ..TextStyle::default() };
         v.push(text(format_duration(shown), time_style, x + pad, y + 112.0));
         let remaining = TextStyle { align: Align::Right, ..time_style };
@@ -2487,8 +2539,13 @@ pub enum MenuAction {
     LyricsTiming,
     /// The sleep timer: off → 15 → 30 → 45 → 60 minutes → off.
     Sleep,
+    /// One of the user's own shortcuts (Islet Pro), by its place in the list.
+    Shortcut(u8),
     Quit,
 }
+
+/// The menu never has more rows than fit the window.
+pub const MENU_MAX_ROWS: usize = 7;
 
 /// The sleep timer's choices, in minutes.
 pub const SLEEP_MINUTES: [u32; 4] = [15, 30, 45, 60];
@@ -2637,18 +2694,62 @@ pub fn expanded_call(pill: Rect, c: &Call, t: f64, o: f32, engine: &mut TextEngi
 
 // ---- The time on the empty island --------------------------------------------
 
+/// What the empty pill shows (see `islet_core::prefs::CLOCK_FACES`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ClockFace {
+    #[default]
+    Time,
+    /// "Wed 4 · 14:05"
+    Date,
+    /// "14:05:09"
+    Seconds,
+}
+
+impl ClockFace {
+    pub fn from_pref(name: &str) -> Self {
+        match name {
+            "date" => Self::Date,
+            "seconds" => Self::Seconds,
+            _ => Self::Time,
+        }
+    }
+}
+
 /// The time, centred in the empty pill ("14:05", or "2:05 PM").
-pub fn idle_clock(pill: Rect, now: &LocalTime, h24: bool, o: f32, engine: &mut TextEngine) -> Vec<Element> {
+pub fn idle_clock(
+    pill: Rect,
+    now: &LocalTime,
+    h24: bool,
+    face: ClockFace,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<Element> {
     let (time, suffix) = format_time(now, h24);
     let style = TextStyle { size: 14.0, weight: 600, opacity: o, tabular: true, ..TextStyle::default() };
     let small = TextStyle { size: 11.0, opacity: o * 0.7, ..style };
+    // The date goes in front, dimmer; seconds follow the minutes.
+    let lead = match face {
+        ClockFace::Date => {
+            let day = islet_core::clock::format_date_short(now);
+            // "Wed 4 Nov" without the month: the pill is small.
+            day.rsplit_once(' ').map_or(day.clone(), |(d, _)| d.to_string())
+        }
+        _ => String::new(),
+    };
+    let time = if face == ClockFace::Seconds { format!("{time}:{:02}", now.second) } else { time };
+    let lead_style = TextStyle { size: 12.5, weight: 600, opacity: o * 0.6, ..TextStyle::default() };
+    let lw = if lead.is_empty() { 0.0 } else { engine.measure(&lead, &lead_style) + 7.0 };
     let tw = engine.measure(&time, &style);
     let sw = suffix.as_ref().map_or(0.0, |s| 3.0 + engine.measure(s, &small));
     let (cx, baseline) = ((pill.x + pill.w / 2.0) as f32, (pill.y + pill.h / 2.0) as f32 + 5.0);
-    let left = cx - (tw + sw) / 2.0;
-    let mut v = vec![text(time, style, left, baseline)];
+    let left = cx - (lw + tw + sw) / 2.0;
+    let mut v = Vec::with_capacity(3);
+    if !lead.is_empty() {
+        v.push(text(lead, lead_style, left, baseline - 0.5));
+    }
+    v.push(text(time, style, left + lw, baseline));
     if let Some(s) = suffix {
-        v.push(text(s, small, left + tw + 3.0, baseline));
+        v.push(text(s, small, left + lw + tw + 3.0, baseline));
     }
     v
 }
@@ -3035,7 +3136,7 @@ mod tests {
     fn expanded_media_shows_title_times_and_controls() {
         let mut engine = TextEngine::new();
         let pill = Rect::new(24.0, 0.0, 372.0, 160.0);
-        let v = expanded_media(pill, &song(), 0.0, 1.0, None, None, &mut engine);
+        let v = expanded_media(pill, &song(), 0.0, 1.0, None, None, false, &mut engine);
         let t = texts(&v);
         assert!(t[0].ends_with('…'), "long title is ellipsised: {}", t[0]);
         assert!(t.contains(&"1:05".to_string()) && t.contains(&"-2:15".to_string()), "{t:?}");
