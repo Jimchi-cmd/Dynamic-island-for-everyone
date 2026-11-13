@@ -269,6 +269,8 @@ export interface IslandPrefs {
   focusQuiet: boolean;
   /** Weather, battery and processor beside the time when you point at the island. */
   hoverStatus: boolean;
+  /** "Connected to Home" when Wi-Fi joins a network. */
+  wifiPopup: boolean;
   /** Say when a program hogs the processor or memory. */
   performanceAlert: boolean;
   /** Islet Pro looks. */
@@ -343,6 +345,7 @@ export const SWITCH_NAMES: Record<string, string> = {
   powerSaver: 'power-saver',
   focusQuiet: 'focus-quiet',
   hoverStatus: 'hover-status',
+  wifiPopup: 'wifi-popup',
   performanceAlert: 'performance-alert',
   albumGlow: 'album-glow',
   visualizer: 'visualizer',

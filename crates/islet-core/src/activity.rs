@@ -109,7 +109,7 @@ pub struct NavInfo {
 }
 
 /// A level change the island shows briefly (like the iPhone's volume HUD).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Hud {
     /// Output volume 0..=1, and whether it is muted.
     Volume {
@@ -119,7 +119,22 @@ pub enum Hud {
     /// Screen brightness 0..=1.
     Brightness(f32),
     CapsLock(bool),
+    /// Wi-Fi joined this network.
+    WifiJoined(String),
 }
+
+impl Hud {
+    /// How long it shows: a network's name needs longer to read.
+    pub fn secs(&self) -> f64 {
+        match self {
+            Hud::WifiJoined(_) => WIFI_SECS,
+            _ => HUD_SECS,
+        }
+    }
+}
+
+/// How long "Connected to …" shows.
+pub const WIFI_SECS: f64 = 3.0;
 
 /// A live activity started by a script or another app (`islet activity`):
 /// a build, a download, a delivery…
@@ -554,7 +569,8 @@ impl Activities {
                 true
             }
             Report::Hud(h) => {
-                self.hud = Some((h, t + HUD_SECS));
+                let until = t + h.secs();
+                self.hud = Some((h, until));
                 true
             }
             Report::Weather(w) => {
@@ -653,7 +669,7 @@ impl Activities {
         }
         if let Some((h, until)) = &self.hud {
             if t < *until {
-                out.push(Live::Hud(*h));
+                out.push(Live::Hud(h.clone()));
             }
         }
         if t < self.note_until {

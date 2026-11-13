@@ -983,7 +983,7 @@
         <div class="card">
           <h2>Pop-ups</h2>
           <p class="muted small">The island shows a moment's notice when these change.</p>
-          {#each [['volumeHud', 'Volume'], ['brightnessHud', 'Screen brightness'], ['capsLockHud', 'Caps Lock']] as [key, label] (key)}
+          {#each [['volumeHud', 'Volume'], ['brightnessHud', 'Screen brightness'], ['capsLockHud', 'Caps Lock'], ['wifiPopup', 'Joining a Wi-Fi network']] as [key, label] (key)}
             <div class="net">
               <span class="name">{label}</span>
               <input

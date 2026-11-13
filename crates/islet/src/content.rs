@@ -371,6 +371,7 @@ fn hud_icon(h: &Hud) -> Icon {
         }),
         Hud::Brightness(_) => Icon::Sun,
         Hud::CapsLock(_) => Icon::CapsLock,
+        Hud::WifiJoined(_) => Icon::Wifi(3),
     }
 }
 
@@ -399,6 +400,17 @@ fn hud_trailing(h: &Hud, right: f32, cy: f32, bar_w: f32, o: f32) -> Vec<Element
                 ..TextStyle::default()
             };
             vec![text(if on { "On" } else { "Off" }, style, right, cy + 5.0)]
+        }
+        Hud::WifiJoined(_) => {
+            let style = TextStyle {
+                size: 14.0,
+                weight: 600,
+                opacity: o,
+                color: GREEN,
+                align: Align::Right,
+                ..TextStyle::default()
+            };
+            vec![text("Connected", style, right, cy + 5.0)]
         }
     }
 }
@@ -922,9 +934,15 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
                 color: WHITE,
                 opacity: o,
             }];
-            if let Hud::CapsLock(_) = h {
-                let style = TextStyle { size: 14.0, weight: 600, opacity: o, ..TextStyle::default() };
-                v.push(text("Caps Lock", style, x + 38.0, cy + 5.0));
+            let style = TextStyle { size: 14.0, weight: 600, opacity: o, ..TextStyle::default() };
+            match h {
+                Hud::CapsLock(_) => v.push(text("Caps Lock", style, x + 38.0, cy + 5.0)),
+                // The network's name, up to "Connected" on the right.
+                Hud::WifiJoined(name) => {
+                    let room = (right - 16.0 - 82.0) - (x + 38.0);
+                    v.push(text(engine.ellipsize(name, &style, room), style, x + 38.0, cy + 5.0));
+                }
+                _ => {}
             }
             v.extend(hud_trailing(h, right - 16.0, cy, 96.0, o));
             v

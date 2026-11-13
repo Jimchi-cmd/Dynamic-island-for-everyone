@@ -343,6 +343,8 @@ pub struct App {
     /// The pointer just left a hovered island that showed its status
     /// strip: the strip fades as the pill shrinks back.
     strip_linger: bool,
+    /// The Wi-Fi state has been read once: from then on a new network is news.
+    wifi_seen: bool,
     call_press: bool,
     /// The Join button being pressed on the agenda card (its link).
     join_press: Option<String>,
@@ -444,6 +446,7 @@ impl App {
             streak: Default::default(),
             streak_dirty: false,
             strip_linger: false,
+            wifi_seen: false,
             call_press: false,
             join_press: None,
         };
@@ -1485,6 +1488,7 @@ impl App {
             Some(Live::Hud(Hud::Volume { level, .. })) => format!("Volume {}%", pct(*level)),
             Some(Live::Hud(Hud::Brightness(b))) => format!("Brightness {}%", pct(*b)),
             Some(Live::Hud(Hud::CapsLock(on))) => format!("Caps Lock {}", if *on { "on" } else { "off" }),
+            Some(Live::Hud(Hud::WifiJoined(name))) => format!("Connected to {name}"),
             Some(Live::Note(n)) => format!("Notification from {}: {}", n.app, n.summary),
             Some(Live::Battery {
                 device: d,
@@ -2017,6 +2021,16 @@ impl App {
             let changed = self.prefs.clipboard && self.clip.push(text);
             return changed && self.panel == Some(Panel::Clipboard) && self.island.presentation().is_open();
         }
+        // Wi-Fi joined a network (not just a refreshed list): say so.
+        if let Report::Connectivity(ConnUpdate::Wifi(w)) = &r {
+            let before = self.activities.connectivity().wifi.current.clone();
+            let known = self.wifi_seen;
+            self.wifi_seen = true;
+            if let Some(now) = w.current.clone().filter(|now| known && before.as_ref() != Some(now)) {
+                let changed = self.activities.report(r, t);
+                return self.report(Report::Hud(Hud::WifiJoined(now)), t) || changed;
+            }
+        }
         if let Report::Calendar(_) = &r {
             let changed = self.activities.report(r, t);
             self.refresh_soon();
@@ -2027,6 +2041,7 @@ impl App {
                 Hud::Volume { .. } => self.prefs.volume_hud,
                 Hud::Brightness(_) => self.prefs.brightness_hud,
                 Hud::CapsLock(_) => self.prefs.caps_lock_hud,
+                Hud::WifiJoined(_) => self.prefs.wifi_popup,
             };
             if !on {
                 return false;
@@ -5306,6 +5321,35 @@ mod tests {
     }
 
     #[test]
+    fn joining_a_wifi_network_says_so_once() {
+        let mut engine = TextEngine::new();
+        let mut app = App::new(Demo::None, false);
+        let report =
+            |a: &mut App, net: Option<&str>, t: f64| a.report(Report::Connectivity(ConnUpdate::Wifi(wifi(net))), t);
+        // The first reading is the baseline: no pop-up for the network it was already on.
+        report(&mut app, Some("Home"), 0.0);
+        assert!(app.live(0.5).is_empty());
+        // The same network again (a refreshed list): nothing.
+        report(&mut app, Some("Home"), 1.0);
+        assert!(app.live(1.5).is_empty());
+        // Off the network, then onto another: "Connected" with its name.
+        report(&mut app, None, 2.0);
+        assert!(app.live(2.5).is_empty());
+        report(&mut app, Some("Cafe Wi-Fi"), 3.0);
+        app.tick(3.0);
+        assert_eq!(app.presentation(), Compact);
+        let shown = texts(&app, 3.5, &mut engine);
+        assert!(shown.iter().any(|s| s == "Cafe Wi-Fi") && shown.iter().any(|s| s == "Connected"), "{shown:?}");
+        assert_eq!(app.accessibility(3.5).label, "Connected to Cafe Wi-Fi");
+        app.tick(3.0 + islet_core::activity::WIFI_SECS + 0.1);
+        assert!(app.live(6.5).is_empty(), "it goes after a few seconds");
+        // Switched off in Settings, there is no pop-up.
+        app.set_prefs(IslandPrefs { wifi_popup: false, ..IslandPrefs::default() });
+        report(&mut app, Some("Library"), 10.0);
+        assert!(app.live(10.5).is_empty());
+    }
+
+    #[test]
     fn focus_rounds_can_hold_pop_ups_until_the_break() {
         let mut app = App::new(Demo::None, false);
         app.set_prefs(IslandPrefs { focus_quiet: true, notifications: true, ..IslandPrefs::default() });
@@ -6335,7 +6379,7 @@ mod tests {
             .iter()
             .map(|h| {
                 let mut a = App::new(Demo::None, false);
-                a.report(Report::Hud(*h), 0.0);
+                a.report(Report::Hud(h.clone()), 0.0);
                 a.tick(0.0);
                 a
             })

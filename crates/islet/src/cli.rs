@@ -111,7 +111,7 @@ Usage:
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
                                            notifications, calendar, fahrenheit, web-artwork,
                                            spotify, privacy-dots, clipboard, lyrics, auto-hide, calls, downloads,
-                                           idle-clock, hover-status, focus-quiet, performance-alert,
+                                           idle-clock, hover-status, wifi-popup, focus-quiet, performance-alert,
                                            and with Islet Pro: power-saver, album-glow, visualizer,
                                            screenshot-preview, phone
   islet prefs [--json]                     the island's settings

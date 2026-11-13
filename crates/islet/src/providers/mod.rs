@@ -43,6 +43,7 @@ mod macos_privacy;
 mod macos_volume;
 pub mod mic;
 pub mod navigation;
+mod netwatch;
 pub mod phone;
 mod screenshots;
 pub mod spotify;
@@ -221,6 +222,7 @@ impl Providers {
         let sink = Sink { tx, waker };
         let nav = navigation::start(sink.clone());
         let conn = connectivity::start(sink.clone());
+        netwatch::start(conn.clone());
         let weather = weather::start(sink.clone());
         let calendar = calendar::start(sink.clone());
         let spotify = spotify::start(sink.clone());

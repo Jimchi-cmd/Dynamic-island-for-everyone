@@ -47,6 +47,8 @@ pub struct IslandPrefs {
     pub calls: bool,
     /// Downloads in progress, from the Downloads folder.
     pub downloads: bool,
+    /// A pop-up when Wi-Fi joins a network.
+    pub wifi_popup: bool,
     /// Pointing at the empty island shows the weather, the battery and
     /// how busy the processor is, either side of the time.
     pub hover_status: bool,
@@ -218,6 +220,7 @@ impl Default for IslandPrefs {
             power_saver: false,
             focus_quiet: false,
             hover_status: true,
+            wifi_popup: true,
             performance_alert: false,
             phone: false,
             screenshot_preview: true,
@@ -239,7 +242,7 @@ impl Default for IslandPrefs {
 }
 
 /// The switches `islet set <key> on|off` understands.
-pub const SWITCHES: [&str; 23] = [
+pub const SWITCHES: [&str; 24] = [
     "volume-hud",
     "brightness-hud",
     "caps-lock-hud",
@@ -263,6 +266,7 @@ pub const SWITCHES: [&str; 23] = [
     "visualizer",
     "screenshot-preview",
     "phone",
+    "wifi-popup",
 ];
 
 impl IslandPrefs {
@@ -311,6 +315,7 @@ impl IslandPrefs {
             "visualizer" => &mut self.visualizer,
             "screenshot-preview" => &mut self.screenshot_preview,
             "phone" => &mut self.phone,
+            "wifi-popup" => &mut self.wifi_popup,
             _ => return Err(format!("unknown setting {key:?} (one of: {})", SWITCHES.join(", "))),
         })
     }
