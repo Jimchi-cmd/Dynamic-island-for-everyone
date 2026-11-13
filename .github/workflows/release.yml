@@ -277,9 +277,58 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # The phone companion's APK: signed with the project's key when its
+  # secrets are set (docs/phone.md), else a debug build that still installs.
+  android:
+    name: Build (android)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HAS_ANDROID_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: '8.14.3'
+      - name: Protocol tests
+        working-directory: android
+        run: gradle :protocol:test --no-daemon
+      - name: Signed release build
+        if: env.HAS_ANDROID_KEY == 'true'
+        working-directory: android
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ISLET_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ISLET_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ISLET_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/islet-release.jks"
+          ISLET_ANDROID_KEYSTORE="$RUNNER_TEMP/islet-release.jks" gradle :app:assembleRelease --no-daemon
+          rm -f "$RUNNER_TEMP/islet-release.jks"
+          mkdir -p ../out
+          cp app/build/outputs/apk/release/app-release.apk "../out/Islet-${TAG#v}-android.apk"
+      - name: Debug build (no signing key set)
+        if: env.HAS_ANDROID_KEY != 'true'
+        working-directory: android
+        run: |
+          gradle :app:assembleDebug --no-daemon
+          mkdir -p ../out
+          cp app/build/outputs/apk/debug/app-debug.apk "../out/Islet-${TAG#v}-android-debug.apk"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-android
+          path: out/*
+          if-no-files-found: error
+          retention-days: 14
+
   release:
     name: Release
-    needs: build
+    needs: [build, android]
     if: inputs.tag != '' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:

@@ -25,6 +25,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 - **Controls:** volume and brightness sliders and a dark-mode switch, one tap from the clock card.
 - **Performance alert** (opt-in): says when one program hogs the processor or the memory, with a Close button.
 - **System panel:** processor, memory, disk, network speed and battery health.
+- **Your Android phone** (Islet Pro): its notifications, music and battery on the island, through a small companion app. See [docs/phone.md](docs/phone.md).
 - **Status at a glance:** point at the empty island and it widens to show the weather, your battery and how busy the processor is, either side of the time.
 - **Class timetable:** enter your week once; the island counts down to the next lesson and shows your free gaps.
 - **Alarms:** one-time or repeating. When one rings, the island opens with a swinging bell and a chime until you snooze or stop it.

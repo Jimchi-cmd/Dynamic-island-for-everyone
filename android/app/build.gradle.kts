@@ -24,9 +24,26 @@ android {
         jvmTarget = "17"
     }
 
+    // Releases are signed when the workflow hands over a keystore (see
+    // docs/phone.md). The keystore itself is never in the repository.
+    val keystorePath = System.getenv("ISLET_ANDROID_KEYSTORE")
+    if (keystorePath != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("ISLET_ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ISLET_ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ISLET_ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (keystorePath != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

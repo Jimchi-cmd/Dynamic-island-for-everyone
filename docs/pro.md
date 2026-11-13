@@ -58,6 +58,10 @@ islet look clock date
 islet update check --early
 ```
 
+## Your Android phone
+
+The Islet companion app puts your phone's notifications, music and battery on the island. Installing, pairing and what is sent are in [phone.md](phone.md).
+
 ## Screenshot preview
 
 When the system saves a screenshot, the island shows its thumbnail for eight seconds. Open the island and tap the card to open the picture.

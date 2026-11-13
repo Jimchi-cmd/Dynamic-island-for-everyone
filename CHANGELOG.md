@@ -11,6 +11,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
   - Looks: tinted and glass styles, a notch shape, a glow in the album's colour, the song's progress as moving bars, clock faces with the day or with seconds.
   - Screenshot preview: each new screenshot shows on the island; tap its card to open it.
   - Early builds: `islet update check --early`.
+  - **Your Android phone on the island:** a companion app sends the phone's notifications, music and battery to the island over your Wi-Fi, encrypted with a key shown once in a QR code; the island's music buttons control the phone. See [docs/phone.md](docs/phone.md).
 - **Clock card:** Wi-Fi and Bluetooth chips, round tool buttons you can show or hide, a quick timer, a month calendar, screenshot and lock buttons, and twelve accent colours.
 - **Controls panel:** volume and brightness sliders and a dark-mode switch.
 - **Status strip:** point at the empty island for the weather, battery and processor load beside the time.

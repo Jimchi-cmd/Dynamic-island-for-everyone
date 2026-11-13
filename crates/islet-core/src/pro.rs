@@ -299,7 +299,7 @@ pub fn hint(key: &str) -> String {
 }
 
 /// What Pro unlocks, for Settings and the docs.
-pub const FEATURES: [&str; 9] = [
+pub const FEATURES: [&str; 10] = [
     "No low-end limits: smoother motion, sharper album art, longer history",
     "Quick notes saved to a file, and a to-do list on the island",
     "Stopwatch with laps, and world clocks",
@@ -307,6 +307,7 @@ pub const FEATURES: [&str; 9] = [
     "Moving bars as the song's progress bar",
     "Clock faces for the empty island: with the date, or with seconds",
     "Shortcut buttons of your own, on the island and in its right-click menu",
+    "Your Android phone's notifications, music and battery on the island",
     "Power saver for long days on battery",
     "Supporter badge and early builds",
 ];
