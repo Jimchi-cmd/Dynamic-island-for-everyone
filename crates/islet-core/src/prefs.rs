@@ -50,6 +50,8 @@ pub struct IslandPrefs {
     /// Pointing at the empty island shows the weather, the battery and
     /// how busy the processor is, either side of the time.
     pub hover_status: bool,
+    /// Islet Pro: show each new screenshot on the island for a moment.
+    pub screenshot_preview: bool,
     /// Islet Pro looks: a glow in the album's colour while music plays,
     /// and the progress bar drawn as moving bars.
     pub album_glow: bool,
@@ -214,6 +216,7 @@ impl Default for IslandPrefs {
             focus_quiet: false,
             hover_status: true,
             performance_alert: false,
+            screenshot_preview: true,
             album_glow: true,
             visualizer: true,
             shape: "pill".into(),
@@ -232,7 +235,7 @@ impl Default for IslandPrefs {
 }
 
 /// The switches `islet set <key> on|off` understands.
-pub const SWITCHES: [&str; 21] = [
+pub const SWITCHES: [&str; 22] = [
     "volume-hud",
     "brightness-hud",
     "caps-lock-hud",
@@ -254,6 +257,7 @@ pub const SWITCHES: [&str; 21] = [
     "performance-alert",
     "album-glow",
     "visualizer",
+    "screenshot-preview",
 ];
 
 impl IslandPrefs {
@@ -300,6 +304,7 @@ impl IslandPrefs {
             "performance-alert" => &mut self.performance_alert,
             "album-glow" => &mut self.album_glow,
             "visualizer" => &mut self.visualizer,
+            "screenshot-preview" => &mut self.screenshot_preview,
             _ => return Err(format!("unknown setting {key:?} (one of: {})", SWITCHES.join(", "))),
         })
     }

@@ -58,6 +58,14 @@ islet look clock date
 islet update check --early
 ```
 
+## Screenshot preview
+
+When the system saves a screenshot, the island shows its thumbnail for eight seconds. Open the island and tap the card to open the picture.
+
+- Islet watches the folder the system saves into: `Pictures/Screenshots` on Windows and Linux (or `Pictures` if there is no such folder), and the Desktop on macOS, where only files named like a screenshot count.
+- It reads the new picture to draw the thumbnail. Nothing leaves the computer.
+- Switch it off in Settings → General → **Show each new screenshot on the island**.
+
 ## Quick notes
 
 One line at a time, added with the date and time to a plain text file: `Islet notes.txt` in your Documents folder. Open it in any editor.

@@ -1167,6 +1167,7 @@ impl App {
                 progress: Some(h.share()),
                 color: Some(content::ORANGE),
                 open: None,
+                image: None,
             }),
             None => Report::CustomEnded(content::HOG_ID.into()),
         };
@@ -3834,6 +3835,7 @@ mod tests {
             progress: Some(0.5),
             color: None,
             open: None,
+            image: None,
         };
         app.report(Report::Custom(job), 1.0);
         assert_eq!(app.presentation(), Compact);
@@ -5219,6 +5221,48 @@ mod tests {
     }
 
     #[test]
+    fn a_new_screenshot_shows_its_thumbnail_and_opens_on_a_tap() {
+        use islet_core::activity::Custom;
+        use islet_core::screenshot::ACTIVITY_ID;
+        let mut engine = TextEngine::new();
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        let shot = Custom {
+            id: ACTIVITY_ID.into(),
+            title: "Screenshot".into(),
+            subtitle: "Screenshot 2026-11-04 140509.png".into(),
+            progress: Some(1.0),
+            color: None,
+            open: Some("/home/a/Pictures/Screenshots/Screenshot 2026-11-04 140509.png".into()),
+            image: song_with_art(true).art,
+        };
+        assert!(app.report(Report::Custom(shot), 1.0));
+        app.tick(1.0);
+        assert_eq!(app.presentation(), Compact);
+        let els = app.elements(4.0, &mut engine);
+        assert!(els.iter().any(|e| matches!(e, Element::Art { .. })), "the thumbnail, not a progress ring");
+        assert!(!els.iter().any(|e| matches!(e, Element::Ring { .. })));
+        let words: Vec<String> = texts(&app, 4.0, &mut engine).into_iter().filter(|s| !s.is_empty()).collect();
+        assert_eq!(words, ["Screenshot"], "and no percentage");
+        assert_eq!(app.frame_interval(4.0), None, "nothing about it moves");
+        // Open the card, then tap it: the picture opens.
+        click(&mut app, 5.0);
+        let card = texts(&app, 9.0, &mut engine);
+        assert!(
+            card.iter().any(|s| s == "Tap to open") && card.iter().any(|s| s.starts_with("Screenshot 2026")),
+            "{card:?}"
+        );
+        click(&mut app, 10.0);
+        assert_eq!(
+            app.take_ui_actions(),
+            [UiAction::Path("/home/a/Pictures/Screenshots/Screenshot 2026-11-04 140509.png".into())]
+        );
+        // The watcher takes it away after a few seconds.
+        app.report(Report::CustomEnded(ACTIVITY_ID.into()), 12.0);
+        assert!(app.live(12.5).is_empty());
+    }
+
+    #[test]
     fn a_program_hogging_the_computer_gets_an_alert_with_a_way_out() {
         use islet_core::hog::{Hog, Kind};
         let mut engine = TextEngine::new();
@@ -6047,6 +6091,7 @@ mod tests {
             progress: Some(0.6),
             color: None,
             open: None,
+            image: None,
         };
         compact.report(Report::Custom(job), 0.0);
         let apps = [(clock, 4.0), (system, 9.0), (idle, 4.0), (compact, 4.0)];

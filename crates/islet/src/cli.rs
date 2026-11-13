@@ -106,7 +106,8 @@ Usage:
                                            notifications, calendar, fahrenheit, web-artwork,
                                            spotify, privacy-dots, clipboard, lyrics, auto-hide, calls, downloads,
                                            idle-clock, hover-status, focus-quiet, performance-alert,
-                                           and with Islet Pro: power-saver, album-glow, visualizer
+                                           and with Islet Pro: power-saver, album-glow, visualizer,
+                                           screenshot-preview
   islet prefs [--json]                     the island's settings
   islet autostart on|off                   start Islet when you log in (or stop doing so)
   islet status [--json]                    is Islet running, and how it is set up
@@ -562,6 +563,7 @@ pub fn parse_activity(id: &str, args: &[&str]) -> Result<islet_core::activity::C
         progress: None,
         color: None,
         open: None,
+        image: None,
     };
     let mut it = args.iter();
     while let Some(&arg) = it.next() {

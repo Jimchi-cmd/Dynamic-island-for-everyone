@@ -220,6 +220,7 @@ fn run() -> platform::Result<()> {
     providers.clipboard(app.prefs().clipboard && !scripted);
     providers.downloads(app.prefs().downloads && !scripted);
     providers.hog(app.prefs().performance_alert && !scripted);
+    providers.screenshots(pro::active() && app.prefs().screenshot_preview && !scripted);
     let mut alarm_sound = sound::AlarmSound::default();
     // Windows' screen-reader adapter must exist before the window shows.
     let mut access = a11y::Bridge::new(win.native_handle(), win.waker());
@@ -386,6 +387,7 @@ fn run() -> platform::Result<()> {
                     providers.clipboard(app.prefs().clipboard);
                     providers.downloads(app.prefs().downloads);
                     providers.hog(app.prefs().performance_alert);
+                    providers.screenshots(pro::active() && app.prefs().screenshot_preview);
                 }
                 Control::PrefsChanged => {}
                 Control::ShelfChanged if !scripted => app.set_shelf(config::load_shelf()),

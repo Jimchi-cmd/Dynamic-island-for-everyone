@@ -154,6 +154,7 @@ fn run(dir: &Path, on: &AtomicBool, sink: &Sink) {
                 progress: None,
                 color: Some(BLUE),
                 open: None,
+                image: None,
             }));
             shown = true;
             done_until = None;
@@ -165,6 +166,7 @@ fn run(dir: &Path, on: &AtomicBool, sink: &Sink) {
                 progress: Some(1.0),
                 color: Some(GREEN),
                 open: Some(path.to_string_lossy().into_owned()),
+                image: None,
             }));
             shown = true;
             done_until = Some(now + DONE_FOR);
@@ -187,13 +189,13 @@ fn run(dir: &Path, on: &AtomicBool, sink: &Sink) {
 // ---- Folder change notifications ---------------------------------------------------
 
 #[cfg(target_os = "linux")]
-struct Change {
+pub(super) struct Change {
     fd: std::os::fd::OwnedFd,
 }
 
 #[cfg(target_os = "linux")]
 impl Change {
-    fn new(dir: &Path) -> Option<Self> {
+    pub(super) fn new(dir: &Path) -> Option<Self> {
         use std::os::fd::FromRawFd;
         use std::os::unix::ffi::OsStrExt;
         let path = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
@@ -210,7 +212,7 @@ impl Change {
         }
     }
 
-    fn wait(&mut self, timeout: Option<Duration>) {
+    pub(super) fn wait(&mut self, timeout: Option<Duration>) {
         use std::os::fd::AsRawFd;
         let ms = timeout.map_or(-1, |t| t.as_millis().min(i32::MAX as u128) as libc::c_int);
         let mut fds = [libc::pollfd { fd: self.fd.as_raw_fd(), events: libc::POLLIN, revents: 0 }];
@@ -224,14 +226,14 @@ impl Change {
 }
 
 #[cfg(target_os = "macos")]
-struct Change {
+pub(super) struct Change {
     kq: std::os::fd::OwnedFd,
     _dir: std::os::fd::OwnedFd,
 }
 
 #[cfg(target_os = "macos")]
 impl Change {
-    fn new(dir: &Path) -> Option<Self> {
+    pub(super) fn new(dir: &Path) -> Option<Self> {
         use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
         use std::os::unix::ffi::OsStrExt;
         let path = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
@@ -260,7 +262,7 @@ impl Change {
         }
     }
 
-    fn wait(&mut self, timeout: Option<Duration>) {
+    pub(super) fn wait(&mut self, timeout: Option<Duration>) {
         use std::os::fd::AsRawFd;
         let ts =
             timeout.map(|t| libc::timespec { tv_sec: t.as_secs() as libc::time_t, tv_nsec: t.subsec_nanos() as _ });
@@ -274,13 +276,13 @@ impl Change {
 }
 
 #[cfg(target_os = "windows")]
-struct Change {
+pub(super) struct Change {
     handle: windows::Win32::Foundation::HANDLE,
 }
 
 #[cfg(target_os = "windows")]
 impl Change {
-    fn new(dir: &Path) -> Option<Self> {
+    pub(super) fn new(dir: &Path) -> Option<Self> {
         use std::os::windows::ffi::OsStrExt;
         use windows::core::PCWSTR;
         use windows::Win32::Storage::FileSystem::{
@@ -299,7 +301,7 @@ impl Change {
         Some(Change { handle: h })
     }
 
-    fn wait(&mut self, timeout: Option<Duration>) {
+    pub(super) fn wait(&mut self, timeout: Option<Duration>) {
         use windows::Win32::Storage::FileSystem::FindNextChangeNotification;
         use windows::Win32::System::Threading::{WaitForSingleObject, INFINITE};
         let ms = timeout.map_or(INFINITE, |t| t.as_millis().min(u128::from(INFINITE - 1)) as u32);

@@ -274,6 +274,7 @@ export interface IslandPrefs {
   /** Islet Pro looks. */
   albumGlow: boolean;
   visualizer: boolean;
+  screenshotPreview: boolean;
   shape: string;
   clockFace: string;
   hotkey: string;
@@ -344,6 +345,7 @@ export const SWITCH_NAMES: Record<string, string> = {
   performanceAlert: 'performance-alert',
   albumGlow: 'album-glow',
   visualizer: 'visualizer',
+  screenshotPreview: 'screenshot-preview',
 };
 
 /** `islet focus streak --json`. */

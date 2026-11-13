@@ -43,6 +43,7 @@ mod macos_privacy;
 mod macos_volume;
 pub mod mic;
 pub mod navigation;
+mod screenshots;
 pub mod spotify;
 pub mod sysmon;
 pub mod weather;
@@ -202,6 +203,7 @@ pub struct Providers {
     mic: Sender<islet_core::activity::MicCommand>,
     clipboard: Option<clipboard::Watcher>,
     downloads: Option<downloads::Watcher>,
+    screenshots: Option<screenshots::Watcher>,
     sink: Sink,
     #[cfg(target_os = "linux")]
     notifications: linux_notifications::Notifications,
@@ -243,6 +245,7 @@ impl Providers {
             mic,
             clipboard: None,
             downloads: None,
+            screenshots: None,
             sink,
             #[cfg(target_os = "linux")]
             notifications: linux_notifications::Notifications::default(),
@@ -302,6 +305,15 @@ impl Providers {
             self.downloads = downloads::start(self.sink.clone());
         } else if !on && self.downloads.take().is_some() {
             self.sink.send(Report::CustomEnded(islet_core::downloads::ACTIVITY_ID.into()));
+        }
+    }
+
+    /// Start or stop showing new screenshots (Islet Pro).
+    pub fn screenshots(&mut self, on: bool) {
+        if on && self.screenshots.is_none() {
+            self.screenshots = screenshots::start(self.sink.clone());
+        } else if !on && self.screenshots.take().is_some() {
+            self.sink.send(Report::CustomEnded(islet_core::screenshot::ACTIVITY_ID.into()));
         }
     }
 

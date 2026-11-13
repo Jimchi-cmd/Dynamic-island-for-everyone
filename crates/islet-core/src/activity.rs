@@ -139,6 +139,10 @@ pub struct Custom {
     /// A file or link that tapping the open card opens (a finished download).
     #[serde(default)]
     pub open: Option<String>,
+    /// A picture shown in place of the ring (a screenshot's thumbnail).
+    /// Islet's own activities set it; scripts can't.
+    #[serde(skip)]
+    pub image: Option<ArtImage>,
 }
 
 /// At most this many script activities at once.

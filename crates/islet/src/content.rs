@@ -510,6 +510,9 @@ pub fn custom_color(c: &Custom) -> [u8; 3] {
 
 /// "40%", or the subtitle when there's no known amount.
 fn custom_right(c: &Custom) -> String {
+    if c.image.is_some() {
+        return String::new();
+    }
     match c.progress {
         Some(p) => format!("{}%", (p.clamp(0.0, 1.0) * 100.0).round() as i32),
         None => String::new(),
@@ -534,6 +537,19 @@ pub const CUSTOM_H: f64 = 112.0;
 pub fn expanded_custom(pill: Rect, c: &Custom, t: f64, o: f32, engine: &mut TextEngine) -> Vec<Element> {
     let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
     let pad = PAD as f32;
+    if let Some(img) = &c.image {
+        // A picture's card (a screenshot): the thumbnail, its name, and
+        // what a tap does.
+        let title = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
+        let small = TextStyle { size: 13.0, opacity: o * 0.6, ..TextStyle::default() };
+        let (tx, room) = (x + pad + 76.0, w - 2.0 * pad - 76.0);
+        return vec![
+            Element::Art { x: x + pad, y: y + 22.0, size: 64.0, radius: 10.0, image: Some(img.clone()), opacity: o },
+            text(engine.ellipsize(&c.title, &title, room), title, tx, y + 44.0),
+            text(engine.ellipsize(&c.subtitle, &small, room), small, tx, y + 63.0),
+            text("Tap to open", TextStyle { color: accent_text(), ..small }, tx, y + 82.0),
+        ];
+    }
     let color = custom_color(c);
     let title = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
     let pct = custom_right(c);
@@ -848,8 +864,20 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
             let right_text = custom_right(c);
             let rs = TextStyle { size: 13.0, weight: 600, opacity: o, color, tabular: true, align: Align::Right };
             let room = (right - x) - 40.0 - engine.measure(&right_text, &rs) - 24.0;
+            // A picture (a screenshot's thumbnail) takes the ring's place.
+            let lead = match &c.image {
+                Some(img) => Element::Art {
+                    x: x + 9.0,
+                    y: cy - 11.0,
+                    size: 22.0,
+                    radius: 5.0,
+                    image: Some(img.clone()),
+                    opacity: o,
+                },
+                None => custom_ring(c, x + 20.0, cy, 8.5, t, o),
+            };
             vec![
-                custom_ring(c, x + 20.0, cy, 8.5, t, o),
+                lead,
                 text(engine.ellipsize(&c.title, &title, room), title, x + 38.0, cy + 4.5),
                 text(right_text, rs, right - 14.0, cy + 4.5),
             ]

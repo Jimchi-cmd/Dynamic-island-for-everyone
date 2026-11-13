@@ -1071,7 +1071,7 @@
             </select>
           </div>
           {#if pro?.active}
-            {#each [['albumGlow', 'Glow in the album’s colour while music plays'], ['visualizer', 'Moving bars as the song’s progress bar']] as [key, label] (key)}
+            {#each [['albumGlow', 'Glow in the album’s colour while music plays'], ['visualizer', 'Moving bars as the song’s progress bar'], ['screenshotPreview', 'Show each new screenshot on the island']] as [key, label] (key)}
               <div class="net">
                 <span class="name">{label}</span>
                 <input
