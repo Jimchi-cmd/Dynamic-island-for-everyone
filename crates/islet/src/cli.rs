@@ -87,6 +87,8 @@ Usage:
                                  [--color #rrggbb] [--open <file or link>]
                                            show your own live activity (a build, a download…)
   islet activity end <id>                  remove it
+  islet clipboard exclude [--json]         apps whose copies the clipboard history never keeps
+  islet clipboard exclude add|remove <app> change that list
   islet shelf [--json]                     files on the shelf (drop files on the island to add)
   islet shelf clear                        empty the shelf (the files themselves stay)
   islet spotify login <client-id>          show Spotify playback from your other devices (opens
@@ -252,6 +254,13 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
             config::save_shelf(&[]);
             let _ = control::send(&Control::ShelfChanged);
             Ok("The shelf is empty.".into())
+        }
+        ["clipboard", "exclude"] => Ok(config::load_prefs().clipboard_exclude.join("\n")),
+        ["clipboard", "exclude", "--json"] => {
+            serde_json::to_string(&config::load_prefs().clipboard_exclude).map_err(|e| e.to_string())
+        }
+        ["clipboard", "exclude", verb @ ("add" | "remove"), app @ ..] if !app.is_empty() => {
+            clipboard_exclude(*verb == "add", &app.join(" "))
         }
         ["media", verb @ ("hide" | "show"), app @ ..] if !app.is_empty() => {
             media_exclude(*verb == "hide", &app.join(" "))
@@ -701,6 +710,22 @@ fn set_hotkey(combo: &str) -> Result<String, String> {
     config::save_prefs(&p)?;
     prefs_changed();
     Ok(if label.is_empty() { "Shortcut removed.".into() } else { format!("{label} opens and closes the island.") })
+}
+
+/// Add an app to the clipboard history's exclude list, or take it off.
+fn clipboard_exclude(add: bool, app: &str) -> Result<String, String> {
+    let app = app.trim();
+    if app.is_empty() || app.len() > 60 {
+        return Err("name the app (up to 60 characters)".into());
+    }
+    let mut p = config::load_prefs();
+    p.clipboard_exclude.retain(|x| !x.eq_ignore_ascii_case(app));
+    if add {
+        p.clipboard_exclude.push(app.to_string());
+    }
+    config::save_prefs(&p)?;
+    prefs_changed();
+    Ok(if add { format!("Copies from {app} won't be kept.") } else { format!("Copies from {app} will be kept.") })
 }
 
 /// The launcher's or the quick note's shortcut.

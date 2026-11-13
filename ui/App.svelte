@@ -390,6 +390,20 @@
     }
   }
 
+  // Clipboard history: apps whose copies are never kept.
+  let excludeDraft = $state('');
+  async function clipExclude(verb: 'add' | 'remove', app: string) {
+    const name = app.trim();
+    if (!name || name.startsWith('-')) return;
+    try {
+      await api.islet(['clipboard', 'exclude', verb, name]);
+      excludeDraft = '';
+      await loadIslandPrefs();
+    } catch (e) {
+      problem = api.message(e);
+    }
+  }
+
   // Now Playing
   let hideApp = $state('');
 
@@ -1405,10 +1419,27 @@
             />
           </div>
           <p class="muted small">
-            Keeps the last 20 texts you copy, in memory only: nothing is saved to disk, and the list is gone when Islet
-            quits. Copies that password managers mark as secret are skipped.{#if info?.os === 'macos'} macOS has no
+            Keeps the last 20 texts and pictures you copy, in memory only: nothing is saved to disk, and the list is
+            gone when Islet quits. Copies that password managers mark as secret are skipped, and so is everything
+            copied from the apps below.{#if info?.os === 'macos'} macOS has no
             clipboard notifications, so while this is on Islet checks the clipboard twice a second.{/if}
           </p>
+          <p class="muted small">Never keep copies from:</p>
+          <div class="actions left">
+            {#each islandPrefs?.clipboardExclude ?? [] as app (app)}
+              <button onclick={() => clipExclude('remove', app)} aria-label={`Keep copies from ${app} again`}>{app} ✕</button>
+            {/each}
+          </div>
+          <form
+            class="join"
+            onsubmit={(e) => {
+              e.preventDefault();
+              void clipExclude('add', excludeDraft);
+            }}
+          >
+            <input placeholder="An app's name, e.g. Slack" maxlength="60" bind:value={excludeDraft} aria-label="App to leave out" />
+            <button type="submit" disabled={!excludeDraft.trim()}>Add</button>
+          </form>
         </div>
         <div class="card">
           <h2>Spotify on your other devices</h2>

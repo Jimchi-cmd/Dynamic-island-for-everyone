@@ -2434,12 +2434,27 @@ pub fn expanded_clipboard(
     let style = TextStyle { size: 14.5, weight: 500, opacity: o, ..TextStyle::default() };
     for (r, item) in rows.iter().zip(history.items().skip(scroll)) {
         let (x, cy, rw) = (r.x as f32, (r.y + r.h / 2.0) as f32, r.w as f32);
-        let line = islet_core::clipboard::preview(item);
-        v.push(text(engine.ellipsize(&line, &style, rw - 20.0), style, x + 10.0, cy + 5.0));
+        let line = item.label();
+        let lead = match item {
+            // A picture: its thumbnail before its size.
+            islet_core::clipboard::Clip::Image(img) => {
+                v.push(Element::Art {
+                    x: x + 10.0,
+                    y: cy - 12.0,
+                    size: 24.0,
+                    radius: 5.0,
+                    image: img.thumb.clone(),
+                    opacity: o,
+                });
+                34.0
+            }
+            islet_core::clipboard::Clip::Text(_) => 0.0,
+        };
+        v.push(text(engine.ellipsize(&line, &style, rw - 20.0 - lead), style, x + 10.0 + lead, cy + 5.0));
     }
     if n == 0 {
         let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
-        v.push(text("Copy some text to see it here", style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
+        v.push(text("Copy some text or a picture", style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
     } else {
         v.extend(list_footer_elements(pill, shown, CLIPBOARD_CLEAR, true, o, engine));
     }

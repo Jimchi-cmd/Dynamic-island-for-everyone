@@ -252,7 +252,7 @@ pub struct App {
     /// Clipboard history (in memory only; empty while the feature is off).
     clip: islet_core::clipboard::History,
     /// Entries to put back on the clipboard (for main to hand over).
-    clip_out: Vec<String>,
+    clip_out: Vec<islet_core::clipboard::Clip>,
     /// Gap above the island (Settings → Look), in island px.
     top: f64,
     /// The notifications card was opened from a notification: it stays
@@ -1441,9 +1441,9 @@ impl App {
                     }
                 }
                 Some(Panel::Clipboard) => {
-                    if let Some(text) = self.clip.get(i).cloned() {
-                        self.clip.push(&text);
-                        self.clip_out.push(text);
+                    if let Some(clip) = self.clip.get(i).cloned() {
+                        self.clip.add(clip.clone());
+                        self.clip_out.push(clip);
                     }
                 }
                 Some(Panel::Todo) => {
@@ -1715,9 +1715,7 @@ impl App {
                             .iter()
                             .map(|i| format!("{}{}", i.text, if i.done { ", done" } else { ", to do" }))
                             .collect(),
-                        Panel::Clipboard => {
-                            self.clip.items().map(|t| format!("Copy {}", islet_core::clipboard::preview(t))).collect()
-                        }
+                        Panel::Clipboard => self.clip.items().map(|c| format!("Copy {}", c.label())).collect(),
                     };
                     let (total, footer) = self.panel_list(p);
                     let scroll = self.scroll_of(p);
@@ -1969,7 +1967,7 @@ impl App {
     }
 
     /// History entries the user chose to copy again.
-    pub fn take_clipboard_copies(&mut self) -> Vec<String> {
+    pub fn take_clipboard_copies(&mut self) -> Vec<islet_core::clipboard::Clip> {
         std::mem::take(&mut self.clip_out)
     }
 
@@ -2021,8 +2019,15 @@ impl App {
             self.sync_live(t);
             return true;
         }
-        if let Report::Clipboard(text) = &r {
-            let changed = self.prefs.clipboard && self.clip.push(text);
+        if let Report::Clipboard(clip, app) = &r {
+            use islet_core::clipboard::{excluded, Clip};
+            let from_excluded = app.as_deref().is_some_and(|a| excluded(a, &self.prefs.clipboard_exclude));
+            let changed = self.prefs.clipboard
+                && !from_excluded
+                && match clip {
+                    Clip::Text(text) => self.clip.push(text),
+                    Clip::Image(image) => self.clip.push_image(image.clone()),
+                };
             return changed && self.panel == Some(Panel::Clipboard) && self.island.presentation().is_open();
         }
         // Wi-Fi joined a network (not just a refreshed list): say so.
@@ -5660,7 +5665,7 @@ mod tests {
         assert_eq!(app.limits(), FULL);
         assert_eq!(app.frame_interval(5.0), Some(FRAME));
         for i in 0..(LIGHT.clipboard_items + 30) {
-            app.report(Report::Clipboard(format!("copy {i}")), 5.0);
+            app.report(Report::Clipboard(islet_core::clipboard::Clip::Text(format!("copy {i}")), None), 5.0);
         }
         assert_eq!(app.clip.len(), LIGHT.clipboard_items + 30, "history runs past the free cap");
         let files: Vec<(String, bool)> = (0..LIGHT.shelf + 8).map(|i| (format!("/tmp/f{i}"), false)).collect();
@@ -6045,15 +6050,20 @@ mod tests {
         );
     }
 
+    fn copied(text: &str) -> Report {
+        Report::Clipboard(islet_core::clipboard::Clip::Text(text.into()), None)
+    }
+
     #[test]
     fn clipboard_history_is_opt_in() {
+        use islet_core::clipboard::Clip;
         let mut app = App::new(Demo::None, false);
-        app.report(Report::Clipboard("ignored".into()), 0.0);
+        app.report(copied("ignored"), 0.0);
         assert!(app.clip.is_empty(), "off by default");
         let mut prefs = IslandPrefs { clipboard: true, ..Default::default() };
         app.set_prefs(prefs.clone());
-        app.report(Report::Clipboard("first".into()), 0.0);
-        app.report(Report::Clipboard("second copy\nwith two lines".into()), 0.0);
+        app.report(copied("first"), 0.0);
+        app.report(copied("second copy\nwith two lines"), 0.0);
         app.set_time(NOW, 0.0);
         click(&mut app, 0.0);
         let cr = app.content_rect(app.pill_rect(5.0));
@@ -6066,17 +6076,54 @@ mod tests {
         // Tapping the older entry copies it again (and moves it to the top).
         let rows = content::list_rows(app.content_rect(app.pill_rect(9.0)), 2);
         press(&mut app, rows[1], 9.0);
-        assert_eq!(app.take_clipboard_copies(), ["first"]);
-        assert_eq!(app.clip.get(0).map(String::as_str), Some("first"));
+        assert_eq!(app.take_clipboard_copies(), [Clip::Text("first".into())]);
+        assert_eq!(app.clip.get(0), Some(&Clip::Text("first".into())));
         // Clear history.
         let footer = content::list_footer(app.content_rect(app.pill_rect(9.0)), 2);
         press(&mut app, footer, 9.0);
         assert!(app.clip.is_empty());
         // Turning it off forgets everything and closes the panel.
-        app.report(Report::Clipboard("third".into()), 10.0);
+        app.report(copied("third"), 10.0);
         prefs.clipboard = false;
         app.set_prefs(prefs);
         assert!(app.clip.is_empty() && app.panel.is_none());
+    }
+
+    #[test]
+    fn clipboard_keeps_pictures_and_skips_excluded_apps() {
+        use islet_core::clipboard::{Clip, ClipImage};
+        let mut engine = TextEngine::new();
+        let mut app = App::new(Demo::None, false);
+        app.set_prefs(IslandPrefs { clipboard: true, ..Default::default() });
+        // A password manager on the (default) exclude list: never kept.
+        app.report(Report::Clipboard(Clip::Text("hunter2".into()), Some("KeePassXC".into())), 0.0);
+        app.report(Report::Clipboard(Clip::Text("from Bitwarden".into()), Some("Bitwarden.exe".into())), 0.0);
+        assert!(app.clip.is_empty());
+        // An ordinary app's copy is kept; so is a picture.
+        app.report(Report::Clipboard(Clip::Text("an address".into()), Some("firefox".into())), 1.0);
+        let picture =
+            ClipImage { png: Arc::new(vec![1, 2, 3]), width: 1280, height: 720, thumb: song_with_art(true).art };
+        app.report(Report::Clipboard(Clip::Image(picture.clone()), Some("Screenshot".into())), 2.0);
+        assert_eq!(app.clip.len(), 2);
+        // The list shows the picture's thumbnail and size.
+        app.set_time(NOW, 0.0);
+        click(&mut app, 3.0);
+        let cr = app.content_rect(app.pill_rect(8.0));
+        let (chip, _) =
+            content::clock_chips(cr, app.clock_row()).into_iter().find(|(_, p)| *p == Panel::Clipboard).unwrap();
+        press(&mut app, chip, 8.0);
+        let shown = texts(&app, 12.0, &mut engine);
+        assert!(shown.iter().any(|s| s == "Image, 1280 × 720"), "{shown:?}");
+        assert!(app.elements(12.0, &mut engine).iter().any(|e| matches!(e, Element::Art { .. })), "with its thumbnail");
+        // Tapping it puts the picture back on the clipboard.
+        let rows = content::list_rows(app.content_rect(app.pill_rect(12.0)), 2);
+        press(&mut app, rows[0], 12.0);
+        assert_eq!(app.take_clipboard_copies(), [Clip::Image(picture)]);
+        // A user's own exclude list replaces the default one.
+        app.set_prefs(IslandPrefs { clipboard: true, clipboard_exclude: vec!["Slack".into()], ..Default::default() });
+        app.report(Report::Clipboard(Clip::Text("secret plans".into()), Some("slack".into())), 20.0);
+        app.report(Report::Clipboard(Clip::Text("now kept".into()), Some("KeePassXC".into())), 21.0);
+        assert_eq!(app.clip.get(0), Some(&Clip::Text("now kept".into())));
     }
 
     #[test]

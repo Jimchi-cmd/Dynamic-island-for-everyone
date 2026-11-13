@@ -211,7 +211,7 @@ In every list, the round **‹** button at the top left goes back to Control Cen
 1. Drag files or folders from your desktop or file manager onto the island.
 2. Open Control Centre → **Shelf** to see them. Tap one to open it; tap **×** to take it off the shelf. The shelf keeps shortcuts only: your files stay where they are.
 
-**Clipboard history** (off until you turn it on in Settings → General → Privacy) keeps your last 20 copied texts in memory (500 with Islet Pro). Tap one to copy it again. Copies from password managers are never kept.
+**Clipboard history** (off until you turn it on in Settings → General → Privacy) keeps your last 20 copied texts and pictures in memory (500 with Islet Pro; pictures are shown with a thumbnail, and only the newest few are kept). Tap one to copy it again. Copies from password managers are never kept, and neither is anything copied from an app on the **Never keep copies from** list (password managers are on it already; add any app you like, or use `islet clipboard exclude add <app>`).
 
 **System monitor:** CPU, memory and disk, read only while that page is open.
 

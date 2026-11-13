@@ -432,8 +432,8 @@ fn run() -> platform::Result<()> {
             sysmon_on = !sysmon_on;
             providers.sysmon(sysmon_on);
         }
-        for text in app.take_clipboard_copies() {
-            providers.clipboard_copy(text);
+        for clip in app.take_clipboard_copies() {
+            providers.clipboard_copy(clip);
         }
         for cmd in app.take_conn_commands() {
             providers.conn(cmd);

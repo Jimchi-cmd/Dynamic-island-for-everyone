@@ -52,6 +52,14 @@ pub fn from_pixmap(src: &Pixmap) -> ArtImage {
     from_pixmap_at(src, size())
 }
 
+/// A small square thumbnail of a PNG (for the clipboard list), and the
+/// picture's size.
+pub fn png_thumbnail(png: &[u8]) -> Option<(ArtImage, u32, u32)> {
+    let src = Pixmap::decode_png(png).ok()?;
+    let (w, h) = (src.width(), src.height());
+    Some((from_pixmap_at(&src, 48), w, h))
+}
+
 fn from_pixmap_at(src: &Pixmap, px: u32) -> ArtImage {
     let side = src.width().min(src.height()).max(1) as f32;
     // Never blow a small cover up: it would only cost memory.

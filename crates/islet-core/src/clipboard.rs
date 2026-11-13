@@ -34,16 +34,49 @@ pub fn is_secret<S: AsRef<str>>(formats: &[S]) -> bool {
     formats.iter().any(|f| SECRET_MARKERS.iter().any(|m| f.as_ref().eq_ignore_ascii_case(m)))
 }
 
+/// A copied picture: the PNG bytes (what is put back on the clipboard)
+/// and a small thumbnail for the list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClipImage {
+    pub png: std::sync::Arc<Vec<u8>>,
+    pub width: u32,
+    pub height: u32,
+    pub thumb: Option<crate::activity::ArtImage>,
+}
+
+/// One history entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Clip {
+    Text(String),
+    Image(ClipImage),
+}
+
+impl Clip {
+    /// The row's words: the text's first line, or "Image, 1280 × 720".
+    pub fn label(&self) -> String {
+        match self {
+            Clip::Text(t) => preview(t),
+            Clip::Image(i) => format!("Image, {} × {}", i.width, i.height),
+        }
+    }
+}
+
+/// The largest picture kept, as PNG.
+pub const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
+/// At most this many pictures, however long the history (they are big).
+pub const MAX_IMAGES: usize = 5;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct History {
-    items: VecDeque<String>,
+    items: VecDeque<Clip>,
     max_items: usize,
     max_chars: usize,
+    max_images: usize,
 }
 
 impl Default for History {
     fn default() -> Self {
-        Self { items: VecDeque::new(), max_items: MAX_ITEMS, max_chars: MAX_CHARS }
+        Self { items: VecDeque::new(), max_items: MAX_ITEMS, max_chars: MAX_CHARS, max_images: MAX_IMAGES }
     }
 }
 
@@ -53,6 +86,8 @@ impl History {
     pub fn set_limits(&mut self, items: usize, chars: usize) {
         self.max_items = items.max(1);
         self.max_chars = chars.max(1);
+        // Pictures scale with the history, within reason.
+        self.max_images = (items / 4).clamp(MAX_IMAGES, 25);
     }
 
     /// Record a copy. Returns false when nothing changed (blank, or already
@@ -62,20 +97,44 @@ impl History {
             return false;
         }
         let text: String = text.chars().take(self.max_chars).collect();
-        if self.items.front() == Some(&text) {
+        self.add(Clip::Text(text))
+    }
+
+    /// Record a copied picture (too big ones are left out).
+    pub fn push_image(&mut self, image: ClipImage) -> bool {
+        if image.png.is_empty() || image.png.len() > MAX_IMAGE_BYTES {
             return false;
         }
-        self.items.retain(|t| *t != text);
-        self.items.push_front(text);
+        self.add(Clip::Image(image))
+    }
+
+    /// Put an entry (back) at the top.
+    pub fn add(&mut self, clip: Clip) -> bool {
+        if self.items.front() == Some(&clip) {
+            return false;
+        }
+        self.items.retain(|c| *c != clip);
+        self.items.push_front(clip);
         self.items.truncate(self.max_items);
+        // Drop the oldest pictures past the limit.
+        let mut images = 0;
+        let max = self.max_images;
+        self.items.retain(|c| {
+            if matches!(c, Clip::Image(_)) {
+                images += 1;
+                images <= max
+            } else {
+                true
+            }
+        });
         true
     }
 
-    pub fn items(&self) -> impl Iterator<Item = &String> {
+    pub fn items(&self) -> impl Iterator<Item = &Clip> {
         self.items.iter()
     }
 
-    pub fn get(&self, i: usize) -> Option<&String> {
+    pub fn get(&self, i: usize) -> Option<&Clip> {
         self.items.get(i)
     }
 
@@ -90,6 +149,32 @@ impl History {
     pub fn clear(&mut self) {
         self.items.clear();
     }
+}
+
+/// Apps whose copies are never kept, unless the user changes the list:
+/// password managers (most also mark their copies secret, which is
+/// honoured anyway).
+pub const DEFAULT_EXCLUDE: [&str; 10] = [
+    "1Password",
+    "Bitwarden",
+    "KeePassXC",
+    "KeePass",
+    "Dashlane",
+    "LastPass",
+    "Enpass",
+    "Proton Pass",
+    "Keeper",
+    "Passwords",
+];
+
+/// Is the app that copied (as the system names it: "keepassxc",
+/// "KeePassXC.exe", "org.keepassxc.KeePassXC") on the exclude list?
+pub fn excluded(app: &str, list: &[String]) -> bool {
+    let norm = |s: &str| -> String { s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase() };
+    let app = app.trim();
+    let base = app.strip_suffix(".exe").or_else(|| app.strip_suffix(".EXE")).unwrap_or(app);
+    let names = [norm(base), norm(base.rsplit('.').next().unwrap_or(base))];
+    list.iter().map(|x| norm(x)).filter(|x| !x.is_empty()).any(|x| names.contains(&x))
 }
 
 /// One line for a list row: the first non-blank line, whitespace collapsed.
@@ -123,14 +208,15 @@ mod tests {
         assert!(!h.push("two"), "same as the newest");
         assert!(!h.push("   \n"), "blank");
         assert!(h.push("one"), "an older copy moves to the top");
-        assert_eq!(h.items().collect::<Vec<_>>(), ["one", "two"]);
+        let texts = |h: &History| h.items().map(Clip::label).collect::<Vec<_>>();
+        assert_eq!(texts(&h), ["one", "two"]);
         for i in 0..30 {
             h.push(&i.to_string());
         }
         assert_eq!(h.len(), MAX_ITEMS);
-        assert_eq!(h.get(0).map(String::as_str), Some("29"));
+        assert_eq!(h.get(0), Some(&Clip::Text("29".into())));
         h.push(&"x".repeat(MAX_CHARS + 50));
-        assert_eq!(h.get(0).unwrap().len(), MAX_CHARS);
+        assert!(matches!(h.get(0), Some(Clip::Text(t)) if t.len() == MAX_CHARS));
         h.clear();
         assert!(h.is_empty());
     }
@@ -144,12 +230,46 @@ mod tests {
         }
         assert_eq!(h.len(), 60);
         h.push(&"y".repeat(MAX_CHARS + 50));
-        assert_eq!(h.get(0).unwrap().len(), MAX_CHARS + 50);
+        assert!(matches!(h.get(0), Some(Clip::Text(t)) if t.len() == MAX_CHARS + 50));
         // Back to the light limits: nothing is thrown away until the next copy.
         h.set_limits(MAX_ITEMS, MAX_CHARS);
         assert_eq!(h.len(), 61);
         h.push("newest");
         assert_eq!(h.len(), MAX_ITEMS);
+    }
+
+    fn image(byte: u8) -> ClipImage {
+        ClipImage { png: std::sync::Arc::new(vec![byte; 10]), width: 640, height: 480, thumb: None }
+    }
+
+    #[test]
+    fn pictures_are_kept_too_but_only_a_few() {
+        let mut h = History::default();
+        h.push("text");
+        assert!(h.push_image(image(1)));
+        assert!(!h.push_image(image(1)), "the same picture again is no news");
+        assert_eq!(h.get(0).map(Clip::label).as_deref(), Some("Image, 640 × 480"));
+        for b in 2..=9 {
+            h.push_image(image(b));
+        }
+        let images = h.items().filter(|c| matches!(c, Clip::Image(_))).count();
+        assert_eq!(images, MAX_IMAGES, "the oldest pictures go first");
+        assert!(h.items().any(|c| *c == Clip::Text("text".into())), "text stays");
+        let huge = ClipImage { png: std::sync::Arc::new(vec![0; MAX_IMAGE_BYTES + 1]), ..image(0) };
+        assert!(!h.push_image(huge));
+    }
+
+    #[test]
+    fn apps_on_the_exclude_list_are_recognised_by_any_name() {
+        let list: Vec<String> = DEFAULT_EXCLUDE.iter().map(|s| s.to_string()).collect();
+        for app in ["KeePassXC", "keepassxc", "KeePassXC.exe", "org.keepassxc.KeePassXC", "1Password", "Proton Pass"] {
+            assert!(excluded(app, &list), "{app}");
+        }
+        for app in ["firefox", "Code.exe", "Notes", ""] {
+            assert!(!excluded(app, &list), "{app}");
+        }
+        assert!(excluded("Slack", &["slack".to_string()]));
+        assert!(!excluded("Slack", &["".to_string()]));
     }
 
     #[test]

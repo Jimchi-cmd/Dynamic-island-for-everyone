@@ -34,8 +34,10 @@ pub struct IslandPrefs {
     pub spotify: bool,
     /// Green/orange dots while the camera or microphone is in use.
     pub privacy_dots: bool,
-    /// Keep the last few copied texts (in memory only).
+    /// Keep the last few copied texts and pictures (in memory only).
     pub clipboard: bool,
+    /// Apps whose copies are never kept (see `clipboard::excluded`).
+    pub clipboard_exclude: Vec<String>,
     /// Show synced lyrics for the playing song (fetched from LRCLIB).
     pub lyrics: bool,
     /// Hide the empty island until the pointer is over it. Anything live
@@ -215,6 +217,7 @@ impl Default for IslandPrefs {
             spotify: false,
             privacy_dots: true,
             clipboard: false,
+            clipboard_exclude: crate::clipboard::DEFAULT_EXCLUDE.iter().map(|s| s.to_string()).collect(),
             lyrics: false,
             auto_hide: false,
             idle_clock: true,

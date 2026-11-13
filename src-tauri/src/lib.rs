@@ -60,6 +60,8 @@ pub fn allowed(args: &[String]) -> bool {
         ["timer", "pause" | "resume" | "stop"] => true,
         ["prefs", "--json"] | ["weather", "off"] | ["shelf", "--json"] | ["shelf", "clear"] => true,
         ["media", "hide" | "show", app] => !app.starts_with('-'),
+        ["clipboard", "exclude", "--json"] => true,
+        ["clipboard", "exclude", "add" | "remove", app] => !app.starts_with('-') && app.len() <= 60,
         ["spotify", "logout" | "on" | "off"] => true,
         ["spotify", "login", id] => id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric()),
         ["calendar", "set"] | ["calendar", "on" | "off" | "clear"] | ["calendar", "--json"] => true,

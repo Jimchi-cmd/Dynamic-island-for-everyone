@@ -166,7 +166,7 @@ pub fn processes() -> Vec<Proc> {
             let len = entry.szExeFile.iter().position(|c| *c == 0).unwrap_or(entry.szExeFile.len());
             let name = String::from_utf16_lossy(&entry.szExeFile[..len]);
             // Programs we may not look into (other users', protected ones) are skipped.
-            if let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false.into(), pid) {
+            if let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
                 let (mut created, mut exited, mut kernel, mut user) =
                     (FILETIME::default(), FILETIME::default(), FILETIME::default(), FILETIME::default());
                 let timed = GetProcessTimes(process, &mut created, &mut exited, &mut kernel, &mut user).is_ok();

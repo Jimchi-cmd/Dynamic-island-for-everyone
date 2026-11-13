@@ -3,6 +3,7 @@
 
 pub mod activity;
 pub mod alarm;
+pub mod bitmap;
 pub mod calendar;
 pub mod clipboard;
 pub mod clock;

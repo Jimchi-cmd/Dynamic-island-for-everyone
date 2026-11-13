@@ -236,8 +236,8 @@ pub enum Report {
     Privacy(Privacy),
     /// A system monitor reading (None when the monitor stops).
     System(Option<crate::sysmon::Stats>),
-    /// Text was copied (clipboard history, when it's on).
-    Clipboard(String),
+    /// Something was copied, and the app that copied it, when known.
+    Clipboard(crate::clipboard::Clip, Option<String>),
     /// Synced lyrics for a song (`Track::key`), or None when it has none.
     Lyrics(String, Option<std::sync::Arc<crate::lyrics::Lyrics>>),
     /// The output volume (0..=1) and mute, quietly (no pop-up): sent when
@@ -578,7 +578,7 @@ impl Activities {
                 true
             }
             // The island keeps the history (it knows whether it's on).
-            Report::Clipboard(_)
+            Report::Clipboard(..)
             | Report::Lyrics(..)
             | Report::Volume(..)
             | Report::Brightness(_)

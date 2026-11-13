@@ -177,7 +177,7 @@ fn describe(r: &Report) -> String {
         Report::RemoteMedia(m) => format!("remote media: {:?}", m.as_ref().map(|m| &m.app_name)),
         Report::System(s) => format!("system: {s:?}"),
         // Never log what was copied.
-        Report::Clipboard(t) => format!("clipboard: {} chars", t.chars().count()),
+        Report::Clipboard(c, app) => format!("clipboard: {} from {app:?}", c.label().chars().count()),
         Report::Privacy(p) => format!("privacy: camera {:?}, mic {:?}", p.camera, p.mic),
         Report::Lyrics(key, l) => {
             format!("lyrics for {key:?}: {}", l.as_ref().map_or(0, |l| l.lines.len()))
@@ -323,9 +323,9 @@ impl Providers {
     }
 
     /// Put a history entry back on the clipboard.
-    pub fn clipboard_copy(&self, text: String) {
+    pub fn clipboard_copy(&self, clip: islet_core::clipboard::Clip) {
         if let Some(w) = &self.clipboard {
-            w.copy(text);
+            w.copy(clip);
         }
     }
 

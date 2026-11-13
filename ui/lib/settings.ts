@@ -258,6 +258,8 @@ export interface IslandPrefs {
   spotify: boolean;
   privacyDots: boolean;
   clipboard: boolean;
+  /** Apps whose copies are never kept. */
+  clipboardExclude: string[];
   lyrics: boolean;
   autoHide: boolean;
   idleClock: boolean;
