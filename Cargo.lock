@@ -2093,7 +2093,7 @@ dependencies = [
  "accesskit_unix",
  "accesskit_windows",
  "block2",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "islet-core",
  "islet-mediaremote",
  "islet-render",
