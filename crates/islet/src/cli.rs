@@ -32,6 +32,8 @@ Usage:
                                            a lesson for your timetable (mon 9:00 10:00 Maths)
   islet class [--json]                     your timetable; the clock card counts down to lessons
   islet class remove <n>                   delete lesson n
+  islet launcher                           open the quick launcher (apps, web, sums, conversions);
+                                           bind it to a key in your system's keyboard settings
   islet note [<text>]                      add a line to Islet notes.txt in Documents (Islet Pro);
                                            bind it to a key in your system's keyboard settings
   islet note --where                       where that file is
@@ -134,6 +136,10 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["class", "--json"] => serde_json::to_string(&load_timetable().lessons).map_err(|e| e.to_string()),
         ["class", "add", day, start, end, name, rest @ ..] => class_add(day, start, end, name, rest),
         ["class", "remove", n] => class_remove(n),
+        ["launcher"] => {
+            crate::open_settings("launcher");
+            Ok(String::new())
+        }
         ["note", "--where"] => notes_file().map(|p| p.display().to_string()),
         ["note"] => read_line("Type a note and press Enter:").and_then(|line| add_note(&line)),
         ["note", first, rest @ ..] if !first.starts_with('-') => {

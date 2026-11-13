@@ -5,6 +5,8 @@
 //! runs the `islet` binary installed next to it with an allow-listed set of
 //! commands (see [`allowed`]), so there is one tested implementation.
 
+mod launcher;
+
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::PathBuf;
@@ -184,6 +186,18 @@ fn start_island() -> Result<(), String> {
     c.spawn().map(drop).map_err(|e| e.to_string())
 }
 
+/// The apps the quick launcher can start.
+#[tauri::command]
+async fn list_apps() -> Vec<launcher::AppEntry> {
+    launcher::list()
+}
+
+/// Start one of them.
+#[tauri::command]
+async fn launch_app(path: String) -> Result<(), String> {
+    launcher::launch(&path)
+}
+
 /// Open a web page in the default browser (https only).
 #[tauri::command]
 fn open_link(url: String) -> Result<(), String> {
@@ -339,6 +353,8 @@ pub fn run() {
             islet,
             start_island,
             open_link,
+            list_apps,
+            launch_app,
             info,
             get_prefs,
             set_prefs,

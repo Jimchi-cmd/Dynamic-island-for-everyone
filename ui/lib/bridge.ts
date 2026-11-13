@@ -27,6 +27,8 @@ export const islet = (args: string[], input?: string) => invoke<string>('islet',
 export const status = async (): Promise<Status> => parseStatus(await islet(['status', '--json']));
 export const startIsland = () => invoke<void>('start_island');
 export const openLink = (url: string) => invoke<void>('open_link', { url });
+export const listApps = () => invoke<{ name: string; path: string }[]>('list_apps');
+export const launchApp = (path: string) => invoke<void>('launch_app', { path });
 export const getPrefs = () => invoke<Prefs>('get_prefs');
 export const setPrefs = (prefs: Prefs) => invoke<void>('set_prefs', { prefs });
 export const checkUpdate = () => invoke<UpdateInfo>('check_update');

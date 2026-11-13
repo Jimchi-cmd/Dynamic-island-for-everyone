@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { asLink, calculate, convert, formatNumber, matchApps, webSearchUrl, type AppEntry } from './lib/launcher';
   import * as api from './lib/bridge';
   import type { Info, Prefs, UpdateInfo } from './lib/bridge';
   import {
@@ -35,7 +36,7 @@
     type Trip,
   } from './lib/settings';
 
-  type Page = 'general' | 'connections' | 'alarms' | 'timer' | 'navigation' | 'pro' | 'updates' | 'about';
+  type Page = 'general' | 'connections' | 'alarms' | 'timer' | 'navigation' | 'launcher' | 'pro' | 'updates' | 'about';
   // Each section's icon is a few strokes on a 24×24 grid, drawn for Islet,
   // on a coloured tile (`tint`).
   const PAGES: { id: Page; label: string; tint: string; icon: string; dots?: [number, number, number][] }[] = [
@@ -73,6 +74,12 @@
       label: 'Navigation',
       tint: 'linear-gradient(160deg, #4cd97b, #1fa64d)',
       icon: 'M5.5 19.5L12 4.5l6.5 15l-6.5-4z',
+    },
+    {
+      id: 'launcher',
+      label: 'Launcher',
+      tint: 'linear-gradient(160deg, #ff7a8a, #e0355a)',
+      icon: 'M10.5 4.5a6 6 0 1 0 0 12a6 6 0 0 0 0-12zM15 15l4.5 4.5',
     },
     {
       id: 'pro',
@@ -207,7 +214,54 @@
       void loadStreak();
       void loadLessons();
     }
+    if (page === 'launcher') {
+      if (!apps.length) void loadApps();
+      // Type straight away, as in any launcher.
+      queueMicrotask(() => launcherInput?.focus());
+    }
   });
+
+  // Quick launcher: apps, web searches, sums and unit conversions.
+  let apps = $state<AppEntry[]>([]);
+  let launcherText = $state('');
+  let launcherNote = $state('');
+  let launcherInput: HTMLInputElement | null = $state(null);
+  type LauncherRow = { kind: 'answer' | 'app' | 'link' | 'web'; title: string; detail: string; run?: () => Promise<void> | void };
+  const launcherRows = $derived.by((): LauncherRow[] => {
+    const q = launcherText.trim();
+    if (!q) return [];
+    const rows: LauncherRow[] = [];
+    const sum = calculate(q);
+    if (sum !== null) rows.push({ kind: 'answer', title: formatNumber(sum), detail: `${q} =` });
+    const converted = convert(q);
+    if (converted) rows.push({ kind: 'answer', title: converted.split(' = ')[1] ?? converted, detail: converted });
+    for (const a of matchApps(apps, q)) {
+      rows.push({ kind: 'app', title: a.name, detail: 'App', run: () => api.launchApp(a.path) });
+    }
+    const link = asLink(q);
+    if (link) rows.push({ kind: 'link', title: link, detail: 'Open in your browser', run: () => api.openLink(link) });
+    rows.push({ kind: 'web', title: `Search the web for “${q}”`, detail: 'DuckDuckGo', run: () => api.openLink(webSearchUrl(q)) });
+    return rows;
+  });
+
+  async function loadApps() {
+    try {
+      apps = await api.listApps();
+    } catch (e) {
+      launcherNote = api.message(e);
+    }
+  }
+
+  async function runLauncherRow(row: LauncherRow | undefined) {
+    if (!row?.run) return;
+    try {
+      await row.run();
+      launcherText = '';
+      launcherNote = '';
+    } catch (e) {
+      launcherNote = api.message(e);
+    }
+  }
 
   // The island's own preferences (island.json via the CLI)
   let islandPrefs: IslandPrefs | null = $state(null);
@@ -787,6 +841,7 @@
     await refresh();
     await loadIslandPrefs();
     const wanted = parsePage(await api.initialPage().catch(() => null));
+    if (wanted?.page === 'launcher') page = 'launcher';
     if (wanted?.page === 'connections') {
       page = 'connections';
       joining = wanted.ssid;
@@ -1665,6 +1720,46 @@
           Islet refreshes the ETA every minute while the card is open and every 2–5 minutes otherwise, and makes no
           requests without a trip. Trips go straight to Google; route results are never stored.
         </p>
+      {:else if page === 'launcher'}
+        <h1>Launcher</h1>
+        <p class="muted">
+          Type an app’s name, a sum (12 * 7.5), a conversion (5 km in miles) or anything to search the web for. Enter
+          opens the first result.
+        </p>
+        <div class="card">
+          <input
+            type="text"
+            class="launcher-input"
+            aria-label="Search apps, the web, or type a sum"
+            placeholder="Search…"
+            autocomplete="off"
+            spellcheck="false"
+            bind:this={launcherInput}
+            bind:value={launcherText}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') void runLauncherRow(launcherRows.find((r) => r.run));
+              if (e.key === 'Escape') launcherText = '';
+            }}
+          />
+          {#each launcherRows as row, i (i)}
+            {#if row.run}
+              <button class="launcher-row" onclick={() => runLauncherRow(row)}>
+                <span class="name">{row.title}</span>
+                <span class="muted small">{row.detail}</span>
+              </button>
+            {:else}
+              <div class="launcher-row answer" role="status">
+                <span class="name">{row.title}</span>
+                <span class="muted small">{row.detail}</span>
+              </div>
+            {/if}
+          {/each}
+          {#if launcherNote}<p class="small" role="status">{launcherNote}</p>{/if}
+        </div>
+        <p class="muted small">
+          To open the launcher with a key, bind one to <code>islet launcher</code> in your system’s keyboard settings.
+          Web searches go to DuckDuckGo, and only when you choose that row.
+        </p>
       {:else if page === 'pro'}
         <h1>Islet Pro {#if pro?.active}<span class="badge">Supporter</span>{/if}</h1>
         {#if pro?.active}
@@ -2270,6 +2365,38 @@
   .path {
     font-weight: 600;
     overflow-wrap: anywhere;
+  }
+  .launcher-input {
+    width: 100%;
+    font-size: 17px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+  }
+  .launcher-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    width: 100%;
+    padding: 9px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    box-shadow: none;
+  }
+  button.launcher-row:hover,
+  button.launcher-row:focus-visible {
+    background: color-mix(in srgb, var(--accent, #0a84ff) 14%, transparent);
+  }
+  .launcher-row .name {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .launcher-row.answer .name {
+    font-size: 20px;
   }
   h3.day {
     margin: 14px 0 2px;
