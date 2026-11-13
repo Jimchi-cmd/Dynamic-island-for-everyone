@@ -116,6 +116,28 @@ pub struct RouteInfo {
     pub maneuver: Option<String>,
 }
 
+/// Which way a maneuver goes, in degrees clockwise from straight ahead,
+/// for the arrow on the island. Google's Routes API names them
+/// "TURN_LEFT", "TURN_SLIGHT_RIGHT", "UTURN_LEFT", "ROUNDABOUT_RIGHT"…
+pub fn maneuver_degrees(maneuver: &str) -> Option<i16> {
+    let m = maneuver.to_ascii_uppercase();
+    let side = if m.ends_with("LEFT") {
+        -1
+    } else if m.ends_with("RIGHT") {
+        1
+    } else {
+        0
+    };
+    Some(match m.as_str() {
+        "STRAIGHT" | "DEPART" | "NAME_CHANGE" | "MERGE" | "FERRY" | "FERRY_TRAIN" => 0,
+        _ if m.starts_with("UTURN") => 180,
+        _ if m.contains("SLIGHT") || m.starts_with("RAMP") || m.starts_with("FORK") => 45 * side,
+        _ if m.contains("SHARP") => 135 * side,
+        _ if m.starts_with("TURN") || m.starts_with("ROUNDABOUT") => 90 * side,
+        _ => return None,
+    })
+}
+
 impl RouteInfo {
     /// Extra time caused by traffic (seconds, never negative).
     pub fn delay(&self) -> f64 {
@@ -310,6 +332,19 @@ mod tests {
         assert_eq!(r.delay(), 330.0);
         assert_eq!(r.first_step.as_deref(), Some("Turn left onto Kampala Rd"));
         assert_eq!(r.maneuver.as_deref(), Some("TURN_LEFT"));
+        assert_eq!(r.maneuver.as_deref().and_then(maneuver_degrees), Some(-90));
+        for (name, degrees) in [
+            ("TURN_RIGHT", Some(90)),
+            ("TURN_SLIGHT_LEFT", Some(-45)),
+            ("TURN_SHARP_RIGHT", Some(135)),
+            ("UTURN_LEFT", Some(180)),
+            ("RAMP_RIGHT", Some(45)),
+            ("ROUNDABOUT_LEFT", Some(-90)),
+            ("STRAIGHT", Some(0)),
+            ("SOMETHING_NEW", None),
+        ] {
+            assert_eq!(maneuver_degrees(name), degrees, "{name}");
+        }
     }
 
     #[test]

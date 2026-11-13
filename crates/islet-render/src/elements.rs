@@ -59,6 +59,9 @@ pub enum Icon {
     /// A chevron pointing left ("back") or right.
     Back,
     Forward,
+    /// An arrow for the next turn, pointing this many degrees clockwise
+    /// from straight ahead (−90 = left, 90 = right, 180 = turn round).
+    Turn(i16),
     /// Two switches, one on and one off (Control Centre).
     Controls,
     /// A microphone; struck through when muted.
@@ -317,6 +320,23 @@ impl IconPainter<'_> {
                 let p = Self::poly(&[(20.0, 4.0), (12.5, 20.5), (10.8, 13.2), (3.5, 11.5)]);
                 self.fill(p.clone());
                 self.stroke(p, 1.6);
+            }
+            Icon::Turn(degrees) => {
+                // A straight arrow, turned about the icon's middle.
+                let rad = f32::from(degrees).to_radians();
+                let (sin, cos) = rad.sin_cos();
+                let at = |x: f32, y: f32| {
+                    let (dx, dy) = (x - 12.0, y - 12.0);
+                    (12.0 + dx * cos - dy * sin, 12.0 + dx * sin + dy * cos)
+                };
+                let mut pb = PathBuilder::new();
+                let (tail, tip, left, right) = (at(12.0, 19.5), at(12.0, 4.5), at(6.0, 10.5), at(18.0, 10.5));
+                pb.move_to(tail.0, tail.1);
+                pb.line_to(tip.0, tip.1);
+                pb.move_to(left.0, left.1);
+                pb.line_to(tip.0, tip.1);
+                pb.line_to(right.0, right.1);
+                self.stroke(pb.finish(), 2.6);
             }
             Icon::Back | Icon::Forward => {
                 let mut pb = PathBuilder::new();
@@ -759,7 +779,10 @@ mod tests {
         p.pixels().iter().filter(|c| c.alpha() > 0).count()
     }
 
-    const ALL: [Icon; 53] = [
+    const ALL: [Icon; 56] = [
+        Icon::Turn(0),
+        Icon::Turn(-90),
+        Icon::Turn(135),
         Icon::Stopwatch,
         Icon::Checklist,
         Icon::Screenshot,

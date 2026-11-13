@@ -709,6 +709,7 @@
     try {
       update = await api.checkUpdate();
       updateNote = update.newer ? '' : `Islet ${update.current} is up to date.`;
+      void updatePill();
     } catch (e) {
       update = null;
       updateNote = api.message(e);
@@ -728,6 +729,28 @@
     } catch (e) {
       early = null;
       earlyNote = api.message(e);
+    }
+  }
+
+  // Tell the island too: a pill that opens the download page (and goes
+  // once Islet is up to date).
+  async function updatePill() {
+    const link = update?.url && update.url.startsWith('https://') ? update.url : `${info?.repo}/releases/latest`;
+    try {
+      if (update?.newer && link.startsWith('https://')) {
+        await api.islet([
+          'activity', 'start', 'islet-update',
+          '--title', `Islet ${update.latest} is available`,
+          '--subtitle', 'Tap to open the download page',
+          // A full ring: an activity without a value would spin (and cost power).
+          '--progress', '100',
+          '--open', link,
+        ]);
+      } else {
+        await api.islet(['activity', 'end', 'islet-update']);
+      }
+    } catch {
+      // The island isn't running: nothing to show it on.
     }
   }
 

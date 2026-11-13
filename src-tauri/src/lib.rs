@@ -29,6 +29,11 @@ pub fn allowed(args: &[String]) -> bool {
         ["stopwatch", "start" | "pause" | "resume" | "lap" | "reset"] => true,
         ["world", "--json"] | ["world", "cities", "--json"] => true,
         ["note"] | ["note", "--where"] => true,
+        // The "update available" pill on the island.
+        ["activity", "end", "islet-update"] => true,
+        ["activity", "start", "islet-update", "--title", title, "--subtitle", sub, "--progress", "100", "--open", link] => {
+            !title.starts_with('-') && !sub.starts_with('-') && link.starts_with("https://") && link.len() <= 300
+        }
         ["class", "--json"] => true,
         ["class", "remove", n] => n.parse::<u32>().is_ok(),
         ["class", "add", day, start, end, name, rest @ ..] => {

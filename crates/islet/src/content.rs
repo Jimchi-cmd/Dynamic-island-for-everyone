@@ -962,15 +962,16 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
             ]
         }
         Live::Navigation(n) => {
+            // The way the first turn goes, when the route says; else the
+            // navigation mark.
+            let icon = n
+                .route
+                .as_ref()
+                .and_then(|r| r.maneuver.as_deref())
+                .and_then(nav::maneuver_degrees)
+                .map_or(Icon::Navigation, Icon::Turn);
             vec![
-                Element::Icon {
-                    icon: Icon::Navigation,
-                    x: x + 9.0,
-                    y: cy - 10.0,
-                    size: 20.0,
-                    color: GREEN_NAV,
-                    opacity: o,
-                },
+                Element::Icon { icon, x: x + 9.0, y: cy - 10.0, size: 20.0, color: GREEN_NAV, opacity: o },
                 nav_eta(n, right - 13.0, cy, o),
             ]
         }
@@ -1644,8 +1645,22 @@ pub fn expanded_nav(pill: Rect, n: &NavInfo, now: Option<&LocalTime>, o: f32, en
             v.push(text("Google Maps", credit, x + w - pad, y + 92.0));
             if let Some(step) = &r.first_step {
                 let style = TextStyle { opacity: o * 0.8, ..small };
-                let line = engine.ellipsize(&format!("Start: {step}"), &style, w - 2.0 * pad - 84.0);
-                v.push(text(line, style, x + pad, y + 92.0));
+                // An arrow for the turn, where the route names it.
+                let arrow = r.maneuver.as_deref().and_then(nav::maneuver_degrees);
+                let lead = if arrow.is_some() { 20.0 } else { 0.0 };
+                if let Some(degrees) = arrow {
+                    v.push(Element::Icon {
+                        icon: Icon::Turn(degrees),
+                        x: x + pad - 2.0,
+                        y: y + 80.0,
+                        size: 16.0,
+                        color: GREEN_NAV,
+                        opacity: o,
+                    });
+                }
+                let words = if arrow.is_some() { step.clone() } else { format!("Start: {step}") };
+                let line = engine.ellipsize(&words, &style, w - 2.0 * pad - 84.0 - lead);
+                v.push(text(line, style, x + pad + lead, y + 92.0));
             }
         }
         (None, Some(err)) => {
