@@ -36,6 +36,7 @@ x11rb::atom_manager! {
         _NET_WM_STATE_SKIP_PAGER,
         _NET_WM_STATE_FULLSCREEN,
         _NET_ACTIVE_WINDOW,
+        _NET_WM_PID,
         _NET_WM_DESKTOP,
         _MOTIF_WM_HINTS,
         XdndAware,
@@ -90,6 +91,9 @@ pub struct X11 {
     active: std::cell::Cell<Window>,
     fullscreen: std::cell::Cell<bool>,
     fullscreen_checked: std::cell::Cell<bool>,
+    /// The front app, once named; and a change not yet reported.
+    front: std::cell::RefCell<String>,
+    front_news: std::cell::RefCell<Option<String>>,
 }
 
 /// Lock-type modifiers (Caps, Num, Scroll) the shortcut must work under.
@@ -318,6 +322,8 @@ impl Backend for X11 {
             active: std::cell::Cell::new(x11rb::NONE),
             fullscreen: std::cell::Cell::new(false),
             fullscreen_checked: std::cell::Cell::new(false),
+            front: std::cell::RefCell::new(String::new()),
+            front_news: std::cell::RefCell::new(None),
         })
     }
 
@@ -501,10 +507,38 @@ impl X11 {
             watch(self.active.get(), EventMask::NO_EVENT);
             watch(active, EventMask::PROPERTY_CHANGE);
             self.active.set(active);
+            if let Some(app) = self.app_of(active).filter(|a| *a != *self.front.borrow()) {
+                self.front.replace(app.clone());
+                self.front_news.replace(Some(app));
+            }
         }
         let on = active != x11rb::NONE && active != self.win && self.is_fullscreen(active);
         let _ = self.conn.flush();
         (on != self.fullscreen.replace(on)).then_some(Event::Fullscreen(on))
+    }
+
+    /// The program a window belongs to: its process (`_NET_WM_PID`) as
+    /// named in /proc, or else its class ("firefox").
+    fn app_of(&self, w: Window) -> Option<String> {
+        if w == x11rb::NONE || w == self.win {
+            return None;
+        }
+        let pid = self
+            .conn
+            .get_property(false, w, self.atoms._NET_WM_PID, AtomEnum::CARDINAL, 0, 1)
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .and_then(|r| r.value32().and_then(|mut v| v.next()));
+        if let Some(path) = pid.and_then(|p| std::fs::read_link(format!("/proc/{p}/exe")).ok()) {
+            if let Some(name) = path.file_name() {
+                return Some(name.to_string_lossy().into_owned());
+            }
+        }
+        let class = self.conn.get_property(false, w, AtomEnum::WM_CLASS, AtomEnum::STRING, 0, 64).ok()?.reply().ok()?;
+        // "instance\0Class\0": the class is the program's name.
+        let mut parts = class.value.split(|b| *b == 0).filter(|p| !p.is_empty());
+        let instance = parts.next();
+        parts.next().or(instance).map(|c| String::from_utf8_lossy(c).into_owned())
     }
 
     /// The window says it's fullscreen and its centre is on our display.
@@ -544,6 +578,9 @@ impl X11 {
             if let Some(e) = self.translate(ev) {
                 out.push(e);
             }
+        }
+        if let Some(app) = self.front_news.take() {
+            out.push(Event::FrontApp(app));
         }
         Ok(())
     }
@@ -808,6 +845,8 @@ mod tests {
         let atoms = Atoms::new(&wm).unwrap().reply().unwrap();
         let app = wm.generate_id().unwrap();
         wm.create_window(0, app, root, 0, 0, w, h, 0, WindowClass::INPUT_OUTPUT, 0, &CreateWindowAux::new()).unwrap();
+        // The app's class, as toolkits set it (no process id: the class names it).
+        wm.change_property8(PropMode::REPLACE, app, AtomEnum::WM_CLASS, AtomEnum::STRING, b"slides\0Slides\0").unwrap();
         wm.map_window(app).unwrap();
         let pump = |island: &mut X11| {
             let mut out = Vec::new();
@@ -820,7 +859,9 @@ mod tests {
         pump(&mut island);
         wm.change_property32(PropMode::REPLACE, root, atoms._NET_ACTIVE_WINDOW, AtomEnum::WINDOW, &[app]).unwrap();
         wm.flush().unwrap();
-        assert!(!pump(&mut island).contains(&Event::Fullscreen(true)), "active, but not fullscreen yet");
+        let heard = pump(&mut island);
+        assert!(!heard.contains(&Event::Fullscreen(true)), "active, but not fullscreen yet");
+        assert!(heard.contains(&Event::FrontApp("Slides".into())), "the app in front is named: {heard:?}");
         let full = [atoms._NET_WM_STATE_FULLSCREEN];
         wm.change_property32(PropMode::REPLACE, app, atoms._NET_WM_STATE, AtomEnum::ATOM, &full).unwrap();
         wm.flush().unwrap();

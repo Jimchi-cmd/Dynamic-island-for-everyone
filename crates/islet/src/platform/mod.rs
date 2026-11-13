@@ -110,6 +110,8 @@ pub enum Event {
     /// An app went fullscreen on the island's display (a video, a game,
     /// a presentation), or stopped being fullscreen.
     Fullscreen(bool),
+    /// The app in front changed (its name, as its process is called).
+    FrontApp(String),
     /// The OS lost our pixels (expose); present the last frame again.
     Redraw,
     ScaleChanged(f64),

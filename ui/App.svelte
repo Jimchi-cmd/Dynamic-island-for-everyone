@@ -390,6 +390,20 @@
     }
   }
 
+  // Apps the island steps aside for.
+  let hideDraft = $state('');
+  async function hideWith(verb: 'add' | 'remove', app: string) {
+    const name = app.trim();
+    if (!name || name.startsWith('-')) return;
+    try {
+      await api.islet(['rules', 'hide', verb, name]);
+      hideDraft = '';
+      await loadIslandPrefs();
+    } catch (e) {
+      problem = api.message(e);
+    }
+  }
+
   // Clipboard history: apps whose copies are never kept.
   let excludeDraft = $state('');
   async function clipExclude(verb: 'add' | 'remove', app: string) {
@@ -1133,6 +1147,25 @@
             The empty island stays hidden until you move the pointer to the top of the screen. Music, timers, calls for
             attention and other live activities always show.
           </p>
+          <p class="muted small">
+            Step aside while one of these apps is in front, as over fullscreen videos (point at the island to bring it
+            back):
+          </p>
+          <div class="actions left">
+            {#each islandPrefs?.hideWith ?? [] as app (app)}
+              <button onclick={() => hideWith('remove', app)} aria-label={`Show the island over ${app} again`}>{app} ✕</button>
+            {/each}
+          </div>
+          <form
+            class="join"
+            onsubmit={(e) => {
+              e.preventDefault();
+              void hideWith('add', hideDraft);
+            }}
+          >
+            <input placeholder="An app's name, e.g. Steam" maxlength="60" bind:value={hideDraft} aria-label="App to step aside for" />
+            <button type="submit" disabled={!hideDraft.trim()}>Add</button>
+          </form>
           <div class="net">
             <span class="name">Show the time when nothing is playing</span>
             <input

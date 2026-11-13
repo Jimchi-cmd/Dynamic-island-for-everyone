@@ -246,6 +246,8 @@ pub struct Mac {
     _caps_monitor: Option<Retained<AnyObject>>,
     /// Whether another app is fullscreen on the island's display.
     fullscreen: bool,
+    /// The front app last reported.
+    front: String,
     /// How frames reach Core Animation: two IOSurfaces taken in turn
     /// (measured on CI: about a sixth of the time of making a CGImage per
     /// frame), or a CGImage per frame when IOSurfaces aren't available
@@ -403,6 +405,7 @@ impl Backend for Mac {
             _monitor: monitor,
             _caps_monitor: caps_monitor,
             fullscreen: false,
+            front: String::new(),
             present_mode: PresentMode::from_env(),
             surfaces: Vec::new(),
             next_surface: 0,
@@ -560,6 +563,14 @@ impl Backend for Mac {
             if now != self.fullscreen {
                 self.fullscreen = now;
                 out.push(Event::Fullscreen(now));
+            }
+            let front = objc2_app_kit::NSWorkspace::sharedWorkspace()
+                .frontmostApplication()
+                .and_then(|a| a.localizedName())
+                .map(|n| n.to_string());
+            if let Some(app) = front.filter(|a| *a != self.front) {
+                self.front = app.clone();
+                out.push(Event::FrontApp(app));
             }
         }
         Ok(())

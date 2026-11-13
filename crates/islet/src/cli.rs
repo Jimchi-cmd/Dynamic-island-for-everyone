@@ -87,6 +87,8 @@ Usage:
                                  [--color #rrggbb] [--open <file or link>]
                                            show your own live activity (a build, a download…)
   islet activity end <id>                  remove it
+  islet rules hide [--json]                apps in front of which the island steps aside
+  islet rules hide add|remove <app>        change that list (a game, Steam, PowerPoint…)
   islet clipboard exclude [--json]         apps whose copies the clipboard history never keeps
   islet clipboard exclude add|remove <app> change that list
   islet shelf [--json]                     files on the shelf (drop files on the island to add)
@@ -254,6 +256,13 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
             config::save_shelf(&[]);
             let _ = control::send(&Control::ShelfChanged);
             Ok("The shelf is empty.".into())
+        }
+        ["rules"] | ["rules", "hide"] => Ok(config::load_prefs().hide_with.join("\n")),
+        ["rules", "hide", "--json"] => {
+            serde_json::to_string(&config::load_prefs().hide_with).map_err(|e| e.to_string())
+        }
+        ["rules", "hide", verb @ ("add" | "remove"), app @ ..] if !app.is_empty() => {
+            hide_with(*verb == "add", &app.join(" "))
         }
         ["clipboard", "exclude"] => Ok(config::load_prefs().clipboard_exclude.join("\n")),
         ["clipboard", "exclude", "--json"] => {
@@ -710,6 +719,26 @@ fn set_hotkey(combo: &str) -> Result<String, String> {
     config::save_prefs(&p)?;
     prefs_changed();
     Ok(if label.is_empty() { "Shortcut removed.".into() } else { format!("{label} opens and closes the island.") })
+}
+
+/// Add an app the island steps aside for, or take it off the list.
+fn hide_with(add: bool, app: &str) -> Result<String, String> {
+    let app = app.trim();
+    if app.is_empty() || app.len() > 60 {
+        return Err("name the app (up to 60 characters)".into());
+    }
+    let mut p = config::load_prefs();
+    p.hide_with.retain(|x| !x.eq_ignore_ascii_case(app));
+    if add {
+        p.hide_with.push(app.to_string());
+    }
+    config::save_prefs(&p)?;
+    prefs_changed();
+    Ok(if add {
+        format!("The island steps aside while {app} is in front.")
+    } else {
+        format!("The island stays while {app} is in front.")
+    })
 }
 
 /// Add an app to the clipboard history's exclude list, or take it off.

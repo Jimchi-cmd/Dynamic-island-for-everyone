@@ -60,6 +60,8 @@ pub fn allowed(args: &[String]) -> bool {
         ["timer", "pause" | "resume" | "stop"] => true,
         ["prefs", "--json"] | ["weather", "off"] | ["shelf", "--json"] | ["shelf", "clear"] => true,
         ["media", "hide" | "show", app] => !app.starts_with('-'),
+        ["rules", "hide", "--json"] => true,
+        ["rules", "hide", "add" | "remove", app] => !app.starts_with('-') && app.len() <= 60,
         ["clipboard", "exclude", "--json"] => true,
         ["clipboard", "exclude", "add" | "remove", app] => !app.starts_with('-') && app.len() <= 60,
         ["spotify", "logout" | "on" | "off"] => true,

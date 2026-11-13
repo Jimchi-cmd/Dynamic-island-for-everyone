@@ -261,6 +261,40 @@ mod fullscreen {
         }
     }
 
+    /// The program the foreground window belongs to ("chrome", "Code").
+    pub fn front_app() -> Option<String> {
+        use windows::Win32::Foundation::CloseHandle;
+        use windows::Win32::System::Threading::{
+            OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+        // SAFETY: plain calls; the process handle is closed before returning.
+        unsafe {
+            let fg = GetForegroundWindow();
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(fg, Some(&mut pid));
+            if pid == 0 || pid == std::process::id() {
+                return None;
+            }
+            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+            let mut buf = [0u16; 512];
+            let mut len = buf.len() as u32;
+            let ok = QueryFullProcessImageNameW(
+                process,
+                PROCESS_NAME_WIN32,
+                windows::core::PWSTR(buf.as_mut_ptr()),
+                &mut len,
+            )
+            .is_ok();
+            let _ = CloseHandle(process);
+            if !ok {
+                return None;
+            }
+            let path = String::from_utf16_lossy(&buf[..len as usize]);
+            let base = path.rsplit('\\').next().unwrap_or(&path);
+            Some(base.strip_suffix(".exe").or_else(|| base.strip_suffix(".EXE")).unwrap_or(base).to_string())
+        }
+    }
+
     /// Whether something changed that may have entered or left fullscreen.
     pub fn take_dirty() -> bool {
         DIRTY.with(|d| d.replace(false))
@@ -316,6 +350,8 @@ pub struct Win32 {
     timer: windows::Win32::Foundation::HANDLE,
     /// Last fullscreen state reported.
     fullscreen: bool,
+    /// The front app last reported.
+    front: String,
 }
 
 /// A waitable timer that keeps time to well under a millisecond (Windows 10
@@ -479,6 +515,7 @@ impl Backend for Win32 {
                 scale: 1.0,
                 timer: frame_timer(),
                 fullscreen: false,
+                front: String::new(),
             };
             me.configure()?;
             // Accept dropped files for the shelf (OLE needs a single-threaded
@@ -673,6 +710,10 @@ impl Backend for Win32 {
             if now != self.fullscreen {
                 self.fullscreen = now;
                 out.push(Event::Fullscreen(now));
+            }
+            if let Some(app) = fullscreen::front_app().filter(|a| *a != self.front) {
+                self.front = app.clone();
+                out.push(Event::FrontApp(app));
             }
         }
         Ok(())

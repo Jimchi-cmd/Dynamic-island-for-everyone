@@ -258,6 +258,8 @@ export interface IslandPrefs {
   spotify: boolean;
   privacyDots: boolean;
   clipboard: boolean;
+  /** Apps in front of which the island steps aside. */
+  hideWith: string[];
   /** Apps whose copies are never kept. */
   clipboardExclude: string[];
   lyrics: boolean;

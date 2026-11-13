@@ -347,6 +347,8 @@ pub struct App {
     /// The pointer just left a hovered island that showed its status
     /// strip: the strip fades as the pill shrinks back.
     strip_linger: bool,
+    /// The app in front, as the system names it ("" until it says).
+    front_app: String,
     /// The Wi-Fi state has been read once: from then on a new network is news.
     wifi_seen: bool,
     call_press: bool,
@@ -451,6 +453,7 @@ impl App {
             streak_dirty: false,
             strip_linger: false,
             wifi_seen: false,
+            front_app: String::new(),
             call_press: false,
             join_press: None,
         };
@@ -1933,12 +1936,17 @@ impl App {
     /// shows when it's opened, when files are dragged to it, and for a
     /// ringing alarm or timer.
     fn hidden_for_fullscreen(&self) -> bool {
-        self.fullscreen
+        (self.fullscreen || self.front_app_hides())
             && !self.hovered
             && !self.dragging
             && !self.island.presentation().is_open()
             && self.activities.alarm().is_none()
             && !self.timer_ringing
+    }
+
+    /// The app in front is one the user asked the island to step aside for.
+    fn front_app_hides(&self) -> bool {
+        !self.front_app.is_empty() && islet_core::clipboard::excluded(&self.front_app, &self.prefs.hide_with)
     }
 
     /// "Hide for an hour" from the menu: like fullscreen, it still shows
@@ -2957,6 +2965,10 @@ impl App {
                 self.fullscreen = on;
                 self.update_shown(t)
             }
+            Event::FrontApp(name) => {
+                self.front_app = name;
+                self.update_shown(t)
+            }
             Event::CapsLock(on) => self.report(Report::Hud(Hud::CapsLock(on)), t),
             Event::DragOver { x, y } => self.drag_over(x, y, t),
             Event::A11yPress(button) => self.a11y_press(button, t),
@@ -3740,6 +3752,27 @@ mod tests {
         app.tick(9.0);
         app.handle(Event::Fullscreen(false), 9.0);
         assert!(app.frame(11.0).opacity > 0.99);
+    }
+
+    #[test]
+    fn listed_apps_make_the_island_step_aside() {
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        app.set_prefs(IslandPrefs { hide_with: vec!["Steam".into(), "PowerPoint".into()], ..IslandPrefs::default() });
+        app.report(Report::Media(Some(song(true))), 0.0);
+        app.handle(Event::FrontApp("firefox".into()), 1.0);
+        assert!(app.frame(3.0).opacity > 0.99, "an app that isn't listed changes nothing");
+        // A game launched through Steam ("steam.exe" on Windows) is in front: hidden.
+        app.handle(Event::FrontApp("steam.exe".into()), 3.0);
+        assert!(app.frame(5.0).opacity < 0.01);
+        // Pointing at it still brings it back, as over fullscreen windows.
+        let (x, y) = centre(&app, 5.0);
+        app.handle(Event::PointerMove { x, y }, 5.0);
+        assert!(app.frame(6.0).opacity > 0.99);
+        app.handle(Event::PointerLeave, 6.0);
+        // Back to another app: shown again.
+        app.handle(Event::FrontApp("Code".into()), 7.0);
+        assert!(app.frame(9.0).opacity > 0.99);
     }
 
     /// Lyrics, the back buttons and Control Centre for visual review:

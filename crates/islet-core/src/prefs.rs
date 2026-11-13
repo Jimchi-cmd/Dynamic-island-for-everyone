@@ -36,6 +36,9 @@ pub struct IslandPrefs {
     pub privacy_dots: bool,
     /// Keep the last few copied texts and pictures (in memory only).
     pub clipboard: bool,
+    /// Apps in front of which the island steps aside (games, slides…),
+    /// as it does over fullscreen windows.
+    pub hide_with: Vec<String>,
     /// Apps whose copies are never kept (see `clipboard::excluded`).
     pub clipboard_exclude: Vec<String>,
     /// Show synced lyrics for the playing song (fetched from LRCLIB).
@@ -217,6 +220,7 @@ impl Default for IslandPrefs {
             spotify: false,
             privacy_dots: true,
             clipboard: false,
+            hide_with: Vec::new(),
             clipboard_exclude: crate::clipboard::DEFAULT_EXCLUDE.iter().map(|s| s.to_string()).collect(),
             lyrics: false,
             auto_hide: false,
