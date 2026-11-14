@@ -58,6 +58,72 @@ impl DropTarget {
     }
 }
 
+/// The other half: files dragged out of the shelf. OLE asks this whether
+/// the drag goes on (the left button still down) and which cursor to show.
+#[windows_core::implement(windows::Win32::System::Ole::IDropSource)]
+struct DropSource;
+
+impl windows::Win32::System::Ole::IDropSource_Impl for DropSource_Impl {
+    fn QueryContinueDrag(
+        &self,
+        escape: windows_core::BOOL,
+        keys: windows::Win32::System::SystemServices::MODIFIERKEYS_FLAGS,
+    ) -> windows_core::HRESULT {
+        use windows::Win32::Foundation::{DRAGDROP_S_CANCEL, DRAGDROP_S_DROP};
+        if escape.as_bool() {
+            DRAGDROP_S_CANCEL
+        } else if keys.0 & windows::Win32::System::SystemServices::MK_LBUTTON.0 == 0 {
+            DRAGDROP_S_DROP
+        } else {
+            windows_core::HRESULT(0)
+        }
+    }
+
+    fn GiveFeedback(&self, _effect: windows::Win32::System::Ole::DROPEFFECT) -> windows_core::HRESULT {
+        windows::Win32::Foundation::DRAGDROP_S_USEDEFAULTCURSORS
+    }
+}
+
+/// Drag files out to Explorer, the desktop or any app: the shell makes the
+/// data object (as Explorer's own drags do) and OLE runs the drag until the
+/// button is let go.
+fn drag_files_out(paths: &[String]) -> bool {
+    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::System::Com::IDataObject;
+    use windows::Win32::System::Ole::{DoDragDrop, IDropSource, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK};
+    use windows::Win32::UI::Shell::Common::ITEMIDLIST;
+    use windows::Win32::UI::Shell::{
+        BHID_DataObject, IShellItemArray, SHCreateShellItemArrayFromIDLists, SHParseDisplayName,
+    };
+    // SAFETY: shell and OLE calls on the window's thread (OLE is initialised
+    // there); every PIDL from SHParseDisplayName is freed below.
+    unsafe {
+        let mut pidls: Vec<*const ITEMIDLIST> = Vec::new();
+        for p in paths {
+            let mut pidl: *mut ITEMIDLIST = std::ptr::null_mut();
+            let name = windows_core::HSTRING::from(p.as_str());
+            if SHParseDisplayName(&name, None, &mut pidl, 0, None).is_ok() && !pidl.is_null() {
+                pidls.push(pidl);
+            }
+        }
+        let data: windows_core::Result<IDataObject> = if pidls.is_empty() {
+            Err(windows_core::Error::empty())
+        } else {
+            SHCreateShellItemArrayFromIDLists(&pidls)
+                .and_then(|items: IShellItemArray| items.BindToHandler(None, &BHID_DataObject))
+        };
+        for p in pidls {
+            CoTaskMemFree(Some(p.cast()));
+        }
+        let Ok(data) = data else { return false };
+        let source: IDropSource = DropSource.into();
+        let mut effect = DROPEFFECT::default();
+        // Returns once the drop is done or cancelled.
+        let _ = DoDragDrop(&data, &source, DROPEFFECT_COPY | DROPEFFECT_LINK, &mut effect);
+        true
+    }
+}
+
 fn hdrop_format() -> windows::Win32::System::Com::FORMATETC {
     windows::Win32::System::Com::FORMATETC {
         cfFormat: windows::Win32::System::Ole::CF_HDROP.0,
@@ -619,6 +685,10 @@ impl Backend for Win32 {
 
     fn native_handle(&self) -> isize {
         self.hwnd.0 as isize
+    }
+
+    fn start_drag(&mut self, paths: &[String]) -> bool {
+        drag_files_out(paths)
     }
 
     fn watch_caps_lock(&mut self, on: bool) {

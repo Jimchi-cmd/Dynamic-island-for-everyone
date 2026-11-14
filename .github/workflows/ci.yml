@@ -86,7 +86,7 @@ jobs:
         if: runner.os == 'Linux'
         # -noreset: by default the X server starts afresh whenever its last
         # client leaves, and a test connecting just then is turned away.
-        run: xvfb-run -a -s "-noreset" cargo test -p islet -- platform::x11 providers::clipboard --test-threads=1 --nocapture
+        run: xvfb-run -a -s "-noreset" cargo test -p islet -- platform::x11 providers::clipboard switcher --test-threads=1 --nocapture
       # Informational: can the MediaRemote helper read Now Playing on this
       # macOS version? (Nothing plays on CI, so "info=0" is expected.)
       - name: MediaRemote helper probe (macOS)

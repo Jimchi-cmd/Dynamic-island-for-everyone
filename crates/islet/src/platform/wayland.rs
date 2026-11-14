@@ -64,12 +64,12 @@ struct State {
     drag_files: bool,
     /// A drop whose file list is still arriving through its pipe.
     pending_drop: Option<PendingDrop>,
-    /// Tests: the last button press's serial (to start a drag from), and
-    /// what this client sends when it is the drag source.
-    #[cfg(test)]
+    /// The last button press's serial (a drag starts from it), and what a
+    /// drag out of the island offers: the file list, and the source, kept
+    /// until the drop is done (dropping it cancels the drag).
     press_serial: Option<u32>,
-    #[cfg(test)]
     payload: Option<String>,
+    drag: Option<smithay_client_toolkit::data_device_manager::data_source::DragSource>,
     configured: bool,
     scale: i32,
     events: Vec<Event>,
@@ -136,10 +136,9 @@ impl Wayland {
             data_device: None,
             drag_files: false,
             pending_drop: None,
-            #[cfg(test)]
             press_serial: None,
-            #[cfg(test)]
             payload: None,
+            drag: None,
             configured: false,
             scale: 1,
             events: Vec::new(),
@@ -187,6 +186,25 @@ impl Wayland {
         surface.set_input_region(Some(region.wl_region()));
         surface.commit();
         self.conn.flush().map_err(we)
+    }
+
+    /// Drag files out of the island, from the press that is still held.
+    pub fn start_drag(&mut self, paths: &[String]) -> bool {
+        let list = islet_core::shelf::uri_list(paths);
+        let (Some(manager), Some(device), Some(serial)) =
+            (&self.state.data_manager, &self.state.data_device, self.state.press_serial)
+        else {
+            return false;
+        };
+        if list.is_empty() {
+            return false;
+        }
+        let qh = self.queue.handle();
+        let drag = manager.create_drag_and_drop_source(&qh, [URI_LIST], DndAction::Copy);
+        drag.start_drag(device, self.state.layer.wl_surface(), None, serial);
+        self.state.payload = Some(list);
+        self.state.drag = Some(drag);
+        self.conn.flush().is_ok()
     }
 
     pub fn waker(&self) -> Waker {
@@ -353,11 +371,7 @@ impl PointerHandler for State {
                 PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => Some(Event::PointerMove { x, y }),
                 PointerEventKind::Leave { .. } => Some(Event::PointerLeave),
                 PointerEventKind::Press { button: b, serial, .. } => {
-                    #[cfg(test)]
-                    {
-                        self.press_serial = Some(*serial);
-                    }
-                    let _ = serial;
+                    self.press_serial = Some(*serial);
                     button(*b).map(|button| Event::PointerDown { x, y, button })
                 }
                 PointerEventKind::Release { button: b, .. } => {
@@ -484,7 +498,7 @@ impl DataOfferHandler for State {
     fn selected_action(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &mut DragOffer, _: DndAction) {}
 }
 
-/// Islet never offers data itself; the trait comes with the data device.
+/// Files dragged out of the island: the target asks for the list.
 impl DataSourceHandler for State {
     fn accept_mime(
         &mut self,
@@ -502,18 +516,19 @@ impl DataSourceHandler for State {
         _: String,
         pipe: WritePipe,
     ) {
-        #[cfg(test)]
         if let Some(p) = &self.payload {
             use std::io::Write;
             let mut pipe = pipe;
             let _ = pipe.write_all(p.as_bytes());
-            return;
         }
-        drop(pipe);
     }
-    fn cancelled(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_data_source::WlDataSource) {}
+    fn cancelled(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_data_source::WlDataSource) {
+        self.drag = None;
+    }
     fn dnd_dropped(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_data_source::WlDataSource) {}
-    fn dnd_finished(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_data_source::WlDataSource) {}
+    fn dnd_finished(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_data_source::WlDataSource) {
+        self.drag = None;
+    }
     fn action(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_data_source::WlDataSource, _: DndAction) {}
 }
 
@@ -706,7 +721,6 @@ mod tests {
             frame.fill(tiny_skia::Color::from_rgba8(0, 0, 0, 255));
             w.present(&frame).unwrap();
         }
-        source.state.payload = Some("# a comment\r\nfile:///tmp/My%20Notes.txt\r\n".into());
 
         let conn = Connection::connect_to_env().unwrap();
         let (globals, mut queue) = registry_queue_init::<Driver>(&conn).unwrap();
@@ -741,15 +755,9 @@ mod tests {
         send(&|t| pointer.motion_absolute(t, 640, 700, 1280, 800));
         send(&|t| pointer.button(t, BTN_LEFT, ButtonState::Pressed));
         pump(&mut island, &mut source, 300);
-        let serial = source.state.press_serial.expect("the source saw the press");
-        let qh_source = source.queue.handle();
-        let drag = source.state.data_manager.as_ref().unwrap().create_drag_and_drop_source(
-            &qh_source,
-            [URI_LIST],
-            DndAction::Copy,
-        );
-        drag.start_drag(source.state.data_device.as_ref().unwrap(), source.state.layer.wl_surface(), None, serial);
-        source.conn.flush().unwrap();
+        assert!(source.state.press_serial.is_some(), "the source saw the press");
+        // The source drags its file out the way the island's shelf does.
+        assert!(source.start_drag(&["/tmp/My Notes.txt".into()]));
         pump(&mut island, &mut source, 200);
         // …drag up onto the island and let go.
         for y in [400, 100, 20, 18] {
@@ -758,7 +766,6 @@ mod tests {
         }
         send(&|t| pointer.button(t, BTN_LEFT, ButtonState::Released));
         pump(&mut island, &mut source, 600);
-        drop(drag);
 
         assert!(island_events.iter().any(|e| matches!(e, Event::DragOver { .. })), "{island_events:?}");
         assert!(

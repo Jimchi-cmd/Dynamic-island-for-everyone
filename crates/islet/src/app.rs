@@ -172,6 +172,8 @@ pub enum UiAction {
     ReadMixer,
     /// Set one app's volume (its id from the mixer, in percent).
     SetAppVolume(String, u8),
+    /// A shelf file dragged out of the island: start the system's drag.
+    DragOut(Vec<String>),
 }
 
 /// Windows has no public API to connect Bluetooth devices: its settings do.
@@ -273,6 +275,9 @@ pub struct App {
     /// The open Wi-Fi or Bluetooth list, a pressed entry, and requests.
     panel: Option<Panel>,
     conn_hit: Option<ConnHit>,
+    /// Where the press on a list row began (a shelf row dragged far enough
+    /// becomes a drag of its file).
+    press_at: (f64, f64),
     conn_commands: Vec<ConnCommand>,
     ui_actions: Vec<UiAction>,
     scrub: Option<f64>,
@@ -416,6 +421,7 @@ impl App {
             utc_offset: 0,
             panel: None,
             conn_hit: None,
+            press_at: (0.0, 0.0),
             conn_commands: Vec::new(),
             ui_actions: Vec::new(),
             scrub: None,
@@ -1231,6 +1237,20 @@ impl App {
     /// The brightness its slider was let go at, since the last call.
     pub fn take_brightness(&mut self) -> Option<f32> {
         self.brightness_out.take()
+    }
+
+    /// A shelf row pressed and dragged a few pixels: hand its file to the
+    /// system's drag-and-drop (the press no longer opens it).
+    fn drags_shelf_row(&mut self, x: f64, y: f64) -> bool {
+        const START: f64 = 6.0;
+        let Some(ConnHit::Row(i)) = self.conn_hit else { return false };
+        if self.panel != Some(Panel::Shelf) || (x - self.press_at.0).hypot(y - self.press_at.1) < START {
+            return false;
+        }
+        let Some(item) = self.shelf.get(i) else { return false };
+        self.ui_actions.push(UiAction::DragOut(vec![item.path.clone()]));
+        self.conn_hit = None;
+        true
     }
 
     /// How many sliders the Controls panel has to show.
@@ -2813,6 +2833,7 @@ impl App {
                 self.scrub = Some(content::scrub_fraction(self.card_rect(t), x));
                 true
             }
+            Event::PointerMove { x, y } if self.drags_shelf_row(x, y) => true,
             Event::PointerMove { x, y } => self.pointer_at(x, y, t),
             Event::PointerLeave => self.pointer_at(f64::NAN, f64::NAN, t),
             Event::PointerDown { x, y, button: Button::Primary } if self.hit(x, y, t) => {
@@ -2842,6 +2863,7 @@ impl App {
                 }
                 if let Some(h) = self.conn_hit_at(x, y, t) {
                     self.conn_hit = Some(h);
+                    self.press_at = (x, y);
                     return true;
                 }
                 if let Some(c) = self.alarm_control_at(x, y, t) {
@@ -5715,6 +5737,17 @@ mod tests {
         assert_eq!(app.take_ui_actions(), [UiAction::Path("/home/a/Report final.pdf".into())]);
         press(&mut app, Rect::new(rows[1].right() - 30.0, rows[1].y, 20.0, rows[1].h), 7.0);
         assert_eq!(app.take_shelf_changes().map(|v| v.len()), Some(1));
+
+        // Pressing a file and pulling it away drags it out instead.
+        let (rx, ry) = (rows[0].x + 40.0, rows[0].y + rows[0].h / 2.0);
+        app.handle(Event::PointerDown { x: rx, y: ry, button: Button::Primary }, 7.5);
+        app.handle(Event::PointerMove { x: rx + 2.0, y: ry + 1.0 }, 7.55);
+        assert!(app.take_ui_actions().is_empty(), "a small wobble is still a tap");
+        app.handle(Event::PointerMove { x: rx + 2.0, y: ry + 30.0 }, 7.6);
+        assert_eq!(app.take_ui_actions(), [UiAction::DragOut(vec!["/home/a/Report final.pdf".into()])]);
+        app.handle(Event::PointerUp { x: rx, y: ry + 30.0, button: Button::Primary }, 7.7);
+        assert!(app.take_ui_actions().is_empty(), "letting go doesn't open it too");
+        app.handle(Event::PointerLeave, 7.8);
 
         // A drag that leaves again closes what it opened.
         app.handle(Event::Key(Key::Escape), 8.0);

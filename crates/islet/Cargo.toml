@@ -88,6 +88,7 @@ windows = { version = "0.62", features = [
   "Win32_System_Rpc",
   "Win32_System_SystemServices",
   "Win32_UI_Shell",
+  "Win32_UI_Shell_Common",
   "Win32_System_Variant",
   "Win32_System_Wmi",
   "Win32_System_Console",
@@ -110,7 +111,7 @@ block2 = "0.6"
 libc = "0.2"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSArray", "NSData", "NSDate", "NSDictionary", "NSDistributedNotificationCenter", "NSGeometry", "NSEnumerator", "NSNotification", "NSObjCRuntime", "NSOperation", "NSOrderedSet", "NSSet", "NSRunLoop", "NSString", "NSThread", "NSURL", "NSValue"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "block2", "libc", "objc2-core-foundation", "objc2-quartz-core","NSApplication", "NSColor", "NSDragging", "NSEvent", "NSGraphics", "NSGraphicsContext", "NSPanel", "NSPasteboard", "NSResponder", "NSRunningApplication", "NSScreen", "NSTrackingArea", "NSView", "NSWindow", "NSWorkspace"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "block2", "libc", "objc2-core-foundation", "objc2-quartz-core","NSApplication", "NSColor", "NSDragging", "NSDraggingItem", "NSDraggingSession", "NSEvent", "NSImage", "NSGraphics", "NSGraphicsContext", "NSPanel", "NSPasteboard", "NSResponder", "NSRunningApplication", "NSScreen", "NSTrackingArea", "NSView", "NSWindow", "NSWorkspace"] }
 objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "objc2-core-foundation", "CALayer", "CATransaction"] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes", "CFData"] }
 objc2-core-wlan = { version = "0.3", default-features = false, features = ["std", "CWConfiguration", "CWInterface", "CWNetwork", "CWNetworkProfile", "CWWiFiClient", "CoreWLANTypes"] }

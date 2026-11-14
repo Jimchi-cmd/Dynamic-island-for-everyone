@@ -49,6 +49,25 @@ pub fn paths_from_uri_list(list: &str) -> Vec<String> {
         .collect()
 }
 
+/// A `text/uri-list` of files (dragging shelf files out): `file://` URIs,
+/// with everything but unreserved characters and `/` percent-encoded,
+/// each line ending in CRLF as the format asks.
+pub fn uri_list(paths: &[String]) -> String {
+    let mut out = String::new();
+    for p in paths.iter().filter(|p| p.starts_with('/')) {
+        out.push_str("file://");
+        for b in p.bytes() {
+            if b.is_ascii_alphanumeric() || b"/-_.~".contains(&b) {
+                out.push(b as char);
+            } else {
+                out.push_str(&format!("%{b:02X}"));
+            }
+        }
+        out.push_str("\r\n");
+    }
+    out
+}
+
 fn percent_decode(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
@@ -70,6 +89,15 @@ fn percent_decode(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn makes_a_uri_list_that_reads_back() {
+        let paths = vec!["/home/a/Report final.pdf".to_string(), "/home/a/Ünï#%.txt".to_string()];
+        let list = uri_list(&paths);
+        assert!(list.starts_with("file:///home/a/Report%20final.pdf\r\n"), "{list}");
+        assert_eq!(paths_from_uri_list(&list), paths);
+        assert_eq!(uri_list(&["relative.txt".into()]), "", "only absolute paths");
+    }
 
     #[test]
     fn names_and_order() {

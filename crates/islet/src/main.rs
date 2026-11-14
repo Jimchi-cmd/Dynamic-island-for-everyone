@@ -462,6 +462,13 @@ fn run() -> platform::Result<()> {
                 UiAction::Url(url) => navigation::open_url(&url),
                 UiAction::Settings(page) => open_settings(&page),
                 UiAction::Path(path) => open_path(&path),
+                UiAction::DragOut(paths) if !scripted => {
+                    // Where the system can't drag files, the press is a tap again.
+                    if !win.start_drag(&paths) {
+                        trace("dragging files out isn't available here");
+                    }
+                }
+                UiAction::DragOut(_) => {}
                 // From the island's menu: save it like `islet set` would.
                 UiAction::SetSwitch(key, on) if !scripted => {
                     let mut prefs = config::load_prefs();

@@ -86,6 +86,13 @@ impl Backend for Linux {
         }
     }
 
+    fn start_drag(&mut self, paths: &[String]) -> bool {
+        match self {
+            Linux::X11(x) => x.start_drag(paths),
+            Linux::Wayland(w) => w.start_drag(paths),
+        }
+    }
+
     fn screen_origin(&self) -> (f64, f64) {
         match self {
             Linux::X11(x) => x.screen_origin(),

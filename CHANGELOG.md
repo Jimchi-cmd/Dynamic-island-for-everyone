@@ -31,14 +31,15 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - **App switcher:** the launcher finds open windows by title or app and brings the one you choose to the front (X11, sway, Hyprland, Windows; apps on macOS). `islet windows` and `islet windows focus <id>` do the same from a terminal.
 - **Speed test** in Settings (Wi-Fi & Bluetooth) and `islet speedtest`: latency, download and upload, only when asked, with Cloudflare's public speed-test servers (about 36 MB).
 - **Plugin widgets** (off by default): your own scripts in the plugins folder, run on their own schedule, shown as live activities (docs/plugins.md, `islet plugins`).
+- **Drag files out of the shelf** into Finder, Explorer, a file manager or any app (Windows, macOS, X11 and Wayland).
 - **Per-app volume** on the Controls panel: a slider for each app playing sound (up to four), on Linux (pactl) and Windows (Core Audio sessions).
 
 ### Fixed
 - Labels cut short on the clock card and in the Wi-Fi, Bluetooth and shelf lists.
 - CI no longer fails when Ubuntu's package servers are unreachable.
+- macOS: sliders (volume, brightness, the song position) follow the pointer while the button is held.
 
 ### Not included
-- Dragging files out of the shelf: it needs per-system code that could not be verified on Windows and macOS.
 - A per-app volume mixer on macOS: there is no public API for one app's volume.
 
 ## [0.2.0] - 2026-11-06

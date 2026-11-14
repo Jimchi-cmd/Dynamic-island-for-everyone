@@ -218,6 +218,13 @@ pub trait Backend: Sized {
     /// What VoiceOver reads for the island (macOS handles it in the view).
     fn set_a11y_label(&mut self, _label: &str) {}
 
+    /// Start a system drag of these files out of the island (a shelf row
+    /// dragged away), while the pointer button is still down. False where
+    /// the system offers no way.
+    fn start_drag(&mut self, _paths: &[String]) -> bool {
+        false
+    }
+
     /// The display's camera notch (width, height in logical px), if the
     /// island sits on one (notched MacBooks).
     fn notch(&self) -> Option<(f64, f64)> {

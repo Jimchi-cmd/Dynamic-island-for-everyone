@@ -14,18 +14,21 @@ use super::{Backend, Button, Event, Key, Result, Waker, WindowSpec};
 use islet_core::geometry::Rect;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{define_class, msg_send, AnyThread, ClassType, MainThreadMarker, MainThreadOnly};
+use objc2::{define_class, msg_send, AnyThread, ClassType, MainThreadMarker, MainThreadOnly, Message};
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSColor, NSDragOperation, NSDraggingInfo,
-    NSEvent, NSEventMask, NSEventModifierFlags, NSEventType, NSPanel, NSPasteboardTypeFileURL, NSResponder, NSScreen,
-    NSStatusWindowLevel, NSTrackingArea, NSTrackingAreaOptions, NSView, NSWindowCollectionBehavior, NSWindowStyleMask,
+    NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSColor, NSDragOperation, NSDraggingContext,
+    NSDraggingInfo, NSDraggingItem, NSDraggingSession, NSDraggingSource, NSEvent, NSEventMask, NSEventModifierFlags,
+    NSEventType, NSPanel, NSPasteboardTypeFileURL, NSResponder, NSScreen, NSStatusWindowLevel, NSTrackingArea,
+    NSTrackingAreaOptions, NSView, NSWindowCollectionBehavior, NSWindowStyleMask, NSWorkspace,
 };
 use objc2_core_foundation::CFRetained;
 use objc2_core_graphics::{
     kCGColorSpaceSRGB, CGBitmapInfo, CGColorRenderingIntent, CGColorSpace, CGDataProvider, CGImage, CGImageAlphaInfo,
     CGImageByteOrderInfo,
 };
-use objc2_foundation::{NSArray, NSDate, NSDefaultRunLoopMode, NSObject, NSPoint, NSRect, NSSize, NSString, NSURL};
+use objc2_foundation::{
+    NSArray, NSDate, NSDefaultRunLoopMode, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString, NSURL,
+};
 use objc2_quartz_core::CATransaction;
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
@@ -88,8 +91,17 @@ define_class!(
 
         #[unsafe(method(mouseDown:))]
         fn mouse_down(&self, event: &NSEvent) {
+            LAST_MOUSE.with(|m| *m.borrow_mut() = Some(event.retain()));
             let (x, y) = self.local(event);
             push(Event::PointerDown { x, y, button: Button::Primary });
+        }
+
+        /// The pointer moving with the button held (sliders, shelf drags).
+        #[unsafe(method(mouseDragged:))]
+        fn mouse_dragged(&self, event: &NSEvent) {
+            LAST_MOUSE.with(|m| *m.borrow_mut() = Some(event.retain()));
+            let (x, y) = self.local(event);
+            push(Event::PointerMove { x, y });
         }
 
         #[unsafe(method(mouseUp:))]
@@ -192,6 +204,16 @@ define_class!(
             push(Event::DragLeave);
         }
 
+        #[unsafe(method(draggingSession:sourceOperationMaskForDraggingContext:))]
+        fn source_operations(&self, _session: &NSDraggingSession, context: NSDraggingContext) -> NSDragOperation {
+            // Files dragged out of the shelf are copied (or linked) elsewhere.
+            if context == NSDraggingContext::OutsideApplication {
+                NSDragOperation::Copy | NSDragOperation::Link | NSDragOperation::Generic
+            } else {
+                NSDragOperation::None
+            }
+        }
+
         #[unsafe(method(performDragOperation:))]
         fn perform_drag(&self, info: &ProtocolObject<dyn NSDraggingInfo>) -> bool {
             let classes = NSArray::from_slice(&[NSURL::class()]);
@@ -212,7 +234,46 @@ define_class!(
     }
 );
 
+// SAFETY: the one required NSDraggingSource method is implemented above.
+unsafe impl NSObjectProtocol for IsletView {}
+unsafe impl NSDraggingSource for IsletView {}
+
+thread_local! {
+    /// The last mouse-down or drag event: a drag out has to start from one.
+    static LAST_MOUSE: RefCell<Option<Retained<NSEvent>>> = const { RefCell::new(None) };
+}
+
 impl IsletView {
+    /// Drag files out to Finder or any app, each with its Finder icon.
+    fn drag_files_out(&self, paths: &[String]) -> bool {
+        let Some(event) = LAST_MOUSE.with(|m| m.borrow().clone()) else { return false };
+        let at = self.convertPoint_fromView(event.locationInWindow(), None);
+        let workspace = NSWorkspace::sharedWorkspace();
+        let items: Vec<Retained<NSDraggingItem>> = paths
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let path = NSString::from_str(p);
+                let url = NSURL::fileURLWithPath(&path);
+                let item =
+                    NSDraggingItem::initWithPasteboardWriter(NSDraggingItem::alloc(), ProtocolObject::from_ref(&*url));
+                let icon = workspace.iconForFile(&path);
+                let offset = i as f64 * 6.0;
+                let frame =
+                    NSRect::new(NSPoint::new(at.x - 16.0 + offset, at.y - 16.0 + offset), NSSize::new(32.0, 32.0));
+                // SAFETY: an NSImage is what the dragging frame's contents take.
+                unsafe { item.setDraggingFrame_contents(frame, Some(&icon)) };
+                item
+            })
+            .collect();
+        if items.is_empty() {
+            return false;
+        }
+        let items = NSArray::from_retained_slice(&items);
+        let _session = self.beginDraggingSessionWithItems_event_source(&items, &event, ProtocolObject::from_ref(self));
+        true
+    }
+
     fn drag_at(&self, info: &ProtocolObject<dyn NSDraggingInfo>) {
         // Window coordinates → the (flipped) view's top-left coordinates.
         let p = self.convertPoint_fromView(info.draggingLocation(), None);
@@ -430,6 +491,10 @@ impl Backend for Mac {
 
     fn scale(&self) -> f64 {
         self.scale
+    }
+
+    fn start_drag(&mut self, paths: &[String]) -> bool {
+        self.view.drag_files_out(paths)
     }
 
     fn set_a11y_label(&mut self, label: &str) {

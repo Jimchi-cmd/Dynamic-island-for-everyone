@@ -54,6 +54,16 @@ x11rb::atom_manager! {
     }
 }
 
+/// Shelf files being dragged out of the island (Islet as the XDND source):
+/// the window under the pointer that takes drops, whether it said yes, and
+/// whether the drop was sent (then only XdndFinished is awaited).
+#[derive(Clone, Copy)]
+struct DragOut {
+    target: Window,
+    accepted: bool,
+    dropped: bool,
+}
+
 /// An XDND drag over the island: who is dragging, and whether it offers files.
 #[derive(Clone, Copy)]
 struct Dnd {
@@ -78,6 +88,9 @@ pub struct X11 {
     pos: (i32, i32),
     /// The drag in progress (XDND), if any.
     dnd: std::cell::Cell<Option<Dnd>>,
+    /// A drag out of the island, and the file list it offers.
+    drag_out: std::cell::Cell<Option<DragOut>>,
+    drag_uris: std::cell::RefCell<String>,
     /// Frame converted to the server's pixel layout (BGRA on little-endian).
     buf: Vec<u8>,
     /// eventfd that other threads write to wake `poll`.
@@ -314,6 +327,8 @@ impl Backend for X11 {
             caps,
             pos: (x, y),
             dnd: std::cell::Cell::new(None),
+            drag_out: std::cell::Cell::new(None),
+            drag_uris: std::cell::RefCell::new(String::new()),
             buf: Vec::new(),
             wake_fd,
             root: screen.root,
@@ -325,6 +340,22 @@ impl Backend for X11 {
             front: std::cell::RefCell::new(String::new()),
             front_news: std::cell::RefCell::new(None),
         })
+    }
+
+    fn start_drag(&mut self, paths: &[String]) -> bool {
+        let list = islet_core::shelf::uri_list(paths);
+        if list.is_empty() {
+            return false;
+        }
+        // The button is still down, so the implicit grab brings every motion
+        // and the release here, wherever the pointer goes.
+        *self.drag_uris.borrow_mut() = list;
+        if self.conn.set_selection_owner(self.win, self.atoms.XdndSelection, x11rb::CURRENT_TIME).is_err() {
+            return false;
+        }
+        let _ = self.conn.flush();
+        self.drag_out.set(Some(DragOut { target: x11rb::NONE, accepted: false, dropped: false }));
+        true
     }
 
     fn set_hotkey(&mut self, slot: u8, hotkey: Option<islet_core::hotkey::Hotkey>) -> Result<()> {
@@ -586,6 +617,9 @@ impl X11 {
     }
 
     fn translate(&self, ev: XEvent) -> Option<Event> {
+        if let Some(handled) = self.drag_out_event(&ev) {
+            return handled;
+        }
         let s = self.scale;
         let button = |b: u8| match b {
             1 => Some(Button::Primary),
@@ -705,6 +739,112 @@ impl X11 {
 }
 
 impl X11 {
+    /// The window under the root position (rx, ry) that takes XDND drops:
+    /// the first one down the tree with an XdndAware of version 3 or more.
+    /// None over the island itself or the bare desktop.
+    fn xdnd_target_at(&self, rx: i16, ry: i16) -> Window {
+        let mut w = self.root;
+        for _ in 0..8 {
+            let Some(r) = self.conn.translate_coordinates(self.root, w, rx, ry).ok().and_then(|c| c.reply().ok())
+            else {
+                break;
+            };
+            if r.child == x11rb::NONE || r.child == self.win {
+                break;
+            }
+            let version = self
+                .conn
+                .get_property(false, r.child, self.atoms.XdndAware, AtomEnum::ATOM, 0, 1)
+                .ok()
+                .and_then(|c| c.reply().ok())
+                .and_then(|p| p.value32().and_then(|mut v| v.next()));
+            if version.is_some_and(|v| v >= 3) {
+                return r.child;
+            }
+            w = r.child;
+        }
+        x11rb::NONE
+    }
+
+    /// The XDND source's side of a drag out of the island. Some(result)
+    /// when the event belonged to it.
+    fn drag_out_event(&self, ev: &XEvent) -> Option<Option<Event>> {
+        let a = &self.atoms;
+        // The drop target asking for the files (possibly after the drag).
+        if let XEvent::SelectionRequest(r) = ev {
+            if r.selection != a.XdndSelection {
+                return None;
+            }
+            let ok = r.target == a.TEXT_URI_LIST && r.property != x11rb::NONE;
+            if ok {
+                let list = self.drag_uris.borrow();
+                let _ =
+                    self.conn.change_property8(PropMode::REPLACE, r.requestor, r.property, r.target, list.as_bytes());
+            }
+            let note = SelectionNotifyEvent {
+                response_type: SELECTION_NOTIFY_EVENT,
+                sequence: 0,
+                time: r.time,
+                requestor: r.requestor,
+                selection: r.selection,
+                target: r.target,
+                property: if ok { r.property } else { x11rb::NONE },
+            };
+            let _ = self.conn.send_event(false, r.requestor, EventMask::NO_EVENT, note);
+            let _ = self.conn.flush();
+            return Some(None);
+        }
+        let mut d = self.drag_out.get()?;
+        let me = self.win;
+        let result = match ev {
+            XEvent::MotionNotify(e) if !d.dropped => {
+                let target = self.xdnd_target_at(e.root_x, e.root_y);
+                if target != d.target {
+                    if d.target != x11rb::NONE {
+                        self.dnd_send(d.target, a.XdndLeave, [me, 0, 0, 0, 0]);
+                    }
+                    d = DragOut { target, accepted: false, dropped: false };
+                    if target != x11rb::NONE {
+                        // Version 5; three types or fewer, and only one.
+                        self.dnd_send(target, a.XdndEnter, [me, 5 << 24, a.TEXT_URI_LIST, 0, 0]);
+                    }
+                }
+                if target != x11rb::NONE {
+                    let at = (u32::from(e.root_x as u16) << 16) | u32::from(e.root_y as u16);
+                    self.dnd_send(target, a.XdndPosition, [me, 0, at, e.time, a.XdndActionCopy]);
+                }
+                None
+            }
+            XEvent::ClientMessage(e) if e.type_ == a.XdndStatus => {
+                let data = e.data.as_data32();
+                if data[0] == d.target {
+                    d.accepted = data[1] & 1 != 0;
+                }
+                None
+            }
+            XEvent::ButtonRelease(e) if !d.dropped && e.detail == 1 => {
+                if d.target != x11rb::NONE && d.accepted {
+                    self.dnd_send(d.target, a.XdndDrop, [me, 0, e.time, 0, 0]);
+                    d.dropped = true;
+                } else {
+                    if d.target != x11rb::NONE {
+                        self.dnd_send(d.target, a.XdndLeave, [me, 0, 0, 0, 0]);
+                    }
+                    self.drag_out.set(None);
+                    return Some(None);
+                }
+                None
+            }
+            XEvent::ClientMessage(e) if e.type_ == a.XdndFinished && e.data.as_data32()[0] == d.target => {
+                self.drag_out.set(None);
+                return Some(None);
+            }
+            _ => return None,
+        };
+        self.drag_out.set(Some(d));
+        Some(result)
+    }
+
     /// Which grabbed shortcut a key press is, if any.
     fn hotkey_slot(&self, code: Keycode, state: x11rb::protocol::xproto::KeyButMask) -> Option<u8> {
         let held = u16::from(state) & SHORTCUT_MODS;
@@ -958,6 +1098,120 @@ mod tests {
         send(atoms.XdndDrop, [source, 0, 0, 0, 0]);
         let dropped = pump(&mut island, &|e| matches!(e, Event::Drop(_)));
         assert_eq!(dropped, Some(Event::Drop(vec!["/home/a/Report final.pdf".into(), "/home/a/Photos".into()])));
+    }
+
+    /// Plays an XDND drop target against a drag out of the island: the
+    /// island finds the target under the pointer, sends Enter, Position and
+    /// Drop, and serves the file list. Needs an X server (xvfb-run).
+    #[test]
+    fn xdnd_drag_out_of_the_island() {
+        use super::super::{Backend, WindowSpec};
+        use super::*;
+        use std::time::{Duration, Instant};
+        if std::env::var_os("DISPLAY").is_none() {
+            eprintln!("skipping: no X display");
+            return;
+        }
+        let Ok(mut island) = X11::create(WindowSpec { width: 420.0, height: 260.0 }) else {
+            eprintln!("skipping: can't open the X display");
+            return;
+        };
+        let (dst, screen) = x11rb::connect(None).unwrap();
+        let root = dst.setup().roots[screen].root;
+        let atoms = Atoms::new(&dst).unwrap().reply().unwrap();
+        // A file manager's window, away from the island, that takes drops.
+        let target = dst.generate_id().unwrap();
+        dst.create_window(0, target, root, 0, 400, 60, 60, 0, WindowClass::INPUT_OUTPUT, 0, &CreateWindowAux::new())
+            .unwrap();
+        dst.change_property32(PropMode::REPLACE, target, atoms.XdndAware, AtomEnum::ATOM, &[5]).unwrap();
+        dst.map_window(target).unwrap();
+        dst.flush().unwrap();
+
+        assert!(island.start_drag(&["/home/a/Report final.pdf".into()]));
+        // The pointer (held down on the island) moves over the target...
+        let win = island.win;
+        let at = |x: i16, y: i16| MotionNotifyEvent {
+            response_type: MOTION_NOTIFY_EVENT,
+            detail: Motion::NORMAL,
+            sequence: 0,
+            time: 0,
+            root,
+            event: win,
+            child: x11rb::NONE,
+            root_x: x,
+            root_y: y,
+            event_x: 0,
+            event_y: 0,
+            state: KeyButMask::BUTTON1,
+            same_screen: true,
+        };
+        let island_saw = |island: &mut X11, ev: XEvent| island.translate(ev);
+        assert_eq!(island_saw(&mut island, XEvent::MotionNotify(at(30, 430))), None, "a drag, not a hover");
+        // ...and the target hears about it, says yes, and gets the drop.
+        let mut got = Vec::new();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut dropped = false;
+        let mut list = String::new();
+        while Instant::now() < deadline && list.is_empty() {
+            let mut out = Vec::new();
+            island.wait(Some(Instant::now() + Duration::from_millis(20)), &mut out).unwrap();
+            while let Some(ev) = dst.poll_for_event().unwrap() {
+                match ev {
+                    XEvent::ClientMessage(e) if e.type_ == atoms.XdndPosition => {
+                        got.push("position");
+                        let src = e.data.as_data32()[0];
+                        let ok =
+                            ClientMessageEvent::new(32, src, atoms.XdndStatus, [target, 1, 0, 0, atoms.XdndActionCopy]);
+                        dst.send_event(false, src, EventMask::NO_EVENT, ok).unwrap();
+                        dst.flush().unwrap();
+                    }
+                    XEvent::ClientMessage(e) if e.type_ == atoms.XdndEnter => got.push("enter"),
+                    XEvent::ClientMessage(e) if e.type_ == atoms.XdndDrop => {
+                        got.push("drop");
+                        dst.convert_selection(
+                            target,
+                            atoms.XdndSelection,
+                            atoms.TEXT_URI_LIST,
+                            atoms.ISLET_DND,
+                            x11rb::CURRENT_TIME,
+                        )
+                        .unwrap();
+                        dst.flush().unwrap();
+                    }
+                    XEvent::SelectionNotify(e) if e.property == atoms.ISLET_DND => {
+                        let r = dst.get_property(true, target, atoms.ISLET_DND, AtomEnum::ANY, 0, 4096).unwrap();
+                        list = String::from_utf8_lossy(&r.reply().unwrap().value).into_owned();
+                    }
+                    _ => {}
+                }
+            }
+            if got.contains(&"position") && !dropped {
+                // Let go over the target once it has answered.
+                std::thread::sleep(Duration::from_millis(50));
+                let mut out = Vec::new();
+                island.wait(Some(Instant::now() + Duration::from_millis(20)), &mut out).unwrap();
+                let release = ButtonReleaseEvent {
+                    response_type: BUTTON_RELEASE_EVENT,
+                    detail: 1,
+                    sequence: 0,
+                    time: 0,
+                    root,
+                    event: win,
+                    child: x11rb::NONE,
+                    root_x: 30,
+                    root_y: 430,
+                    event_x: 0,
+                    event_y: 0,
+                    state: KeyButMask::BUTTON1,
+                    same_screen: true,
+                };
+                assert_eq!(island_saw(&mut island, XEvent::ButtonRelease(release)), None);
+                dropped = true;
+            }
+        }
+        assert_eq!(got.first(), Some(&"enter"), "{got:?}");
+        assert!(got.contains(&"drop"), "{got:?}");
+        assert_eq!(islet_core::shelf::paths_from_uri_list(&list), ["/home/a/Report final.pdf"]);
     }
 
     #[test]
