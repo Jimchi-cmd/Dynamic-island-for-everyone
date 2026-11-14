@@ -15,6 +15,7 @@ pub mod hotkey;
 pub mod island;
 pub mod limits;
 pub mod lyrics;
+pub mod mixer;
 pub mod nav;
 pub mod paths;
 pub mod phone;

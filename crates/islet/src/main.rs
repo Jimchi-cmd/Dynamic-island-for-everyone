@@ -477,6 +477,11 @@ fn run() -> platform::Result<()> {
                 UiAction::ReadBatteryHealth if !scripted => providers::sysmon::read_battery_health(providers.sink()),
                 UiAction::ReadBatteryHealth => {}
                 UiAction::DarkMode if !scripted => quick::toggle_dark_mode(),
+                UiAction::ReadMixer if !scripted => providers::mixer::read(providers.sink()),
+                UiAction::SetAppVolume(id, level) if !scripted => {
+                    providers::mixer::set(providers.sink(), id, f32::from(level) / 100.0)
+                }
+                UiAction::ReadMixer | UiAction::SetAppVolume(..) => {}
                 UiAction::Screenshot
                 | UiAction::Lock
                 | UiAction::Shortcut(_)

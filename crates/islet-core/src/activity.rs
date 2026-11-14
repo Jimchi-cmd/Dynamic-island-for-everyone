@@ -214,6 +214,9 @@ pub enum Report {
     Hud(Hud),
     /// The screen's brightness as read on request (no pop-up), 0..=1.
     Brightness(f32),
+    /// The apps playing sound and their volumes (None: this system can't
+    /// tell).
+    Mixer(Option<Vec<crate::mixer::AppVolume>>),
     /// How worn the laptop's battery is, as read on request.
     BatteryHealth(Option<crate::sysmon::BatteryHealth>),
     /// A program hogging the processor or the memory (None: no longer).
@@ -583,6 +586,7 @@ impl Activities {
             | Report::Volume(..)
             | Report::Brightness(_)
             | Report::BatteryHealth(_)
+            | Report::Mixer(_)
             | Report::Hog(_) => false,
             Report::System(s) => {
                 self.system = s;

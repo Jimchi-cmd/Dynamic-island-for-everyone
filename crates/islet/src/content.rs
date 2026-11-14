@@ -2837,7 +2837,12 @@ pub fn idle_clock(
 pub enum Tune {
     Volume,
     Brightness,
+    /// One app's own volume (its place in the mixer's list).
+    App(usize),
 }
+
+/// Apps given a slider of their own, at most.
+pub const MIXER_APPS: usize = 4;
 
 const TUNE_ROW: f64 = 40.0;
 
@@ -2851,11 +2856,13 @@ fn tune_track(pill: Rect, row: usize) -> (f64, f64, f64) {
     (pill.x + PAD + 34.0, pill.right() - PAD - 50.0, pill.y + LIST_TOP + row as f64 * TUNE_ROW + TUNE_ROW / 2.0)
 }
 
-/// The sliders shown (volume first), with the area that grabs each.
-pub fn tune_sliders(pill: Rect, volume: bool, brightness: bool) -> Vec<(Rect, Tune)> {
+/// The sliders shown (volume, brightness, then each app playing sound),
+/// with the area that grabs each.
+pub fn tune_sliders(pill: Rect, volume: bool, brightness: bool, apps: usize) -> Vec<(Rect, Tune)> {
     [(Tune::Volume, volume), (Tune::Brightness, brightness)]
         .into_iter()
         .filter(|(_, on)| *on)
+        .chain((0..apps.min(MIXER_APPS)).map(|i| (Tune::App(i), true)))
         .enumerate()
         .map(|(row, (tune, _))| {
             let (left, right, cy) = tune_track(pill, row);
@@ -2876,11 +2883,13 @@ pub fn dark_mode_button(pill: Rect, sliders: usize) -> Rect {
 }
 
 /// The Controls panel: a slider each for volume and brightness (when the
-/// computer tells Islet the level), and the dark-mode switch.
+/// computer tells Islet the level), one for each app playing sound, and
+/// the dark-mode switch.
 pub fn expanded_controls(
     pill: Rect,
     volume: Option<(f32, bool)>,
     brightness: Option<f32>,
+    apps: &[islet_core::mixer::AppVolume],
     o: f32,
     engine: &mut TextEngine,
 ) -> Vec<Element> {
@@ -2893,9 +2902,17 @@ pub fn expanded_controls(
         align: Align::Right,
         ..TextStyle::default()
     };
-    let sliders = tune_sliders(pill, volume.is_some(), brightness.is_some());
+    let sliders = tune_sliders(pill, volume.is_some(), brightness.is_some(), apps.len());
+    let app_name = TextStyle { size: 11.0, weight: 600, opacity: o * 0.6, ..TextStyle::default() };
     for (row, (_, tune)) in sliders.iter().enumerate() {
-        let (left, right, cy) = tune_track(pill, row);
+        let (left, right, mut cy) = tune_track(pill, row);
+        if let Tune::App(i) = tune {
+            // The app's name above its (slightly lower) track.
+            let a = &apps[*i];
+            let name = engine.ellipsize(&a.name, &app_name, (right - left) as f32);
+            v.push(text(name, app_name, left as f32, (cy - 6.0) as f32));
+            cy += 7.0;
+        }
         let (level, icon, dim) = match tune {
             Tune::Volume => {
                 let (level, muted) = volume.unwrap_or((0.0, false));
@@ -2915,6 +2932,10 @@ pub fn expanded_controls(
                 (level, icon, muted)
             }
             Tune::Brightness => (brightness.unwrap_or(0.0), Icon::Sun, false),
+            Tune::App(i) => {
+                let a = &apps[*i];
+                (a.level, Icon::Volume(if a.muted { 255 } else { 2 }), a.muted)
+            }
         };
         let x = (pill.x + PAD) as f32;
         v.push(Element::Icon { icon, x, y: cy as f32 - 10.0, size: 20.0, color: WHITE, opacity: o });

@@ -168,6 +168,10 @@ pub enum UiAction {
     ReadBatteryHealth,
     /// Switch between the dark and the light look.
     DarkMode,
+    /// Read each app's volume, for the Controls panel's mixer.
+    ReadMixer,
+    /// Set one app's volume (its id from the mixer, in percent).
+    SetAppVolume(String, u8),
 }
 
 /// Windows has no public API to connect Bluetooth devices: its settings do.
@@ -332,6 +336,8 @@ pub struct App {
     brightness_set_at: f64,
     /// The Controls slider being dragged.
     tune: Option<content::Tune>,
+    /// The apps playing sound and their volumes (the Controls panel).
+    mixer: Vec<islet_core::mixer::AppVolume>,
     /// The program the performance alert is about; the alert button being
     /// pressed; and programs not to mention again (name, until when).
     /// How worn the laptop's battery is, once read (the System panel).
@@ -445,6 +451,7 @@ impl App {
             volume_set_at: f64::NEG_INFINITY,
             brightness: None,
             brightness_out: None,
+            mixer: Vec::new(),
             brightness_set_at: f64::NEG_INFINITY,
             tune: None,
             battery_health: None,
@@ -1228,7 +1235,9 @@ impl App {
 
     /// How many sliders the Controls panel has to show.
     fn tune_count(&self) -> usize {
-        usize::from(self.volume.is_some()) + usize::from(self.brightness.is_some())
+        usize::from(self.volume.is_some())
+            + usize::from(self.brightness.is_some())
+            + self.mixer.len().min(content::MIXER_APPS)
     }
 
     /// The Controls slider under (x, y), while that panel is open.
@@ -1239,7 +1248,7 @@ impl App {
             return None;
         }
         let cr = self.content_rect(self.settled_pill());
-        content::tune_sliders(cr, self.volume.is_some(), self.brightness.is_some())
+        content::tune_sliders(cr, self.volume.is_some(), self.brightness.is_some(), self.mixer.len())
             .into_iter()
             .find(|(r, _)| r.contains(x, y))
             .map(|(_, tune)| tune)
@@ -1259,6 +1268,11 @@ impl App {
                 // Never all the way to black: the screen must stay readable.
                 self.brightness = Some(level.max(0.05));
                 self.brightness_set_at = t;
+            }
+            content::Tune::App(i) => {
+                if let Some(a) = self.mixer.get_mut(i) {
+                    a.level = level;
+                }
             }
         }
         true
@@ -1326,7 +1340,10 @@ impl App {
                     Panel::Wifi => self.conn_commands.push(ConnCommand::ScanWifi),
                     Panel::Bluetooth => self.conn_commands.push(ConnCommand::ListBluetooth),
                     // The slider needs the screen's brightness: ask for it.
-                    Panel::Controls => self.ui_actions.push(UiAction::ReadBrightness),
+                    Panel::Controls => {
+                        self.ui_actions.push(UiAction::ReadBrightness);
+                        self.ui_actions.push(UiAction::ReadMixer);
+                    }
                     // How worn the battery is: read once each time the panel opens.
                     Panel::System => self.ui_actions.push(UiAction::ReadBatteryHealth),
                     Panel::Shelf
@@ -1665,10 +1682,20 @@ impl App {
                 OpenContent::Panel(p) => {
                     buttons.push(("Back".into(), content::list_header(cr)));
                     if p == Panel::Controls {
-                        for (r, tune) in content::tune_sliders(cr, self.volume.is_some(), self.brightness.is_some()) {
+                        let sliders = content::tune_sliders(
+                            cr,
+                            self.volume.is_some(),
+                            self.brightness.is_some(),
+                            self.mixer.len(),
+                        );
+                        for (r, tune) in sliders {
                             let (name, level) = match tune {
-                                content::Tune::Volume => ("Volume", self.volume.map_or(0.0, |v| v.0)),
-                                content::Tune::Brightness => ("Brightness", self.brightness.unwrap_or(0.0)),
+                                content::Tune::Volume => ("Volume".to_string(), self.volume.map_or(0.0, |v| v.0)),
+                                content::Tune::Brightness => ("Brightness".to_string(), self.brightness.unwrap_or(0.0)),
+                                content::Tune::App(i) => {
+                                    let a = &self.mixer[i];
+                                    (format!("{} volume", a.name), a.level)
+                                }
                             };
                             buttons.push((format!("{name}, {}%", (level * 100.0).round() as i32), r));
                         }
@@ -2012,6 +2039,15 @@ impl App {
         if let Report::BatteryHealth(h) = r {
             self.battery_health = h;
             self.sync_live(t);
+            return self.island.presentation().is_open();
+        }
+        if let Report::Mixer(apps) = r {
+            // Not while one of its sliders is held: the rows could move.
+            if !matches!(self.tune, Some(content::Tune::App(_))) {
+                self.mixer = apps.unwrap_or_default();
+                self.mixer.truncate(content::MIXER_APPS);
+                self.sync_live(t);
+            }
             return self.island.presentation().is_open();
         }
         if let Report::Brightness(level) = r {
@@ -2405,7 +2441,7 @@ impl App {
                     out.extend(content::expanded_system(cr, self.activities.system(), self.battery_health, eo, engine))
                 }
                 OpenContent::Panel(Panel::Controls) => {
-                    out.extend(content::expanded_controls(cr, self.volume, self.brightness, eo, engine))
+                    out.extend(content::expanded_controls(cr, self.volume, self.brightness, &self.mixer, eo, engine))
                 }
                 // Shown as OpenContent::Stopwatch instead.
                 OpenContent::Panel(Panel::Stopwatch) => {}
@@ -2886,9 +2922,19 @@ impl App {
                 }
                 if let Some(tune) = self.tune.take() {
                     self.tune_to(tune, x, t);
-                    if tune == content::Tune::Brightness {
-                        self.brightness_out = self.brightness;
-                        self.brightness_set_at = t;
+                    match tune {
+                        content::Tune::Brightness => {
+                            self.brightness_out = self.brightness;
+                            self.brightness_set_at = t;
+                        }
+                        // An app's volume is set once, when its slider is let go.
+                        content::Tune::App(i) => {
+                            if let Some(a) = self.mixer.get(i) {
+                                let pct = (a.level.clamp(0.0, 1.0) * 100.0).round() as u8;
+                                self.ui_actions.push(UiAction::SetAppVolume(a.id.clone(), pct));
+                            }
+                        }
+                        content::Tune::Volume => {}
                     }
                     return true;
                 }
@@ -5145,6 +5191,45 @@ mod tests {
     }
 
     #[test]
+    fn the_controls_panel_has_a_slider_for_each_app_playing_sound() {
+        use islet_core::mixer::AppVolume;
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        app.report(Report::Volume(0.5, false), 0.0);
+        open_panel(&mut app, Panel::Controls, 0.0);
+        app.take_ui_actions();
+        let apps: Vec<AppVolume> = (0..6)
+            .map(|i| AppVolume { id: format!("{i}"), name: format!("App {i}"), level: 0.8, muted: i == 1 })
+            .collect();
+        app.report(Report::Mixer(Some(apps)), 9.0);
+        // The volume slider, and four apps at most.
+        assert!((app.pill_rect(14.0).h - content::controls_height(1 + content::MIXER_APPS)).abs() < 0.5);
+        let shown = texts(&app, 14.0, &mut engine);
+        assert!(shown.contains(&"App 0".to_string()) && shown.contains(&"App 3".to_string()), "{shown:?}");
+        assert!(!shown.contains(&"App 4".to_string()), "{shown:?}");
+
+        // Its volume is set once, when the slider is let go.
+        let cr = app.content_rect(app.pill_rect(14.0));
+        let sliders = content::tune_sliders(cr, true, false, 4);
+        let (r, _) = sliders.iter().find(|(_, t)| *t == content::Tune::App(2)).unwrap();
+        let y = r.y + r.h / 2.0;
+        app.handle(Event::PointerDown { x: r.right() - 10.0, y, button: Button::Primary }, 15.0);
+        app.handle(Event::PointerMove { x: r.x + 10.0, y }, 15.1);
+        // A reading arriving mid-drag doesn't move the rows.
+        app.report(Report::Mixer(Some(Vec::new())), 15.15);
+        assert!(app.take_ui_actions().is_empty(), "not while dragging");
+        app.handle(Event::PointerUp { x: r.x + 10.0, y, button: Button::Primary }, 15.2);
+        assert_eq!(app.take_ui_actions(), [UiAction::SetAppVolume("2".into(), 0)]);
+        let names: Vec<String> = app.accessibility(16.0).buttons.into_iter().map(|(n, _)| n).collect();
+        assert!(names.contains(&"App 2 volume, 0%".to_string()), "{names:?}");
+
+        // The new reading after the change; none at all (macOS) shows none.
+        app.report(Report::Mixer(None), 17.0);
+        assert!((app.pill_rect(22.0).h - content::controls_height(1)).abs() < 0.5);
+    }
+
+    #[test]
     fn the_controls_panel_sets_volume_brightness_and_the_look() {
         use content::Tune;
         let mut app = App::new(Demo::None, false);
@@ -5152,7 +5237,11 @@ mod tests {
         app.set_time(NOW, 0.0);
         app.report(Report::Volume(0.3, false), 0.0);
         open_panel(&mut app, Panel::Controls, 0.0);
-        assert_eq!(app.take_ui_actions(), [UiAction::ReadBrightness], "opening asks for the screen's brightness");
+        assert_eq!(
+            app.take_ui_actions(),
+            [UiAction::ReadBrightness, UiAction::ReadMixer],
+            "opening asks for the screen's brightness and the apps' volumes"
+        );
         let shown = texts(&app, 9.0, &mut engine);
         assert!(shown.contains(&"Controls".to_string()) && shown.contains(&"30%".to_string()), "{shown:?}");
         assert!((app.pill_rect(9.0).h - content::controls_height(1)).abs() < 0.5, "one slider so far");
@@ -5165,7 +5254,7 @@ mod tests {
 
         // Dragging volume follows the pointer.
         let cr = app.content_rect(app.pill_rect(14.0));
-        let sliders = content::tune_sliders(cr, true, true);
+        let sliders = content::tune_sliders(cr, true, true, 0);
         let (vol, _) = sliders.iter().find(|(_, t)| *t == Tune::Volume).unwrap();
         let y = vol.y + vol.h / 2.0;
         app.handle(Event::PointerDown { x: vol.x + 10.0, y, button: Button::Primary }, 15.0);
