@@ -29,6 +29,7 @@ mod providers;
 mod quick;
 mod secrets;
 mod sound;
+mod switcher;
 
 use app::{AlarmOut, App, Demo, UiAction, FRAME, WINDOW};
 use content::NavControl;

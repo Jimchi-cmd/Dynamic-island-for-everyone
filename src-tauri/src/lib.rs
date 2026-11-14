@@ -96,6 +96,8 @@ pub fn allowed(args: &[String]) -> bool {
         ["timer", "start", dur, rest @ ..] => {
             !dur.starts_with('-') && rest.chunks(2).all(|kv| matches!(kv, ["--label", v] if !v.starts_with('-')))
         }
+        ["windows", "--json"] => true,
+        ["windows", "focus", id] => islet_core::switcher::valid_id(id),
         ["focus", "streak", "--json"] => true,
         ["focus", rest @ ..] => {
             rest.chunks(2).all(|kv| matches!(kv, ["--work" | "--break" | "--rounds", v] if !v.starts_with('-')))
@@ -398,6 +400,8 @@ mod tests {
         assert!(!allowed(&args(&["nav", "start", "X", "--from"])), "option without a value");
         assert!(!allowed(&args(&["nav", "start", "X", "--evil", "y"])));
         assert!(!allowed(&args(&["--mediaremote-probe"])));
+        assert!(allowed(&args(&["windows", "--json"])) && allowed(&args(&["windows", "focus", "0x55d1a2b0"])));
+        assert!(!allowed(&args(&["windows", "focus", "address:0x1"])), "only a plain window id");
         assert!(allowed(&args(&["alarm", "add", "07:30", "--label", "Gym", "--days", "weekdays"])));
         assert!(!allowed(&args(&["alarm", "add", "07:30", "--label"])), "option without a value");
         assert!(!allowed(&args(&["alarm", "remove", "all"])));

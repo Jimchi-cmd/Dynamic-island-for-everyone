@@ -36,6 +36,8 @@ Usage:
                                            Islet app scans; --new makes a fresh key
   islet phone status [--json]              is a phone paired, and where the island listens
   islet phone unpair                       forget the phone
+  islet windows [--json]                   the windows open now (on macOS: the apps), with their ids
+  islet windows focus <id>                 bring one of them to the front
   islet launcher                           open the quick launcher (apps, web, sums, conversions);
                                            bind it to a key in your system's keyboard settings
   islet note [<text>]                      add a line to Islet notes.txt in Documents (Islet Pro);
@@ -156,6 +158,11 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["phone", "status"] => Ok(phone_status(false)),
         ["phone", "status", "--json"] => Ok(phone_status(true)),
         ["phone", "unpair"] => phone_unpair(),
+        ["windows"] => crate::switcher::list().map(|w| windows_text(&w)),
+        ["windows", "--json"] => {
+            crate::switcher::list().and_then(|w| serde_json::to_string(&w).map_err(|e| e.to_string()))
+        }
+        ["windows", "focus", id] => crate::switcher::focus(id).map(|()| String::new()),
         ["launcher"] => {
             crate::open_settings("launcher");
             Ok(String::new())
@@ -1259,6 +1266,15 @@ fn phone_pair(new_key: bool, json: bool) -> Result<String, String> {
     }
     out.push_str(&format!("\nOr paste this into the app:\n{uri}\n\nKeep it private: it holds the pairing key."));
     Ok(out)
+}
+
+/// The open windows, one a line: the id `islet windows focus` takes, the
+/// app, and the title.
+fn windows_text(list: &[crate::switcher::OpenWindow]) -> String {
+    if list.is_empty() {
+        return "No windows are open.".into();
+    }
+    list.iter().map(|w| format!("{}\t{} — {}", w.id, w.app, w.title)).collect::<Vec<_>>().join("\n")
 }
 
 fn phone_status(json: bool) -> String {

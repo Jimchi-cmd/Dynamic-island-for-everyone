@@ -1,6 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { asLink, calculate, convert, formatNumber, matchApps, webSearchUrl, type AppEntry } from './lib/launcher';
+  import {
+    asLink,
+    calculate,
+    convert,
+    formatNumber,
+    matchApps,
+    matchWindows,
+    webSearchUrl,
+    type AppEntry,
+    type OpenWindow,
+  } from './lib/launcher';
   import * as api from './lib/bridge';
   import type { Info, Prefs, UpdateInfo } from './lib/bridge';
   import {
@@ -219,6 +229,7 @@
     }
     if (page === 'launcher') {
       if (!apps.length) void loadApps();
+      void loadWindows();
       // Type straight away, as in any launcher.
       queueMicrotask(() => launcherInput?.focus());
     }
@@ -226,10 +237,13 @@
 
   // Quick launcher: apps, web searches, sums and unit conversions.
   let apps = $state<AppEntry[]>([]);
+  // The windows open now, read each time the launcher opens (none where the
+  // desktop keeps them private).
+  let openWindows = $state<OpenWindow[]>([]);
   let launcherText = $state('');
   let launcherNote = $state('');
   let launcherInput: HTMLInputElement | null = $state(null);
-  type LauncherRow = { kind: 'answer' | 'app' | 'link' | 'web'; title: string; detail: string; run?: () => Promise<void> | void };
+  type LauncherRow = { kind: 'answer' | 'window' | 'app' | 'link' | 'web'; title: string; detail: string; run?: () => Promise<void> | void };
   const launcherRows = $derived.by((): LauncherRow[] => {
     const q = launcherText.trim();
     if (!q) return [];
@@ -255,6 +269,10 @@
     if (sum !== null) rows.push({ kind: 'answer', title: formatNumber(sum), detail: `${q} =` });
     const converted = convert(q);
     if (converted) rows.push({ kind: 'answer', title: converted.split(' = ')[1] ?? converted, detail: converted });
+    for (const w of matchWindows(openWindows, q)) {
+      const detail = w.title === w.app ? 'Switch to this app' : `Switch to · ${w.app}`;
+      rows.push({ kind: 'window', title: w.title, detail, run: () => api.islet(['windows', 'focus', w.id]).then(() => {}) });
+    }
     for (const a of matchApps(apps, q)) {
       rows.push({ kind: 'app', title: a.name, detail: 'App', run: () => api.launchApp(a.path) });
     }
@@ -269,6 +287,14 @@
       apps = await api.listApps();
     } catch (e) {
       launcherNote = api.message(e);
+    }
+  }
+
+  async function loadWindows() {
+    try {
+      openWindows = JSON.parse(await api.islet(['windows', '--json']));
+    } catch {
+      openWindows = [];
     }
   }
 
@@ -1944,7 +1970,7 @@
       {:else if page === 'launcher'}
         <h1>Launcher</h1>
         <p class="muted">
-          Type an app’s name, a sum (12 * 7.5), a conversion (5 km in miles) or anything to search the web for. Enter
+          Type an app’s or an open window’s name, a sum (12 * 7.5), a conversion (5 km in miles) or anything to search the web for. Enter
           opens the first result. Start with <code>note:</code> to save a quick note.
         </p>
         <div class="card">

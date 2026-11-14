@@ -338,6 +338,8 @@ Islet restarts itself to apply a new size, position, gap or display.
 
 Two more shortcuts sit under it: one opens the **launcher**, and one opens it ready for a **quick note** (Islet Pro): type the note and press Enter, and it is added to `Islet notes.txt`. In the launcher, starting with `note:` does the same. On native Wayland, bind keys to `islet launcher` and `islet note` instead.
 
+**Switching windows:** the launcher also finds the windows open now, by title or app; choosing one brings it to the front. It works on X11 desktops (through the window manager), sway, Hyprland and Windows. macOS lists apps rather than windows, because other apps' window titles need the Screen Recording permission. Other Wayland desktops (GNOME, KDE) keep their windows private, so only apps appear there. From a terminal: `islet windows` lists them with ids, and `islet windows focus <id>` brings one forward.
+
 **Settings → General → Start at login:** start Islet when you log in, or not.
 
 ---

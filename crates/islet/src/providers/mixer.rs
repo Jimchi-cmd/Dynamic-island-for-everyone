@@ -60,30 +60,6 @@ mod platform {
     };
     use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
 
-    fn process_name(pid: u32) -> Option<String> {
-        use windows::Win32::Foundation::CloseHandle;
-        use windows::Win32::System::Threading::{
-            OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
-        };
-        // SAFETY: plain calls; the handle is closed before returning.
-        unsafe {
-            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
-            let mut buf = [0u16; 512];
-            let mut len = buf.len() as u32;
-            let ok = QueryFullProcessImageNameW(
-                process,
-                PROCESS_NAME_WIN32,
-                windows::core::PWSTR(buf.as_mut_ptr()),
-                &mut len,
-            )
-            .is_ok();
-            let _ = CloseHandle(process);
-            let path = String::from_utf16_lossy(&buf[..len as usize]);
-            let base = path.rsplit('\\').next().unwrap_or(&path).to_string();
-            ok.then(|| base.strip_suffix(".exe").unwrap_or(&base).to_string())
-        }
-    }
-
     /// Each session playing on the default output, with its volume control.
     fn sessions() -> windows::core::Result<Vec<(u32, String, ISimpleAudioVolume)>> {
         // SAFETY: COM calls on this thread after CoInitializeEx.
@@ -103,7 +79,7 @@ mod platform {
                     continue;
                 }
                 let Ok(volume) = control.cast::<ISimpleAudioVolume>() else { continue };
-                let name = process_name(pid).unwrap_or_else(|| format!("App {pid}"));
+                let name = crate::switcher::process_name(pid).unwrap_or_else(|| format!("App {pid}"));
                 out.push((pid, name, volume));
             }
             Ok(out)

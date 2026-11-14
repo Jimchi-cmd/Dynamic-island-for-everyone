@@ -28,6 +28,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - **More shortcuts:** keys of your own for the launcher and for a quick note, beside the one that opens the island.
 - **Sleep timer** in the right-click menu; an "update available" pill; a quick **launcher** in Settings (`islet launcher`) for apps, web searches, sums and unit conversions.
 - **Settings:** a new look, with a page for Islet Pro, the timetable and the launcher.
+- **App switcher:** the launcher finds open windows by title or app and brings the one you choose to the front (X11, sway, Hyprland, Windows; apps on macOS). `islet windows` and `islet windows focus <id>` do the same from a terminal.
 - **Per-app volume** on the Controls panel: a slider for each app playing sound (up to four), on Linux (pactl) and Windows (Core Audio sessions).
 
 ### Fixed
@@ -35,7 +36,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - CI no longer fails when Ubuntu's package servers are unreachable.
 
 ### Not included
-- A speed test (it would need a third-party server), dragging files out of the shelf, and an app switcher. These need per-system code that could not be verified on Windows and macOS.
+- A speed test (it would need a third-party server) and dragging files out of the shelf. These need per-system code that could not be verified on Windows and macOS.
 - A per-app volume mixer on macOS: there is no public API for one app's volume.
 
 ## [0.2.0] - 2026-11-06
