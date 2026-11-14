@@ -2,7 +2,7 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.2] - 2026-11-14
 
 ### Fixed
 - Windows: a PowerShell or console window no longer flashes up when the island opens the Controls or system panels. The island reads brightness, battery health and network use with Windows' own tools, and each one used to open a visible window while it ran; now none of them do.

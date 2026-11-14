@@ -2160,7 +2160,7 @@ checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
 
 [[package]]
 name = "islet"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "accesskit",
  "accesskit_unix",
@@ -2200,7 +2200,7 @@ dependencies = [
 
 [[package]]
 name = "islet-core"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "aes-gcm",
  "serde",
@@ -2210,7 +2210,7 @@ dependencies = [
 
 [[package]]
 name = "islet-mediaremote"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "block2",
  "dispatch2",
@@ -2221,7 +2221,7 @@ dependencies = [
 
 [[package]]
 name = "islet-perf"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "libc",
  "serde",
@@ -2232,7 +2232,7 @@ dependencies = [
 
 [[package]]
 name = "islet-render"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "cosmic-text",
  "islet-core",
@@ -2242,7 +2242,7 @@ dependencies = [
 
 [[package]]
 name = "islet-settings"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "islet-core",
  "serde",
