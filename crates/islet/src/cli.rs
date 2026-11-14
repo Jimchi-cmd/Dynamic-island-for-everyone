@@ -36,6 +36,8 @@ Usage:
                                            Islet app scans; --new makes a fresh key
   islet phone status [--json]              is a phone paired, and where the island listens
   islet phone unpair                       forget the phone
+  islet speedtest [--json]                 measure the connection (about 36 MB, with Cloudflare's
+                                           speed-test servers; only when you run it)
   islet windows [--json]                   the windows open now (on macOS: the apps), with their ids
   islet windows focus <id>                 bring one of them to the front
   islet launcher                           open the quick launcher (apps, web, sums, conversions);
@@ -158,6 +160,16 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["phone", "status"] => Ok(phone_status(false)),
         ["phone", "status", "--json"] => Ok(phone_status(true)),
         ["phone", "unpair"] => phone_unpair(),
+        ["speedtest"] => crate::net::speed_test().map(|r| {
+            format!(
+                "{}\n({:.0} MB used, with Cloudflare's speed-test servers)",
+                islet_core::speedtest::describe(&r),
+                r.bytes_used as f64 / 1e6
+            )
+        }),
+        ["speedtest", "--json"] => {
+            crate::net::speed_test().and_then(|r| serde_json::to_string(&r).map_err(|e| e.to_string()))
+        }
         ["windows"] => crate::switcher::list().map(|w| windows_text(&w)),
         ["windows", "--json"] => {
             crate::switcher::list().and_then(|w| serde_json::to_string(&w).map_err(|e| e.to_string()))

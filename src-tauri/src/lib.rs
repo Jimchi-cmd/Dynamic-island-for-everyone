@@ -96,7 +96,7 @@ pub fn allowed(args: &[String]) -> bool {
         ["timer", "start", dur, rest @ ..] => {
             !dur.starts_with('-') && rest.chunks(2).all(|kv| matches!(kv, ["--label", v] if !v.starts_with('-')))
         }
-        ["windows", "--json"] => true,
+        ["windows", "--json"] | ["speedtest", "--json"] => true,
         ["windows", "focus", id] => islet_core::switcher::valid_id(id),
         ["focus", "streak", "--json"] => true,
         ["focus", rest @ ..] => {

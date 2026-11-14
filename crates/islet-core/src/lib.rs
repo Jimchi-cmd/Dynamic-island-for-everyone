@@ -24,6 +24,7 @@ pub mod pro;
 pub mod quicknote;
 pub mod screenshot;
 pub mod shelf;
+pub mod speedtest;
 pub mod spring;
 pub mod stopwatch;
 pub mod streak;

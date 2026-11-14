@@ -6,13 +6,18 @@
 use std::time::Duration;
 
 pub fn agent() -> ureq::Agent {
+    agent_for(15)
+}
+
+/// The same, with its own time limit for each request.
+fn agent_for(secs: u64) -> ureq::Agent {
     let tls = ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier);
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     let tls = tls.provider(ureq::tls::TlsProvider::NativeTls);
     ureq::Agent::config_builder()
         .tls_config(tls.build())
         .http_status_as_error(false)
-        .timeout_global(Some(Duration::from_secs(15)))
+        .timeout_global(Some(Duration::from_secs(secs)))
         .user_agent(concat!("islet/", env!("CARGO_PKG_VERSION")))
         .build()
         .into()
@@ -84,6 +89,65 @@ pub fn parse_release(json: &str) -> Result<(String, String), String> {
     let tag = v["tag_name"].as_str().ok_or("release has no tag")?;
     let page = v["html_url"].as_str().unwrap_or_default();
     Ok((tag.to_string(), page.to_string()))
+}
+
+/// Run the speed test (see `islet_core::speedtest`): latency, then a timed
+/// download and upload. Only ever run when the user asks for it.
+pub fn speed_test() -> Result<islet_core::speedtest::SpeedResult, String> {
+    use islet_core::speedtest::*;
+    use std::io::Read;
+    use std::time::Instant;
+    let agent = agent_for(30);
+    let call = |r: Result<ureq::http::Response<ureq::Body>, ureq::Error>| {
+        let r = r.map_err(|err| format!("speed test: {err}"))?;
+        if r.status().is_success() {
+            Ok(r)
+        } else {
+            Err(format!("the speed-test server answered {}; try again later", r.status()))
+        }
+    };
+    let mut used = 0u64;
+
+    // Latency: empty downloads on the one connection (the first opens it).
+    let mut pings = Vec::new();
+    for i in 0..PINGS {
+        let start = Instant::now();
+        let mut r = call(agent.get(format!("{DOWN_URL}0")).call())?;
+        let _ = r.body_mut().read_to_vec();
+        if i > 0 {
+            pings.push(start.elapsed().as_secs_f64() * 1000.0);
+        }
+    }
+    let latency_ms = median(&pings).unwrap_or(0.0);
+
+    // Download: a warm-up, then the timed one (cut short on a slow line).
+    let mut r = call(agent.get(format!("{DOWN_URL}{WARM_BYTES}")).call())?;
+    used += r.body_mut().with_config().limit(WARM_BYTES + 1024).read_to_vec().map_or(0, |v| v.len() as u64);
+    let start = Instant::now();
+    let mut r = call(agent.get(format!("{DOWN_URL}{DOWN_BYTES}")).call())?;
+    let mut reader = r.body_mut().with_config().limit(DOWN_BYTES + 1024).reader();
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut got = 0u64;
+    while start.elapsed().as_secs_f64() < MAX_SECS {
+        match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => got += n as u64,
+            Err(err) => return Err(format!("speed test: {err}")),
+        }
+    }
+    let down_mbps = mbps(got, start.elapsed().as_secs_f64());
+    used += got;
+    drop(reader);
+
+    // Upload: zeros, timed until the server has them all.
+    let body = vec![0u8; UP_BYTES];
+    let start = Instant::now();
+    let mut r = call(agent.post(UP_URL).send(&body[..]))?;
+    let _ = r.body_mut().read_to_vec();
+    let up_mbps = mbps(UP_BYTES as u64, start.elapsed().as_secs_f64());
+    used += UP_BYTES as u64;
+
+    Ok(SpeedResult { latency_ms, down_mbps, up_mbps, bytes_used: used })
 }
 
 #[cfg(test)]

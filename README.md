@@ -58,7 +58,7 @@ Islet isn't code-signed yet, so browsers, Windows SmartScreen and macOS Gatekeep
 ## Privacy
 
 - No accounts, no analytics, no telemetry.
-- Islet uses the network only for features you turn on: Spotify Connect (if you link it), your calendar link (every 15 minutes), weather (Open-Meteo, hourly, only the place you chose), lyrics (LRCLIB, once per song: its title, artist, album and length), the navigation ETA (straight to Google, with your key) and update checks (off by default).
+- Islet uses the network only for features you turn on: Spotify Connect (if you link it), your calendar link (every 15 minutes), weather (Open-Meteo, hourly, only the place you chose), lyrics (LRCLIB, once per song: its title, artist, album and length), the navigation ETA (straight to Google, with your key), update checks (off by default), and the speed test (Cloudflare's speed-test servers, only when you press its button).
 - Your Google key is kept in the OS keychain, never in a file. Route results are never stored.
 - Wi-Fi and Bluetooth lists load only when you open them.
 - Destination suggestions (Google Places, your key) are requested only while you type in Settings.

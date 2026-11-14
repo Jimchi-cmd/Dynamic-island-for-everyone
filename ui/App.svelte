@@ -290,6 +290,25 @@
     }
   }
 
+  // The speed test: run only when its button is pressed.
+  type Speed = { latencyMs: number; downMbps: number; upMbps: number; bytesUsed: number };
+  let speed = $state<Speed | null>(null);
+  let speedRunning = $state(false);
+  let speedNote = $state('');
+  const formatMbps = (v: number) => (v < 100 ? v.toFixed(1) : Math.round(v).toString());
+
+  async function runSpeedTest() {
+    speedRunning = true;
+    speedNote = '';
+    try {
+      speed = JSON.parse(await api.islet(['speedtest', '--json']));
+    } catch (e) {
+      speedNote = api.message(e);
+    } finally {
+      speedRunning = false;
+    }
+  }
+
   async function loadWindows() {
     try {
       openWindows = JSON.parse(await api.islet(['windows', '--json']));
@@ -1718,6 +1737,24 @@
             <p class="muted">No paired devices. Pair new ones in your system's Bluetooth settings.</p>
           {/each}
         </div>
+        <div class="card">
+          <div class="row">
+            <h2>Speed test</h2>
+            <button disabled={speedRunning} onclick={runSpeedTest}>{speedRunning ? 'Testing…' : 'Test speed'}</button>
+          </div>
+          {#if speed}
+            <div class="speed" role="status">
+              <span><b>{formatMbps(speed.downMbps)}</b> Mbps down</span>
+              <span><b>{formatMbps(speed.upMbps)}</b> Mbps up</span>
+              <span><b>{Math.round(speed.latencyMs)}</b> ms</span>
+            </div>
+          {/if}
+          {#if speedNote}<p class="small" role="status">{speedNote}</p>{/if}
+          <p class="muted small">
+            Runs only when you press the button: it downloads about 25 MB and uploads 10 MB with Cloudflare’s public
+            speed-test servers (speed.cloudflare.com), so mind a metered connection.
+          </p>
+        </div>
         {#if connNote}<p class="small" role="status">{connNote}</p>{/if}
       {:else if page === 'timer'}
         <h1>Timer &amp; focus</h1>
@@ -2673,6 +2710,15 @@
     font-size: 17px;
     padding: 10px 12px;
     margin-bottom: 6px;
+  }
+  .speed {
+    display: flex;
+    gap: 24px;
+    margin: 4px 0 8px;
+  }
+  .speed b {
+    font-size: 1.4em;
+    font-variant-numeric: tabular-nums;
   }
   .launcher-row {
     display: flex;
