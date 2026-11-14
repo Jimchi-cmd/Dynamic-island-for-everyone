@@ -329,8 +329,10 @@ Shows your arrival time with live traffic, and hands off to Google Maps or Waze.
 - **Size:** small, medium or large.
 - **Display:** which screen the island is on (with more than one), or **All displays** for an island on each. The extra islands show music, calls, batteries, downloads and Control Centre; alarms, timers and the shortcut stay with the main island. Plug in a new screen? Choose the setting again (or restart Islet) to give it an island.
 - **Gap above the island:** move it down from the top edge (0–40 px).
+- **Position:** top centre (like the iPhone), top left, top right, or bottom centre, where it grows upward. Notched Macs keep it on the notch only at top centre.
+- **A size for each display:** with **All displays** chosen, each display can have its own size.
 
-Islet restarts itself to apply a new size, gap or display.
+Islet restarts itself to apply a new size, position, gap or display.
 
 **Settings → General → Shortcut:** click the box, press the keys you want (for example **Ctrl+Alt+I**) and click **Save**; they then open and close the island from the keyboard. It needs Ctrl, Alt or the Windows/Command key. On native Wayland desktops, set a shortcut in your desktop's keyboard settings that runs `islet toggle` instead.
 

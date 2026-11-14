@@ -89,7 +89,14 @@ impl Wayland {
     /// Connect and create the overlay surface. Fails (so X11 is used) when
     /// there's no Wayland session or the compositor lacks layer-shell.
     pub fn create(spec: WindowSpec) -> Result<Self> {
-        Self::create_anchored(spec, Anchor::TOP)
+        use islet_core::geometry::Placement;
+        let anchor = match super::placement() {
+            Placement::Top => Anchor::TOP,
+            Placement::TopLeft => Anchor::TOP | Anchor::LEFT,
+            Placement::TopRight => Anchor::TOP | Anchor::RIGHT,
+            Placement::Bottom => Anchor::BOTTOM,
+        };
+        Self::create_anchored(spec, anchor)
     }
 
     fn create_anchored(spec: WindowSpec, anchor: Anchor) -> Result<Self> {

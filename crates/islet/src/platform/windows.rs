@@ -12,7 +12,7 @@
 //!   which turns 60 fps into about 32 (the island felt laggy).
 
 use super::{Backend, Button, Event, Key, Result, Waker, WindowSpec};
-use islet_core::geometry::{top_center, Rect};
+use islet_core::geometry::Rect;
 use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::time::Instant;
@@ -436,7 +436,7 @@ impl Win32 {
         self.scale = scale;
         SCALE.with(|s| s.set(scale));
         self.size = ((self.spec.width * scale).round() as u32, (self.spec.height * scale).round() as u32);
-        let (x, y) = top_center(mpos, msize, self.size.0);
+        let (x, y) = super::placement().origin(mpos, msize, self.size);
         self.pos = POINT { x, y };
         // SAFETY: GDI objects are created and selected on this thread and
         // released in drop/reconfigure; `bits` stays valid while `dib` lives.

@@ -115,10 +115,18 @@ fn run() -> platform::Result<()> {
     } else {
         Default::default()
     };
-    let k = layout_prefs.size_factor();
-    let top = layout_prefs.top_offset();
     let display = layout_prefs.display.clone();
     let all_displays = display == islet_core::prefs::ALL_DISPLAYS;
+    // The display this island is on, for its own size there.
+    let here = match &mirror {
+        Some(name) => name.clone(),
+        None if display.is_empty() || all_displays => platform::displays().into_iter().next().unwrap_or_default(),
+        None => display.clone(),
+    };
+    let k = layout_prefs.size_factor_on(&here);
+    let top = layout_prefs.top_offset();
+    let placement = layout_prefs.placement();
+    platform::set_placement(placement);
     platform::set_preferred_display(match &mirror {
         Some(name) => Some(name.clone()),
         None if all_displays => None, // the main island takes the primary display
@@ -136,8 +144,11 @@ fn run() -> platform::Result<()> {
         .ok()
         .and_then(|v| v.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))))
         .or(win.notch());
+    // The notch only matters for an island at the top centre.
+    let notch = notch.filter(|_| placement == islet_core::geometry::Placement::Top);
     // A notched Mac's island hangs from the notch: no offset there.
     app.set_top(if notch.is_some() { 0.0 } else { top });
+    app.set_placement(placement, 0.0);
     app.set_notch(notch.map(|(w, h)| (w / k, h / k)), 0.0);
     trace("notch checked");
     let epoch = Instant::now();
@@ -370,8 +381,11 @@ fn run() -> platform::Result<()> {
                     // A new size or gap needs a new window: start afresh (a
                     // mirror is restarted by the main island instead).
                     let p = app.prefs();
-                    let moved = (p.size_factor() - k).abs() > 1e-9
+                    let moved = (p.size_factor_on(&here) - k).abs() > 1e-9
                         || (p.top_offset() - top).abs() > 1e-9
+                        || p.placement() != placement
+                        // Another display's size: its mirror starts afresh with the main island.
+                        || p.display_sizes != layout_prefs.display_sizes
                         || (mirror.is_none() && p.display != display);
                     if moved && mirror.is_none() {
                         if let Ok(exe) = std::env::current_exe() {

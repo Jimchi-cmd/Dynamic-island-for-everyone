@@ -371,7 +371,19 @@
     }
   }
 
-  async function setLook(what: 'accent' | 'style' | 'shape' | 'clock' | 'size' | 'offset' | 'display', value: string) {
+  async function displaySize(display: string, size: string) {
+    try {
+      await api.islet(['look', 'size', size, '--display', display]);
+      await loadIslandPrefs();
+    } catch (e) {
+      problem = api.message(e);
+    }
+  }
+
+  async function setLook(
+    what: 'accent' | 'style' | 'shape' | 'clock' | 'size' | 'position' | 'offset' | 'display',
+    value: string,
+  ) {
     try {
       await api.islet(['look', what, value]);
       await loadIslandPrefs();
@@ -1328,6 +1340,38 @@
             </div>
           {/if}
           <div class="net">
+            <span class="name">Position</span>
+            <select
+              aria-label="Where the island sits"
+              value={islandPrefs?.position ?? 'top'}
+              disabled={!islandPrefs}
+              onchange={(e) => setLook('position', e.currentTarget.value)}
+            >
+              <option value="top">Top centre</option>
+              <option value="top-left">Top left</option>
+              <option value="top-right">Top right</option>
+              <option value="bottom">Bottom centre</option>
+            </select>
+          </div>
+          {#if displays.length > 1 && islandPrefs?.display === 'all'}
+            <p class="muted small">A size for each display:</p>
+            {#each displays as d (d)}
+              <div class="net">
+                <span class="name">{d}</span>
+                <select
+                  aria-label={`Island size on ${d}`}
+                  value={islandPrefs?.displaySizes?.[d] ?? 'default'}
+                  onchange={(e) => displaySize(d, e.currentTarget.value)}
+                >
+                  <option value="default">Same as above</option>
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </select>
+              </div>
+            {/each}
+          {/if}
+          <div class="net">
             <span class="name">Gap above the island</span>
             <input
               type="range"
@@ -1341,7 +1385,7 @@
             />
             <span class="muted small">{islandPrefs?.offset ?? 0} px</span>
           </div>
-          <p class="muted small">Islet restarts itself to apply a new size, gap or display. Notched Macs always hang the island from the notch.</p>
+          <p class="muted small">Islet restarts itself to apply a new size, position, gap or display. Notched Macs always hang the island from the notch.</p>
         </div>
         <div class="card">
           <h2>Shortcut</h2>

@@ -88,6 +88,10 @@ pub fn allowed(args: &[String]) -> bool {
             !q.starts_with('-') && tok.len() <= 64 && tok.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
         }
         ["look", "display", name] => !name.starts_with('-'),
+        ["look", "position", name] => islet_core::geometry::Placement::parse(name).is_some(),
+        ["look", "size", size, "--display", name] => {
+            (*size == "default" || islet_core::prefs::SIZES.iter().any(|(n, _)| n == size)) && !name.starts_with('-')
+        }
         ["look", "offset", px] => px.parse::<u32>().is_ok_and(|v| v <= islet_core::prefs::MAX_OFFSET),
         ["timer", "start", dur, rest @ ..] => {
             !dur.starts_with('-') && rest.chunks(2).all(|kv| matches!(kv, ["--label", v] if !v.starts_with('-')))

@@ -7,7 +7,7 @@
 //! - the loop sleeps in poll(2) on the X socket: zero wakeups when idle.
 
 use super::{Backend, Button, Event, Key, Result, Waker, WindowSpec};
-use islet_core::geometry::{top_center, Rect};
+use islet_core::geometry::Rect;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::sync::Arc;
 use std::time::Instant;
@@ -198,7 +198,7 @@ impl Backend for X11 {
         let scale = read_scale(&conn, screen.root);
         let size = ((spec.width * scale).round() as u32, (spec.height * scale).round() as u32);
         let (mx, my, mw, mh) = primary_monitor(&conn, &screen);
-        let (x, y) = top_center((mx, my), (mw, mh), size.0);
+        let (x, y) = super::placement().origin((mx, my), (mw, mh), size);
 
         let (depth, visual) = match find_argb_visual(&screen) {
             Some(v) => (32, v),
@@ -818,6 +818,19 @@ mod tests {
         let island = island.unwrap();
         assert!(island.pos.0 >= i32::from(half), "on the right monitor: {:?}", island.pos);
         drop(island);
+        // At the bottom right of that monitor's screen edge, and at its top-left corner.
+        use islet_core::geometry::Placement;
+        super::super::set_preferred_display(Some("ISLET-RIGHT".into()));
+        super::super::set_placement(Placement::Bottom);
+        let bottom = X11::create(WindowSpec { width: 420.0, height: 260.0 }).unwrap();
+        super::super::set_placement(Placement::TopLeft);
+        let corner = X11::create(WindowSpec { width: 420.0, height: 260.0 }).unwrap();
+        super::super::set_placement(Placement::Top);
+        super::super::set_preferred_display(None);
+        let (_, wh) = bottom.size;
+        assert_eq!(bottom.pos.1, i32::from(h) - wh as i32, "flush with the bottom: {:?}", bottom.pos);
+        assert_eq!(corner.pos, (i32::from(half), 0), "the monitor's top-left corner");
+        drop((bottom, corner));
         for name in [left, right] {
             let _ = conn.randr_delete_monitor(s.root, name);
         }

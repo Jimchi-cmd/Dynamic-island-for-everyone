@@ -30,6 +30,8 @@ use std::time::Duration;
 pub const WINDOW: (f64, f64) = (420.0, 260.0);
 /// Gap between the screen's top edge and the pill.
 pub const TOP_GAP: f64 = 0.0;
+/// Gap between the island and the screen's side, in a corner.
+const CORNER_MARGIN: f64 = 16.0;
 const SMOOTHING: f32 = 0.6;
 
 /// Frame interval while a spring is moving (60 fps)…
@@ -347,6 +349,8 @@ pub struct App {
     /// The pointer just left a hovered island that showed its status
     /// strip: the strip fades as the pill shrinks back.
     strip_linger: bool,
+    /// Where on its display the island sits.
+    placement: islet_core::geometry::Placement,
     /// The app in front, as the system names it ("" until it says).
     front_app: String,
     /// The Wi-Fi state has been read once: from then on a new network is news.
@@ -454,6 +458,7 @@ impl App {
             strip_linger: false,
             wifi_seen: false,
             front_app: String::new(),
+            placement: Default::default(),
             call_press: false,
             join_press: None,
         };
@@ -3183,7 +3188,26 @@ impl App {
     }
 
     fn pill_at(&self, w: f64, h: f64) -> Rect {
-        Rect::new((WINDOW.0 - w) / 2.0, self.top, w, h)
+        use islet_core::geometry::Placement;
+        // In a corner the island keeps a small margin from the screen's
+        // side; at the bottom it grows upward.
+        let x = match self.placement {
+            Placement::TopLeft => CORNER_MARGIN,
+            Placement::TopRight => WINDOW.0 - w - CORNER_MARGIN,
+            Placement::Top | Placement::Bottom => (WINDOW.0 - w) / 2.0,
+        };
+        let y = if self.placement.from_bottom() { WINDOW.1 - h } else { self.top };
+        Rect::new(x, y, w, h)
+    }
+
+    /// Where on its display the island sits (it starts there: see main).
+    pub fn set_placement(&mut self, p: islet_core::geometry::Placement, t: f64) {
+        self.placement = p;
+        let dims = self.target_dims(self.island.presentation(), t);
+        for (a, v) in [(&mut self.w, dims.0), (&mut self.h, dims.1), (&mut self.r, dims.2)] {
+            a.snap(v);
+        }
+        self.anim_region = self.target_bounds();
     }
 
     /// Where the pill is heading. Buttons are hit-tested here, so a tap
@@ -3291,7 +3315,8 @@ impl App {
     /// Square top corners: a Mac's notch, or the "notch" shape (Islet Pro)
     /// while the island touches the top of the screen.
     fn flat_top(&self) -> bool {
-        self.notch.is_some() || (self.pro && self.prefs.shape == "notch" && self.top <= 0.0)
+        self.notch.is_some()
+            || (self.pro && self.prefs.shape == "notch" && self.top <= 0.0 && !self.placement.from_bottom())
     }
 
     pub fn frame(&self, t: f64) -> PillFrame {
@@ -3752,6 +3777,37 @@ mod tests {
         app.tick(9.0);
         app.handle(Event::Fullscreen(false), 9.0);
         assert!(app.frame(11.0).opacity > 0.99);
+    }
+
+    #[test]
+    fn the_island_can_sit_in_a_corner_or_at_the_bottom() {
+        use islet_core::geometry::Placement;
+        let mut engine = TextEngine::new();
+        for (placement, check) in
+            [(Placement::TopLeft, "left"), (Placement::TopRight, "right"), (Placement::Bottom, "bottom")]
+        {
+            let mut app = App::new(Demo::None, false);
+            app.set_time(NOW, 0.0);
+            app.set_placement(placement, 0.0);
+            let idle = app.pill_rect(0.0);
+            match check {
+                "left" => assert!((idle.x - CORNER_MARGIN).abs() < 0.01, "{idle:?}"),
+                "right" => assert!((idle.right() - (WINDOW.0 - CORNER_MARGIN)).abs() < 0.01, "{idle:?}"),
+                _ => assert!((idle.bottom() - WINDOW.1).abs() < 0.01, "{idle:?}"),
+            }
+            // Opened, it keeps the same edge, and its buttons are where it is.
+            click(&mut app, 1.0);
+            let open = app.pill_rect(6.0);
+            match check {
+                "left" => assert!((open.x - CORNER_MARGIN).abs() < 0.01),
+                "right" => assert!((open.right() - (WINDOW.0 - CORNER_MARGIN)).abs() < 0.01),
+                _ => assert!((open.bottom() - WINDOW.1).abs() < 0.01 && open.y < idle.y, "it grows upward"),
+            }
+            assert!(texts(&app, 6.0, &mut engine).iter().any(|s| s == "14:05"), "the card draws: {placement:?}");
+            let (x, y) = centre(&app, 6.0);
+            assert!(app.input_region(6.0).contains(x, y));
+            app.handle(Event::Key(Key::Escape), 7.0);
+        }
     }
 
     #[test]

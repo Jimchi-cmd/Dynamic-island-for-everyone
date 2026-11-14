@@ -70,9 +70,71 @@ pub fn top_center(monitor_pos: (i32, i32), monitor_size: (u32, u32), window_widt
     (monitor_pos.0 + (free / 2) as i32, monitor_pos.1)
 }
 
+/// Where on its display the island sits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Placement {
+    /// Top centre, like the iPhone's.
+    #[default]
+    Top,
+    TopLeft,
+    TopRight,
+    /// Bottom centre: it grows upward.
+    Bottom,
+}
+
+impl Placement {
+    pub const NAMES: [&'static str; 4] = ["top", "top-left", "top-right", "bottom"];
+
+    pub fn parse(name: &str) -> Option<Self> {
+        Some(match name {
+            "top" => Self::Top,
+            "top-left" => Self::TopLeft,
+            "top-right" => Self::TopRight,
+            "bottom" => Self::Bottom,
+            _ => return None,
+        })
+    }
+
+    pub fn name(self) -> &'static str {
+        Self::NAMES[self as usize]
+    }
+
+    /// The window's top-left physical position on a monitor.
+    pub fn origin(self, monitor_pos: (i32, i32), monitor_size: (u32, u32), window: (u32, u32)) -> (i32, i32) {
+        let (mx, my) = monitor_pos;
+        let free_w = monitor_size.0 as i64 - window.0 as i64;
+        let free_h = monitor_size.1 as i64 - window.1 as i64;
+        match self {
+            Self::Top => top_center(monitor_pos, monitor_size, window.0),
+            Self::TopLeft => (mx, my),
+            Self::TopRight => (mx + free_w as i32, my),
+            Self::Bottom => (mx + (free_w / 2) as i32, my + free_h as i32),
+        }
+    }
+
+    /// The island grows upward from the bottom of its window.
+    pub fn from_bottom(self) -> bool {
+        self == Self::Bottom
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn placements_put_the_window_where_they_say() {
+        let (pos, size, win) = ((1920, 0), (2560, 1440), (400, 300));
+        assert_eq!(Placement::Top.origin(pos, size, win), (1920 + 1080, 0));
+        assert_eq!(Placement::TopLeft.origin(pos, size, win), (1920, 0));
+        assert_eq!(Placement::TopRight.origin(pos, size, win), (1920 + 2160, 0));
+        assert_eq!(Placement::Bottom.origin(pos, size, win), (1920 + 1080, 1140));
+        for name in Placement::NAMES {
+            assert_eq!(Placement::parse(name).map(Placement::name), Some(name));
+        }
+        assert_eq!(Placement::parse("side"), None);
+        assert!(Placement::Bottom.from_bottom() && !Placement::TopLeft.from_bottom());
+    }
 
     #[test]
     fn physical_rounds_outward() {

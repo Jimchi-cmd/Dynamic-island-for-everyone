@@ -96,6 +96,12 @@ pub struct IslandPrefs {
     /// Gap between the top of the screen and the island, in px (0–40;
     /// applies on restart; ignored on notched Macs, where it hangs from the notch).
     pub offset: u32,
+    /// Where on the display: "top", "top-left", "top-right" or "bottom"
+    /// (see `geometry::Placement`; applies on restart).
+    pub position: String,
+    /// A size for particular displays (name → "small", "medium" or
+    /// "large"), over `size`.
+    pub display_sizes: std::collections::BTreeMap<String, String>,
     /// The display to show the island on, by name ("" = the primary one,
     /// `ALL_DISPLAYS` = one island on every display).
     pub display: String,
@@ -244,6 +250,8 @@ impl Default for IslandPrefs {
             accent: "blue".into(),
             style: "black".into(),
             size: "medium".into(),
+            position: "top".into(),
+            display_sizes: Default::default(),
             offset: 0,
             display: String::new(),
             world_clocks: Vec::new(),
@@ -361,6 +369,18 @@ impl IslandPrefs {
         SIZES.iter().find(|(n, _)| n.eq_ignore_ascii_case(&self.size)).map_or(1.0, |(_, k)| *k)
     }
 
+    /// The size on one display: its own, if it has one, else the usual.
+    pub fn size_factor_on(&self, display: &str) -> f64 {
+        match self.display_sizes.get(display) {
+            Some(size) => SIZES.iter().find(|(n, _)| n.eq_ignore_ascii_case(size)).map_or(1.0, |(_, k)| *k),
+            None => self.size_factor(),
+        }
+    }
+
+    pub fn placement(&self) -> crate::geometry::Placement {
+        crate::geometry::Placement::parse(&self.position).unwrap_or_default()
+    }
+
     pub fn top_offset(&self) -> f64 {
         f64::from(self.offset.min(MAX_OFFSET))
     }
@@ -377,6 +397,19 @@ pub fn parse_on_off(v: &str) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_display_can_have_its_own_size() {
+        let mut p = IslandPrefs { size: "large".into(), ..IslandPrefs::default() };
+        p.display_sizes.insert("DELL U2720Q".into(), "small".into());
+        assert!((p.size_factor_on("DELL U2720Q") - 0.88).abs() < 1e-9);
+        assert!((p.size_factor_on("Built-in display") - 1.15).abs() < 1e-9, "the others keep the usual size");
+        assert_eq!(p.placement(), crate::geometry::Placement::Top);
+        p.position = "bottom".into();
+        assert_eq!(p.placement(), crate::geometry::Placement::Bottom);
+        p.position = "nonsense".into();
+        assert_eq!(p.placement(), crate::geometry::Placement::Top);
+    }
 
     #[test]
     fn look_and_layout() {

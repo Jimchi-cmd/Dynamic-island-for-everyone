@@ -305,10 +305,18 @@ impl Backend for Mac {
             .ok_or("no screens")?;
         let sf = screen.frame();
         let scale = screen.backingScaleFactor();
-        let frame = NSRect::new(
-            NSPoint::new(sf.origin.x + (sf.size.width - spec.width) / 2.0, sf.origin.y + sf.size.height - spec.height),
-            NSSize::new(spec.width, spec.height),
-        );
+        // Cocoa's origin is the bottom-left corner of the screen.
+        use islet_core::geometry::Placement;
+        let (left, centre, right) =
+            (sf.origin.x, sf.origin.x + (sf.size.width - spec.width) / 2.0, sf.origin.x + sf.size.width - spec.width);
+        let top = sf.origin.y + sf.size.height - spec.height;
+        let origin = match super::placement() {
+            Placement::Top => NSPoint::new(centre, top),
+            Placement::TopLeft => NSPoint::new(left, top),
+            Placement::TopRight => NSPoint::new(right, top),
+            Placement::Bottom => NSPoint::new(centre, sf.origin.y),
+        };
+        let frame = NSRect::new(origin, NSSize::new(spec.width, spec.height));
 
         let panel = NSPanel::initWithContentRect_styleMask_backing_defer(
             NSPanel::alloc(mtm),

@@ -44,6 +44,20 @@ pub(crate) fn preferred_display() -> Option<String> {
     DISPLAY.lock().ok()?.clone()
 }
 
+/// Where on its display the island goes (Settings → Look).
+static PLACEMENT: std::sync::Mutex<islet_core::geometry::Placement> =
+    std::sync::Mutex::new(islet_core::geometry::Placement::Top);
+
+pub fn set_placement(p: islet_core::geometry::Placement) {
+    if let Ok(mut current) = PLACEMENT.lock() {
+        *current = p;
+    }
+}
+
+pub(crate) fn placement() -> islet_core::geometry::Placement {
+    PLACEMENT.lock().map(|p| *p).unwrap_or_default()
+}
+
 /// Names of the connected displays, primary first.
 pub fn displays() -> Vec<String> {
     #[cfg(target_os = "linux")]

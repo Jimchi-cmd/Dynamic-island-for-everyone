@@ -291,6 +291,10 @@ export interface IslandPrefs {
   style: string;
   cardHidden: string[];
   size: string;
+  /** "top", "top-left", "top-right" or "bottom". */
+  position: string;
+  /** A size for particular displays, over `size`. */
+  displaySizes: Record<string, string>;
   offset: number;
   display: string;
 }

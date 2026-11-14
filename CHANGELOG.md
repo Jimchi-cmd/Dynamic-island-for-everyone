@@ -23,6 +23,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - **Navigation:** an arrow for the first turn.
 - **Wi-Fi pop-up:** "Connected" and the network's name when Wi-Fi joins a network.
 - **Clipboard history** keeps pictures too (with thumbnails), and never keeps copies from the apps you list (password managers are listed already).
+- **Per-app rules:** the island steps aside while apps you list are in front (a game, Steam, slides).
+- **Position and size per display:** top centre, top left, top right or bottom; and its own size on each display.
 - **More shortcuts:** keys of your own for the launcher and for a quick note, beside the one that opens the island.
 - **Sleep timer** in the right-click menu; an "update available" pill; a quick **launcher** in Settings (`islet launcher`) for apps, web searches, sums and unit conversions.
 - **Settings:** a new look, with a page for Islet Pro, the timetable and the launcher.
@@ -32,7 +34,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - CI no longer fails when Ubuntu's package servers are unreachable.
 
 ### Not included
-- A speed test (it would need a third-party server), dragging files out of the shelf, an app switcher, a per-app volume mixer, per-app rules, and placing the island at the bottom or side. These need per-system code that could not be verified on Windows and macOS.
+- A speed test (it would need a third-party server), dragging files out of the shelf, an app switcher, and a per-app volume mixer. These need per-system code that could not be verified on Windows and macOS.
 
 ## [0.2.0] - 2026-11-06
 

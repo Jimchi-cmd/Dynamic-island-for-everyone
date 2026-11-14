@@ -108,6 +108,10 @@ Usage:
   islet card                               the clock card's buttons
   islet card show|hide <button>            timer, calendar, screenshot, lock, system, todo, stopwatch
   islet look size small|medium|large       the island's size
+  islet look size <size>|default --display <name>
+                                           a size for one display
+  islet look position top|top-left|top-right|bottom
+                                           where on the display the island sits
   islet look offset <px>                   gap above the island, 0–40 px
   islet look display <name>|primary|all    which display (names from `islet displays`), or all
   islet displays [--json]                  connected displays, primary first
@@ -317,6 +321,27 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["card", show @ ("show" | "hide"), button] => set_look(|p| {
             p.set_card_button(button, *show == "show")?;
             Ok(format!("{button}: {}.", if *show == "show" { "shown" } else { "hidden" }))
+        }),
+        ["look", "position", name] => set_look(|p| {
+            let place = islet_core::geometry::Placement::parse(name)
+                .ok_or_else(|| format!("position is one of: {}", islet_core::geometry::Placement::NAMES.join(", ")))?;
+            p.position = place.name().into();
+            Ok(format!("Position: {}.", place.name()))
+        }),
+        ["look", "size", name, "--display", display] => set_look(|p| {
+            if *name == "default" {
+                p.display_sizes.remove(*display);
+                return Ok(format!("{display} uses the usual size."));
+            }
+            let (n, _) = islet_core::prefs::SIZES
+                .iter()
+                .find(|(n, _)| n.eq_ignore_ascii_case(name))
+                .ok_or("size is small, medium, large or default")?;
+            if !crate::platform::displays().iter().any(|d| d == display) {
+                return Err(format!("no display called {display:?} (see `islet displays`)"));
+            }
+            p.display_sizes.insert(display.to_string(), (*n).into());
+            Ok(format!("Size on {display}: {n}."))
         }),
         ["look", "size", name] => set_look(|p| {
             let (n, _) = islet_core::prefs::SIZES
