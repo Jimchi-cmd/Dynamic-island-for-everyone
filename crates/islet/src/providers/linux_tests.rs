@@ -7,7 +7,7 @@ use crate::platform::Waker;
 use islet_core::activity::{DeviceKind, MediaCommand, Report};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -22,7 +22,7 @@ struct TestBus {
 
 impl TestBus {
     fn start() -> Option<Self> {
-        let mut child = Command::new("dbus-daemon")
+        let mut child = crate::hidden::command("dbus-daemon")
             .args(["--session", "--nofork", "--print-address=1"])
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

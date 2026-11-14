@@ -2,7 +2,7 @@
 //! tool (never through a shell). Islet takes no screenshots itself and never
 //! sees the picture.
 
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 type Argv = &'static [&'static str];
 
@@ -53,7 +53,7 @@ pub fn lock_commands(os: &str) -> &'static [Argv] {
 fn run_first(commands: &'static [Argv], what: &'static str) {
     std::thread::spawn(move || {
         for argv in commands {
-            let status = Command::new(argv[0])
+            let status = crate::hidden::command(argv[0])
                 .args(&argv[1..])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
@@ -90,7 +90,7 @@ pub fn open_shortcut(target: &str) {
         use std::os::unix::fs::PermissionsExt;
         let runnable = std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0);
         if runnable {
-            let mut cmd = Command::new(path);
+            let mut cmd = crate::hidden::command(path);
             if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
                 cmd.current_dir(dir);
             }
@@ -102,11 +102,11 @@ pub fn open_shortcut(target: &str) {
         }
     }
     #[cfg(target_os = "macos")]
-    let r = Command::new("open").arg(path).spawn();
+    let r = crate::hidden::command("open").arg(path).spawn();
     #[cfg(target_os = "windows")]
-    let r = Command::new("explorer").arg(path).spawn();
+    let r = crate::hidden::command("explorer").arg(path).spawn();
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let r = Command::new("xdg-open").arg(path).spawn();
+    let r = crate::hidden::command("xdg-open").arg(path).spawn();
     if let Err(e) = r {
         crate::providers::debug_log(&format!("could not open a shortcut: {e}"));
     }
@@ -230,13 +230,18 @@ pub fn dark_set_commands(os: &str, dark: bool) -> Vec<Vec<String>> {
 }
 
 fn output_of(cmd: &[String]) -> Option<String> {
-    let out = Command::new(cmd.first()?).args(&cmd[1..]).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
+    let out = crate::hidden::command(cmd.first()?)
+        .args(&cmd[1..])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 fn succeeds(cmd: &[String]) -> bool {
     let Some(program) = cmd.first() else { return false };
-    Command::new(program)
+    crate::hidden::command(program)
         .args(&cmd[1..])
         .stdin(Stdio::null())
         .stdout(Stdio::null())

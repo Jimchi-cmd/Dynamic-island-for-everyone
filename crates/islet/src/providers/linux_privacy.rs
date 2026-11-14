@@ -14,7 +14,7 @@ use islet_core::activity::{Privacy, Report};
 use std::collections::BTreeSet;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::time::Duration;
 
@@ -175,7 +175,7 @@ const METERS: &[&str] =
 fn watch_mic(tx: Sender<Dirty>) {
     let mut backoff = 5u64;
     loop {
-        let child = Command::new("pactl")
+        let child = crate::hidden::command("pactl")
             .arg("subscribe")
             .env("LC_ALL", "C")
             .stdin(Stdio::null())
@@ -209,7 +209,7 @@ fn watch_mic(tx: Sender<Dirty>) {
 }
 
 fn pactl(args: &[&str]) -> Option<String> {
-    let out = Command::new("pactl").args(args).env("LC_ALL", "C").stderr(Stdio::null()).output().ok()?;
+    let out = crate::hidden::command("pactl").args(args).env("LC_ALL", "C").stderr(Stdio::null()).output().ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 

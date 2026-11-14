@@ -24,10 +24,10 @@ pub fn set(sink: Sink, id: String, level: f32) {
 #[cfg(target_os = "linux")]
 mod platform {
     use super::AppVolume;
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
 
     fn pactl(args: &[&str]) -> Option<String> {
-        let out = Command::new("pactl")
+        let out = crate::hidden::command("pactl")
             .args(args)
             // Untranslated, so it can be read.
             .env("LC_ALL", "C")

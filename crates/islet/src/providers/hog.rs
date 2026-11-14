@@ -92,9 +92,9 @@ pub fn close(pid: u32) {
     }
     #[cfg(windows)]
     std::thread::spawn(move || {
-        use std::process::{Command, Stdio};
+        use std::process::Stdio;
         // taskkill without /F sends the window a close request.
-        let status = Command::new("taskkill")
+        let status = crate::hidden::command("taskkill")
             .args(["/PID", &pid.to_string()])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -134,8 +134,8 @@ pub fn processes() -> Vec<Proc> {
 
 #[cfg(target_os = "macos")]
 pub fn processes() -> Vec<Proc> {
-    use std::process::{Command, Stdio};
-    let out = Command::new("/bin/ps")
+    use std::process::Stdio;
+    let out = crate::hidden::command("/bin/ps")
         .args(["-Ao", "pid=,pcpu=,rss=,comm="])
         .stdin(Stdio::null())
         .stderr(Stdio::null())

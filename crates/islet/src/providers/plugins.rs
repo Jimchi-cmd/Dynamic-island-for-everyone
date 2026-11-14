@@ -7,7 +7,7 @@ use islet_core::activity::{Custom, Report};
 use islet_core::plugin::{self, Manifest};
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -50,7 +50,7 @@ pub fn run_once(dir: &Path, m: &Manifest, limit: Duration) -> Option<String> {
     // "./name": the plugin's own file.
     let program =
         if first.starts_with("./") || first.starts_with(".\\") { dir.join(&first[2..]) } else { first.into() };
-    let mut child = Command::new(program)
+    let mut child = crate::hidden::command(program)
         .args(&m.command[1..])
         .current_dir(dir)
         .stdin(Stdio::null())

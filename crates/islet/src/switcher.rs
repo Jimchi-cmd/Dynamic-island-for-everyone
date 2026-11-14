@@ -29,10 +29,10 @@ pub use imp::process_name;
 #[cfg(all(unix, not(target_os = "macos")))]
 mod imp {
     use super::{keep, OpenWindow};
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
 
     fn run(cmd: &str, args: &[&str]) -> Result<String, String> {
-        let out = Command::new(cmd)
+        let out = crate::hidden::command(cmd)
             .args(args)
             .stdin(Stdio::null())
             .stderr(Stdio::null())
@@ -288,7 +288,7 @@ mod imp {
         let Some(path) = path else {
             return Err("that app can't be brought to the front".into());
         };
-        let ok = std::process::Command::new("open")
+        let ok = crate::hidden::command("open")
             .arg(path)
             .stdin(std::process::Stdio::null())
             .status()

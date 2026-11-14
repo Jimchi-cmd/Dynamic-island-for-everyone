@@ -83,8 +83,8 @@ fn sample(prev: Option<CpuTimes>, before: &mut Option<CpuTimes>, net: &mut Net) 
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn tool_output(program: &str, args: &[&str]) -> Option<String> {
-    use std::process::{Command, Stdio};
-    let out = Command::new(program).args(args).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
+    use std::process::Stdio;
+    let out = crate::hidden::command(program).args(args).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 

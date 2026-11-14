@@ -123,7 +123,7 @@ pub fn start(sink: Sink) -> Option<Sender<MediaCommand>> {
         .spawn(move || {
             for cmd in rx {
                 let Some(app) = *last.lock().unwrap() else { continue };
-                let status = std::process::Command::new("/usr/bin/osascript").args(["-e", &script(app, cmd)]).status();
+                let status = crate::hidden::command("/usr/bin/osascript").args(["-e", &script(app, cmd)]).status();
                 if !status.as_ref().is_ok_and(|s| s.success()) {
                     debug_log(&format!(
                         "osascript failed for {cmd:?} ({status:?}); is Automation allowed in System Settings?"

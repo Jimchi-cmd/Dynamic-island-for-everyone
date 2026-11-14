@@ -107,11 +107,11 @@ pub fn start(sink: Sink) -> Sender<NavMsg> {
 /// Open a hand-off link in the default browser / app.
 pub fn open_url(url: &str) {
     #[cfg(target_os = "macos")]
-    let r = std::process::Command::new("open").arg(url).spawn();
+    let r = crate::hidden::command("open").arg(url).spawn();
     #[cfg(target_os = "windows")]
-    let r = std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", url]).spawn();
+    let r = crate::hidden::command("rundll32").args(["url.dll,FileProtocolHandler", url]).spawn();
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let r = std::process::Command::new("xdg-open").arg(url).spawn();
+    let r = crate::hidden::command("xdg-open").arg(url).spawn();
     if let Err(e) = r {
         debug_log(&format!("could not open {url}: {e}"));
     }

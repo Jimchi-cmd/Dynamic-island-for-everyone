@@ -20,6 +20,7 @@ mod clock;
 mod config;
 mod content;
 mod control;
+mod hidden;
 #[cfg(target_os = "windows")]
 mod msix;
 mod net;
@@ -251,7 +252,7 @@ fn run() -> platform::Result<()> {
     if all_displays && mirror.is_none() && !scripted {
         if let Ok(exe) = std::env::current_exe() {
             for name in platform::displays().into_iter().skip(1) {
-                let child = std::process::Command::new(&exe)
+                let child = crate::hidden::command(&exe)
                     .args(["--mirror", &name])
                     .stdin(std::process::Stdio::piped())
                     .stdout(std::process::Stdio::null())
@@ -397,7 +398,7 @@ fn run() -> platform::Result<()> {
                         || (mirror.is_none() && p.display != display);
                     if moved && mirror.is_none() {
                         if let Ok(exe) = std::env::current_exe() {
-                            if std::process::Command::new(exe).env("ISLET_RELAUNCH", "1").spawn().is_ok() {
+                            if crate::hidden::command(exe).env("ISLET_RELAUNCH", "1").spawn().is_ok() {
                                 return Ok(());
                             }
                         }
@@ -676,7 +677,7 @@ fn open_settings(page: &str) {
         providers::debug_log("Islet Settings is not installed next to the island");
         return;
     };
-    let _ = std::process::Command::new(exe)
+    let _ = crate::hidden::command(exe)
         .args(["--page", page])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -687,11 +688,11 @@ fn open_settings(page: &str) {
 /// Open a shelf item with the OS's default app (never through a shell).
 fn open_path(path: &str) {
     #[cfg(target_os = "macos")]
-    let r = std::process::Command::new("open").arg(path).spawn();
+    let r = crate::hidden::command("open").arg(path).spawn();
     #[cfg(target_os = "windows")]
-    let r = std::process::Command::new("explorer").arg(path).spawn();
+    let r = crate::hidden::command("explorer").arg(path).spawn();
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let r = std::process::Command::new("xdg-open").arg(path).spawn();
+    let r = crate::hidden::command("xdg-open").arg(path).spawn();
     if let Err(e) = r {
         providers::debug_log(&format!("could not open a shelf item: {e}"));
     }

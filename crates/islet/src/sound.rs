@@ -78,7 +78,7 @@ pub fn chime_once() {
         #[cfg(not(target_os = "macos"))]
         let players: &[&[&str]] = &[&["pw-play"], &["paplay"], &["aplay", "-q"]];
         if let Some(cmd) = players.iter().find(|p| which(p[0])) {
-            let _ = std::process::Command::new(cmd[0])
+            let _ = crate::hidden::command(cmd[0])
                 .args(&cmd[1..])
                 .arg(&path)
                 .stdin(std::process::Stdio::null())
@@ -143,7 +143,7 @@ impl AlarmSound {
             let mut player = players.iter().copied().find(|p| which(p[0]));
             while !flag.load(Ordering::Relaxed) {
                 let Some(cmd) = player else { return };
-                let child = std::process::Command::new(cmd[0])
+                let child = crate::hidden::command(cmd[0])
                     .args(&cmd[1..])
                     .arg(&path)
                     .stdin(std::process::Stdio::null())

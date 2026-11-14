@@ -5,7 +5,7 @@
 use super::{debug_log, Sink};
 use islet_core::activity::{Hud, Report};
 use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 /// "Volume: front-left: 32768 /  50% / -18.06 dB,   front-right: …" → 0.5
 pub fn parse_volume(out: &str) -> Option<f32> {
@@ -24,7 +24,7 @@ pub fn parse_mute(out: &str) -> Option<bool> {
 }
 
 fn pactl(args: &[&str]) -> Option<String> {
-    let out = Command::new("pactl").args(args).stderr(Stdio::null()).output().ok()?;
+    let out = crate::hidden::command("pactl").args(args).stderr(Stdio::null()).output().ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
@@ -41,7 +41,7 @@ pub fn start(sink: Sink) {
             return;
         };
         sink.send(Report::Volume(last.0, last.1));
-        let Ok(mut child) = Command::new("pactl")
+        let Ok(mut child) = crate::hidden::command("pactl")
             .arg("subscribe")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())

@@ -117,7 +117,7 @@ fn secret_tool_error(e: std::io::Error) -> String {
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn read(account: &str) -> Option<String> {
-    let out = std::process::Command::new("secret-tool")
+    let out = crate::hidden::command("secret-tool")
         .args(["lookup", "application", SERVICE, "key", account])
         .stderr(std::process::Stdio::null())
         .output()
@@ -128,7 +128,7 @@ fn read(account: &str) -> Option<String> {
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn set(account: &str, value: &str, label: &str) -> Result<(), String> {
     use std::io::Write;
-    let mut child = std::process::Command::new("secret-tool")
+    let mut child = crate::hidden::command("secret-tool")
         .args(["store", &format!("--label={label}"), "application", SERVICE, "key", account])
         .stdin(std::process::Stdio::piped())
         .spawn()
@@ -140,7 +140,7 @@ fn set(account: &str, value: &str, label: &str) -> Result<(), String> {
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn clear(account: &str) -> Result<(), String> {
-    let status = std::process::Command::new("secret-tool")
+    let status = crate::hidden::command("secret-tool")
         .args(["clear", "application", SERVICE, "key", account])
         .status()
         .map_err(secret_tool_error)?;

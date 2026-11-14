@@ -29,7 +29,7 @@ mod imp {
     use islet_core::modes::{gnome_dnd, parse_rfkill, Radios};
     use std::io::{BufRead, BufReader};
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
 
     pub fn start(sink: Sink) {
         let s = sink.clone();
@@ -81,13 +81,13 @@ mod imp {
 
     fn watch_dnd(sink: &Sink) {
         const SCHEMA: [&str; 2] = ["org.gnome.desktop.notifications", "show-banners"];
-        let get = Command::new("gsettings").arg("get").args(SCHEMA).stderr(Stdio::null()).output();
+        let get = crate::hidden::command("gsettings").arg("get").args(SCHEMA).stderr(Stdio::null()).output();
         if let Some(on) =
             get.ok().filter(|o| o.status.success()).and_then(|o| gnome_dnd(&String::from_utf8_lossy(&o.stdout)))
         {
             dnd(sink, on);
             // GNOME: `gsettings monitor` prints each change.
-            let Ok(mut child) = Command::new("gsettings")
+            let Ok(mut child) = crate::hidden::command("gsettings")
                 .arg("monitor")
                 .args(SCHEMA)
                 .stdin(Stdio::null())

@@ -41,7 +41,7 @@ impl Mic {
     }
 
     fn pactl(args: &[&str]) -> Option<String> {
-        let out = std::process::Command::new("pactl").args(args).stderr(std::process::Stdio::null()).output().ok()?;
+        let out = crate::hidden::command("pactl").args(args).stderr(std::process::Stdio::null()).output().ok()?;
         out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
     }
 

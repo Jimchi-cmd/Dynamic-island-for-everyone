@@ -14,7 +14,7 @@ use islet_core::activity::{ArtImage, MediaCaps, MediaCommand, MediaInfo, Report}
 use islet_mediaremote::wire;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Stdio};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 
@@ -44,7 +44,7 @@ pub fn find_helper() -> Option<PathBuf> {
 }
 
 fn spawn(lib: &PathBuf, probe: bool) -> std::io::Result<Child> {
-    let mut cmd = Command::new("/usr/bin/perl");
+    let mut cmd = crate::hidden::command("/usr/bin/perl");
     cmd.arg("-e")
         .arg(LOADER)
         .env("ISLET_MR_LIB", lib)
