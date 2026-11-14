@@ -38,6 +38,8 @@ Usage:
   islet phone unpair                       forget the phone
   islet speedtest [--json]                 measure the connection (about 36 MB, with Cloudflare's
                                            speed-test servers; only when you run it)
+  islet plugins [--json|--where|reload]    your plugin widgets (scripts in the plugins folder; see
+                                           docs/plugins.md); reload rereads the folder
   islet windows [--json]                   the windows open now (on macOS: the apps), with their ids
   islet windows focus <id>                 bring one of them to the front
   islet launcher                           open the quick launcher (apps, web, sums, conversions);
@@ -124,7 +126,7 @@ Usage:
   islet set <setting> on|off               volume-hud, brightness-hud, caps-lock-hud,
                                            notifications, calendar, fahrenheit, web-artwork,
                                            spotify, privacy-dots, clipboard, lyrics, auto-hide, calls, downloads,
-                                           idle-clock, hover-status, wifi-popup, focus-quiet, performance-alert,
+                                           idle-clock, hover-status, wifi-popup, focus-quiet, performance-alert, plugins,
                                            and with Islet Pro: power-saver, album-glow, visualizer,
                                            screenshot-preview, phone
   islet prefs [--json]                     the island's settings
@@ -169,6 +171,15 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         }),
         ["speedtest", "--json"] => {
             crate::net::speed_test().and_then(|r| serde_json::to_string(&r).map_err(|e| e.to_string()))
+        }
+        ["plugins"] => Ok(plugins_text()),
+        ["plugins", "--json"] => Ok(plugins_json()),
+        ["plugins", "--where"] => crate::providers::plugins::folder()
+            .map(|p| p.display().to_string())
+            .ok_or_else(|| "no settings folder".to_string()),
+        ["plugins", "reload"] => {
+            let _ = control::send(&Control::PluginsReload);
+            Ok(plugins_text())
         }
         ["windows"] => crate::switcher::list().map(|w| windows_text(&w)),
         ["windows", "--json"] => {
@@ -1278,6 +1289,51 @@ fn phone_pair(new_key: bool, json: bool) -> Result<String, String> {
     }
     out.push_str(&format!("\nOr paste this into the app:\n{uri}\n\nKeep it private: it holds the pairing key."));
     Ok(out)
+}
+
+/// The plugins found, whether each can run, and whether they're switched on.
+fn plugins_text() -> String {
+    let Some(folder) = crate::providers::plugins::folder() else { return "No settings folder.".into() };
+    let found = crate::providers::plugins::scan(&folder);
+    let on = config::load_prefs().plugins;
+    let mut lines = vec![format!(
+        "Plugins are {} (islet set plugins on|off). Folder: {}",
+        if on { "on" } else { "off" },
+        folder.display()
+    )];
+    if found.is_empty() {
+        lines.push("No plugins yet: add a folder with a plugin.json (see docs/plugins.md).".into());
+    }
+    for (i, f) in found.iter().enumerate() {
+        let name = f.dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        lines.push(match &f.manifest {
+            Ok(m) if i < islet_core::plugin::MAX_PLUGINS => format!("  {name}: {} (every {} s)", m.name, m.every),
+            Ok(m) => format!("  {name}: {} — not run: at most {} plugins", m.name, islet_core::plugin::MAX_PLUGINS),
+            Err(e) => format!("  {name}: can't run — {e}"),
+        });
+    }
+    lines.join("\n")
+}
+
+fn plugins_json() -> String {
+    let folder = crate::providers::plugins::folder();
+    let found = folder.as_deref().map(crate::providers::plugins::scan).unwrap_or_default();
+    let list: Vec<serde_json::Value> = found
+        .iter()
+        .map(|f| {
+            let folder = f.dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            match &f.manifest {
+                Ok(m) => serde_json::json!({ "folder": folder, "name": m.name, "every": m.every }),
+                Err(e) => serde_json::json!({ "folder": folder, "error": e }),
+            }
+        })
+        .collect();
+    serde_json::json!({
+        "on": config::load_prefs().plugins,
+        "folder": folder.map(|p| p.display().to_string()),
+        "plugins": list,
+    })
+    .to_string()
 }
 
 /// The open windows, one a line: the id `islet windows focus` takes, the

@@ -97,6 +97,7 @@ pub fn allowed(args: &[String]) -> bool {
             !dur.starts_with('-') && rest.chunks(2).all(|kv| matches!(kv, ["--label", v] if !v.starts_with('-')))
         }
         ["windows", "--json"] | ["speedtest", "--json"] => true,
+        ["plugins", "--json"] | ["plugins", "reload"] => true,
         ["windows", "focus", id] => islet_core::switcher::valid_id(id),
         ["focus", "streak", "--json"] => true,
         ["focus", rest @ ..] => {

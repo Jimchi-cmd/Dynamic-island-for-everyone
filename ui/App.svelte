@@ -309,6 +309,27 @@
     }
   }
 
+  // Plugin widgets found in the plugins folder.
+  type PluginInfo = { folder: string; name?: string; every?: number; error?: string };
+  let plugins = $state<{ on: boolean; folder: string | null; plugins: PluginInfo[] } | null>(null);
+
+  async function loadPlugins() {
+    try {
+      plugins = JSON.parse(await api.islet(['plugins', '--json']));
+    } catch {
+      plugins = null;
+    }
+  }
+
+  async function reloadPlugins() {
+    try {
+      await api.islet(['plugins', 'reload']);
+    } catch {
+      // Nothing to reload while the island isn't running.
+    }
+    await loadPlugins();
+  }
+
   async function loadWindows() {
     try {
       openWindows = JSON.parse(await api.islet(['windows', '--json']));
@@ -337,6 +358,7 @@
     try {
       islandPrefs = JSON.parse(await api.islet(['prefs', '--json']));
       displays = JSON.parse(await api.islet(['displays', '--json']));
+      void loadPlugins();
     } catch (e) {
       problem = api.message(e);
     }
@@ -1529,6 +1551,32 @@
             file. Only file names and sizes are read, on this computer.{#if info?.os === 'macos'} macOS asks once
             whether Islet may see your Downloads folder.{/if}
           </p>
+          <div class="net">
+            <span class="name">Plugin widgets</span>
+            <input
+              type="checkbox"
+              class="switch"
+              aria-label="Run plugin widgets"
+              checked={islandPrefs?.plugins ?? false}
+              disabled={!islandPrefs}
+              onchange={async (e) => {
+                await setSwitch('plugins', e.currentTarget.checked);
+                await loadPlugins();
+              }}
+            />
+          </div>
+          <p class="muted small">
+            Your own scripts, shown as live activities: each plugin is a folder with a <code>plugin.json</code> in
+            {#if plugins?.folder}<code>{plugins.folder}</code>{:else}the plugins folder{/if}. Islet runs them on their
+            schedule while this is on, on this computer only.
+            <button class="link" onclick={reloadPlugins}>Reread the folder</button>
+          </p>
+          {#each plugins?.plugins ?? [] as p (p.folder)}
+            <p class="small">
+              <b>{p.name ?? p.folder}</b>
+              {#if p.error}<span class="muted">— can’t run: {p.error}</span>{:else}<span class="muted">every {p.every} s</span>{/if}
+            </p>
+          {/each}
           <div class="net">
             <span class="name">Clipboard history</span>
             <input

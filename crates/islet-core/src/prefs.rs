@@ -52,6 +52,8 @@ pub struct IslandPrefs {
     pub calls: bool,
     /// Downloads in progress, from the Downloads folder.
     pub downloads: bool,
+    /// The user's own plugin widgets (scripts in the plugins folder).
+    pub plugins: bool,
     /// A pop-up when Wi-Fi joins a network.
     pub wifi_popup: bool,
     /// Pointing at the empty island shows the weather, the battery and
@@ -233,6 +235,7 @@ impl Default for IslandPrefs {
             idle_clock: true,
             calls: true,
             downloads: false,
+            plugins: false,
             power_saver: false,
             focus_quiet: false,
             hover_status: true,
@@ -262,7 +265,7 @@ impl Default for IslandPrefs {
 }
 
 /// The switches `islet set <key> on|off` understands.
-pub const SWITCHES: [&str; 24] = [
+pub const SWITCHES: [&str; 25] = [
     "volume-hud",
     "brightness-hud",
     "caps-lock-hud",
@@ -287,6 +290,7 @@ pub const SWITCHES: [&str; 24] = [
     "screenshot-preview",
     "phone",
     "wifi-popup",
+    "plugins",
 ];
 
 impl IslandPrefs {
@@ -327,6 +331,7 @@ impl IslandPrefs {
             "idle-clock" => &mut self.idle_clock,
             "calls" => &mut self.calls,
             "downloads" => &mut self.downloads,
+            "plugins" => &mut self.plugins,
             "power-saver" => &mut self.power_saver,
             "focus-quiet" => &mut self.focus_quiet,
             "hover-status" => &mut self.hover_status,

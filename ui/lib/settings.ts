@@ -275,6 +275,8 @@ export interface IslandPrefs {
   hoverStatus: boolean;
   /** "Connected to Home" when Wi-Fi joins a network. */
   wifiPopup: boolean;
+  /** The user's own plugin widgets. */
+  plugins: boolean;
   /** Say when a program hogs the processor or memory. */
   performanceAlert: boolean;
   /** Islet Pro looks. */
@@ -356,6 +358,7 @@ export const SWITCH_NAMES: Record<string, string> = {
   focusQuiet: 'focus-quiet',
   hoverStatus: 'hover-status',
   wifiPopup: 'wifi-popup',
+  plugins: 'plugins',
   performanceAlert: 'performance-alert',
   albumGlow: 'album-glow',
   visualizer: 'visualizer',

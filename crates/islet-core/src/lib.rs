@@ -19,6 +19,7 @@ pub mod mixer;
 pub mod nav;
 pub mod paths;
 pub mod phone;
+pub mod plugin;
 pub mod prefs;
 pub mod pro;
 pub mod quicknote;

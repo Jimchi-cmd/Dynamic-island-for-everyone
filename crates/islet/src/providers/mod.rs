@@ -46,6 +46,7 @@ pub mod mixer;
 pub mod navigation;
 mod netwatch;
 pub mod phone;
+pub mod plugins;
 mod screenshots;
 pub mod spotify;
 pub mod sysmon;
@@ -207,6 +208,7 @@ pub struct Providers {
     mic: Sender<islet_core::activity::MicCommand>,
     clipboard: Option<clipboard::Watcher>,
     downloads: Option<downloads::Watcher>,
+    plugins: Option<plugins::Runner>,
     screenshots: Option<screenshots::Watcher>,
     phone: Option<phone::Link>,
     sink: Sink,
@@ -251,6 +253,7 @@ impl Providers {
             mic,
             clipboard: None,
             downloads: None,
+            plugins: None,
             screenshots: None,
             phone: None,
             sink,
@@ -307,6 +310,18 @@ impl Providers {
     }
 
     /// Start or stop watching the Downloads folder (opt-in).
+    /// Start or stop the plugin widgets; `reload` rereads the plugins
+    /// folder (`islet plugins reload`).
+    pub fn plugins(&mut self, on: bool, reload: bool) {
+        if !on || reload {
+            // Stopping clears what the plugins showed.
+            self.plugins = None;
+        }
+        if on && self.plugins.is_none() {
+            self.plugins = plugins::start(self.sink.clone());
+        }
+    }
+
     pub fn downloads(&mut self, on: bool) {
         if on && self.downloads.is_none() {
             self.downloads = downloads::start(self.sink.clone());

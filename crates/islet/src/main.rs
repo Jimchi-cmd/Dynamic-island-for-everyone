@@ -231,6 +231,7 @@ fn run() -> platform::Result<()> {
     providers.spotify(app.prefs().spotify && !scripted);
     providers.clipboard(app.prefs().clipboard && !scripted);
     providers.downloads(app.prefs().downloads && !scripted);
+    providers.plugins(app.prefs().plugins && !scripted, false);
     providers.hog(app.prefs().performance_alert && !scripted);
     providers.screenshots(pro::active() && app.prefs().screenshot_preview && !scripted);
     providers.phone(phone_pairing(app.prefs()).filter(|_| !scripted && mirror.is_none()));
@@ -404,6 +405,7 @@ fn run() -> platform::Result<()> {
                     providers.spotify(app.prefs().spotify);
                     providers.clipboard(app.prefs().clipboard);
                     providers.downloads(app.prefs().downloads);
+                    providers.plugins(app.prefs().plugins, false);
                     providers.hog(app.prefs().performance_alert);
                     providers.screenshots(pro::active() && app.prefs().screenshot_preview);
                     providers.phone(phone_pairing(app.prefs()).filter(|_| mirror.is_none()));
@@ -413,6 +415,8 @@ fn run() -> platform::Result<()> {
                 Control::ShelfChanged => {}
                 Control::Activity(c) => needs_frame |= app.report(Report::Custom(c), t),
                 Control::Toggle => needs_frame |= app.toggle(t),
+                Control::PluginsReload if !scripted => providers.plugins(app.prefs().plugins, true),
+                Control::PluginsReload => {}
                 Control::CapsLock(on) => needs_frame |= app.handle(Event::CapsLock(on), t),
                 Control::ActivityEnd(id) => needs_frame |= app.report(Report::CustomEnded(id), t),
             }
