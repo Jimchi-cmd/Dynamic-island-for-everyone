@@ -284,7 +284,7 @@ islet focus streak
 **Weather** (Settings → General → **Weather**)
 
 1. Type your city and click **Search**, then click **Use** next to the right place.
-2. The temperature and today's high and low appear on Control Centre. Turn on **Fahrenheit** if you prefer it. Data comes from Open-Meteo once an hour; no account needed.
+2. The temperature and today's high and low appear on Control Centre. Choose **°C** or **°F** beside it. Data comes from Open-Meteo once an hour; no account needed.
 
 **Calendar** (Settings → General → **Calendar**)
 
@@ -326,6 +326,9 @@ Shows your arrival time with live traffic, and hands off to Google Maps or Waze.
 - **Show the time when nothing is playing:** the time in the empty pill (on by default).
 - **Show weather, battery and processor when you point at it:** point at the empty island and it widens into a status strip: the weather (if you chose a place), the laptop's battery (green while charging, red at 20% or less) and how busy the processor is (orange from 90%), either side of the time. The processor is read only while you point, and the reading shows up after about a second. Not on a Mac with a notch, where the notch is in the way. On by default.
 - **Accent colour:** for buttons and switches on the island.
+- **Font:** the island's text in any font installed on your computer (the list shows each in its own lettering; type to search), or **Built-in** for Inter. Islet reads the font from where your system keeps it; nothing is copied. Text in a script the font lacks falls back to the built-in one. From a terminal: `islet fonts`, then `islet look font "<name>"` (or `default`).
+- **Temperature:** °C or °F, for the weather on the island (also on the Weather page).
+- **Border in the album's colour while music plays:** a thin outline round the island in the playing song's cover colour (on by default; it goes when the music pauses).
 - **Size:** small, medium or large.
 - **Display:** which screen the island is on (with more than one), or **All displays** for an island on each. The extra islands show music, calls, batteries, downloads and Control Centre; alarms, timers and the shortcut stay with the main island. Plug in a new screen? Choose the setting again (or restart Islet) to give it an island.
 - **Gap above the island:** move it down from the top edge (0–40 px).

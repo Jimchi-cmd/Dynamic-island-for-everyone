@@ -98,6 +98,8 @@ pub fn allowed(args: &[String]) -> bool {
         }
         ["windows", "--json"] | ["speedtest", "--json"] => true,
         ["plugins", "--json"] | ["plugins", "reload"] => true,
+        ["fonts", "--json"] | ["look", "font", "default"] => true,
+        ["look", "font", name] => !name.starts_with('-') && !name.is_empty() && name.len() <= 100,
         ["windows", "focus", id] => islet_core::switcher::valid_id(id),
         ["focus", "streak", "--json"] => true,
         ["focus", rest @ ..] => {
@@ -401,6 +403,8 @@ mod tests {
         assert!(!allowed(&args(&["nav", "start", "X", "--from"])), "option without a value");
         assert!(!allowed(&args(&["nav", "start", "X", "--evil", "y"])));
         assert!(!allowed(&args(&["--mediaremote-probe"])));
+        assert!(allowed(&args(&["fonts", "--json"])) && allowed(&args(&["look", "font", "DejaVu Sans"])));
+        assert!(!allowed(&args(&["look", "font", "--evil"])));
         assert!(allowed(&args(&["windows", "--json"])) && allowed(&args(&["windows", "focus", "0x55d1a2b0"])));
         assert!(!allowed(&args(&["windows", "focus", "address:0x1"])), "only a plain window id");
         assert!(allowed(&args(&["alarm", "add", "07:30", "--label", "Gym", "--days", "weekdays"])));

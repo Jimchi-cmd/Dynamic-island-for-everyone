@@ -27,12 +27,15 @@ pub struct Skin {
     /// A soft glow in this colour just inside the edge (the album's colour
     /// while music plays). Inside, so the island's outline never changes.
     pub glow: Option<[u8; 3]>,
+    /// A crisp border in this colour just inside the edge (the playing
+    /// song's cover colour). Inside too, so the outline never changes.
+    pub border: Option<[u8; 3]>,
 }
 
 impl Default for Skin {
     /// Solid black, like the real thing.
     fn default() -> Self {
-        Skin { color: [0, 0, 0], alpha: 1.0, glass: false, glow: None }
+        Skin { color: [0, 0, 0], alpha: 1.0, glass: false, glow: None, border: None }
     }
 }
 
@@ -214,6 +217,27 @@ pub fn draw(pixmap: &mut Pixmap, frame: &PillFrame, scale: f32) {
         }
     }
 
+    if let Some([r, g, b]) = skin.border.filter(|_| shown > 0.02) {
+        const WIDTH: f32 = 2.0;
+        let s = frame.shape;
+        let inset = WIDTH / 2.0;
+        let inner = Squircle {
+            x: s.x + inset,
+            y: s.y + inset,
+            w: s.w - 2.0 * inset,
+            h: s.h - 2.0 * inset,
+            radius: (s.radius - inset).max(0.0),
+            smoothing: s.smoothing,
+        };
+        let ring = if frame.flat_top { inner.path_flat_top() } else { inner.path() };
+        if let (true, Some(p)) = (inner.w > 1.0 && inner.h > 1.0, ring) {
+            let mut border = Paint::default();
+            border.set_color_rgba8(r, g, b, (0.95 * shown * 255.0).round() as u8);
+            border.anti_alias = true;
+            pixmap.stroke_path(&p, &border, &Stroke { width: WIDTH, ..Stroke::default() }, ts, None);
+        }
+    }
+
     if frame.highlight > 0.0 && frame.opacity >= 1.0 {
         // A hairline just inside the edge so the pill reads on dark wallpapers.
         let inset = 0.5 / scale;
@@ -265,6 +289,21 @@ pub fn rgba_to_bgra(src: &[u8], dst: &mut [u8]) {
 #[cfg(test)]
 mod contains_tests {
     use super::*;
+
+    #[test]
+    fn the_border_rims_the_edge_in_its_colour() {
+        let shape = Squircle { x: 0.0, y: 0.0, w: 120.0, h: 40.0, radius: 20.0, smoothing: 0.6 };
+        let mut frame = PillFrame::pill(shape);
+        frame.skin.border = Some([200, 60, 90]);
+        let mut pm = Pixmap::new(120, 40).unwrap();
+        draw(&mut pm, &frame, 1.0);
+        let px = |x: u32, y: u32| {
+            let p = pm.pixel(x, y).unwrap();
+            [p.red(), p.green(), p.blue()]
+        };
+        assert!(px(60, 1)[0] > 150 && px(60, 1)[1] < 90, "the top edge: {:?}", px(60, 1));
+        assert_eq!(px(60, 20), [0, 0, 0], "the middle stays black");
+    }
 
     #[test]
     fn rects_inside_the_outline() {

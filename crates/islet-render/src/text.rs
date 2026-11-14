@@ -75,6 +75,8 @@ pub struct TextEngine {
     fonts: FontSystem,
     cache: SwashCache,
     family: String,
+    /// The family used when none is chosen (Inter, or the macOS system font).
+    default_family: String,
     buffer: Option<Buffer>,
     /// Shaped text by (text, size, weight, tabular): the island draws the
     /// same few strings every animation frame, and shaping is the costly part.
@@ -114,7 +116,41 @@ impl TextEngine {
         let family = system_font.then(|| system_ui_family(&mut db)).flatten().unwrap_or_else(|| INTER.to_string());
         let locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
         let fonts = FontSystem::new_with_locale_and_db(locale, db);
-        Self { fonts, cache: SwashCache::new(), family, buffer: None, shaped: HashMap::new() }
+        Self {
+            fonts,
+            cache: SwashCache::new(),
+            default_family: family.clone(),
+            family,
+            buffer: None,
+            shaped: HashMap::new(),
+        }
+    }
+
+    /// Draw island text in an installed font (Settings → Look → Font), from
+    /// its files; None, or a font that can't be read, goes back to the
+    /// default. Text in scripts the font lacks still falls back to Inter.
+    /// Returns whether the chosen font is in use.
+    pub fn set_font(&mut self, font: Option<(&str, &[std::path::PathBuf])>) -> bool {
+        let wanted = match font {
+            Some((family, files)) if !family.is_empty() => {
+                let has = |db: &fontdb::Database| db.faces().any(|f| f.families.iter().any(|(n, _)| n == family));
+                if !has(self.fonts.db()) {
+                    for f in files {
+                        let _ = self.fonts.db_mut().load_font_file(f);
+                    }
+                }
+                has(self.fonts.db()).then(|| family.to_string())
+            }
+            _ => None,
+        };
+        let ok = wanted.is_some() || font.is_none_or(|(f, _)| f.is_empty());
+        let next = wanted.unwrap_or_else(|| self.default_family.clone());
+        if next != self.family {
+            self.family = next;
+            self.shaped.clear();
+            self.cache = SwashCache::new();
+        }
+        ok
     }
 
     /// The family used for island text ("Inter", or the macOS system font).
@@ -222,6 +258,40 @@ impl TextEngine {
 
 /// On macOS, register the system UI font (San Francisco) from the OS and
 /// return its family name. Elsewhere: None (Inter is used).
+/// A font family installed on this computer, and the files of its faces.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstalledFont {
+    pub family: String,
+    pub files: Vec<std::path::PathBuf>,
+}
+
+/// The font families installed on this computer, by name (read from the
+/// system's font folders; for Settings' font list, not the running island).
+pub fn installed_fonts() -> Vec<InstalledFont> {
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+    let mut by_family: std::collections::BTreeMap<String, Vec<std::path::PathBuf>> = Default::default();
+    for face in db.faces() {
+        let path = match &face.source {
+            fontdb::Source::File(p) | fontdb::Source::SharedFile(p, _) => p.clone(),
+            fontdb::Source::Binary(_) => continue,
+        };
+        let Some((family, _)) = face.families.first() else { continue };
+        // Names starting with a dot are the system's private fonts (macOS).
+        if family.is_empty() || family.starts_with('.') {
+            continue;
+        }
+        let files = by_family.entry(family.clone()).or_default();
+        if !files.contains(&path) {
+            files.push(path);
+        }
+    }
+    let mut out: Vec<InstalledFont> =
+        by_family.into_iter().map(|(family, files)| InstalledFont { family, files }).collect();
+    out.sort_by_cached_key(|f| f.family.to_lowercase());
+    out
+}
+
 fn system_ui_family(db: &mut fontdb::Database) -> Option<String> {
     #[cfg(target_os = "macos")]
     {
@@ -296,6 +366,33 @@ fn blit(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_chosen_installed_font_is_used_and_can_be_undone() {
+        let mut e = TextEngine::bundled_only();
+        let style = TextStyle { size: 14.0, ..TextStyle::default() };
+        let inter = e.measure("Hello island", &style);
+        assert!(!e.set_font(Some(("No Such Font", &[]))), "a font that can't be read");
+        assert_eq!(e.family(), "Inter", "keeps the default");
+        assert!(e.set_font(None));
+        // Any font installed here (skips on a machine without one).
+        let Some(font) = installed_fonts().into_iter().find(|f| f.family != "Inter") else {
+            eprintln!("skipping: no installed fonts");
+            return;
+        };
+        assert!(e.set_font(Some((&font.family, &font.files))), "{font:?}");
+        assert_eq!(e.family(), font.family);
+        let other = e.measure("Hello island", &style);
+        assert!(
+            other > 0.0 && (other - inter).abs() > 0.01,
+            "{} measures differently: {other} vs {inter}",
+            font.family
+        );
+        e.set_font(None);
+        assert_eq!(e.family(), "Inter");
+        assert!((e.measure("Hello island", &style) - inter).abs() < 1e-3);
+    }
+
     use super::*;
 
     fn ink(p: &Pixmap) -> (usize, Option<(u32, u32, u32, u32)>) {

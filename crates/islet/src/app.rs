@@ -3382,8 +3382,18 @@ impl App {
     /// What the island is made of: black, or with Islet Pro the chosen
     /// style (tinted, glass…). A notched Mac stays black to match its notch.
     fn skin(&self) -> islet_render::Skin {
-        if !self.pro || self.notch.is_some() {
+        if self.notch.is_some() {
             return islet_render::Skin::default();
+        }
+        // While a song plays, a border in its cover's colour (Settings → Look).
+        let border = self
+            .activities
+            .media()
+            .filter(|m| self.prefs.album_border && m.playing)
+            .and_then(|m| m.art.as_ref())
+            .map(|a| content::brighten(a.dominant));
+        if !self.pro {
+            return islet_render::Skin { border, ..islet_render::Skin::default() };
         }
         let (color, alpha, glass) = islet_core::prefs::style_body(&self.prefs.style, self.prefs.accent_rgb());
         // While music plays, a glow in its cover's colour.
@@ -3393,7 +3403,7 @@ impl App {
             .filter(|m| self.prefs.album_glow && m.playing)
             .and_then(|m| m.art.as_ref())
             .map(|a| content::brighten(a.dominant));
-        islet_render::Skin { color, alpha, glass, glow }
+        islet_render::Skin { color, alpha, glass, glow, border }
     }
 
     /// What the empty island shows: the time, unless Islet Pro chose more.
@@ -5257,6 +5267,45 @@ mod tests {
         sheet.save_png(out).unwrap();
     }
 
+    /// The album-colour border and an installed font, for visual review:
+    /// `ISLET_LOOK_SHEET=/path/out.png cargo test -p islet look_sheet`
+    #[test]
+    fn look_sheet() {
+        let Some(out) = std::env::var_os("ISLET_LOOK_SHEET") else { return };
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let font = islet_render::text::installed_fonts().into_iter().find(|f| f.family.contains("Serif"));
+        let make = |open: bool| {
+            let mut a = App::new(Demo::None, false);
+            a.set_time(NOW, 0.0);
+            a.report(Report::Media(Some(song_with_art(true))), 0.0);
+            if open {
+                click(&mut a, 1.0);
+            }
+            a
+        };
+        let apps = [make(false), make(true), make(false), make(true)];
+        let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
+        let mut sheet = Pixmap::new(cw * 2, ch * 2).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        for (i, a) in apps.iter().enumerate() {
+            let mut engine = TextEngine::new();
+            if i >= 2 {
+                if let Some(f) = &font {
+                    engine.set_font(Some((&f.family, &f.files)));
+                }
+            }
+            let mut cell = Pixmap::new(cw, ch).unwrap();
+            let frame = a.frame(30.0);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, ch, 1.0);
+            let els = a.elements(30.0, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            let (x, y) = ((i as u32 % 2 * cw) as i32, (i as u32 / 2 * ch) as i32);
+            sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+        }
+        sheet.save_png(out).unwrap();
+    }
+
     /// The hovered island's status strip, for visual review:
     /// `ISLET_STRIP_SHEET=/path/out.png cargo test -p islet strip_sheet`
     #[test]
@@ -5482,6 +5531,21 @@ mod tests {
             dominant: [200, 60, 90],
         };
         MediaInfo { art: Some(art), duration: Some(200.0), position: Some(50.0), ..song(playing) }
+    }
+
+    #[test]
+    fn a_playing_song_borders_the_island_in_its_cover_colour() {
+        let mut app = App::new(Demo::None, false);
+        assert_eq!(app.frame(0.0).skin.border, None, "nothing playing: no border");
+        app.report(Report::Media(Some(song_with_art(true))), 1.0);
+        let skin = app.frame(2.0).skin;
+        assert_eq!(skin.border, Some([200, 60, 90]), "free for everyone");
+        assert_eq!((skin.color, skin.glow), ([0, 0, 0], None), "otherwise the plain black island");
+        app.report(Report::Media(Some(song_with_art(false))), 3.0);
+        assert_eq!(app.frame(4.0).skin.border, None, "paused: gone");
+        app.report(Report::Media(Some(song_with_art(true))), 5.0);
+        app.set_prefs(IslandPrefs { album_border: false, ..IslandPrefs::default() });
+        assert_eq!(app.frame(6.0).skin.border, None, "switched off in Settings");
     }
 
     #[test]

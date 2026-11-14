@@ -277,6 +277,10 @@ export interface IslandPrefs {
   wifiPopup: boolean;
   /** The user's own plugin widgets. */
   plugins: boolean;
+  /** A border in the playing song's cover colour. */
+  albumBorder: boolean;
+  /** An installed font for the island's text ("" = the built-in one). */
+  font: string;
   /** Say when a program hogs the processor or memory. */
   performanceAlert: boolean;
   /** Islet Pro looks. */
@@ -359,6 +363,7 @@ export const SWITCH_NAMES: Record<string, string> = {
   hoverStatus: 'hover-status',
   wifiPopup: 'wifi-popup',
   plugins: 'plugins',
+  albumBorder: 'album-border',
   performanceAlert: 'performance-alert',
   albumGlow: 'album-glow',
   visualizer: 'visualizer',

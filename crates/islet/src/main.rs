@@ -108,6 +108,8 @@ fn run() -> platform::Result<()> {
     app.set_clock_style(clock::prefers_24h());
     // Fonts load on first use, so an island that is never opened never pays for them.
     let mut text: Option<TextEngine> = None;
+    // The font the text engine was last given (Settings → Look → Font).
+    let mut text_font: Option<String> = None;
 
     // Size and position (Settings → Look) apply at start: the window is made
     // for them. `k` scales everything; the offset moves the island down.
@@ -556,6 +558,16 @@ fn run() -> platform::Result<()> {
             islet_render::draw(&mut pixmap, &frame, scale);
             if app.has_content(t) {
                 let engine = text.get_or_insert_with(TextEngine::new);
+                let font = &app.prefs().font;
+                if text_font.as_ref() != Some(font) {
+                    let files: Vec<std::path::PathBuf> =
+                        app.prefs().font_files.iter().map(std::path::PathBuf::from).collect();
+                    let choice = (!font.is_empty()).then_some((font.as_str(), files.as_slice()));
+                    if !engine.set_font(choice) {
+                        trace(&format!("font {font} couldn't be read; using the built-in one"));
+                    }
+                    text_font = Some(font.clone());
+                }
                 let elements = app.elements(t, engine);
                 // Clip only what reaches past the outline (mid-morph content).
                 let clip = islet_render::elements::needs_clip(&frame, &elements, engine)

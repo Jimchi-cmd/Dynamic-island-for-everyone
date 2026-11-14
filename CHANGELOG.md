@@ -4,6 +4,14 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+- **Fonts:** the island's text in any font installed on your computer (Settings → Look → Font, or `islet fonts` and `islet look font <name>`); nothing is bundled or copied.
+- **Celsius or Fahrenheit** as a clear °C / °F choice (Settings → Look and the Weather page).
+- **A border in the album's colour** round the island while a song plays (free; Settings → Look).
+
+### Changed
+- Settings' dropdowns are redrawn to match the rest of the app (the system's plain white lists were hard to read), with search for long lists, and the island's size is three buttons.
+
 ### Fixed
 - The empty island no longer pops open whenever the pointer passes over the top of the screen: it grows (and shows its status strip) once the pointer rests on it for a third of a second.
 - The clock card's Wi-Fi and Bluetooth buttons are blue while Wi-Fi or Bluetooth is switched on (connected or not) and grey when it's off. Wi-Fi no longer stays blue after being switched off, and the island reads the state again once a radio has settled.

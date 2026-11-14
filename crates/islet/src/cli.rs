@@ -110,6 +110,8 @@ Usage:
   islet look style <style>                 what the island is made of: black, or with Islet Pro
                                            tinted, glass or tinted-glass
   islet look shape pill|notch              the outline; notch (Islet Pro) is square at the top
+  islet fonts [--json]                     the fonts installed on this computer
+  islet look font <name>|default           the island's text in one of them, or the built-in font
   islet look clock time|date|seconds       what the empty island shows (date, seconds: Islet Pro)
   islet card                               the clock card's buttons
   islet card show|hide <button>            timer, calendar, screenshot, lock, system, todo, stopwatch
@@ -127,6 +129,7 @@ Usage:
                                            notifications, calendar, fahrenheit, web-artwork,
                                            spotify, privacy-dots, clipboard, lyrics, auto-hide, calls, downloads,
                                            idle-clock, hover-status, wifi-popup, focus-quiet, performance-alert, plugins,
+                                           album-border,
                                            and with Islet Pro: power-saver, album-glow, visualizer,
                                            screenshot-preview, phone
   islet prefs [--json]                     the island's settings
@@ -346,6 +349,17 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         }),
         ["look", "style", name] => set_style(name),
         ["look", "shape", name] => set_choice(name, &islet_core::prefs::SHAPES, "shape", |p, v| p.shape = v),
+        ["fonts"] => Ok(fonts_text()),
+        ["fonts", "--json"] => serde_json::to_string(
+            &islet_render::text::installed_fonts().into_iter().map(|f| f.family).collect::<Vec<_>>(),
+        )
+        .map_err(|e| e.to_string()),
+        ["look", "font", "default"] => set_look(|p| {
+            p.font.clear();
+            p.font_files.clear();
+            Ok("The island uses its built-in font.".into())
+        }),
+        ["look", "font", name] => set_font(name),
         ["look", "clock", name] => set_choice(name, &islet_core::prefs::CLOCK_FACES, "clock", |p, v| p.clock_face = v),
         ["card"] => Ok(card_text()),
         ["card", show @ ("show" | "hide"), button] => set_look(|p| {
@@ -765,6 +779,31 @@ fn set_look(f: impl FnOnce(&mut islet_core::prefs::IslandPrefs) -> Result<String
     config::save_prefs(&p)?;
     prefs_changed();
     Ok(msg)
+}
+
+/// The installed font families, one a line.
+fn fonts_text() -> String {
+    let fonts = islet_render::text::installed_fonts();
+    if fonts.is_empty() {
+        return "No installed fonts found.".into();
+    }
+    fonts.into_iter().map(|f| f.family).collect::<Vec<_>>().join("\n")
+}
+
+/// Use an installed font for the island's text: its files are found now,
+/// so the island reads just those (it never scans all the fonts itself).
+fn set_font(name: &str) -> Result<String, String> {
+    let fonts = islet_render::text::installed_fonts();
+    let Some(font) = fonts.iter().find(|f| f.family.eq_ignore_ascii_case(name)) else {
+        return Err(format!("“{name}” isn't installed (islet fonts lists the fonts you have)"));
+    };
+    let family = font.family.clone();
+    let files = font.files.iter().map(|p| p.display().to_string()).collect();
+    set_look(move |p| {
+        p.font = family.clone();
+        p.font_files = files;
+        Ok(format!("The island's text is in {family}."))
+    })
 }
 
 fn set_hotkey(combo: &str) -> Result<String, String> {

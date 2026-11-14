@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Picker from './lib/Picker.svelte';
   import {
     asLink,
     calculate,
@@ -354,11 +355,22 @@
 
   let displays = $state<string[]>([]);
 
+  // Fonts installed on this computer, for the island's font (read once).
+  let fonts = $state<string[]>([]);
+  async function loadFonts() {
+    try {
+      fonts = JSON.parse(await api.islet(['fonts', '--json']));
+    } catch {
+      fonts = [];
+    }
+  }
+
   async function loadIslandPrefs() {
     try {
       islandPrefs = JSON.parse(await api.islet(['prefs', '--json']));
       displays = JSON.parse(await api.islet(['displays', '--json']));
       void loadPlugins();
+      if (!fonts.length) void loadFonts();
     } catch (e) {
       problem = api.message(e);
     }
@@ -448,7 +460,7 @@
   }
 
   async function setLook(
-    what: 'accent' | 'style' | 'shape' | 'clock' | 'size' | 'position' | 'offset' | 'display',
+    what: 'accent' | 'style' | 'shape' | 'clock' | 'size' | 'position' | 'offset' | 'display' | 'font',
     value: string,
   ) {
     try {
@@ -753,7 +765,6 @@
   // World clocks (Pro)
   let worldClocks: string[] = $state([]);
   let cities: string[] = $state([]);
-  let cityPick = $state('');
 
   async function loadWorld() {
     try {
@@ -769,7 +780,6 @@
     proNote = '';
     try {
       await api.islet(['world', add ? 'add' : 'remove', city]);
-      cityPick = '';
     } catch (e) {
       proNote = api.message(e);
     }
@@ -1046,6 +1056,24 @@
     if (prefs.checkUpdates) await checkUpdate();
   });
 </script>
+
+<!-- Celsius or Fahrenheit, on the Look and Weather pages. -->
+{#snippet units()}
+  <div class="segmented" role="radiogroup" aria-label="Temperature unit">
+    {#each [{ f: false, short: '°C', long: 'Celsius' }, { f: true, short: '°F', long: 'Fahrenheit' }] as u (u.short)}
+      {@const on = (islandPrefs?.fahrenheit ?? false) === u.f}
+      <button
+        role="radio"
+        aria-checked={on}
+        aria-label={u.long}
+        title={u.long}
+        class:chosen={on}
+        disabled={!islandPrefs}
+        onclick={() => setSwitch('fahrenheit', u.f)}>{u.short}</button
+      >
+    {/each}
+  </div>
+{/snippet}
 
 {#if info && !prefs.welcomed}
   <main class="welcome" aria-live="polite">
@@ -1338,28 +1366,59 @@
           </div>
           <div class="net">
             <span class="name">Shape {#if !pro?.active}<span class="pro-tag">Pro</span>{/if}</span>
-            <select
-              aria-label="Island shape"
+            <Picker
+              label="Island shape"
               value={islandPrefs?.shape ?? 'pill'}
               disabled={!islandPrefs}
-              onchange={(e) => (pro?.active ? setLook('shape', e.currentTarget.value) : (page = 'pro'))}
-            >
-              <option value="pill">Pill</option>
-              <option value="notch">Notch (square at the top)</option>
-            </select>
+              options={[
+                { value: 'pill', label: 'Pill' },
+                { value: 'notch', label: 'Notch', hint: 'square at the top' },
+              ]}
+              onchange={(v) => (pro?.active ? setLook('shape', v) : (page = 'pro'))}
+            />
           </div>
           <div class="net">
             <span class="name">Empty island shows {#if !pro?.active}<span class="pro-tag">Pro</span>{/if}</span>
-            <select
-              aria-label="What the empty island shows"
+            <Picker
+              label="What the empty island shows"
               value={islandPrefs?.clockFace ?? 'time'}
               disabled={!islandPrefs}
-              onchange={(e) => (pro?.active ? setLook('clock', e.currentTarget.value) : (page = 'pro'))}
-            >
-              <option value="time">The time</option>
-              <option value="date">The day and the time</option>
-              <option value="seconds">The time with seconds</option>
-            </select>
+              options={[
+                { value: 'time', label: 'The time' },
+                { value: 'date', label: 'The day and the time' },
+                { value: 'seconds', label: 'The time with seconds' },
+              ]}
+              onchange={(v) => (pro?.active ? setLook('clock', v) : (page = 'pro'))}
+            />
+          </div>
+          <div class="net">
+            <span class="name">Font</span>
+            <Picker
+              label="The island's font"
+              value={islandPrefs?.font ?? ''}
+              disabled={!islandPrefs}
+              searchable
+              options={[
+                { value: '', label: 'Built-in', hint: 'Inter' },
+                ...fonts.map((f) => ({ value: f, label: f, font: f })),
+              ]}
+              onchange={(v) => setLook('font', v || 'default')}
+            />
+          </div>
+          <div class="net">
+            <span class="name">Temperature</span>
+            {@render units()}
+          </div>
+          <div class="net">
+            <span class="name">Border in the album’s colour while music plays</span>
+            <input
+              type="checkbox"
+              class="switch"
+              aria-label="Border in the album's colour while music plays"
+              checked={islandPrefs?.albumBorder ?? true}
+              disabled={!islandPrefs}
+              onchange={(e) => setSwitch('albumBorder', e.currentTarget.checked)}
+            />
           </div>
           {#if pro?.active}
             {#each [['albumGlow', 'Glow in the album’s colour while music plays'], ['visualizer', 'Moving bars as the song’s progress bar'], ['screenshotPreview', 'Show each new screenshot on the island']] as [key, label] (key)}
@@ -1378,63 +1437,62 @@
           {/if}
           <div class="net">
             <span class="name">Size</span>
-            <select
-              aria-label="Island size"
-              value={islandPrefs?.size ?? 'medium'}
-              disabled={!islandPrefs}
-              onchange={(e) => setLook('size', e.currentTarget.value)}
-            >
-              <option value="small">Small</option>
-              <option value="medium">Medium</option>
-              <option value="large">Large</option>
-            </select>
+            <div class="segmented" role="radiogroup" aria-label="Island size">
+              {#each [{ v: 'small', l: 'Small' }, { v: 'medium', l: 'Medium' }, { v: 'large', l: 'Large' }] as o (o.v)}
+                {@const on = (islandPrefs?.size ?? 'medium') === o.v}
+                <button role="radio" aria-checked={on} class:chosen={on} disabled={!islandPrefs} onclick={() => setLook('size', o.v)}
+                  >{o.l}</button
+                >
+              {/each}
+            </div>
           </div>
           {#if displays.length > 1}
             <div class="net">
               <span class="name">Display</span>
-              <select
-                aria-label="Display for the island"
+              <Picker
+                label="Display for the island"
                 value={islandPrefs?.display || 'primary'}
                 disabled={!islandPrefs}
-                onchange={(e) => setLook('display', e.currentTarget.value)}
-              >
-                <option value="primary">Primary display</option>
-                <option value="all">All displays</option>
-                {#each displays as d (d)}
-                  <option value={d}>{d}</option>
-                {/each}
-              </select>
+                options={[
+                  { value: 'primary', label: 'Primary display' },
+                  { value: 'all', label: 'All displays' },
+                  ...displays.map((d) => ({ value: d, label: d })),
+                ]}
+                onchange={(v) => setLook('display', v)}
+              />
             </div>
           {/if}
           <div class="net">
             <span class="name">Position</span>
-            <select
-              aria-label="Where the island sits"
+            <Picker
+              label="Where the island sits"
               value={islandPrefs?.position ?? 'top'}
               disabled={!islandPrefs}
-              onchange={(e) => setLook('position', e.currentTarget.value)}
-            >
-              <option value="top">Top centre</option>
-              <option value="top-left">Top left</option>
-              <option value="top-right">Top right</option>
-              <option value="bottom">Bottom centre</option>
-            </select>
+              options={[
+                { value: 'top', label: 'Top centre' },
+                { value: 'top-left', label: 'Top left' },
+                { value: 'top-right', label: 'Top right' },
+                { value: 'bottom', label: 'Bottom centre' },
+              ]}
+              onchange={(v) => setLook('position', v)}
+            />
           </div>
           {#if displays.length > 1 && islandPrefs?.display === 'all'}
             <p class="muted small">A size for each display:</p>
             {#each displays as d (d)}
               <div class="net">
                 <span class="name">{d}</span>
-                <select
-                  aria-label={`Island size on ${d}`}
+                <Picker
+                  label={`Island size on ${d}`}
                   value={islandPrefs?.displaySizes?.[d] ?? 'default'}
-                  onchange={(e) => displaySize(d, e.currentTarget.value)}
-                >
-                  <option value="default">Same as above</option>
-                  <option value="small">Small</option>
-                  <option value="medium">Medium</option>
-                  <option value="large">Large</option>
-                </select>
+                  options={[
+                    { value: 'default', label: 'Same as above' },
+                    { value: 'small', label: 'Small' },
+                    { value: 'medium', label: 'Medium' },
+                    { value: 'large', label: 'Large' },
+                  ]}
+                  onchange={(v) => displaySize(d, v)}
+                />
               </div>
             {/each}
           {/if}
@@ -1684,14 +1742,8 @@
               <button onclick={weatherOff}>Turn off</button>
             </div>
             <div class="net">
-              <span class="name">Fahrenheit</span>
-              <input
-                type="checkbox"
-                class="switch"
-                aria-label="Show temperatures in Fahrenheit"
-                checked={islandPrefs.fahrenheit}
-                onchange={(e) => setSwitch('fahrenheit', e.currentTarget.checked)}
-              />
+              <span class="name">Temperature</span>
+              {@render units()}
             </div>
           {/if}
           <form class="join" onsubmit={(e) => { e.preventDefault(); if (cityQuery.trim() && !cityQuery.trim().startsWith('-')) void searchCity(); }}>
@@ -1901,10 +1953,13 @@
           {/each}
           <div class="three">
             <div>
-              <label for="lday">Day</label>
-              <select id="lday" bind:value={lessonDay}>
-                {#each WEEK_DAYS as dayName, d (d)}<option value={d}>{dayName}</option>{/each}
-              </select>
+              <span class="label">Day</span>
+              <Picker
+                label="Day"
+                value={String(lessonDay)}
+                options={WEEK_DAYS.map((dayName, d) => ({ value: String(d), label: dayName }))}
+                onchange={(v) => (lessonDay = Number(v))}
+              />
             </div>
             <div>
               <label for="lstart">Starts</label>
@@ -2036,10 +2091,13 @@
               <input id="label" bind:value={trip.label} placeholder="Work" />
             </div>
             <div>
-              <label for="mode">Travel by</label>
-              <select id="mode" bind:value={trip.mode}>
-                {#each MODES as m (m.id)}<option value={m.id}>{m.label}</option>{/each}
-              </select>
+              <span class="label">Travel by</span>
+              <Picker
+                label="Travel by"
+                value={trip.mode}
+                options={MODES.map((m) => ({ value: m.id, label: m.label }))}
+                onchange={(v) => (trip.mode = v as typeof trip.mode)}
+              />
             </div>
           </div>
           <div class="actions">
@@ -2179,11 +2237,17 @@
               </div>
             {/if}
             {#if worldClocks.length < 3}
-              <label for="city">Add a city</label>
-              <select id="city" bind:value={cityPick} onchange={() => worldChange(true, cityPick)}>
-                <option value="">Choose…</option>
-                {#each cities.filter((c) => !worldClocks.includes(c)) as c (c)}<option value={c}>{c}</option>{/each}
-              </select>
+              <span class="label">Add a city</span>
+              <Picker
+                label="Add a city"
+                value=""
+                searchable
+                options={[
+                  { value: '', label: 'Choose…' },
+                  ...cities.filter((c) => !worldClocks.includes(c)).map((c) => ({ value: c, label: c })),
+                ]}
+                onchange={(v) => v && worldChange(true, v)}
+              />
             {/if}
           </div>
           <div class="card">
@@ -2651,6 +2715,11 @@
     margin: 12px 0;
     animation: rise 0.28s ease both;
   }
+  /* An open dropdown's list overlaps the cards below it. */
+  .card:has(:global(.picker.open)) {
+    position: relative;
+    z-index: 20;
+  }
   .card p:last-child {
     margin-bottom: 0;
   }
@@ -2721,10 +2790,31 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* A row's control keeps to the right and leaves room for its label. */
-  .net select {
-    width: auto;
-    min-width: 200px;
+  /* A row of choices, the chosen one raised (size, °C / °F). */
+  .segmented {
+    display: inline-flex;
+    flex: none;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 9px;
+    background: var(--field);
+  }
+  .segmented button {
+    box-shadow: none;
+    background: transparent;
+    padding: 4px 14px;
+    border-radius: 7px;
+    color: var(--muted);
+    font-weight: 550;
+  }
+  .segmented button.chosen {
+    background: var(--panel);
+    color: var(--text);
+    box-shadow:
+      0 0 0 0.5px var(--line),
+      0 1px 2px rgba(0, 0, 0, 0.12);
+  }
+  .net :global(.picker) {
     flex: none;
   }
   .net input[type='range'] {

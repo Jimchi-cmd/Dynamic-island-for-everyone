@@ -52,6 +52,8 @@ pub struct IslandPrefs {
     pub calls: bool,
     /// Downloads in progress, from the Downloads folder.
     pub downloads: bool,
+    /// While a song plays, a border around the island in its cover's colour.
+    pub album_border: bool,
     /// The user's own plugin widgets (scripts in the plugins folder).
     pub plugins: bool,
     /// A pop-up when Wi-Fi joins a network.
@@ -73,6 +75,10 @@ pub struct IslandPrefs {
     pub shape: String,
     /// Islet Pro: what the empty island shows (see `CLOCK_FACES`).
     pub clock_face: String,
+    /// The island's text in a font installed on this computer ("" = the
+    /// built-in one), and that font's files (read, never copied).
+    pub font: String,
+    pub font_files: Vec<String>,
     /// Say when one program hogs the processor or the memory, and offer
     /// to close it. Looks at the running programs every 20 seconds.
     pub performance_alert: bool,
@@ -235,6 +241,7 @@ impl Default for IslandPrefs {
             idle_clock: true,
             calls: true,
             downloads: false,
+            album_border: true,
             plugins: false,
             power_saver: false,
             focus_quiet: false,
@@ -247,6 +254,8 @@ impl Default for IslandPrefs {
             visualizer: true,
             shape: "pill".into(),
             clock_face: "time".into(),
+            font: String::new(),
+            font_files: Vec::new(),
             hotkey: String::new(),
             launcher_hotkey: String::new(),
             note_hotkey: String::new(),
@@ -265,7 +274,7 @@ impl Default for IslandPrefs {
 }
 
 /// The switches `islet set <key> on|off` understands.
-pub const SWITCHES: [&str; 25] = [
+pub const SWITCHES: [&str; 26] = [
     "volume-hud",
     "brightness-hud",
     "caps-lock-hud",
@@ -291,6 +300,7 @@ pub const SWITCHES: [&str; 25] = [
     "phone",
     "wifi-popup",
     "plugins",
+    "album-border",
 ];
 
 impl IslandPrefs {
@@ -331,6 +341,7 @@ impl IslandPrefs {
             "idle-clock" => &mut self.idle_clock,
             "calls" => &mut self.calls,
             "downloads" => &mut self.downloads,
+            "album-border" => &mut self.album_border,
             "plugins" => &mut self.plugins,
             "power-saver" => &mut self.power_saver,
             "focus-quiet" => &mut self.focus_quiet,
