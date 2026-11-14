@@ -2,7 +2,7 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [0.3.0] - Unreleased
+## [0.3.0] - 2026-11-14
 
 ### Added
 - **Islet Pro** (optional, one payment): a licence key checked with the store, kept in the system keychain, good on three computers; being offline never turns it off. Everything in 0.2.0 stays free. See [docs/pro.md](docs/pro.md).
