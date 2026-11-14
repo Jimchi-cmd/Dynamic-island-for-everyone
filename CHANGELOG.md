@@ -41,6 +41,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Not included
 - A per-app volume mixer on macOS: there is no public API for one app's volume.
+- A brightness slider on macOS: setting the screen's brightness there needs private APIs, which Islet doesn't use.
 
 ## [0.2.0] - 2026-11-06
 
