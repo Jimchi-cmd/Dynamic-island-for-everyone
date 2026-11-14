@@ -2,7 +2,7 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.1] - 2026-11-14
 
 ### Added
 - **Fonts:** the island's text in any font installed on your computer (Settings → Look → Font, or `islet fonts` and `islet look font <name>`); nothing is bundled or copied.
