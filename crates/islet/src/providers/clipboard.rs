@@ -91,10 +91,22 @@ mod platform {
     }
 
     pub fn start(sink: Sink) -> Option<Watcher> {
-        let (conn, screen) = x11rb::connect(None).ok()?;
+        match try_start(sink) {
+            Ok(w) => Some(w),
+            Err(why) => {
+                crate::providers::debug_log(&format!("clipboard history unavailable: {why}"));
+                None
+            }
+        }
+    }
+
+    /// Start watching, or say which step failed.
+    pub(super) fn try_start(sink: Sink) -> Result<Watcher, String> {
+        let e = |step: &'static str| move |err: &dyn std::fmt::Debug| format!("{step}: {err:?}");
+        let (conn, screen) = x11rb::connect(None).map_err(|x| e("connect")(&x))?;
         let conn = Arc::new(conn);
         let root = conn.setup().roots[screen].root;
-        let win = conn.generate_id().ok()?;
+        let win = conn.generate_id().map_err(|x| e("window id")(&x))?;
         conn.create_window(
             COPY_DEPTH_FROM_PARENT,
             win,
@@ -109,8 +121,13 @@ mod platform {
             // Property changes: big copies arrive in pieces (INCR).
             &CreateWindowAux::new().event_mask(EventMask::PROPERTY_CHANGE),
         )
-        .ok()?;
-        let atom = |name: &str| conn.intern_atom(false, name.as_bytes()).ok()?.reply().ok().map(|r| r.atom);
+        .map_err(|x| e("create window")(&x))?
+        .check()
+        .map_err(|x| e("create window")(&x))?;
+        let atom = |name: &str| -> Result<Atom, String> {
+            let cookie = conn.intern_atom(false, name.as_bytes()).map_err(|x| format!("atom {name}: {x:?}"))?;
+            cookie.reply().map(|r| r.atom).map_err(|x| format!("atom {name}: {x:?}"))
+        };
         let atoms = Atoms {
             clipboard: atom("CLIPBOARD")?,
             targets: atom("TARGETS")?,
@@ -121,19 +138,25 @@ mod platform {
             png: atom("image/png")?,
             pid: atom("_NET_WM_PID")?,
         };
-        conn.xfixes_query_version(5, 0).ok()?.reply().ok()?;
-        conn.xfixes_select_selection_input(win, atoms.clipboard, SelectionEventMask::SET_SELECTION_OWNER).ok()?;
-        conn.flush().ok()?;
+        conn.xfixes_query_version(5, 0).map_err(|x| e("xfixes")(&x))?.reply().map_err(|x| e("xfixes")(&x))?;
+        conn.xfixes_select_selection_input(win, atoms.clipboard, SelectionEventMask::SET_SELECTION_OWNER)
+            .map_err(|x| e("xfixes select")(&x))?
+            .check()
+            .map_err(|x| e("xfixes select")(&x))?;
+        conn.flush().map_err(|x| e("flush")(&x))?;
         let (tx, rx) = channel();
         let c = conn.clone();
-        std::thread::Builder::new().name("clipboard".into()).spawn(move || run(&c, win, &atoms, &rx, &sink)).ok()?;
+        std::thread::Builder::new()
+            .name("clipboard".into())
+            .spawn(move || run(&c, win, &atoms, &rx, &sink))
+            .map_err(|x| e("thread")(&x))?;
         // Wake the watcher with a message to its own window.
         let wake = move || {
             let ev = ClientMessageEvent::new(32, win, AtomEnum::NOTICE, [0u32; 5]);
             let _ = conn.send_event(false, win, EventMask::NO_EVENT, ev);
             let _ = conn.flush();
         };
-        Some(Watcher { tx, wake: Box::new(wake) })
+        Ok(Watcher { tx, wake: Box::new(wake) })
     }
 
     /// A transfer in progress: what was asked for, who copied it, and the
@@ -869,13 +892,19 @@ mod tests {
 
     #[test]
     fn records_copies_skips_secrets_and_copies_back() {
-        if std::env::var_os("DISPLAY").is_none() || x11rb::connect(None).is_err() {
+        // Held for the whole test: an X server whose last client leaves
+        // starts afresh, and turns away whoever connects meanwhile.
+        let keep = x11rb::connect(None);
+        if std::env::var_os("DISPLAY").is_none() || keep.is_err() {
             eprintln!("skipping: no X display");
             return;
         }
         let (tx, rx) = channel();
         let sink = Sink { tx, waker: crate::platform::Waker::new(|| {}) };
-        let watcher = start(sink).expect("XFixes watcher");
+        let watcher = match platform::try_start(sink) {
+            Ok(w) => w,
+            Err(why) => panic!("XFixes watcher: {why}"),
+        };
         let next = |ms: u64| match rx.recv_timeout(Duration::from_millis(ms)) {
             Ok((Report::Clipboard(Clip::Text(t), _), _)) => Some(t),
             _ => None,
