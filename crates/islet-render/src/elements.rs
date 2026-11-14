@@ -39,6 +39,8 @@ pub enum Icon {
     Volume(u8),
     Sun,
     CapsLock,
+    /// An airplane seen from above (airplane mode).
+    Airplane,
     Moon,
     Cloud,
     PartlyCloudy,
@@ -591,6 +593,29 @@ impl IconPainter<'_> {
                     _ => {}
                 }
             }
+            Icon::Airplane => {
+                let plane = Self::poly(&[
+                    (12.0, 2.5),
+                    (13.4, 4.0),
+                    (13.4, 9.5),
+                    (21.0, 14.0),
+                    (21.0, 15.8),
+                    (13.4, 13.4),
+                    (13.4, 18.0),
+                    (16.0, 20.0),
+                    (16.0, 21.5),
+                    (12.0, 20.5),
+                    (8.0, 21.5),
+                    (8.0, 20.0),
+                    (10.6, 18.0),
+                    (10.6, 13.4),
+                    (3.0, 15.8),
+                    (3.0, 14.0),
+                    (10.6, 9.5),
+                    (10.6, 4.0),
+                ]);
+                self.fill(plane);
+            }
             Icon::CapsLock => {
                 let arrow = Self::poly(&[
                     (12.0, 3.5),
@@ -779,7 +804,7 @@ mod tests {
         p.pixels().iter().filter(|c| c.alpha() > 0).count()
     }
 
-    const ALL: [Icon; 56] = [
+    const ALL: [Icon; 57] = [
         Icon::Turn(0),
         Icon::Turn(-90),
         Icon::Turn(135),
@@ -802,6 +827,7 @@ mod tests {
         Icon::Message,
         Icon::Calendar,
         Icon::Moon,
+        Icon::Airplane,
         Icon::Cloud,
         Icon::PartlyCloudy,
         Icon::Rain,

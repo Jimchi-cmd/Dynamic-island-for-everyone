@@ -372,6 +372,8 @@ fn hud_icon(h: &Hud) -> Icon {
         Hud::Brightness(_) => Icon::Sun,
         Hud::CapsLock(_) => Icon::CapsLock,
         Hud::WifiJoined(_) => Icon::Wifi(3),
+        Hud::Airplane(_) => Icon::Airplane,
+        Hud::DoNotDisturb(_) => Icon::Moon,
     }
 }
 
@@ -390,7 +392,7 @@ fn hud_trailing(h: &Hud, right: f32, cy: f32, bar_w: f32, o: f32) -> Vec<Element
     match *h {
         Hud::Volume { level, muted } => level_bar(level, right, cy, bar_w, muted, o).to_vec(),
         Hud::Brightness(level) => level_bar(level, right, cy, bar_w, false, o).to_vec(),
-        Hud::CapsLock(on) => {
+        Hud::CapsLock(on) | Hud::Airplane(on) | Hud::DoNotDisturb(on) => {
             let style = TextStyle {
                 size: 14.0,
                 weight: 600,
@@ -937,6 +939,8 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
             let style = TextStyle { size: 14.0, weight: 600, opacity: o, ..TextStyle::default() };
             match h {
                 Hud::CapsLock(_) => v.push(text("Caps Lock", style, x + 38.0, cy + 5.0)),
+                Hud::Airplane(_) => v.push(text("Airplane mode", style, x + 38.0, cy + 5.0)),
+                Hud::DoNotDisturb(_) => v.push(text("Do Not Disturb", style, x + 38.0, cy + 5.0)),
                 // The network's name, up to "Connected" on the right.
                 Hud::WifiJoined(name) => {
                     let room = (right - 16.0 - 82.0) - (x + 38.0);
@@ -2793,12 +2797,15 @@ impl ClockFace {
 }
 
 /// The time, centred in the empty pill ("14:05", or "2:05 PM").
+#[allow(clippy::too_many_arguments)]
 pub fn idle_clock(
     pill: Rect,
     now: &LocalTime,
     h24: bool,
     face: ClockFace,
     o: f32,
+    icons: &[Icon],
+    icon_o: f32,
     engine: &mut TextEngine,
 ) -> Vec<Element> {
     let (time, suffix) = format_time(now, h24);
@@ -2818,9 +2825,14 @@ pub fn idle_clock(
     let lw = if lead.is_empty() { 0.0 } else { engine.measure(&lead, &lead_style) + 7.0 };
     let tw = engine.measure(&time, &style);
     let sw = suffix.as_ref().map_or(0.0, |s| 3.0 + engine.measure(s, &small));
+    // Airplane mode / Do Not Disturb icons lead the row, centred with it.
+    let iw = if icons.is_empty() || icon_o <= 0.0 { 0.0 } else { mode_icons_width(icons.len()) };
     let (cx, baseline) = ((pill.x + pill.w / 2.0) as f32, (pill.y + pill.h / 2.0) as f32 + 5.0);
-    let left = cx - (lw + tw + sw) / 2.0;
-    let mut v = Vec::with_capacity(3);
+    let left = cx - (iw + lw + tw + sw) / 2.0 + iw;
+    let mut v = Vec::with_capacity(3 + icons.len());
+    if iw > 0.0 {
+        v.extend(mode_icons(icons, left - iw, (pill.y + pill.h / 2.0) as f32, icon_o));
+    }
     if !lead.is_empty() {
         v.push(text(lead, lead_style, left, baseline - 0.5));
     }
@@ -2829,6 +2841,31 @@ pub fn idle_clock(
         v.push(text(s, small, left + lw + tw + 3.0, baseline));
     }
     v
+}
+
+/// Each airplane-mode / Do Not Disturb icon, and the gap after the last.
+const MODE_ICON_STEP: f32 = 17.0;
+const MODE_ICONS_GAP: f32 = 6.0;
+
+/// The room a row of `n` mode icons takes, up to what follows them.
+pub fn mode_icons_width(n: usize) -> f32 {
+    n as f32 * MODE_ICON_STEP + MODE_ICONS_GAP - 3.0
+}
+
+/// The mode icons from `x`, centred on the line `cy`.
+pub fn mode_icons(icons: &[Icon], x: f32, cy: f32, o: f32) -> Vec<Element> {
+    icons
+        .iter()
+        .enumerate()
+        .map(|(i, &icon)| Element::Icon {
+            icon,
+            x: x + i as f32 * MODE_ICON_STEP,
+            y: cy - 7.0,
+            size: 14.0,
+            color: WHITE,
+            opacity: o * 0.85,
+        })
+        .collect()
 }
 
 // ---- Volume, brightness and dark mode -----------------------------------------

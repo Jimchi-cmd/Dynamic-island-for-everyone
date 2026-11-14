@@ -43,6 +43,7 @@ mod macos_privacy;
 mod macos_volume;
 pub mod mic;
 pub mod mixer;
+pub mod modes;
 pub mod navigation;
 mod netwatch;
 pub mod phone;
@@ -186,6 +187,7 @@ fn describe(r: &Report) -> String {
         }
         Report::Volume(level, muted) => format!("volume {level:.2} muted={muted}"),
         Report::Brightness(level) => format!("brightness {level:.2}"),
+        Report::Modes { airplane, dnd } => format!("modes airplane={airplane:?} dnd={dnd:?}"),
         Report::Mixer(m) => format!("mixer: {:?} apps", m.as_ref().map(Vec::len)),
         Report::BatteryHealth(h) => format!("battery health {:?}", h.map(|h| h.percent)),
         Report::Hog(h) => format!("hog {:?}", h.as_ref().map(|h| (&h.name, h.share()))),

@@ -69,6 +69,7 @@ windows = { version = "0.62", features = [
   "Media_Control",
   "Storage_Streams",
   "UI_Notifications",
+  "UI_Shell",
   "UI_Notifications_Management",
   "System_Power",
   "Win32_System_WinRT",

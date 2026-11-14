@@ -129,7 +129,7 @@ Usage:
                                            notifications, calendar, fahrenheit, web-artwork,
                                            spotify, privacy-dots, clipboard, lyrics, auto-hide, calls, downloads,
                                            idle-clock, hover-status, wifi-popup, focus-quiet, performance-alert, plugins,
-                                           album-border,
+                                           album-border, mode-indicators,
                                            and with Islet Pro: power-saver, album-glow, visualizer,
                                            screenshot-preview, phone
   islet prefs [--json]                     the island's settings

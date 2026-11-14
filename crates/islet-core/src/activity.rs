@@ -121,6 +121,10 @@ pub enum Hud {
     CapsLock(bool),
     /// Wi-Fi joined this network.
     WifiJoined(String),
+    /// Airplane mode turned on or off.
+    Airplane(bool),
+    /// Do Not Disturb (Focus) turned on or off.
+    DoNotDisturb(bool),
 }
 
 impl Hud {
@@ -214,6 +218,12 @@ pub enum Report {
     Hud(Hud),
     /// The screen's brightness as read on request (no pop-up), 0..=1.
     Brightness(f32),
+    /// Airplane mode and Do Not Disturb as the system reports them (each
+    /// None where this system can't tell).
+    Modes {
+        airplane: Option<bool>,
+        dnd: Option<bool>,
+    },
     /// The apps playing sound and their volumes (None: this system can't
     /// tell).
     Mixer(Option<Vec<crate::mixer::AppVolume>>),
@@ -587,6 +597,7 @@ impl Activities {
             | Report::Brightness(_)
             | Report::BatteryHealth(_)
             | Report::Mixer(_)
+            | Report::Modes { .. }
             | Report::Hog(_) => false,
             Report::System(s) => {
                 self.system = s;

@@ -235,6 +235,10 @@ fn run() -> platform::Result<()> {
     providers.downloads(app.prefs().downloads && !scripted);
     providers.plugins(app.prefs().plugins && !scripted, false);
     providers.hog(app.prefs().performance_alert && !scripted);
+    // Airplane mode and Do Not Disturb: event-driven, nothing polls.
+    if !scripted {
+        providers::modes::start(providers.sink());
+    }
     providers.screenshots(pro::active() && app.prefs().screenshot_preview && !scripted);
     providers.phone(phone_pairing(app.prefs()).filter(|_| !scripted && mirror.is_none()));
     let mut alarm_sound = sound::AlarmSound::default();

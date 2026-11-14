@@ -277,6 +277,8 @@ export interface IslandPrefs {
   wifiPopup: boolean;
   /** The user's own plugin widgets. */
   plugins: boolean;
+  /** Airplane mode and Do Not Disturb: pop-ups and icons on the island. */
+  modeIndicators: boolean;
   /** A border in the playing song's cover colour. */
   albumBorder: boolean;
   /** An installed font for the island's text ("" = the built-in one). */
@@ -364,6 +366,7 @@ export const SWITCH_NAMES: Record<string, string> = {
   wifiPopup: 'wifi-popup',
   plugins: 'plugins',
   albumBorder: 'album-border',
+  modeIndicators: 'mode-indicators',
   performanceAlert: 'performance-alert',
   albumGlow: 'album-glow',
   visualizer: 'visualizer',

@@ -1172,7 +1172,7 @@
         <div class="card">
           <h2>Pop-ups</h2>
           <p class="muted small">The island shows a moment's notice when these change.</p>
-          {#each [['volumeHud', 'Volume'], ['brightnessHud', 'Screen brightness'], ['capsLockHud', 'Caps Lock'], ['wifiPopup', 'Joining a Wi-Fi network']] as [key, label] (key)}
+          {#each [['volumeHud', 'Volume'], ['brightnessHud', 'Screen brightness'], ['capsLockHud', 'Caps Lock'], ['wifiPopup', 'Joining a Wi-Fi network'], ['modeIndicators', 'Airplane mode and Do Not Disturb']] as [key, label] (key)}
             <div class="net">
               <span class="name">{label}</span>
               <input
@@ -1193,6 +1193,12 @@
               you turn this off.
             </p>
           {/if}
+          <p class="muted small">
+            Airplane mode and Do Not Disturb also show as small icons on the empty island while they're on.
+            {#if info?.os === 'macos'}Macs have no airplane mode, and macOS shares Focus only with App Store apps, so
+              neither shows on a Mac.{:else if info?.os === 'windows'}Do Not Disturb follows Windows 11's Focus
+              sessions.{/if}
+          </p>
         </div>
         <div class="card">
           <h2>Now Playing</h2>

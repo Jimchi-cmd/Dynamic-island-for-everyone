@@ -8,6 +8,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - **Fonts:** the island's text in any font installed on your computer (Settings → Look → Font, or `islet fonts` and `islet look font <name>`); nothing is bundled or copied.
 - **Celsius or Fahrenheit** as a clear °C / °F choice (Settings → Look and the Weather page).
 - **A border in the album's colour** round the island while a song plays (free; Settings → Look).
+- **Airplane mode and Do Not Disturb:** a pop-up when either turns on or off, and a small plane or moon beside the time on the empty island while it's on. Linux: airplane mode from the radios' switches (rfkill), Do Not Disturb from GNOME or KDE. Windows: airplane mode, and Do Not Disturb through Windows 11's Focus sessions. Not on a Mac (no airplane mode; macOS shares Focus only with App Store apps). Switch: Settings → General → Pop-ups, or `islet set mode-indicators off`.
 
 ### Changed
 - Settings' dropdowns are redrawn to match the rest of the app (the system's plain white lists were hard to read), with search for long lists, and the island's size is three buttons.

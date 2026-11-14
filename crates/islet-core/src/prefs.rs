@@ -54,6 +54,9 @@ pub struct IslandPrefs {
     pub downloads: bool,
     /// While a song plays, a border around the island in its cover's colour.
     pub album_border: bool,
+    /// Show airplane mode and Do Not Disturb: a pop-up as they change and
+    /// a small icon on the empty island while they're on.
+    pub mode_indicators: bool,
     /// The user's own plugin widgets (scripts in the plugins folder).
     pub plugins: bool,
     /// A pop-up when Wi-Fi joins a network.
@@ -242,6 +245,7 @@ impl Default for IslandPrefs {
             calls: true,
             downloads: false,
             album_border: true,
+            mode_indicators: true,
             plugins: false,
             power_saver: false,
             focus_quiet: false,
@@ -274,7 +278,7 @@ impl Default for IslandPrefs {
 }
 
 /// The switches `islet set <key> on|off` understands.
-pub const SWITCHES: [&str; 26] = [
+pub const SWITCHES: [&str; 27] = [
     "volume-hud",
     "brightness-hud",
     "caps-lock-hud",
@@ -301,6 +305,7 @@ pub const SWITCHES: [&str; 26] = [
     "wifi-popup",
     "plugins",
     "album-border",
+    "mode-indicators",
 ];
 
 impl IslandPrefs {
@@ -342,6 +347,7 @@ impl IslandPrefs {
             "calls" => &mut self.calls,
             "downloads" => &mut self.downloads,
             "album-border" => &mut self.album_border,
+            "mode-indicators" => &mut self.mode_indicators,
             "plugins" => &mut self.plugins,
             "power-saver" => &mut self.power_saver,
             "focus-quiet" => &mut self.focus_quiet,

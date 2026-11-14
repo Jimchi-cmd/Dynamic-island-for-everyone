@@ -16,6 +16,7 @@ pub mod island;
 pub mod limits;
 pub mod lyrics;
 pub mod mixer;
+pub mod modes;
 pub mod nav;
 pub mod paths;
 pub mod phone;

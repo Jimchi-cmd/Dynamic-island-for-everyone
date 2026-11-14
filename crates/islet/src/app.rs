@@ -20,7 +20,7 @@ use islet_core::prefs::IslandPrefs;
 use islet_core::spring::{Animated, Spring};
 use islet_core::stopwatch::{Stopwatch, StopwatchCommand};
 use islet_core::timer::{Timer, TimerCommand, TimerEvent};
-use islet_render::elements::Element;
+use islet_render::elements::{Element, Icon};
 use islet_render::text::TextEngine;
 use islet_render::{Circle, PillFrame, Squircle};
 use std::sync::Arc;
@@ -348,6 +348,9 @@ pub struct App {
     brightness_set_at: f64,
     /// The Controls slider being dragged.
     tune: Option<content::Tune>,
+    /// Airplane mode and Do Not Disturb, once the system has said.
+    airplane: Option<bool>,
+    dnd: Option<bool>,
     /// The apps playing sound and their volumes (the Controls panel).
     mixer: Vec<islet_core::mixer::AppVolume>,
     /// The program the performance alert is about; the alert button being
@@ -466,6 +469,8 @@ impl App {
             brightness: None,
             brightness_out: None,
             mixer: Vec::new(),
+            airplane: None,
+            dnd: None,
             brightness_set_at: f64::NEG_INFINITY,
             tune: None,
             battery_health: None,
@@ -1261,6 +1266,40 @@ impl App {
         true
     }
 
+    /// The small icons the empty island shows: airplane mode, then Do Not
+    /// Disturb, while they're on.
+    fn mode_icons(&self) -> Vec<Icon> {
+        if !self.prefs.mode_indicators {
+            return Vec::new();
+        }
+        let mut v = Vec::new();
+        if self.airplane == Some(true) {
+            v.push(Icon::Airplane);
+        }
+        if self.dnd == Some(true) {
+            v.push(Icon::Moon);
+        }
+        v
+    }
+
+    /// How visible the mode icons are: on the empty, closed island, and
+    /// out of the way while the hover strip grows in.
+    fn mode_opacity(&self, live: &[Live], p: Rect, strip: f32) -> f32 {
+        if live.is_empty() && p.h < 60.0 {
+            (1.0 - strip * 4.0).clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    /// The width the mode icons add to the empty island.
+    fn mode_room(&self) -> f64 {
+        match self.mode_icons().len() {
+            0 => 0.0,
+            n => f64::from(content::mode_icons_width(n)),
+        }
+    }
+
     /// How many sliders the Controls panel has to show.
     fn tune_count(&self) -> usize {
         usize::from(self.volume.is_some())
@@ -1546,6 +1585,10 @@ impl App {
             Some(Live::Hud(Hud::Brightness(b))) => format!("Brightness {}%", pct(*b)),
             Some(Live::Hud(Hud::CapsLock(on))) => format!("Caps Lock {}", if *on { "on" } else { "off" }),
             Some(Live::Hud(Hud::WifiJoined(name))) => format!("Connected to {name}"),
+            Some(Live::Hud(Hud::Airplane(on))) => format!("Airplane mode {}", if *on { "on" } else { "off" }),
+            Some(Live::Hud(Hud::DoNotDisturb(on))) => {
+                format!("Do Not Disturb {}", if *on { "on" } else { "off" })
+            }
             Some(Live::Note(n)) => format!("Notification from {}: {}", n.app, n.summary),
             Some(Live::Battery {
                 device: d,
@@ -1584,6 +1627,18 @@ impl App {
                 if m.artist.is_empty() { String::new() } else { format!(" by {}", m.artist) },
                 if m.app_name.is_empty() { String::new() } else { format!(", in {}", m.app_name) }
             ),
+        };
+        // What the small icons on the empty island say.
+        let label = match self.mode_icons().as_slice() {
+            [] => label,
+            icons if live.is_empty() => {
+                let names: Vec<&str> = icons
+                    .iter()
+                    .map(|i| if *i == Icon::Airplane { "Airplane mode on" } else { "Do Not Disturb on" })
+                    .collect();
+                format!("{label}. {}", names.join(", "))
+            }
+            _ => label,
         };
         let label = match self.privacy_shown().then(|| self.activities.privacy().describe()).flatten() {
             Some(p) => format!("{label}. {p}"),
@@ -2077,6 +2132,25 @@ impl App {
             self.sync_live(t);
             return self.island.presentation().is_open();
         }
+        if let Report::Modes { airplane, dnd } = r {
+            // The first reading is how things are; only changes pop up.
+            let mut changed = false;
+            for (now, was, hud) in [
+                (airplane, &mut self.airplane, Hud::Airplane as fn(bool) -> Hud),
+                (dnd, &mut self.dnd, Hud::DoNotDisturb as fn(bool) -> Hud),
+            ] {
+                let Some(now) = now else { continue };
+                let before = was.replace(now);
+                if before == Some(now) {
+                    continue;
+                }
+                changed = true;
+                if before.is_some() && self.prefs.mode_indicators {
+                    self.activities.report(Report::Hud(hud(now)), t);
+                }
+            }
+            return self.sync_live(t) || changed;
+        }
         if let Report::Mixer(apps) = r {
             // Not while one of its sliders is held: the rows could move.
             if !matches!(self.tune, Some(content::Tune::App(_))) {
@@ -2136,6 +2210,7 @@ impl App {
                 Hud::Brightness(_) => self.prefs.brightness_hud,
                 Hud::CapsLock(_) => self.prefs.caps_lock_hud,
                 Hud::WifiJoined(_) => self.prefs.wifi_popup,
+                Hud::Airplane(_) | Hud::DoNotDisturb(_) => self.prefs.mode_indicators,
             };
             if !on {
                 return false;
@@ -2355,7 +2430,9 @@ impl App {
             return 0.0;
         }
         let p = self.pill_rect(t);
-        let shape = smooth((60.0 - p.h) / 16.0) * smooth((190.0 - p.w) / 40.0);
+        // Fades as the pill widens into something else (not for the room
+        // the airplane-mode / Do Not Disturb icons take).
+        let shape = smooth((60.0 - p.h) / 16.0) * smooth((190.0 + self.mode_room() - p.w) / 40.0);
         let o = shape as f32;
         if o < 0.01 || self.shown.value(t) < 0.01 {
             0.0
@@ -2394,6 +2471,7 @@ impl App {
             || self.privacy_opacity(t) > 0.0
             || self.idle_clock_opacity(t, &live) > 0.0
             || self.strip_opacity(t) > 0.0
+            || (!self.mode_icons().is_empty() && live.is_empty() && self.pill_rect(t).h < 60.0)
     }
 
     /// The camera / microphone dot shows while the pill is closed (idle or
@@ -2629,7 +2707,18 @@ impl App {
                 inner.x += content::status_shift(items.len()) * f64::from(so);
                 out.extend(content::status_strip(inner, &items, so));
             }
-            out.extend(content::idle_clock(inner, &now, self.h24, self.clock_face(), io, engine));
+            let mo = self.mode_opacity(&live, p, so);
+            let icons = self.mode_icons();
+            out.extend(content::idle_clock(inner, &now, self.h24, self.clock_face(), io, &icons, mo, engine));
+        }
+        // Airplane mode / Do Not Disturb with the time off: the icons alone,
+        // centred (with the time, they lead its row).
+        let icons = self.mode_icons();
+        let mo = self.mode_opacity(&live, p, so);
+        if !icons.is_empty() && mo > 0.0 && !(io > 0.0 && self.clock.is_some()) {
+            let w = content::mode_icons_width(icons.len()) - 6.0;
+            let x = (p.x + p.w / 2.0) as f32 - w / 2.0;
+            out.extend(content::mode_icons(&icons, x, (p.y + p.h / 2.0) as f32, mo));
         }
         let po = self.privacy_opacity(t);
         if po > 0.0 {
@@ -2656,6 +2745,10 @@ impl App {
                 let room = if self.privacy_shown() { PRIVACY_W } else { 0.0 };
                 let strip = content::status_width(self.status_items().len());
                 (w.max(strip + room), h, r)
+            }
+            // Room on the left for the airplane-mode / Do Not Disturb icons.
+            Presentation::Idle | Presentation::Peek if live.is_empty() && !self.mode_icons().is_empty() => {
+                (w + self.mode_room(), h, r)
             }
             Presentation::Compact => {
                 let room = if self.privacy_shown() { PRIVACY_W } else { 0.0 };
@@ -5283,7 +5376,10 @@ mod tests {
             }
             a
         };
-        let apps = [make(false), make(true), make(false), make(true)];
+        let mut modes = App::new(Demo::None, false);
+        modes.set_time(NOW, 0.0);
+        modes.report(Report::Modes { airplane: Some(true), dnd: Some(true) }, 0.0);
+        let apps = [make(false), make(true), modes, make(true)];
         let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
         let mut sheet = Pixmap::new(cw * 2, ch * 2).unwrap();
         sheet.fill(Color::from_rgba8(226, 230, 236, 255));
@@ -5531,6 +5627,49 @@ mod tests {
             dominant: [200, 60, 90],
         };
         MediaInfo { art: Some(art), duration: Some(200.0), position: Some(50.0), ..song(playing) }
+    }
+
+    #[test]
+    fn airplane_mode_and_do_not_disturb_show_on_the_island() {
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        let icons = |app: &App, t: f64, engine: &mut TextEngine| -> Vec<Icon> {
+            app.elements(t, engine)
+                .into_iter()
+                .filter_map(|e| match e {
+                    Element::Icon { icon: i @ (Icon::Airplane | Icon::Moon), .. } => Some(i),
+                    _ => None,
+                })
+                .collect()
+        };
+        // How things are at start: shown, but no pop-up.
+        app.report(Report::Modes { airplane: Some(false), dnd: Some(true) }, 0.0);
+        assert!(app.live(0.1).is_empty(), "the first reading doesn't pop up");
+        assert_eq!(icons(&app, 0.5, &mut engine), [Icon::Moon]);
+        assert!(app.has_content(0.5));
+        assert!(app.accessibility(0.5).label.ends_with("Do Not Disturb on"), "{}", app.accessibility(0.5).label);
+
+        // Airplane mode turns on: a pop-up, then the plane beside the moon.
+        app.report(Report::Modes { airplane: Some(true), dnd: None }, 1.0);
+        assert!(matches!(app.live(1.1).first(), Some(Live::Hud(Hud::Airplane(true)))));
+        assert_eq!(app.accessibility(1.1).label, "Airplane mode on");
+        app.tick(10.0);
+        assert!(app.live(10.0).is_empty());
+        assert_eq!(icons(&app, 10.0, &mut engine), [Icon::Airplane, Icon::Moon]);
+        assert!(texts(&app, 30.0, &mut engine).contains(&"14:05".to_string()), "the time still shows");
+
+        // Do Not Disturb off: "Off", and the moon goes.
+        app.report(Report::Modes { airplane: None, dnd: Some(false) }, 11.0);
+        assert!(matches!(app.live(11.1).first(), Some(Live::Hud(Hud::DoNotDisturb(false)))));
+        app.tick(20.0);
+        assert_eq!(icons(&app, 20.0, &mut engine), [Icon::Airplane]);
+
+        // Switched off in Settings: neither icons nor pop-ups.
+        app.set_prefs(IslandPrefs { mode_indicators: false, ..IslandPrefs::default() });
+        assert!(icons(&app, 20.0, &mut engine).is_empty());
+        app.report(Report::Modes { airplane: Some(false), dnd: None }, 21.0);
+        assert!(app.live(21.1).is_empty());
     }
 
     #[test]
