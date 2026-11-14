@@ -128,8 +128,25 @@ impl Connectivity {
     }
 
     /// The connected Bluetooth device shown on the button.
+    /// The connected device, while Bluetooth is on.
     pub fn connected_device(&self) -> Option<&BtDevice> {
-        self.bt.devices.iter().find(|d| d.connected)
+        self.bt_on().then(|| self.bt.devices.iter().find(|d| d.connected)).flatten()
+    }
+
+    /// Wi-Fi is switched on (the clock card's chip is blue).
+    pub fn wifi_on(&self) -> bool {
+        self.wifi.available && self.wifi.enabled
+    }
+
+    /// Bluetooth is switched on (the clock card's chip is blue).
+    pub fn bt_on(&self) -> bool {
+        self.bt.available && self.bt.powered
+    }
+
+    /// The network Wi-Fi is on, while Wi-Fi is switched on (a name the
+    /// system still reports just after it's switched off doesn't count).
+    pub fn wifi_network(&self) -> Option<&str> {
+        self.wifi_on().then_some(self.wifi.current.as_deref()).flatten()
     }
 }
 
@@ -202,6 +219,23 @@ pub fn kind_from_hint(hint: &str) -> DeviceKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn on_means_switched_on_not_connected() {
+        let mut c = Connectivity::default();
+        assert!(!c.wifi_on() && !c.bt_on(), "nothing known yet: grey");
+        c.wifi = WifiState { available: true, enabled: true, ..WifiState::default() };
+        c.bt = BtState { available: true, powered: true, ..BtState::default() };
+        assert!(c.wifi_on() && c.bt_on(), "on with nothing connected is still on");
+        assert_eq!(c.wifi_network(), None);
+        // Switched off while the system still names the old network and device.
+        c.wifi = WifiState { available: true, enabled: false, current: Some("Home".into()), ..WifiState::default() };
+        c.bt.powered = false;
+        c.bt.devices.push(BtDevice { id: "b".into(), name: "Buds".into(), kind: DeviceKind::Earbuds, connected: true });
+        assert!(!c.wifi_on() && !c.bt_on());
+        assert_eq!(c.wifi_network(), None, "a stale name isn't shown");
+        assert!(c.connected_device().is_none());
+    }
 
     fn net(ssid: &str, strength: u8, known: bool, active: bool) -> WifiNetwork {
         WifiNetwork { ssid: ssid.into(), strength, secure: true, known, active }

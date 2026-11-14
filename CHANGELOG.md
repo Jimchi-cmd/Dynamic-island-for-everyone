@@ -2,6 +2,11 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- The clock card's Wi-Fi and Bluetooth buttons are blue while Wi-Fi or Bluetooth is switched on (connected or not) and grey when it's off. Wi-Fi no longer stays blue after being switched off, and the island reads the state again once a radio has settled.
+
 ## [0.3.0] - 2026-11-14
 
 ### Added

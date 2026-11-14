@@ -42,6 +42,12 @@ pub fn backend() -> Box<dyn Backend> {
     Box::new(super::macos_conn::Mac)
 }
 
+/// How long a radio is given to settle after being switched on or off.
+#[cfg(not(test))]
+const SETTLE: std::time::Duration = std::time::Duration::from_millis(1500);
+#[cfg(test)]
+const SETTLE: std::time::Duration = std::time::Duration::from_millis(1);
+
 /// Run one command against a backend, reporting progress through `send`.
 pub fn run(b: &mut dyn Backend, cmd: ConnCommand, send: &mut dyn FnMut(ConnUpdate)) {
     match cmd {
@@ -94,10 +100,15 @@ pub fn run(b: &mut dyn Backend, cmd: ConnCommand, send: &mut dyn FnMut(ConnUpdat
                 Ok(()) => send(ConnUpdate::Busy(None)),
                 Err(message) => send(ConnUpdate::Failed { message, needs_password: None }),
             }
-            match radio {
+            let mut read = |b: &mut dyn Backend| match radio {
                 Radio::Wifi => send(ConnUpdate::Wifi(b.wifi(false))),
                 Radio::Bluetooth => send(ConnUpdate::Bluetooth(b.bluetooth())),
-            }
+            };
+            read(b);
+            // A radio takes a moment to settle (Windows may still name the
+            // old network): read it again once it has.
+            std::thread::sleep(SETTLE);
+            read(b);
         }
     }
 }
@@ -186,8 +197,9 @@ mod tests {
         let mut b = Fake::default();
         let u = collect(&mut b, ConnCommand::SetPower(Radio::Wifi, false));
         assert!(
-            matches!(&u[..], [ConnUpdate::Busy(Some(m)), ConnUpdate::Busy(None), ConnUpdate::Wifi(w)] if m == "Turning Wi-Fi off…" && !w.enabled),
-            "{u:?}"
+            matches!(&u[..], [ConnUpdate::Busy(Some(m)), ConnUpdate::Busy(None), ConnUpdate::Wifi(w), ConnUpdate::Wifi(again)]
+                if m == "Turning Wi-Fi off…" && !w.enabled && !again.enabled),
+            "read at once, then again once the radio has settled: {u:?}"
         );
         let u = collect(&mut b, ConnCommand::SetPower(Radio::Bluetooth, true));
         assert!(matches!(&u[1], ConnUpdate::Failed { .. }) && matches!(u.last(), Some(ConnUpdate::Bluetooth(_))));

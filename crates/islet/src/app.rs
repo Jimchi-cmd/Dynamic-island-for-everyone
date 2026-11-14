@@ -1667,13 +1667,20 @@ impl App {
                     for (r, p) in content::clock_chips(cr, self.clock_row()) {
                         let name = match p {
                             Panel::Wifi => {
-                                format!("Wi-Fi{}", c.wifi.current.as_ref().map_or(String::new(), |n| format!(", {n}")))
+                                let state = match c.wifi_network() {
+                                    _ if !c.wifi_on() => ", off".to_string(),
+                                    Some(n) => format!(", {n}"),
+                                    None => ", on".to_string(),
+                                };
+                                format!("Wi-Fi{state}")
                             }
                             Panel::Bluetooth => {
-                                format!(
-                                    "Bluetooth{}",
-                                    c.connected_device().map_or(String::new(), |d| format!(", {}", d.name))
-                                )
+                                let state = match c.connected_device() {
+                                    _ if !c.bt_on() => ", off".to_string(),
+                                    Some(d) => format!(", {}", d.name),
+                                    None => ", on".to_string(),
+                                };
+                                format!("Bluetooth{state}")
                             }
                             Panel::Shelf => format!("Shelf, {} items", self.shelf.len()),
                             Panel::System => "System monitor".into(),
@@ -4331,6 +4338,58 @@ mod tests {
             networks: vec![net("Home", true), net("Cafe", false)],
             note: None,
         }
+    }
+
+    #[test]
+    fn wifi_and_bluetooth_chips_are_blue_only_while_switched_on() {
+        use islet_core::connectivity::{BtState, ConnUpdate};
+        let mut app = App::new(Demo::None, false);
+        let mut engine = TextEngine::new();
+        app.set_time(NOW, 0.0);
+        click(&mut app, 0.0);
+        let chip_colours = |app: &App, engine: &mut TextEngine| -> Vec<[u8; 3]> {
+            let cr = app.content_rect(app.pill_rect(5.0));
+            let chips = content::clock_chips(cr, app.clock_row());
+            let els = app.elements(5.0, engine);
+            chips
+                .iter()
+                .filter(|(_, p)| matches!(p, Panel::Wifi | Panel::Bluetooth))
+                .map(|(r, _)| {
+                    els.iter()
+                        .find_map(|e| match e {
+                            Element::Bar { x, y, color, .. }
+                                if (f64::from(*x) - r.x).abs() < 1.0 && (f64::from(*y) - r.y).abs() < 1.0 =>
+                            {
+                                Some(*color)
+                            }
+                            _ => None,
+                        })
+                        .unwrap()
+                })
+                .collect()
+        };
+        let names = |app: &App| -> Vec<String> {
+            app.accessibility(5.0)
+                .buttons
+                .into_iter()
+                .map(|(n, _)| n)
+                .filter(|n| n.starts_with("Wi-Fi") || n.starts_with("Bluetooth"))
+                .collect()
+        };
+        // Both on, nothing connected: blue anyway.
+        app.report(Report::Connectivity(ConnUpdate::Wifi(wifi(None))), 0.5);
+        let on = BtState { available: true, powered: true, ..BtState::default() };
+        app.report(Report::Connectivity(ConnUpdate::Bluetooth(on.clone())), 0.5);
+        assert_eq!(chip_colours(&app, &mut engine), [content::accent(), content::accent()]);
+        assert_eq!(names(&app), ["Wi-Fi, on", "Bluetooth, on"]);
+        // Switched off, though the system still names the network: grey.
+        let mut off = wifi(Some("Home"));
+        off.enabled = false;
+        app.report(Report::Connectivity(ConnUpdate::Wifi(off)), 1.0);
+        app.report(Report::Connectivity(ConnUpdate::Bluetooth(BtState { powered: false, ..on })), 1.0);
+        assert_eq!(chip_colours(&app, &mut engine), [content::WHITE, content::WHITE]);
+        assert_eq!(names(&app), ["Wi-Fi, off", "Bluetooth, off"]);
+        assert!(!texts(&app, 5.0, &mut engine).iter().any(|s| s == "Home"), "no stale network name");
     }
 
     #[test]

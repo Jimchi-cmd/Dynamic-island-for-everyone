@@ -2001,13 +2001,14 @@ pub fn clock_chip_elements(
         let (icon, label, on) = match panel {
             Panel::Wifi => (
                 Icon::Wifi(c.wifi.networks.iter().find(|n| n.active).map_or(3, |n| connectivity::bars(n.strength))),
-                c.wifi.current.clone().unwrap_or_else(|| "Wi-Fi".into()),
-                c.wifi.current.is_some(),
+                // Blue while Wi-Fi is on (connected or not), grey when off.
+                c.wifi_network().unwrap_or("Wi-Fi").to_string(),
+                c.wifi_on(),
             ),
             Panel::Bluetooth => (
                 Icon::Bluetooth,
                 c.connected_device().map_or_else(|| "Bluetooth".into(), |d| d.name.clone()),
-                c.connected_device().is_some(),
+                c.bt_on(),
             ),
             Panel::Shelf
             | Panel::System
