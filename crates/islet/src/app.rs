@@ -56,6 +56,10 @@ const CONTENT_FADE_H: f64 = 60.0;
 /// …and cards are treated as at least this tall for the fade.
 const CONTENT_MIN_FULL_H: f64 = 84.0;
 const IDLE_W: f64 = 126.0;
+/// The pointer rests this long on the empty island before it grows (and
+/// shows its status strip), so passing over the top of the screen doesn't
+/// keep opening it.
+const HOVER_DELAY: f64 = 0.35;
 /// Extra width a compact pill takes for the camera / microphone dot.
 const PRIVACY_W: f64 = 14.0;
 /// The dot's centre, from the pill's right edge, and its diameter.
@@ -212,6 +216,9 @@ pub struct App {
     /// Bubble centre relative to the pill's round end: 0 = merged.
     bubble: Animated,
     hovered: bool,
+    /// When the pointer came to rest on the empty island (it grows once
+    /// HOVER_DELAY has passed).
+    hover_since: Option<f64>,
     press: Option<Press>,
     /// A media control being pressed, and the scrub position while dragging.
     control: Option<Control>,
@@ -383,6 +390,7 @@ impl App {
             r: Animated::new(r, s),
             bubble: Animated::new(0.0, s),
             hovered: false,
+            hover_since: None,
             press: None,
             control: None,
             nav_control: None,
@@ -1981,6 +1989,7 @@ impl App {
         let hide = self.prefs.auto_hide
             && self.notch.is_none()
             && self.island.presentation() == Presentation::Idle
+            && !self.hovered
             && !self.dragging
             && !self.privacy_shown();
         if hide || self.hidden_for_fullscreen() || self.hidden_for_now() {
@@ -2804,8 +2813,15 @@ impl App {
         self.hovered = inside;
         let changed = if inside {
             self.left_open_at = None;
-            self.signal(Signal::PointerEnter, t)
+            if self.island.presentation() == Presentation::Idle {
+                // Wait a moment: the pointer may only be passing by.
+                self.hover_since = Some(t);
+                false
+            } else {
+                self.signal(Signal::PointerEnter, t)
+            }
         } else {
+            self.hover_since = None;
             if self.island.presentation().is_open() {
                 self.left_open_at = Some(t);
             }
@@ -3068,6 +3084,13 @@ impl App {
     /// Advance timers. Returns true if anything changed.
     pub fn tick(&mut self, t: f64) -> bool {
         let mut changed = self.timer_tick(t);
+        // The pointer has rested on the empty island: grow it.
+        if self.hover_since.is_some_and(|since| t >= since + HOVER_DELAY) {
+            self.hover_since = None;
+            if self.hovered && self.press.is_none() && self.island.presentation() == Presentation::Idle {
+                changed |= self.signal(Signal::PointerEnter, t);
+            }
+        }
         if self.hidden_until.is_some_and(|h| t >= h) {
             self.hidden_until = None;
             changed = true;
@@ -3205,6 +3228,9 @@ impl App {
         }
         if let Some(left) = self.left_open_at {
             at(left + AUTO_COLLAPSE_SECS);
+        }
+        if let Some(since) = self.hover_since {
+            at(since + HOVER_DELAY);
         }
         if self.demo != Demo::None {
             at(self.demo_next);
@@ -3636,8 +3662,9 @@ mod tests {
         let (x, y) = centre(&app, 2.0);
         assert!(app.input_region(2.0).contains(x, y));
         app.handle(Event::PointerMove { x, y }, 2.0);
-        assert_eq!(app.presentation(), Peek);
-        assert!(app.frame(3.0).opacity > 0.99);
+        assert!(app.frame(3.0).opacity > 0.99, "shows at once");
+        app.tick(2.0 + HOVER_DELAY);
+        assert_eq!(app.presentation(), Peek, "and grows once the pointer rests");
         app.handle(Event::PointerLeave, 3.0);
         assert!(app.frame(5.0).opacity < 0.01, "and hides again when it leaves");
 
@@ -4074,10 +4101,32 @@ mod tests {
     fn hover_peeks_and_leaving_restores_idle() {
         let mut app = App::new(Demo::None, false);
         let (x, y) = centre(&app, 0.0);
-        assert!(app.handle(Event::PointerMove { x, y }, 0.0));
-        assert_eq!(app.presentation(), Peek);
+        app.handle(Event::PointerMove { x, y }, 0.0);
+        assert_eq!(app.presentation(), Idle, "passing over doesn't open it");
+        assert!((app.next_timer(0.0).unwrap() - HOVER_DELAY).abs() < 1e-9, "it wakes to check");
+        assert!(app.tick(HOVER_DELAY));
+        assert_eq!(app.presentation(), Peek, "resting on it does");
         assert!(app.handle(Event::PointerLeave, 1.0));
         assert_eq!(app.presentation(), Idle);
+    }
+
+    #[test]
+    fn passing_over_the_island_doesnt_open_it() {
+        let mut app = App::new(Demo::None, false);
+        let (x, y) = centre(&app, 0.0);
+        // The pointer crosses the island on its way somewhere else…
+        app.handle(Event::PointerMove { x, y }, 0.0);
+        app.handle(Event::PointerLeave, 0.1);
+        app.tick(1.0);
+        assert_eq!(app.presentation(), Idle);
+        // …and comes back and goes again, quickly, over and over.
+        for i in 0..5 {
+            let t = 2.0 + f64::from(i) * 0.3;
+            app.handle(Event::PointerMove { x, y }, t);
+            app.handle(Event::PointerLeave, t + 0.2);
+            app.tick(t + 0.29);
+            assert_eq!(app.presentation(), Idle, "pass {i}");
+        }
     }
 
     #[test]
@@ -4098,7 +4147,10 @@ mod tests {
         let (x, y) = centre(&app, 0.0);
         app.handle(Event::PointerMove { x, y }, 0.0);
         app.handle(Event::PointerDown { x, y, button: Button::Primary }, 0.0);
-        assert!((app.next_timer(0.0).unwrap() - LONG_PRESS_SECS).abs() < 1e-9);
+        app.tick(HOVER_DELAY);
+        assert_eq!(app.presentation(), Idle, "a press in progress doesn't peek");
+        let wait = app.next_timer(HOVER_DELAY).unwrap();
+        assert!((wait - (LONG_PRESS_SECS - HOVER_DELAY)).abs() < 1e-9, "the long press is next: {wait}");
         assert!(app.tick(LONG_PRESS_SECS));
         assert_eq!(app.presentation(), Large);
         app.handle(Event::PointerUp { x, y, button: Button::Primary }, 0.6);
@@ -5038,9 +5090,11 @@ mod tests {
         assert!(texts(&gap, 105.0, &mut engine).iter().any(|s| s == "Art"), "Tuesday's Art is up next");
     }
 
+    /// Point at the island and rest there until it grows.
     fn hover(app: &mut App, t: f64) {
         let r = app.pill_rect(t);
         app.handle(Event::PointerMove { x: r.x + r.w / 2.0, y: r.y + r.h / 2.0 }, t);
+        app.tick(t + HOVER_DELAY);
     }
 
     fn stats(cpu: f32) -> islet_core::sysmon::Stats {

@@ -5,6 +5,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ## [Unreleased]
 
 ### Fixed
+- The empty island no longer pops open whenever the pointer passes over the top of the screen: it grows (and shows its status strip) once the pointer rests on it for a third of a second.
 - The clock card's Wi-Fi and Bluetooth buttons are blue while Wi-Fi or Bluetooth is switched on (connected or not) and grey when it's off. Wi-Fi no longer stays blue after being switched off, and the island reads the state again once a radio has settled.
 
 ## [0.3.0] - 2026-11-14
