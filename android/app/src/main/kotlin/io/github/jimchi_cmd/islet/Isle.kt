@@ -18,10 +18,13 @@ import android.os.Looper
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.net.TrafficStats
+import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import islet.island.CalendarEvent
 import islet.island.Colors
 import islet.island.FocusTimer
+import islet.island.Format
 import islet.island.Island
 import islet.island.Live
 import islet.island.Lyrics
@@ -31,6 +34,8 @@ import islet.island.NoteKind
 import islet.island.Notes
 import islet.island.Pop
 import islet.island.Stopwatch
+import islet.island.Streak
+import islet.island.Timetable
 import islet.island.Weather
 import java.util.concurrent.Executors
 
@@ -82,6 +87,9 @@ object Isle {
     // ---- The rest ----
     var weather: Weather? = null
     var events: List<CalendarEvent> = emptyList()
+
+    /** Calendar events in the next two weeks that look like deadlines (exam, essay, due…). */
+    var deadlines: List<CalendarEvent> = emptyList()
     var nextAlarm: Long? = null
     var airplane = false
     var dnd = false
@@ -97,6 +105,19 @@ object Isle {
     var btOn = false
     /** The Bluetooth device that last connected, while it stays connected. */
     var btName: String? = null
+
+    /** When the music sleep timer pauses what's playing (null: off). */
+    var sleepAt: Long? = null
+        private set
+
+    /** The live bars' levels (0..1) from the sound playing, and when they were read. */
+    var levels = FloatArray(4)
+        internal set
+    var levelsAt = 0L
+        internal set
+
+    /** Islet turned Do Not Disturb on for a lesson, so turns it off after. */
+    private var quietForLesson = false
 
     /** The view that draws the island, while one is attached. */
     var onChange: (() -> Unit)? = null
@@ -123,16 +144,25 @@ object Isle {
         }
         island.showEmpty = prefs.showEmpty
         updateEvent()
+        val timetable = prefs.timetable
+        updateLesson(timetable)
         island.tick(now())
         onChange?.invoke()
+        LiveBars.update()
         main.removeCallbacks(due)
-        val next = listOfNotNull(island.nextChange(), focusEnd(), Meetings.nextCheck(events, now()))
-            .minOrNull()
+        val next = listOfNotNull(
+            island.nextChange(),
+            focusEnd(),
+            Meetings.nextCheck(events, now()),
+            timetable.nextCheck(now()).takeIf { prefs.lessons || prefs.lessonQuiet },
+            sleepAt,
+        ).minOrNull()
         if (next != null) main.postDelayed(due, (next - now()).coerceIn(50, 15 * 60_000))
     }
 
     private val due = Runnable {
         checkFocus()
+        checkSleep()
         changed()
     }
 
@@ -390,6 +420,61 @@ object Isle {
 
     fun seek(ms: Long) = controller?.transportControls?.seekTo(ms.coerceAtLeast(0))
 
+    /** The sleep timer button: off → 15 → 30 → 45 → 60 minutes → off. */
+    fun stepSleep() {
+        val left = sleepAt?.let { ((it - now() + 59_999) / 60_000).toInt() }
+        sleepAt = Format.nextSleep(left)?.let { now() + it * 60_000L }
+        changed()
+    }
+
+    fun setSleep(minutes: Int?) {
+        sleepAt = minutes?.let { now() + it * 60_000L }
+        changed()
+    }
+
+    fun sleepMinutesLeft(): Int? = sleepAt?.let { ((it - now() + 59_999) / 60_000).toInt().coerceAtLeast(0) }
+
+    private fun checkSleep() {
+        val at = sleepAt ?: return
+        if (now() < at) return
+        sleepAt = null
+        val c = controller ?: return
+        if (c.playbackState?.state == PlaybackState.STATE_PLAYING) {
+            c.transportControls.pause()
+            island.pop(Pop.Info("Sleep timer: paused"), now())
+        }
+    }
+
+    // ---- Network speed ---------------------------------------------------------------------
+
+    private var netAt = 0L
+    private var netRx = -1L
+    private var netTx = -1L
+
+    /** Download and upload speed (bytes a second) across the whole phone, from the last two readings. */
+    var netRate: Pair<Double, Double>? = null
+        private set
+
+    /** Read the phone's byte counters; call about once a second while the speed shows. */
+    fun sampleNet() {
+        val rx = TrafficStats.getTotalRxBytes()
+        val tx = TrafficStats.getTotalTxBytes()
+        val t = SystemClock.elapsedRealtime()
+        if (rx < 0 || tx < 0) {
+            netRate = null
+            return
+        }
+        if (netRx >= 0 && t - netAt >= 500) {
+            val dt = (t - netAt) / 1000.0
+            netRate = ((rx - netRx).coerceAtLeast(0) / dt) to ((tx - netTx).coerceAtLeast(0) / dt)
+        }
+        if (netRx < 0 || t - netAt >= 500) {
+            netRx = rx
+            netTx = tx
+            netAt = t
+        }
+    }
+
     fun openPlayer() {
         val c = controller ?: return
         send(c.sessionActivity) || launch(c.packageName)
@@ -419,6 +504,8 @@ object Isle {
 
     private fun checkFocus() {
         val done = focus.check(now()) ?: return
+        // A finished focus round (not a break, not a plain timer) counts toward the streak.
+        if (done == "Focus") prefs.streak = prefs.streak.record(Streak.dayOf(now()))
         val label = if (focus.active) "$done done · ${focus.live()?.label} now" else "$done done"
         island.pop(Pop.TimerDone(label), now())
         alert()
@@ -439,6 +526,31 @@ object Isle {
             r?.play()
         } catch (e: Exception) {
             // No sound.
+        }
+    }
+
+    // ---- Class timetable ----------------------------------------------------------------
+
+    private fun updateLesson(timetable: Timetable) {
+        val now = now()
+        val current = timetable.current(now)
+        if (current == null || !prefs.lessons) {
+            island.retain("lesson:", emptySet())
+        } else {
+            val (l, begin) = current
+            val id = "lesson:${l.day}:${l.start}"
+            island.retain("lesson:", setOf(id))
+            island.put(Live.Lesson(id, l.name, l.room, begin, begin + (l.end - l.start) * 60_000L))
+        }
+        // Do Not Disturb while a lesson is on, if asked.
+        val inLesson = current != null && current.second <= now
+        val listener = IsletListener.instance ?: return
+        if (prefs.lessonQuiet && inLesson && !dnd && !quietForLesson) {
+            quietForLesson = true
+            listener.requestInterruptionFilter(NotificationListenerService.INTERRUPTION_FILTER_PRIORITY)
+        } else if (quietForLesson && (!inLesson || !prefs.lessonQuiet)) {
+            quietForLesson = false
+            if (dnd) listener.requestInterruptionFilter(NotificationListenerService.INTERRUPTION_FILTER_ALL)
         }
     }
 

@@ -3,8 +3,12 @@ package io.github.jimchi_cmd.islet
 import android.content.Context
 import android.content.SharedPreferences
 import islet.island.IslandSize
+import islet.island.Launcher
+import islet.island.Link
 import islet.island.Lists
 import islet.island.Place
+import islet.island.Streak
+import islet.island.Timetable
 import islet.island.Todo
 
 /**
@@ -178,6 +182,45 @@ class Prefs(context: Context) {
     var lyricsOffset: Long
         get() = p.getLong("lyrics_offset", 0)
         set(v) = p.edit().putLong("lyrics_offset", v.coerceIn(-10_000, 10_000)).apply()
+
+    /** The weekly class timetable. */
+    var timetable: Timetable
+        get() = Timetable.decode(p.getString("timetable", null))
+        set(v) = p.edit().putString("timetable", v.encode()).apply()
+
+    /** Count down to lessons on the island. */
+    var lessons: Boolean
+        get() = flag("lessons", true)
+        set(v) = set("lessons", v)
+
+    /** Do Not Disturb during lessons (and back on after, if Islet turned it on). */
+    var lessonQuiet: Boolean
+        get() = flag("lesson_quiet", false)
+        set(v) = set("lesson_quiet", v)
+
+    /** Deadlines from the calendar (exam, essay, due…) on the calendar card. */
+    var deadlines: Boolean
+        get() = flag("deadlines", true)
+        set(v) = set("deadlines", v)
+
+    var streak: Streak
+        get() = Streak.decode(p.getString("streak", null))
+        set(v) = p.edit().putString("streak", v.encode()).apply()
+
+    /** Your own links for the quick launcher. */
+    var links: List<Link>
+        get() = Launcher.decodeLinks(p.getString("links", null))
+        set(v) = p.edit().putString("links", Launcher.encodeLinks(v.take(30))).apply()
+
+    /** The strip shows network speed instead of memory use. */
+    var stripNetwork: Boolean
+        get() = flag("strip_network", false)
+        set(v) = set("strip_network", v)
+
+    /** Bars that follow the music's sound (needs the microphone permission; nothing is recorded). */
+    var liveBars: Boolean
+        get() = flag("live_bars", false)
+        set(v) = set("live_bars", v)
 
     fun listen(l: SharedPreferences.OnSharedPreferenceChangeListener) = p.registerOnSharedPreferenceChangeListener(l)
 

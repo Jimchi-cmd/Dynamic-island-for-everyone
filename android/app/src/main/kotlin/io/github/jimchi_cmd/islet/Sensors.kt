@@ -383,8 +383,10 @@ object Sensors {
     }
 
     private fun readCalendar() {
-        if (!Isle.prefs.calendar || !has(Manifest.permission.READ_CALENDAR)) {
+        val p = Isle.prefs
+        if (!(p.calendar || p.deadlines) || !has(Manifest.permission.READ_CALENDAR)) {
             Isle.events = emptyList()
+            Isle.deadlines = emptyList()
             Isle.changed()
             return
         }
@@ -392,7 +394,8 @@ object Sensors {
             val now = System.currentTimeMillis()
             val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().also {
                 ContentUris.appendId(it, now - 60 * 60_000L)
-                ContentUris.appendId(it, now + 36 * 60 * 60_000L)
+                // Two weeks ahead, for deadlines; meetings use the next day and a half.
+                ContentUris.appendId(it, now + 14 * 24 * 60 * 60_000L)
             }.build()
             val cols = arrayOf(
                 CalendarContract.Instances.EVENT_ID,
@@ -406,7 +409,7 @@ object Sensors {
             val found = ArrayList<CalendarEvent>()
             try {
                 ctx.contentResolver.query(uri, cols, null, null, "${CalendarContract.Instances.BEGIN} ASC")?.use { c ->
-                    while (c.moveToNext() && found.size < 50) {
+                    while (c.moveToNext() && found.size < 500) {
                         found.add(
                             CalendarEvent(
                                 c.getLong(0),
@@ -423,8 +426,11 @@ object Sensors {
             } catch (e: SecurityException) {
                 // Permission withdrawn.
             }
+            val soon = found.filter { it.begin < now + 36 * 60 * 60_000L }.take(50)
+            val due = found.filter { islet.island.Deadlines.isDeadline(it.title) }.take(20)
             Isle.post {
-                Isle.events = found
+                Isle.events = if (p.calendar) soon else emptyList()
+                Isle.deadlines = if (p.deadlines) due else emptyList()
                 Isle.changed()
             }
         }

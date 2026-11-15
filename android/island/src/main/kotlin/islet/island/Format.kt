@@ -50,6 +50,22 @@ object Format {
     /** "12.4", "940" (Mbps). */
     fun mbps(v: Double): String = if (v >= 100) v.roundToInt().toString() else "%.1f".format(java.util.Locale.ROOT, v)
 
+    /** A transfer rate: "0 KB/s", "340 KB/s", "1.2 MB/s", "12 MB/s". */
+    fun rate(bytesPerSecond: Double): String {
+        val kb = bytesPerSecond.coerceAtLeast(0.0) / 1000
+        return when {
+            kb < 1000 -> "${kb.roundToInt()} KB/s"
+            kb < 10_000 -> "%.1f MB/s".format(java.util.Locale.ROOT, kb / 1000)
+            else -> "${(kb / 1000).roundToInt()} MB/s"
+        }
+    }
+
+    /**
+     * The music sleep timer's next length when tapped: off → 15 → 30 → 45
+     * → 60 minutes → off. `left`: minutes left now (null: off).
+     */
+    fun nextSleep(left: Int?): Int? = if (left == null) 15 else listOf(15, 30, 45, 60).firstOrNull { it > left }
+
     /** Shorten to `max` characters with an ellipsis. */
     fun cut(s: String, max: Int): String = if (s.length <= max) s else s.take(max - 1).trimEnd() + "…"
 }

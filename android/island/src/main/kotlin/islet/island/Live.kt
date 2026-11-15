@@ -82,6 +82,13 @@ sealed class Live {
         }
     }
 
+    /** A lesson from the class timetable: counting down to it, then the time left in it. */
+    data class Lesson(override val id: String, val name: String, val room: String, val startsAt: Long, val endsAt: Long) : Live() {
+        override val priority get() = 62
+
+        fun started(now: Long) = now >= startsAt
+    }
+
     /** A download, upload or other task with a progress bar. `percent` -1: unknown. */
     data class Progress(override val id: String, val title: String, val app: String, val percent: Int) : Live() {
         override val priority get() = 40

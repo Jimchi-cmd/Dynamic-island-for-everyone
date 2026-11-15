@@ -34,7 +34,12 @@ import com.journeyapps.barcodescanner.ScanOptions
 import islet.island.Forecast
 import islet.island.Format
 import islet.island.IslandSize
+import islet.island.Deadlines
+import islet.island.Launcher
+import islet.island.Link
 import islet.island.Place
+import islet.island.Streak
+import islet.island.Timetable
 import islet.island.Todo
 import islet.protocol.Pairing
 
@@ -49,11 +54,15 @@ class MainActivity : AppCompatActivity() {
         Look("Look", Icon.Brightness, Tints.grey),
         Shows("What it shows", Icon.Bell, Tints.red),
         Timers("Timer & focus", Icon.Timer, Tints.purple),
+        Alarms("Alarms", Icon.Bell, Tints.orange),
+        Study("Classes & deadlines", Icon.Book, Tints.cyan),
         Weather("Weather & clocks", Icon.Sun, Tints.cyan),
         Todo("To-do & notes", Icon.Note, Tints.yellow),
         Controls("Control centre", Icon.Flashlight, Tints.slate),
         Music("Music", Icon.Music, Tints.pink),
         Speed("Speed test", Icon.Download, Tints.green),
+        Battery("Battery", Icon.Battery, Tints.green),
+        Launch("Quick launcher", Icon.Search, Tints.blue),
         Computer("Your computer", Icon.Wifi, Tints.blue),
     }
 
@@ -174,6 +183,10 @@ class MainActivity : AppCompatActivity() {
             Page.Controls -> controls(col)
             Page.Music -> music(col)
             Page.Speed -> speed(col)
+            Page.Alarms -> alarms(col)
+            Page.Study -> study(col)
+            Page.Battery -> battery(col)
+            Page.Launch -> launch(col)
             Page.Computer -> computer(col)
         }
         scroll.removeAllViews()
@@ -276,11 +289,15 @@ class MainActivity : AppCompatActivity() {
         pageRow(pages, Page.Shows)
         pageRow(pages, Page.Controls)
         val things = kit.card(col)
-        pageRow(things, Page.Timers)
+        pageRow(things, Page.Timers, prefs.streak.label(Streak.dayOf(System.currentTimeMillis())) ?: "")
+        pageRow(things, Page.Alarms, Isle.nextAlarm?.let { android.text.format.DateFormat.getTimeFormat(this).format(java.util.Date(it)) } ?: "")
+        pageRow(things, Page.Study, prefs.timetable.lessons.size.takeIf { it > 0 }?.let { "$it lessons" } ?: "")
         pageRow(things, Page.Weather, prefs.place?.name?.substringBefore(',') ?: "")
         pageRow(things, Page.Todo, prefs.todos.count { !it.done }.takeIf { it > 0 }?.toString() ?: "")
         pageRow(things, Page.Music, if (prefs.lyrics) "Lyrics on" else "")
         pageRow(things, Page.Speed)
+        pageRow(things, Page.Battery, if (Isle.battery >= 0) "${Isle.battery}%" else "")
+        pageRow(things, Page.Launch, prefs.links.size.takeIf { it > 0 }?.let { "$it links" } ?: "")
         val link = kit.card(col)
         val pairing = Store.pairing(this)
         pageRow(link, Page.Computer, when {
@@ -394,6 +411,7 @@ class MainActivity : AppCompatActivity() {
             }
         })
         look.add(kit.toggleRow("Show the empty island", "The black pill round the camera when nothing is going on.", prefs.showEmpty) { prefs.showEmpty = it; changed() })
+        look.add(kit.toggleRow("Network speed in the strip", "The strip from a tap on the empty island shows download speed instead of memory use.", prefs.stripNetwork) { prefs.stripNetwork = it; changed() })
         look.add(kit.toggleRow("Glowing rim", "A soft light round the island's edge.", prefs.ring) { prefs.ring = it; changed() })
         look.add(kit.toggleRow("Border in the album's colour while music plays", null, prefs.albumBorder) { prefs.albumBorder = it; changed() })
         look.add(kit.toggleRow("Moving bars beside the song", null, prefs.bars) { prefs.bars = it; changed() })
@@ -482,6 +500,18 @@ class MainActivity : AppCompatActivity() {
         focus.add(kit.stepperRow("Focus", value = { "${prefs.focusMinutes} min" }) { prefs.focusMinutes += it * 5 })
         focus.add(kit.stepperRow("Break", value = { "${prefs.breakMinutes} min" }) { prefs.breakMinutes += it })
         focus.add(kit.buttons(kit.button("Start focus rounds", primary = true) { Isle.startPomodoro() }))
+        val day = Streak.dayOf(System.currentTimeMillis())
+        val s = prefs.streak
+        val streak = kit.card(col, "Focus streak", "Days in a row with at least one finished focus round. It shows on the island's timer.")
+        streak.add(kit.row(
+            when (s.current(day)) {
+                0 -> if (s.rounds == 0) "No focus rounds yet" else "No streak right now"
+                1 -> "1 day so far"
+                else -> "${s.current(day)} days in a row"
+            },
+            "Today ${s.doneOn(day)} · best ${s.best} ${if (s.best == 1) "day" else "days"} · ${s.rounds} in all",
+            right = kit.text(s.current(day).toString(), 26f, bold = true),
+        ))
         val sw = kit.card(col, "Stopwatch")
         sw.add(
             kit.buttons(
@@ -655,6 +685,26 @@ class MainActivity : AppCompatActivity() {
             kit.text("Any app that plays music shows on the island, with its cover, controls and a progress bar you can drag.", 14f, kit.theme.muted)
                 .apply { setPadding(kit.dp(16), kit.dp(14), kit.dp(16), 0) },
         )
+        val sleep = kit.card(col, "Sleep timer", "Pauses the music when the time is up. Also on the island: the moon button on the music card.", top = 14)
+        val left = Isle.sleepMinutesLeft()
+        sleep.add(kit.row(if (left == null) "Off" else "Pauses in $left min", null))
+        sleep.add(kit.buttons(
+            kit.button("15 min") { setSleep(15) },
+            kit.button("30 min") { setSleep(30) },
+            kit.button("45 min") { setSleep(45) },
+            kit.button("60 min") { setSleep(60) },
+            kit.button("Off") { setSleep(null) },
+        ))
+        val bars = kit.card(col, "Bars", "Android lets apps read the loudness of what's playing only with the microphone permission. Islet doesn't use the microphone and records nothing: it reads four levels while music plays.")
+        bars.add(kit.toggleRow("Bars follow the sound", if (LiveBars.failed) "This phone doesn't allow it; the bars move on their own." else null, prefs.liveBars && LiveBars.allowed()) { on ->
+            if (on && !LiveBars.allowed()) {
+                askPermission.launch(Manifest.permission.RECORD_AUDIO)
+                prefs.liveBars = true
+            } else {
+                prefs.liveBars = on
+                if (on) LiveBars.retry() else LiveBars.stop()
+            }
+        })
         val c = kit.card(col, "Lyrics", "Lyrics come from LRCLIB, a free service: Islet sends it the song's title, artist and length.")
         c.add(kit.toggleRow("Synced lyrics on the island", null, prefs.lyrics) {
             prefs.lyrics = it
@@ -664,10 +714,27 @@ class MainActivity : AppCompatActivity() {
         if (prefs.lyrics) c.add(kit.stepperRow("Timing", "If the words run early or late.", value = { "${prefs.lyricsOffset} ms" }) { prefs.lyricsOffset += it * 250L })
     }
 
+    private fun setSleep(minutes: Int?) {
+        Isle.setSleep(minutes)
+        build()
+    }
+
     // ---- Speed test ------------------------------------------------------------------------------------
 
     private fun speed(col: LinearLayout) {
-        val c = kit.card(col, null, "Uses about 35 MB with Cloudflare's public speed-test servers, only when you press the button.", top = 14)
+        val now = kit.card(col, "Right now", "Everything the phone sends and receives, every second. Nothing goes online for this.", top = 14)
+        val rate = kit.text("–", 17f, bold = true)
+        now.add(kit.row("Network use", null, right = rate))
+        val tick = object : Runnable {
+            override fun run() {
+                if (page != Page.Speed || !rate.isAttachedToWindow) return
+                Isle.sampleNet()
+                rate.text = Isle.netRate?.let { "↓ ${Format.rate(it.first)}  ↑ ${Format.rate(it.second)}" } ?: "–"
+                rate.postDelayed(this, 1000)
+            }
+        }
+        rate.post(tick)
+        val c = kit.card(col, "Speed test", "Uses about 35 MB with Cloudflare's public speed-test servers, only when you press the button.")
         if (speedResult.isNotEmpty()) c.add(kit.para(speedResult, kit.theme.text, 17f))
         c.add(
             kit.buttons(
@@ -685,6 +752,195 @@ class MainActivity : AppCompatActivity() {
                 },
             ),
         )
+    }
+
+    // ---- Alarms ----------------------------------------------------------------------------------------
+
+    private fun alarms(col: LinearLayout) {
+        val tf = android.text.format.DateFormat.getTimeFormat(this)
+        val next = Isle.nextAlarm
+        val c = kit.card(col, null, "Alarms go into your phone's Clock app, so they ring even if Islet is closed. The next one shows on the island's calendar card.", top = 14)
+        c.add(kit.row("Next alarm", next?.let { android.text.format.DateFormat.format("EEEE", it).toString() + " " + tf.format(java.util.Date(it)) } ?: "None set", right = kit.text(next?.let { tf.format(java.util.Date(it)) } ?: "–", 26f, bold = true)))
+        c.add(kit.buttons(
+            kit.button("Set an alarm", primary = true) { pickAlarm() },
+            kit.button("In 20 min") { alarmIn(20) },
+            kit.button("In 1 hour") { alarmIn(60) },
+            kit.button("Open Clock") { Isle.start(Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS)) },
+        ))
+    }
+
+    private fun pickAlarm() {
+        val now = java.util.Calendar.getInstance()
+        android.app.TimePickerDialog(this, { _, h, m ->
+            val label = EditText(this).apply {
+                hint = "Label (optional)"
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            }
+            AlertDialog.Builder(this)
+                .setTitle("Alarm at " + Timetable.hm(h * 60 + m, android.text.format.DateFormat.is24HourFormat(this)))
+                .setView(padded(label))
+                .setPositiveButton("Set") { _, _ -> setAlarm(h, m, label.text.toString().trim()) }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }, now.get(java.util.Calendar.HOUR_OF_DAY), now.get(java.util.Calendar.MINUTE), android.text.format.DateFormat.is24HourFormat(this)).show()
+    }
+
+    private fun alarmIn(minutes: Int) {
+        val at = java.util.Calendar.getInstance().apply { add(java.util.Calendar.MINUTE, minutes) }
+        setAlarm(at.get(java.util.Calendar.HOUR_OF_DAY), at.get(java.util.Calendar.MINUTE), "")
+    }
+
+    private fun setAlarm(hour: Int, minute: Int, label: String) {
+        val i = Intent(android.provider.AlarmClock.ACTION_SET_ALARM)
+            .putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour)
+            .putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute)
+            .putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true)
+        if (label.isNotEmpty()) i.putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, label)
+        if (!Isle.start(i)) {
+            message("This phone has no Clock app that takes alarms from other apps.")
+            return
+        }
+        Isle.pop(islet.island.Pop.Info("Alarm set for " + Timetable.hm(hour * 60 + minute, android.text.format.DateFormat.is24HourFormat(this))))
+        window.decorView.postDelayed({ Sensors.refresh(); build() }, 800)
+    }
+
+    // ---- Classes and deadlines ---------------------------------------------------------------------------
+
+    private fun study(col: LinearLayout) {
+        val t = prefs.timetable
+        val now = System.currentTimeMillis()
+        val h24 = android.text.format.DateFormat.is24HourFormat(this)
+        val today = t.line(Timetable.weekday(now), Timetable.minuteOfDay(now), h24)
+        val week = kit.card(col, "Timetable", "Your week's lessons. The island counts down from 15 minutes before each one, then shows the time left in it.", top = 14)
+        if (today != null) week.add(kit.row(today, "Today", tile = IconTile(this, Icon.Book, Tints.cyan)))
+        for ((i, l) in t.lessons.withIndex()) {
+            week.add(kit.row(
+                "${Timetable.DAYS[l.day].take(3)} ${Timetable.hm(l.start, h24)}–${Timetable.hm(l.end, h24)}  ${l.name}",
+                l.room.ifEmpty { null },
+                right = kit.button("Remove") { prefs.timetable = prefs.timetable.remove(i); changed(); build() },
+            ))
+        }
+        week.add(kit.buttons(kit.button("Add a lesson", primary = true) { addLesson() }))
+        val opts = kit.card(col, "On the island")
+        opts.add(kit.toggleRow("Count down to lessons", null, prefs.lessons) { prefs.lessons = it; changed() })
+        opts.add(kit.toggleRow("Do Not Disturb during lessons", "Turns it on when a lesson starts and off when it ends (if Islet turned it on). Needs notification access.", prefs.lessonQuiet) { prefs.lessonQuiet = it; changed() })
+        val due = kit.card(col, "Deadlines", "From your calendar: events called exam, test, essay, assignment, homework, project, due and the like, in the next two weeks. They show on the island's calendar card.")
+        due.add(kit.toggleRow("Count down to deadlines", null, prefs.deadlines) { prefs.deadlines = it; Sensors.refresh(); build() })
+        if (prefs.deadlines && !granted(Manifest.permission.READ_CALENDAR)) {
+            due.add(kit.row("Calendar access", "Needed to find deadlines.", right = kit.button("Allow") { askPermission.launch(Manifest.permission.READ_CALENDAR) }))
+        }
+        if (prefs.deadlines) {
+            for (e in Isle.deadlines.filter { it.end > now }.take(8)) {
+                due.add(kit.row(e.title, Deadlines.countdown(e, now), tile = IconTile(this, Icon.Flag, Tints.orange)))
+            }
+        }
+    }
+
+    private fun addLesson() {
+        AlertDialog.Builder(this)
+            .setTitle("Which day?")
+            .setItems(Timetable.DAYS.toTypedArray()) { _, day ->
+                val h24 = android.text.format.DateFormat.is24HourFormat(this)
+                android.app.TimePickerDialog(this, { _, sh, sm ->
+                    android.app.TimePickerDialog(this, { _, eh, em ->
+                        val name = EditText(this).apply { hint = "Lesson"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS }
+                        val room = EditText(this).apply { hint = "Room (optional)"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS }
+                        val form = kit.column().apply { addView(name); addView(room) }
+                        AlertDialog.Builder(this)
+                            .setTitle("${Timetable.DAYS[day]} ${Timetable.hm(sh * 60 + sm, h24)}–${Timetable.hm(eh * 60 + em, h24)}")
+                            .setView(padded(form))
+                            .setPositiveButton("Add") { _, _ ->
+                                prefs.timetable.add(day, sh * 60 + sm, eh * 60 + em, name.text.toString(), room.text.toString())
+                                    .onSuccess { prefs.timetable = it; changed(); build() }
+                                    .onFailure { message(it.message ?: "That lesson can't be added.") }
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }, (sh + 1) % 24, sm, h24).apply { setTitle("Ends at") }.show()
+                }, 9, 0, h24).apply { setTitle("Starts at") }.show()
+            }
+            .show()
+    }
+
+    // ---- Battery -------------------------------------------------------------------------------------------
+
+    private fun battery(col: LinearLayout) {
+        val b = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val bm = getSystemService(android.os.BatteryManager::class.java)
+        val level = Isle.battery
+        val c = kit.card(col, null, "Android doesn't tell apps how much the battery has worn, but it shares its health, temperature and, on Android 14 and later, how many times it has been charged.", top = 14)
+        c.add(kit.row("Charge", when (b?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0)) {
+            android.os.BatteryManager.BATTERY_PLUGGED_AC -> "Charging from the wall"
+            android.os.BatteryManager.BATTERY_PLUGGED_USB -> "Charging over USB"
+            android.os.BatteryManager.BATTERY_PLUGGED_WIRELESS -> "Charging wirelessly"
+            else -> "On battery"
+        }, right = kit.text(if (level >= 0) "$level%" else "–", 26f, bold = true)))
+        val health = when (b?.getIntExtra(android.os.BatteryManager.EXTRA_HEALTH, 0)) {
+            android.os.BatteryManager.BATTERY_HEALTH_GOOD -> "Good"
+            android.os.BatteryManager.BATTERY_HEALTH_OVERHEAT -> "Too hot"
+            android.os.BatteryManager.BATTERY_HEALTH_COLD -> "Too cold"
+            android.os.BatteryManager.BATTERY_HEALTH_DEAD -> "Worn out: time for a new battery"
+            android.os.BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> "Over voltage"
+            android.os.BatteryManager.BATTERY_HEALTH_UNSPECIFIED_FAILURE -> "Failing"
+            else -> "Not reported"
+        }
+        c.add(kit.row("Health", null, right = kit.text(health, 16f, if (health == "Good") kit.theme.ok else kit.theme.text, bold = true)))
+        b?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)?.takeIf { it != Int.MIN_VALUE }?.let {
+            c.add(kit.row("Temperature", null, right = kit.text(Format.temperature(it / 10.0, prefs.fahrenheit), 16f, bold = true)))
+        }
+        b?.getIntExtra(android.os.BatteryManager.EXTRA_VOLTAGE, 0)?.takeIf { it > 0 }?.let {
+            c.add(kit.row("Voltage", null, right = kit.text("%.2f V".format(java.util.Locale.ROOT, it / 1000.0), 16f, bold = true)))
+        }
+        if (Build.VERSION.SDK_INT >= 34) {
+            b?.getIntExtra(android.os.BatteryManager.EXTRA_CYCLE_COUNT, -1)?.takeIf { it >= 0 }?.let {
+                c.add(kit.row("Charge cycles", "Most batteries keep about 80% of their charge for 500 to 800 cycles.", right = kit.text(it.toString(), 16f, bold = true)))
+            }
+        }
+        b?.getStringExtra(android.os.BatteryManager.EXTRA_TECHNOLOGY)?.takeIf { it.isNotBlank() }?.let {
+            c.add(kit.row("Type", null, right = kit.text(it, 16f, bold = true)))
+        }
+        bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)?.takeIf { it > 0 && level > 0 }?.let { uah ->
+            // Charge left now, and roughly what a full charge holds today.
+            c.add(kit.row("Holds now", "About ${uah / 10 / level} mAh when full", right = kit.text("${uah / 1000} mAh", 16f, bold = true)))
+        }
+    }
+
+    // ---- Quick launcher ----------------------------------------------------------------------------------------
+
+    private fun launch(col: LinearLayout) {
+        val c = kit.card(col, null, "On the island: tap the empty island twice for the card, then the search button. Type a few letters of an app or a link and tap it.", top = 14)
+        c.add(kit.buttons(kit.button("Open the launcher", primary = true) { startActivity(Intent(this, LauncherActivity::class.java)) }))
+        val links = prefs.links
+        val l = kit.card(col, "Your links", "Websites, phone numbers (tel:), email (mailto:) or an app's own links. Up to 30.")
+        for ((i, link) in links.withIndex()) {
+            l.add(kit.row(link.name, link.url, tile = IconTile(this, Icon.Link, Tints.blue), right = kit.button("Remove") {
+                prefs.links = prefs.links.filterIndexed { j, _ -> j != i }
+                build()
+            }))
+        }
+        l.add(kit.buttons(kit.button("Add a link", primary = true) { addLink() }))
+    }
+
+    private fun addLink() {
+        val name = EditText(this).apply { hint = "Name"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS }
+        val url = EditText(this).apply { hint = "example.com or tel:…"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI }
+        AlertDialog.Builder(this)
+            .setTitle("Add a link")
+            .setView(padded(kit.column().apply { addView(name); addView(url) }))
+            .setPositiveButton("Add") { _, _ ->
+                val u = Launcher.tidyLink(url.text.toString())
+                val n = name.text.toString().trim()
+                when {
+                    n.isEmpty() -> message("Give the link a name.")
+                    !Launcher.safeLink(u) -> message("That doesn't look like a link Islet can open.")
+                    else -> {
+                        prefs.links = prefs.links + Link(n, u)
+                        build()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     // ---- The computer ----------------------------------------------------------------------------------

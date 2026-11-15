@@ -2,6 +2,20 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- The rest of the computer's extras on the phone island:
+  - a **class timetable**, counted down on the island from 15 minutes before each lesson, then the time left in it, with optional Do Not Disturb during lessons;
+  - **deadlines** from your calendar (exam, essay, assignment, due…) on the calendar card, counted down;
+  - **alarms** set from Islet, kept by the phone's Clock app, with the next one on the calendar card;
+  - the **focus streak**, on the timer and in Timer & focus;
+  - a **sleep timer** for music (the moon on the music card);
+  - a **quick launcher** from the island's card, for apps and your own links;
+  - a **Battery** page with health, temperature, voltage and charge cycles (Android 14 and later);
+  - **network speed**, live in the Speed test page and, if you choose, in the island's strip;
+  - optional **bars that follow the sound** of the music.
+
 ## [0.4.1] - 2026-11-15
 
 ### Changed

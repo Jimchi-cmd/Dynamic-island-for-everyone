@@ -36,6 +36,14 @@
         android:name="android.permission.WRITE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
 
+    <!-- Set alarms in the phone's Clock app from Islet's Alarms page. -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <!-- Optional, off until switched on: bars that follow the music. Android's
+         Visualizer asks for this to read the loudness of what is playing;
+         the microphone isn't used and nothing is recorded. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
     <!-- To show an app's name ("Messages") rather than its package id. -->
     <queries>
         <intent>
@@ -89,6 +97,16 @@
             android:taskAffinity=""
             android:theme="@style/Theme.Islet.Clear"
             android:windowSoftInputMode="stateVisible" />
+
+        <!-- The quick launcher, from the island's search button. -->
+        <activity
+            android:name=".LauncherActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Islet.Clear"
+            android:windowSoftInputMode="stateVisible|adjustResize" />
 
         <!-- Holds the island's window over the status bar, and presses
              screenshot and lock for the control centre. Reads nothing. -->

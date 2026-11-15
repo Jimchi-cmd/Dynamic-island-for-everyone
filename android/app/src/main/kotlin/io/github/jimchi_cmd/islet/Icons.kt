@@ -14,6 +14,7 @@ enum class Icon {
     Play, Pause, Next, Previous, Phone, HangUp, Bell, BellOff, Vibrate, Plane, Moon, Wifi, Bluetooth, Bolt,
     Timer, Stopwatch, Arrow, Download, Camera, Mic, Flashlight, Sun, Cloud, Rain, Snow, Storm, Fog, Lock,
     Screenshot, Note, Check, Plus, Minus, Calendar, Video, Close, Gear, Sound, Brightness, Music, Flag, Reset, Clipboard, Gauge, Toggles,
+    Book, Search, Battery, Link,
 }
 
 object Icons {
@@ -291,6 +292,25 @@ object Icons {
             Icon.Reset -> {
                 arc(4f, 4f, 20f, 20f, 200f, 290f)
                 p(3.5f, 4.5f, 4.5f, 9.5f, 9.5f, 8.5f)
+            }
+            Icon.Book -> {
+                // An open book: two pages meeting at the spine.
+                p(12f, 6.5f, 12f, 20f)
+                p(12f, 6.5f, 8.5f, 5f, 3.5f, 5f, 3.5f, 18.5f, 8.5f, 18.5f, 12f, 20f)
+                p(12f, 6.5f, 15.5f, 5f, 20.5f, 5f, 20.5f, 18.5f, 15.5f, 18.5f, 12f, 20f)
+            }
+            Icon.Search -> {
+                circle(10.5f, 10.5f, 6f, stroke)
+                p(15f, 15f, 20f, 20f)
+            }
+            Icon.Battery -> {
+                c.drawRoundRect(3f, 7f, 18.5f, 17f, 2.5f, 2.5f, stroke)
+                c.drawRoundRect(5.5f, 9.5f, 12.5f, 14.5f, 1f, 1f, fill)
+                p(21f, 10.5f, 21f, 13.5f)
+            }
+            Icon.Link -> {
+                c.drawRoundRect(3f, 9f, 13f, 15f, 3f, 3f, stroke)
+                c.drawRoundRect(11f, 9f, 21f, 15f, 3f, 3f, stroke)
             }
         }
         c.restore()

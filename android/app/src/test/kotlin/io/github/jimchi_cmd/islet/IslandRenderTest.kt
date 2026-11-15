@@ -15,6 +15,8 @@ import islet.island.CalendarEvent
 import islet.island.Live
 import islet.island.Lyrics
 import islet.island.Pop
+import islet.island.Streak
+import islet.island.Timetable
 import islet.island.Todo
 import islet.island.Weather
 import org.junit.Assert.assertTrue
@@ -50,6 +52,20 @@ class IslandRenderTest {
         Isle.airplane = false
         Isle.dnd = false
         Isle.prefs.style = "black"
+        Isle.prefs.timetable = Timetable()
+        Isle.prefs.stripNetwork = false
+        Isle.prefs.streak = Streak()
+        Isle.deadlines = emptyList()
+        Isle.events = emptyList()
+        Isle.nextAlarm = null
+        Isle.setSleep(null)
+    }
+
+    /** A lesson today from `from` to `to` minutes from now. */
+    private fun lessonAround(from: Int, to: Int, name: String = "Physics", room: String = "Lab 2"): Timetable {
+        val now = Isle.now()
+        val start = Timetable.minuteOfDay(now) + from
+        return Timetable().add(Timetable.weekday(now), start.coerceIn(0, 1438), (Timetable.minuteOfDay(now) + to).coerceIn(1, 1439), name, room).getOrThrow()
     }
 
     private fun cover(): Bitmap {
@@ -68,7 +84,7 @@ class IslandRenderTest {
         v.update()
         v.settle()
         val dm = ctx.resources.displayMetrics
-        val out = Bitmap.createBitmap(dm.widthPixels, (300 * dm.density).toInt(), Bitmap.Config.ARGB_8888)
+        val out = Bitmap.createBitmap(dm.widthPixels, (400 * dm.density).toInt(), Bitmap.Config.ARGB_8888)
         val c = Canvas(out)
         c.drawColor(0xffd9dde6.toInt())
         v.draw(c)
@@ -159,6 +175,32 @@ class IslandRenderTest {
             "24-peek" to { Isle.battery = 61; Isle.island.tap(Isle.now()) },
             "25-calendar" to { Isle.island.showCalendar() },
             "23-call-ongoing" to { Isle.prefs.style = "black"; Isle.island.put(Live.Call("note:c", "Mum", "Phone", false, Isle.now() - 61_000)) },
+            "26-lesson-on" to { Isle.prefs.timetable = lessonAround(-10, 40); Isle.changed() },
+            "27-lesson-soon" to {
+                Isle.prefs.timetable = lessonAround(8, 58, "Maths", "B12")
+                Isle.changed()
+                Isle.island.open(Isle.island.all.first().id)
+            },
+            "28-calendar-more" to {
+                Isle.prefs.timetable = lessonAround(25, 75, "History", "")
+                Isle.events = listOf(CalendarEvent(1, "Team standup", now + 3 * 3_600_000, now + 4 * 3_600_000, false))
+                Isle.deadlines = listOf(CalendarEvent(2, "Biology essay due", now + 3 * 86_400_000L, now + 3 * 86_400_000L + 3_600_000, false))
+                Isle.nextAlarm = now + 9 * 3_600_000
+                Isle.island.showCalendar()
+            },
+            "29-music-sleep" to {
+                Isle.island.put(music)
+                Isle.art = cover()
+                Isle.artColor = 0xe0446a
+                Isle.setSleep(30)
+                Isle.island.open("music")
+            },
+            "30-focus-streak" to {
+                Isle.prefs.streak = Streak(Streak.dayOf(Isle.now()) - 1, 4, 6, 19, 2)
+                Isle.startPomodoro()
+                Isle.island.open("timer")
+            },
+            "31-peek-network" to { Isle.battery = 61; Isle.prefs.stripNetwork = true; Isle.island.tap(Isle.now()) },
         )
         val shots = scenes.map { (name, setup) -> name to render(name, setup) }
         for ((name, b) in shots) assertTrue("$name drew nothing", drewSomething(b))

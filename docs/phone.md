@@ -28,10 +28,11 @@ Optional permissions, each asked for with its own button:
 - **Nearby devices:** name the Bluetooth device that connected.
 - **Location:** Android shares the Wi-Fi network's name only with apps allowed location. Islet reads no location.
 - **Modify system settings:** the brightness slider.
+- **Microphone** (only if you switch on **Bars follow the sound**): Android lets an app read the loudness of what's playing only with this permission. Islet doesn't use the microphone and records nothing; it reads four levels while music plays.
 
 ### Use it
 
-- **Tap the empty island** for a strip, as the computer's island shows when hovered: the battery on the left of the camera, the time and memory use on the right. **Tap the strip** for the card: the time and date, Wi-Fi and Bluetooth (blue while on, with the network's and device's names), and round buttons for notes, the speed test, the control centre, the calendar, a screenshot and lock. The calendar button shows the month with 1, 5, 10 and 25-minute timer buttons, focus rounds and the stopwatch.
+- **Tap the empty island** for a strip, as the computer's island shows when hovered: the battery on the left of the camera, the time and memory use (or download speed, under Look) on the right. **Tap the strip** for the card: the time and date, Wi-Fi and Bluetooth (blue while on, with the network's and device's names), and round buttons for the quick launcher, notes, the speed test, the control centre, the calendar, a screenshot and lock. The calendar button shows the month; under it, your next class, meeting, deadline and alarm, then 1, 5, 10 and 25-minute timer buttons, focus rounds, alarms and the stopwatch.
 - **Tap** something going on (music, a call) to open it. Tap again, swipe up, or tap anywhere else to close it.
 - **Long-press** for the control centre.
 - **Swipe sideways** when two things are going on (a call and music, say) to switch which one leads. The second one sits in a small bubble beside the island; tap the bubble to open it.
@@ -49,6 +50,7 @@ Optional permissions, each asked for with its own button:
 | **Another app's countdown** (the Clock app's timer) | Time left | Open the app |
 | **Meetings** (from 15 minutes before to 5 after) | Minutes to go | Join, or open the calendar |
 | **Downloads and uploads** | A ring filling up | The file, the app and the percentage |
+| **Lessons** (your class timetable, from 15 minutes before) | Minutes to go, then the time left | The lesson, its room and times, and how far through it you are |
 | **Nothing going on** | The empty pill round the camera, with a soft glowing rim; a plane or moon in airplane mode or Do Not Disturb | The strip, then the card (see above) |
 
 Notification pop-ups show the sender's picture (or their initial), how many messages the app has sent lately, and the notification's own buttons, such as **Reply** and **Mark as read**. **Reply** opens a small box to type into, and the answer goes back through the app as it would from the notification. Payments from Google Wallet, Samsung Wallet, PayPal, Revolut and Wise show as **Paid** with the amount.
@@ -70,9 +72,20 @@ Black or frosted **Glass** (Android doesn't let the island blur what's behind it
 - **To-do:** add, tick and delete. The first unfinished one shows on the clock card.
 - **Quick notes:** one line at a time, with the date and time. **Share all** sends them to any app.
 
+### Classes, deadlines, alarms and focus
+
+- **Class timetable:** enter your week once (Classes & deadlines → Add a lesson). The island counts down from 15 minutes before each lesson and then shows the time left in it; the calendar card says "Maths in 25 min" or "Free 45 min · then Physics". **Do Not Disturb during lessons** turns it on when a lesson starts and off when it ends, if Islet turned it on.
+- **Deadlines:** calendar events in the next two weeks called exam, test, quiz, essay, assignment, homework, coursework, project, report, presentation, submission, due or hand in show on the calendar card with a countdown ("in 3 days"). They need calendar access.
+- **Alarms:** set one from the Alarms page (or the bell on the calendar card), at a time or in 20 minutes or an hour. It goes into the phone's own Clock app, so it rings even if Islet is closed.
+- **Focus streak:** each day you finish at least one focus round adds to the streak; it shows on the island's timer ("4 days in a row") and in Timer & focus.
+- **Sleep timer:** the moon on the music card (or the Music page) pauses the music after 15, 30, 45 or 60 minutes.
+
 ### Also in the app
 
-- **Speed test:** about 35 MB with Cloudflare's public speed-test servers, only when you press the button.
+- **Quick launcher:** the search button on the island's card opens a search box; type a few letters of an app or one of your own links (websites, `tel:` numbers, `mailto:` addresses or an app's own links, added under Quick launcher) and tap it, or press Enter for the first.
+- **Battery:** charge, how it's charging, health, temperature, voltage, type, roughly what a full charge holds today, and on Android 14 and later the number of charge cycles. Android doesn't tell apps how much a battery has worn.
+- **Speed test:** about 35 MB with Cloudflare's public speed-test servers, only when you press the button. Above it, the phone's network use right now, every second; nothing goes online for that.
+- **Bars follow the sound** (Music): the bars beside a song move with the music rather than on their own. Off until you switch it on; some phones don't allow it, and then the bars move on their own as before.
 
 ### What the laptop island does that the phone can't
 
@@ -80,7 +93,7 @@ Android doesn't let apps do these, so they stay on the computer:
 
 - **Clipboard history:** since Android 10 only the keyboard and the app in front may read the clipboard.
 - **Per-app volume** and the **app switcher:** Android has no way for an app to set other apps' volume or list their windows.
-- **System monitor** (CPU and memory use): Android 8 and later hide other apps' use.
+- **System monitor** and the **performance alert** (CPU use per app): Android 8 and later hide other apps' use. The strip shows the phone's memory use instead.
 - **Plugins** (scripts on the island) and the **file shelf**: Android apps can't run your scripts or hold files for dragging into other apps.
 - **Switching Wi-Fi, Bluetooth and airplane mode:** the buttons open the phone's own panel instead.
 - **Replacing the volume slider:** Android's own one still shows when you press the volume buttons.
