@@ -80,6 +80,10 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
 
     private companion object {
         /** The rim's glow, outside in: (width in dp, colour). */
+        /** How far (dp) a finger may move and still tap; how far it must move to swipe. */
+        const val TAP_SLOP = 24f
+        const val SWIPE = 36f
+
         val GLOW = listOf(7f to 0x149f8cff, 4.5f to 0x2a9f8cff, 2.5f to 0x559f8cff, 1.3f to 0xffd6ccff.toInt())
     }
 
@@ -129,7 +133,11 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             p.hideInLandscape && window.landscape -> Scene.Hidden
             else -> Isle.island.scene(Isle.now())
         }
-        if (sameShape(next, scene)) {
+        // Same kind of scene and the same size: only what's inside changed.
+        // (A setting such as the size, a nudge or the time on the empty
+        // island changes the size too: then it moves to the new one.)
+        val sameBox = next == Scene.Hidden || scene == Scene.Hidden || to == null || geometry.box(next) == to
+        if (sameShape(next, scene) && sameBox) {
             scene = next
             if (fade.target == 1.0 && fade.settled) shown = next
             invalidate()
@@ -176,6 +184,9 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         a is Scene.Popped && b is Scene.Popped -> a.pop == b.pop
         else -> a == b
     }
+
+    /** The pill's box as drawn now, in dp (for tests). */
+    internal fun drawnBox(): Box? = currentBox()
 
     private fun currentBox(): Box? {
         val f = from ?: return to
@@ -1226,34 +1237,26 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent) = true
 
-            override fun onSingleTapUp(e: MotionEvent): Boolean {
-                getLocationOnScreen(at)
-                val x = e.x + at[0]
-                val y = e.y + at[1]
-                val near = 6 * dp
-                hits.lastOrNull { RectF(it.rect).apply { inset(-near, -near) }.contains(x, y) }?.let {
-                    it.action()
-                    Isle.changed()
-                    return true
-                }
-                tapBackground()
-                return true
-            }
-
             override fun onLongPress(e: MotionEvent) {
                 if (dragging != null) return
+                longPressed = true
                 performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
                 Isle.island.longPress()
                 Isle.changed()
             }
 
             override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
-                if (dragging != null) return false
-                if (abs(vy) > abs(vx) && vy < 0) {
+                if (dragging != null || longPressed) return false
+                // Only a real swipe counts: a thumb tap that slides a little is still a tap.
+                val dx = e2.rawX - downX
+                val dy = e2.rawY - downY
+                if (kotlin.math.hypot(dx, dy) < SWIPE * dp) return false
+                swiped = true
+                if (abs(dy) > abs(dx) && dy < 0) {
                     Isle.island.close(Isle.now())
-                } else if (abs(vx) > abs(vy) && !Isle.island.isOpen) {
+                } else if (abs(dx) > abs(dy) && !Isle.island.isOpen) {
                     Isle.island.cycle()
-                } else if (abs(vy) > abs(vx) && vy > 0 && !Isle.island.isOpen) {
+                } else if (abs(dy) > abs(dx) && dy > 0 && !Isle.island.isOpen) {
                     Isle.island.tap(Isle.now())
                 }
                 Isle.changed()
@@ -1261,6 +1264,19 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             }
         },
     )
+
+    /** A tap at (x, y) on screen: a button if there's one there (with some room round it), else the island itself. */
+    private fun tapAt(x: Float, y: Float) {
+        performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
+        val near = 8 * dp
+        hits.lastOrNull { RectF(it.rect).apply { inset(-near, -near) }.contains(x, y) }?.let {
+            it.action()
+            Isle.changed()
+            return
+        }
+        tapBackground()
+        Isle.changed()
+    }
 
     private fun tapBackground() {
         val now = Isle.now()
@@ -1291,7 +1307,14 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val x = e.x + at[0]
         val y = e.y + at[1]
         when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> dragging = sliders.firstOrNull { it.rect.contains(x, y) }
+            MotionEvent.ACTION_DOWN -> {
+                dragging = sliders.firstOrNull { it.rect.contains(x, y) }
+                downX = e.rawX
+                downY = e.rawY
+                downAt = e.eventTime
+                longPressed = false
+                swiped = false
+            }
             MotionEvent.ACTION_MOVE -> dragging?.let {
                 it.set(((x - it.rect.left) / it.rect.width()).coerceIn(0f, 1f))
                 invalidate()
@@ -1309,8 +1332,22 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 return true
             }
         }
-        return gestures.onTouchEvent(e) || super.onTouchEvent(e)
+        gestures.onTouchEvent(e)
+        // Our own tap: more forgiving than Android's (a thumb moves a little,
+        // and a quick flick that barely moves is a tap, not a swipe).
+        if (e.actionMasked == MotionEvent.ACTION_UP && !longPressed && !swiped &&
+            kotlin.math.hypot(e.rawX - downX, e.rawY - downY) < TAP_SLOP * dp && e.eventTime - downAt < 700
+        ) {
+            tapAt(x, y)
+        }
+        return true
     }
+
+    private var downX = 0f
+    private var downY = 0f
+    private var downAt = 0L
+    private var longPressed = false
+    private var swiped = false
 
     override fun performClick(): Boolean {
         super.performClick()

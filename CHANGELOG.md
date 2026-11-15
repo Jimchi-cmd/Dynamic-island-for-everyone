@@ -2,6 +2,12 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Phone: taps on the small pill open it reliably. A quick thumb tap that slid a little was taken for a sideways swipe and did nothing; now only a real swipe (about a third of an inch) counts as one, and the area just under the pill takes taps too. A light buzz confirms each tap.
+- Phone: changing a setting that changes the island's size (Time on the empty island, the size, the position nudges) left it cut off as a square block until something else happened. It now moves to the new size straight away.
+
 ## [0.4.3] - 2026-11-15
 
 ### Added

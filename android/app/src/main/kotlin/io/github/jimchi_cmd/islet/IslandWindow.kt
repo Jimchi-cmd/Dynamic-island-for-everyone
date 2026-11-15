@@ -79,11 +79,14 @@ class IslandWindow(private val context: Context, private val type: Int) {
         val (x, y, w, h) = if (box == null) {
             listOf(0, 0, 1, 1)
         } else {
-            // Room round the pill for its glowing rim.
-            val m = (8 * d).toInt()
+            // Room round the pill for its glowing rim, and a little more
+            // below it so a thumb that lands just under the small pill still
+            // reaches it (the screen's edge is right above).
+            val m = (10 * d).toInt()
+            val below = (18 * d).toInt()
             val l = floor(box.x * d).toInt() - m
             val t = floor(box.y * d).toInt() - m
-            listOf(l, t, ceil(box.right * d).toInt() + m - l, ceil(box.bottom * d).toInt() + m - t)
+            listOf(l, t, ceil(box.right * d).toInt() + m - l, ceil(box.bottom * d).toInt() + below - t)
         }
         val touchable = box != null
         val flags = if (touchable) {
