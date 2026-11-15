@@ -6,6 +6,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- To reconnect when Wi-Fi comes back, and the island's Wi-Fi pop-up. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Whether Wi-Fi is on, for the clock card's Wi-Fi button. -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Optional: Android shares the Wi-Fi network's name only with apps
+         allowed location. Islet reads no location. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <!-- The island on the phone. Each is asked for in the app, and the
          island works without the optional ones. -->
@@ -73,6 +79,16 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <!-- A box to type a reply into, from a notification on the island. -->
+        <activity
+            android:name=".ReplyActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Islet.Clear"
+            android:windowSoftInputMode="stateVisible" />
 
         <!-- Holds the island's window over the status bar, and presses
              screenshot and lock for the control centre. Reads nothing. -->

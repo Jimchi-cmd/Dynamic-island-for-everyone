@@ -96,8 +96,24 @@ sealed class Pop {
     /** Pop-ups with the same key replace each other instead of queueing. */
     open val key: String get() = this::class.java.simpleName
 
-    data class Note(override val key: String, val app: String, val title: String, val text: String) : Pop() {
-        override val lasts get() = 5000L
+    /**
+     * `actions`: the notification's own buttons ("Reply", "Mark as read"),
+     * at most two; `count`: how many this app has sent lately.
+     */
+    data class Note(
+        override val key: String,
+        val app: String,
+        val title: String,
+        val text: String,
+        val actions: List<String> = emptyList(),
+        val count: Int = 1,
+    ) : Pop() {
+        override val lasts get() = if (actions.isEmpty()) 5000L else 7000L
+    }
+
+    /** A card payment, read from a wallet app's notification. */
+    data class Payment(val merchant: String, val amount: String) : Pop() {
+        override val lasts get() = 4000L
     }
 
     data class Charging(val level: Int, val charging: Boolean) : Pop() {

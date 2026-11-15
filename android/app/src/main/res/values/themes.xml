@@ -4,4 +4,14 @@
         <item name="colorPrimary">#0A84FF</item>
         <item name="colorAccent">#0A84FF</item>
     </style>
+
+    <!-- See-through, for the reply box that opens over other apps. -->
+    <style name="Theme.Islet.Clear" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="colorPrimary">#0A84FF</item>
+        <item name="colorAccent">#0A84FF</item>
+    </style>
 </resources>

@@ -19,6 +19,16 @@ sealed class Scene {
 
     /** Long press: the control centre. */
     object Controls : Scene()
+
+    /**
+     * A tap on the empty island: a strip with the battery, the time and
+     * memory use, as the computer's island shows when hovered. Tap again
+     * for the clock card.
+     */
+    object Peek : Scene()
+
+    /** The month, with timer buttons (from the clock card's calendar button). */
+    object Calendar : Scene()
 }
 
 /**
@@ -35,6 +45,10 @@ class Island(var showEmpty: Boolean = true) {
     private var chosen: String? = null
     private var expanded = false
     private var controls = false
+    private var calendar = false
+    private var peekUntil = 0L
+
+    private fun peeking(now: Long) = now < peekUntil
 
     val all: List<Live> get() = lives.values.sortedByDescending { it.priority }
 
@@ -107,7 +121,7 @@ class Island(var showEmpty: Boolean = true) {
     }
 
     /** When something next changes on its own (a pop-up ends), or null. */
-    fun nextChange(): Long? = current?.let { currentUntil }
+    fun nextChange(): Long? = listOfNotNull(current?.let { currentUntil }, peekUntil.takeIf { it > 0 }).minOrNull()
 
     private fun primary(): Live? {
         val sorted = all
@@ -116,43 +130,77 @@ class Island(var showEmpty: Boolean = true) {
 
     fun scene(now: Long): Scene {
         tick(now)
+        if (calendar) return Scene.Calendar
         if (controls) return Scene.Controls
         if (expanded) return Scene.Expanded(primary())
         current?.let { return Scene.Popped(it) }
-        val first = primary() ?: return if (showEmpty) Scene.Idle else Scene.Hidden
+        if (peekUntil in 1..now) peekUntil = 0
+        val first = primary() ?: return when {
+            peeking(now) -> Scene.Peek
+            showEmpty -> Scene.Idle
+            else -> Scene.Hidden
+        }
         val second = all.firstOrNull { it.id != first.id }
         return Scene.Compact(first, second)
     }
 
     // ---- What the user does --------------------------------------------------
 
-    /** Tap the island: open it (a pop-up opens its activity's card instead). */
+    /**
+     * Tap the island. An open card closes; a pop-up goes; an activity
+     * opens. The empty island first peeks (the strip), then opens the
+     * clock card on a second tap.
+     */
     fun tap(now: Long) {
         tick(now)
         when {
+            calendar -> calendar = false
             controls -> controls = false
             expanded -> expanded = false
             current != null -> dismissPop(now)
-            else -> expanded = true
+            primary() == null && !peeking(now) -> peekUntil = now + PEEK
+            else -> {
+                expanded = true
+                peekUntil = 0
+            }
         }
     }
 
     fun longPress() {
         controls = true
         expanded = false
+        calendar = false
+        peekUntil = 0
     }
+
+    /** The clock card's calendar button. */
+    fun showCalendar() {
+        calendar = true
+        controls = false
+        expanded = false
+    }
+
+    /** The clock card's controls button. */
+    fun showControls() = longPress()
 
     /** Swipe up, the back gesture or a tap outside: close it. */
     fun close(now: Long) {
-        if (controls || expanded) {
+        peekUntil = 0
+        if (controls || expanded || calendar) {
             controls = false
             expanded = false
+            calendar = false
         } else if (current != null) {
             dismissPop(now)
         }
     }
 
-    val isOpen get() = controls || expanded
+    val isOpen get() = controls || expanded || calendar
+
+    companion object {
+        /** How long the strip stays after a tap. */
+        const val PEEK = 4000L
+    }
 
     /** Swipe sideways on the pill: bring the next activity forward. */
     fun cycle() {

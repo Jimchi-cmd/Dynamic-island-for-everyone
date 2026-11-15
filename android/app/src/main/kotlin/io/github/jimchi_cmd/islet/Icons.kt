@@ -13,7 +13,7 @@ import islet.island.Sky
 enum class Icon {
     Play, Pause, Next, Previous, Phone, HangUp, Bell, BellOff, Vibrate, Plane, Moon, Wifi, Bluetooth, Bolt,
     Timer, Stopwatch, Arrow, Download, Camera, Mic, Flashlight, Sun, Cloud, Rain, Snow, Storm, Fog, Lock,
-    Screenshot, Note, Check, Plus, Minus, Calendar, Video, Close, Gear, Sound, Brightness, Music, Flag, Reset,
+    Screenshot, Note, Check, Plus, Minus, Calendar, Video, Close, Gear, Sound, Brightness, Music, Flag, Reset, Clipboard, Gauge, Toggles,
 }
 
 object Icons {
@@ -270,6 +270,23 @@ object Icons {
             Icon.Flag -> {
                 p(5f, 21f, 5f, 3.5f)
                 p(5f, 4f, 18f, 4f, 15f, 8f, 18f, 12f, 5f, 12f, close = true, paint = fill)
+            }
+            Icon.Clipboard -> {
+                c.drawRoundRect(5.5f, 4.5f, 18.5f, 21f, 2.5f, 2.5f, stroke)
+                c.drawRoundRect(9f, 2.5f, 15f, 6.5f, 1.5f, 1.5f, fill)
+                p(9f, 11f, 15f, 11f)
+                p(9f, 15f, 13.5f, 15f)
+            }
+            Icon.Gauge -> {
+                arc(3.5f, 4.5f, 20.5f, 21.5f, 150f, 240f)
+                p(12f, 13f, 15.5f, 8.5f)
+                circle(12f, 13f, 1.6f, fill)
+            }
+            Icon.Toggles -> {
+                c.drawRoundRect(3f, 4f, 21f, 11f, 3.5f, 3.5f, stroke)
+                circle(17.5f, 7.5f, 2f, fill)
+                c.drawRoundRect(3f, 13f, 21f, 20f, 3.5f, 3.5f, stroke)
+                circle(6.5f, 16.5f, 2f, fill)
             }
             Icon.Reset -> {
                 arc(4f, 4f, 20f, 20f, 200f, 290f)

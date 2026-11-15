@@ -2,6 +2,21 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **The phone app looks like Islet's Settings on the computer:** a list of pages with coloured tiles, and grouped cards with switches, light and dark.
+- **The phone island looks like the computer's:** a tap on the empty island shows the strip (battery, time, memory use); a second tap, the card with the time, Wi-Fi and Bluetooth buttons and round buttons for notes, the speed test, controls, the calendar, a screenshot and lock. The calendar button shows the month with timer buttons.
+- The phone island sits round the camera with or without the accessibility switch, a little thicker, with a soft glowing rim (a switch in Look).
+- Notification pop-ups show the sender's picture or initial, a count, and the notification's own buttons; **Reply** opens a box to answer in. Ongoing calls show green bars; Silent and Do Not Disturb read like the computer's.
+
+### Added
+- **Paid** pop-ups for wallet payments, with the amount.
+- A frosted **Glass** style for the phone island.
+
+### Fixed
+- The phone app's screen no longer sits under the status bar on Android 15.
+
 ## [0.4.0] - 2026-11-15
 
 ### Added

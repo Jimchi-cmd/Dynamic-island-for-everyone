@@ -83,9 +83,11 @@ class IslandWindow(private val context: Context, private val type: Int) {
         val (x, y, w, h) = if (box == null) {
             listOf(0, 0, 1, 1)
         } else {
-            val l = floor(box.x * d).toInt() - 2
-            val t = floor(box.y * d).toInt() - 2
-            listOf(l, t, ceil(box.right * d).toInt() + 2 - l, ceil(box.bottom * d).toInt() + 2 - t)
+            // Room round the pill for its glowing rim.
+            val m = (8 * d).toInt()
+            val l = floor(box.x * d).toInt() - m
+            val t = floor(box.y * d).toInt() - m
+            listOf(l, t, ceil(box.right * d).toInt() + m - l, ceil(box.bottom * d).toInt() + m - t)
         }
         val touchable = box != null
         val flags = if (touchable) {
@@ -136,23 +138,10 @@ class IslandWindow(private val context: Context, private val type: Int) {
             prefs.offsetY.toDouble() + extraY,
             prefs.extraWidth.toDouble(),
         )
-        val g = make(0.0)
-        // An ordinary overlay sits under the status bar, which would take
-        // its taps (and pull down the shade): keep it just below the bar.
-        if (type == WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY) {
-            val below = statusBarHeight() / d + 4 - g.top
-            if (below > 0) return make(below)
-        }
-        return g
-    }
-
-    private fun statusBarHeight(): Double {
-        if (Build.VERSION.SDK_INT >= 30) {
-            return wm.currentWindowMetrics.windowInsets.getInsets(android.view.WindowInsets.Type.statusBars()).top.toDouble()
-        }
-        @android.annotation.SuppressLint("DiscouragedApi", "InternalInsetResource")
-        val id = context.resources.getIdentifier("status_bar_height", "dimen", "android")
-        return if (id > 0) context.resources.getDimensionPixelSize(id).toDouble() else 24.0 * density
+        // Round the camera either way. (As an ordinary overlay, some phones'
+        // status bars take taps on the small pill; the accessibility switch
+        // avoids that, and the app says so.)
+        return make(0.0)
     }
 
     companion object {

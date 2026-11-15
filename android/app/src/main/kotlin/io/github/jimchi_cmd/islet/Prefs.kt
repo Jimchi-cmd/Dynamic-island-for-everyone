@@ -44,6 +44,16 @@ class Prefs(context: Context) {
         get() = p.getInt("extra_width", 0)
         set(v) = p.edit().putInt("extra_width", v.coerceIn(-40, 120)).apply()
 
+    /** "black", or "glass": frosted, with a light rim. */
+    var style: String
+        get() = p.getString("style", "black") ?: "black"
+        set(v) = p.edit().putString("style", v).apply()
+
+    /** A soft glowing rim round the island. */
+    var ring: Boolean
+        get() = flag("ring", true)
+        set(v) = set("ring", v)
+
     var albumBorder: Boolean
         get() = flag("album_border", true)
         set(v) = set("album_border", v)

@@ -247,10 +247,30 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val r = (box.right * dp).toFloat()
         val b = (box.bottom * dp).toFloat()
         val radius = (box.radius * dp).toFloat()
-        // The pill.
-        fill.color = Color.BLACK
+        // The pill: black, or frosted glass with a light rim.
         rect.set(l, t, r, b)
-        c.drawRoundRect(rect, radius, radius, fill)
+        if (Isle.prefs.style == "glass") {
+            fill.color = 0xd92a2a30.toInt()
+            c.drawRoundRect(rect, radius, radius, fill)
+            fill.shader = android.graphics.LinearGradient(0f, t, 0f, t + (b - t) * 0.6f, 0x33ffffff, 0x00ffffff, android.graphics.Shader.TileMode.CLAMP)
+            c.drawRoundRect(rect, radius, radius, fill)
+            fill.shader = null
+            line.color = 0x40ffffff
+            line.strokeWidth = 1f * dp
+            rect.set(l + dp / 2, t + dp / 2, r - dp / 2, b - dp / 2)
+            c.drawRoundRect(rect, radius, radius, line)
+        } else {
+            fill.color = Color.BLACK
+            c.drawRoundRect(rect, radius, radius, fill)
+        }
+        if (Isle.prefs.ring && borderFor(shown) == null && scene != Scene.Hidden) {
+            line.color = 0xffd6ccff.toInt()
+            line.strokeWidth = 1.5f * dp
+            line.setShadowLayer(6 * dp, 0f, 0f, 0xcc9f8cff.toInt())
+            rect.set(l + 0.75f * dp, t + 0.75f * dp, r - 0.75f * dp, b - 0.75f * dp)
+            c.drawRoundRect(rect, radius, radius, line)
+            line.clearShadowLayer()
+        }
         borderFor(shown)?.let { colour ->
             line.color = colour
             line.strokeWidth = 2f * dp
@@ -291,6 +311,8 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             is Scene.Popped -> drawPop(c, s.pop, box)
             is Scene.Expanded -> drawExpanded(c, s.live, box)
             Scene.Controls -> drawControls(c, box)
+            Scene.Peek -> drawPeek(c, box)
+            Scene.Calendar -> drawCalendar(c, box)
         }
     }
 
@@ -466,13 +488,14 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             is Live.Call -> {
                 val pulse = if (live.since == 0L) (0.6f + 0.4f * sin(SystemClock.uptimeMillis() / 180.0).toFloat()) else 1f
                 icon(c, Icon.Phone, lx, cy, 15f, (green and 0x00ffffff) or ((pulse * 255).toInt() shl 24))
-                val right = if (live.since > 0) Format.elapsed(now - live.since) else live.name
-                write(c, right, rx + 8 * dp, cy + 5 * dp, 14f, green, bold = true, max = wing, align = Paint.Align.RIGHT)
+                val left = if (live.since > 0) Format.elapsed(now - live.since) else live.name
+                write(c, left, lx + 12 * dp, cy + 5 * dp, 14f, green, bold = true, max = wing - 12 * dp)
+                bars(c, rx + 8 * dp, cy, 16f, green, true)
             }
             is Live.Navigation -> {
                 val extra = Isle.extras[live.id.removePrefix("note:")]
                 if (!drawable(c, extra?.icon, lx, cy, 20f)) icon(c, Icon.Arrow, lx, cy, 17f, green)
-                write(c, live.title, rx + 8 * dp, cy + 5 * dp, 14f, white, bold = true, max = wing, align = Paint.Align.RIGHT)
+                write(c, live.title, rx + 8 * dp, cy + 5 * dp, 14f, green, bold = true, max = wing, align = Paint.Align.RIGHT)
             }
             is Live.Timer -> {
                 icon(c, Icon.Timer, lx, cy, 16f, orange)
@@ -530,14 +553,32 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 val locked = context.getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true
                 val title = if (locked) p.app else p.title.ifEmpty { p.app }
                 val body = if (locked) "New notification" else p.text.ifEmpty { p.app }
-                val ix = box.left + pad + 20 * dp
                 val extra = Isle.extras[p.key]
-                if (!drawable(c, extra?.let { Isle.appIcon(it.pkg) }, ix, cy, 40f)) icon(c, Icon.Bell, ix, cy, 24f, white)
-                val x = ix + 30 * dp
+                // With buttons, the text sits higher to leave room for them.
+                val ty = if (p.actions.isEmpty() || locked) cy else box.top + 40 * dp
+                val ix = box.left + pad + 20 * dp
+                avatar(c, extra, title, ix, ty, locked)
+                val x = ix + 32 * dp
                 val max = box.right - pad - x
-                write(c, title, x, cy - 4 * dp, 15f, white, bold = true, max = max - 40 * dp)
-                write(c, body, x, cy + 16 * dp, 14f, grey, max = max)
-                write(c, "now", box.right - pad, cy - 4 * dp, 12f, grey, align = Paint.Align.RIGHT)
+                val badge = if (p.count > 1) 30 * dp else 0f
+                val w = write(c, title, x, ty - 4 * dp, 15f, white, bold = true, max = max - badge - 44 * dp)
+                write(c, " · now", x + w, ty - 4 * dp, 12f, grey)
+                write(c, body, x, ty + 16 * dp, 14f, 0xffd1d1d6.toInt(), max = max)
+                if (p.count > 1) {
+                    fill.color = 0xff3a3a3c.toInt()
+                    rect.set(box.right - pad - 28 * dp, ty - 17 * dp, box.right - pad, ty + 1 * dp)
+                    c.drawRoundRect(rect, 9 * dp, 9 * dp, fill)
+                    write(c, p.count.toString(), rect.centerX(), ty - 3.5f * dp, 12f, white, bold = true, align = Paint.Align.CENTER)
+                }
+                if (!locked && p.actions.isNotEmpty()) {
+                    var ax = x
+                    val ay = box.bottom - 22 * dp
+                    for ((i, label) in p.actions.withIndex()) {
+                        val aw = write(c, label, ax, ay + 5 * dp, 14f, blue, bold = true)
+                        hits.add(Hit(RectF(ax - 8 * dp, ay - 14 * dp, ax + aw + 8 * dp, ay + 14 * dp)) { Isle.act(p.key, i) })
+                        ax += aw + 22 * dp
+                    }
+                }
             }
             is Pop.Screenshot -> {
                 val thumb = thumbnail(p.uri)
@@ -564,14 +605,15 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                     is Pop.Charging -> Quad(Icon.Bolt, if (p.charging) green else grey, if (p.charging) "Charging" else "Not charging", "${p.level}%")
                     is Pop.LowBattery -> Quad(Icon.Bolt, red, "Low battery", "${p.level}%")
                     is Pop.Ringer -> when (p.mode) {
-                        Pop.RingerMode.Silent -> Quad(Icon.BellOff, red, "Silent", "")
-                        Pop.RingerMode.Vibrate -> Quad(Icon.Vibrate, orange, "Vibrate", "")
-                        Pop.RingerMode.Ring -> Quad(Icon.Bell, white, "Ring", "")
+                        Pop.RingerMode.Silent -> Quad(Icon.BellOff, red, "", "Silent")
+                        Pop.RingerMode.Vibrate -> Quad(Icon.Vibrate, orange, "", "Vibrate")
+                        Pop.RingerMode.Ring -> Quad(Icon.Bell, white, "", "Ring")
                     }
                     is Pop.Airplane -> Quad(Icon.Plane, orange, "Airplane mode", if (p.on) "On" else "Off")
                     is Pop.DoNotDisturb -> Quad(Icon.Moon, purple, "Do Not Disturb", if (p.on) "On" else "Off")
                     is Pop.Wifi -> Quad(Icon.Wifi, blue, p.name.ifEmpty { "Wi-Fi" }, "Connected")
                     is Pop.Info -> Quad(null, white, p.text, "")
+                    is Pop.Payment -> Quad(Icon.Check, green, "Paid", p.amount)
                     else -> Quad(null, white, "", "")
                 }
                 if (i == null) {
@@ -583,7 +625,8 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                         battery(c, rx - 10 * dp, cy, (p as? Pop.Charging)?.level ?: (p as Pop.LowBattery).level, colour)
                         write(c, right, rx - 26 * dp, cy + 5 * dp, 13f, white, bold = true, align = Paint.Align.RIGHT)
                     } else {
-                        write(c, right, rx + 6 * dp, cy + 5 * dp, 14f, grey, bold = true, align = Paint.Align.RIGHT)
+                        val tone = if (p is Pop.Wifi) grey else colour
+                        write(c, right, rx + 6 * dp, cy + 5 * dp, 15f, tone, bold = true, align = Paint.Align.RIGHT)
                     }
                 }
             }
@@ -591,6 +634,28 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     }
 
     private data class Quad(val icon: Icon?, val color: Int, val left: String, val right: String)
+
+    /** The sender's picture if the notification has one, else their initial on a colour, with the app's icon in the corner. */
+    private fun avatar(c: Canvas, extra: NoteExtra?, name: String, cx: Float, cy: Float, locked: Boolean) {
+        val r = 20 * dp
+        val photo = if (locked) null else extra?.icon
+        if (!drawable(c, photo, cx, cy, 40f, round = true)) {
+            val app = extra?.let { Isle.appIcon(it.pkg) }
+            if (locked || name.isBlank()) {
+                if (!drawable(c, app, cx, cy, 40f)) icon(c, Icon.Bell, cx, cy, 24f, white)
+                return
+            }
+            val hues = intArrayOf(0xffc77dff.toInt(), 0xff5e9eff.toInt(), 0xffff8a65.toInt(), 0xff4cd97b.toInt(), 0xffffc04d.toInt(), 0xffff6b8b.toInt())
+            fill.color = hues[Math.floorMod(name.hashCode(), hues.size)]
+            c.drawCircle(cx, cy, r, fill)
+            write(c, name.trim().take(1).uppercase(), cx, cy + 6.5f * dp, 18f, white, bold = true, align = Paint.Align.CENTER)
+        }
+        // The app's own icon, small, at the bottom right.
+        val app = extra?.let { Isle.appIcon(it.pkg) } ?: return
+        fill.color = Color.BLACK
+        c.drawCircle(cx + 14 * dp, cy + 14 * dp, 9 * dp, fill)
+        drawable(c, app, cx + 14 * dp, cy + 14 * dp, 15f, round = true)
+    }
 
     private fun battery(c: Canvas, cx: Float, cy: Float, level: Int, color: Int) {
         val w = 24 * dp
@@ -647,7 +712,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 c.drawCircle(l + 24 * dp, cy, 24 * dp, fill)
                 write(c, live.name.take(1).uppercase(), l + 24 * dp, cy + 7 * dp, 20f, white, bold = true, align = Paint.Align.CENTER)
                 val status = when {
-                    live.incoming -> "${live.app} · incoming"
+                    live.incoming -> "Incoming call"
                     live.since > 0 -> Format.elapsed(now - live.since)
                     else -> "Calling…"
                 }
@@ -673,11 +738,13 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             is Live.Navigation -> {
                 val extra = Isle.extras[live.id.removePrefix("note:")]
                 val cy = box.centerY()
-                if (!drawable(c, extra?.icon, l + 26 * dp, cy, 52f)) icon(c, Icon.Arrow, l + 26 * dp, cy, 44f, green)
-                write(c, live.title, l + 66 * dp, cy - 6 * dp, 22f, white, bold = true, max = r - l - 66 * dp)
-                write(c, live.text, l + 66 * dp, cy + 16 * dp, 14f, grey, max = r - l - 66 * dp)
-                write(c, live.app, l + 66 * dp, cy + 34 * dp, 11f, grey)
+                fill.color = 0xff123d1c.toInt()
+                c.drawCircle(l + 24 * dp, cy - 10 * dp, 24 * dp, fill)
+                if (!drawable(c, extra?.icon, l + 24 * dp, cy - 10 * dp, 30f)) icon(c, Icon.Arrow, l + 24 * dp, cy - 10 * dp, 26f, green)
+                write(c, live.title, l + 62 * dp, cy - 14 * dp, 22f, white, bold = true, max = r - l - 62 * dp)
+                write(c, live.text, l + 62 * dp, cy + 6 * dp, 13f, grey, max = r - l - 62 * dp)
                 hits.add(Hit(RectF(box)) { Isle.open(live.id) })
+                chip(c, "Open ${live.app}", l + 62 * dp, cy + 30 * dp, green, Color.BLACK) { Isle.open(live.id) }
             }
             is Live.Timer -> {
                 write(c, if (live.onBreak) "Break" else live.label, l, t + 14 * dp, 13f, grey)
@@ -791,55 +858,129 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         button(c, cx + 64 * dp, cy, 44f, Color.TRANSPARENT, Icon.Next) { Isle.next() }
     }
 
+    /** The clock card, as on the computer: the time, the date, Wi-Fi and Bluetooth, and round buttons. */
     private fun drawClockCard(c: Canvas, box: RectF) {
-        val pad = 20 * dp
+        val pad = 22 * dp
         val l = box.left + pad
         val r = box.right - pad
         val t = box.top + pad
         val now = Isle.now()
-        write(c, timeText(now), l, t + 38 * dp, 40f, white, bold = true, max = (r - l) / 2)
-        write(c, DateFormat.format("EEEE d MMMM", now).toString(), l, t + 58 * dp, 13f, grey)
+        write(c, timeText(now), l - 2 * dp, t + 50 * dp, 54f, white, bold = true, max = (r - l) * 0.7f)
+        write(c, DateFormat.format("EEEE, d MMMM", now).toString(), l, t + 76 * dp, 15f, grey)
         Isle.weather?.let { w ->
             val p = Isle.prefs
-            icon(c, Icons.sky(w.sky, w.day), r - 76 * dp, t + 22 * dp, 26f, if (w.day) 0xffffd60a.toInt() else white)
-            write(c, Format.temperature(w.celsius, p.fahrenheit), r, t + 32 * dp, 26f, white, bold = true, align = Paint.Align.RIGHT)
-            val hiLo = if (w.highC != null && w.lowC != null) {
-                " · H ${Format.temperature(w.highC!!, p.fahrenheit)} L ${Format.temperature(w.lowC!!, p.fahrenheit)}"
-            } else {
-                ""
-            }
-            write(c, w.words + hiLo, r, t + 54 * dp, 12f, grey, max = (r - l) / 2, align = Paint.Align.RIGHT)
+            write(c, Format.temperature(w.celsius, p.fahrenheit), r, t + 30 * dp, 22f, white, bold = true, align = Paint.Align.RIGHT)
+            icon(c, Icons.sky(w.sky, w.day), r - 62 * dp, t + 22 * dp, 22f, if (w.day) 0xffffd60a.toInt() else white)
+            write(c, w.words, r, t + 50 * dp, 12f, grey, max = (r - l) * 0.3f, align = Paint.Align.RIGHT)
         }
-        var y = t + 84 * dp
-        val clocks = Isle.prefs.worldClocks.mapNotNull { id ->
-            val z = TimeZone.getTimeZone(id)
-            if (z.id == "GMT" && id != "GMT") null else "${id.substringAfterLast('/').replace('_', ' ')} ${timeText(now, z)}"
+        // Wi-Fi and Bluetooth: blue while on, with the network's and device's names.
+        val cy = t + 112 * dp
+        val chipW = (r - l - 10 * dp) / 2
+        fun pill(x: Float, on: Boolean, i: Icon, label: String, action: () -> Unit) {
+            fill.color = if (on) 0xff0a84ff.toInt() else dim
+            rect.set(x, cy - 20 * dp, x + chipW, cy + 20 * dp)
+            c.drawRoundRect(rect, 20 * dp, 20 * dp, fill)
+            icon(c, i, x + 22 * dp, cy, 18f, white)
+            write(c, label, x + 38 * dp, cy + 5.5f * dp, 15f, white, bold = true, max = chipW - 50 * dp)
+            hits.add(Hit(RectF(rect), action))
         }
-        if (clocks.isNotEmpty()) {
-            write(c, clocks.joinToString("   "), l, y, 13f, white, max = r - l)
-            y += 20 * dp
-        }
-        val info = listOfNotNull(
-            islet.island.Meetings.next(Isle.events, now)?.let { "${it.title} ${Format.until(it.begin - now)}" },
-            Isle.nextAlarm?.takeIf { it - now < 24 * 3_600_000L }?.let { "Alarm ${timeText(it)}" },
-            Lists.nextTodo(Isle.prefs.todos)?.let { "To do: $it" },
+        pill(l, Isle.wifiOn, Icon.Wifi, Isle.wifiName ?: if (Isle.wifiOn) "Wi-Fi" else "Wi-Fi off") { Controls.wifi() }
+        pill(l + chipW + 10 * dp, Isle.btOn, Icon.Bluetooth, Isle.btName ?: if (Isle.btOn) "Bluetooth" else "Bluetooth off") { Controls.bluetooth() }
+        // Round buttons, spread across the card.
+        val by = cy + 52 * dp
+        val buttons = listOf<Pair<Icon, () -> Unit>>(
+            Icon.Clipboard to { openApp("Todo") },
+            Icon.Gauge to { openApp("Speed") },
+            Icon.Toggles to { Isle.island.showControls() },
+            Icon.Calendar to { Isle.island.showCalendar() },
+            Icon.Screenshot to { Controls.screenshot() },
+            Icon.Lock to { Controls.lock() },
         )
-        if (info.isNotEmpty()) write(c, info.joinToString(" · "), l, y, 13f, grey, max = r - l)
-        val cy = box.bottom - pad - 14 * dp
+        val step = (r - l - 40 * dp) / (buttons.size - 1)
+        buttons.forEachIndexed { i, (ic, action) ->
+            button(c, l + 20 * dp + i * step, by, 40f, dim, ic, action = action)
+        }
+    }
+
+    private fun openApp(page: String) {
+        Isle.island.close(Isle.now())
+        Isle.changed()
+        Isle.start(Intent(context, MainActivity::class.java).putExtra("page", page))
+    }
+
+    /** The strip for a tap on the empty island: battery left of the camera; the time and memory use right of it. */
+    private fun drawPeek(c: Canvas, box: RectF) {
+        val cy = box.centerY()
+        val h = box.height()
+        val level = Isle.battery.coerceAtLeast(0)
+        val colour = when {
+            Isle.charging || level > 20 -> green
+            level > 10 -> orange
+            else -> red
+        }
+        val bx = box.left + h * 0.55f + 12 * dp
+        battery(c, bx, cy, level, colour)
+        if (Isle.charging) icon(c, Icon.Bolt, bx, cy, 10f, Color.BLACK)
+        write(c, "$level%", bx + 18 * dp, cy + 5.5f * dp, 15f, colour, bold = true)
+        val right = box.right - h * 0.5f
+        val mem = memoryUse()
+        val mw = write(c, "$mem%", right, cy + 5.5f * dp, 15f, white, bold = true, align = Paint.Align.RIGHT)
+        icon(c, Icon.Gauge, right - mw - 10 * dp, cy, 15f, white)
+        write(c, timeText(Isle.now()), right - mw - 24 * dp, cy + 5.5f * dp, 15f, white, bold = true, align = Paint.Align.RIGHT)
+    }
+
+    /** How full the phone's memory is, 0–100 (Android keeps other apps' CPU use private). */
+    private fun memoryUse(): Int {
+        val am = context.getSystemService(android.app.ActivityManager::class.java) ?: return 0
+        val info = android.app.ActivityManager.MemoryInfo()
+        am.getMemoryInfo(info)
+        return if (info.totalMem <= 0) 0 else ((info.totalMem - info.availMem) * 100 / info.totalMem).toInt()
+    }
+
+    /** The month, today ringed, and timer buttons below. */
+    private fun drawCalendar(c: Canvas, box: RectF) {
+        val pad = 20 * dp
+        val l = box.left + pad
+        val r = box.right - pad
+        val t = box.top + pad
+        val cal = java.util.Calendar.getInstance()
+        val today = cal.get(java.util.Calendar.DAY_OF_MONTH)
+        write(c, DateFormat.format("MMMM yyyy", cal).toString(), l, t + 16 * dp, 17f, white, bold = true)
+        cal.set(java.util.Calendar.DAY_OF_MONTH, 1)
+        val firstDay = cal.firstDayOfWeek
+        val offset = Math.floorMod(cal.get(java.util.Calendar.DAY_OF_WEEK) - firstDay, 7)
+        val days = cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+        val colW = (r - l) / 7
+        val names = java.text.DateFormatSymbols.getInstance().shortWeekdays
+        for (i in 0 until 7) {
+            val d = Math.floorMod(firstDay - 1 + i, 7) + 1
+            write(c, names[d].take(2), l + colW * (i + 0.5f), t + 42 * dp, 11f, grey, align = Paint.Align.CENTER)
+        }
+        val rowH = 24 * dp
+        for (day in 1..days) {
+            val cell = offset + day - 1
+            val x = l + colW * (cell % 7 + 0.5f)
+            val y = t + 64 * dp + rowH * (cell / 7)
+            if (day == today) {
+                fill.color = 0xff0a84ff.toInt()
+                c.drawCircle(x, y - 4.5f * dp, 11 * dp, fill)
+            }
+            write(c, day.toString(), x, y, 13f, white, bold = day == today, align = Paint.Align.CENTER)
+        }
+        val now = Isle.now()
+        val next = islet.island.Meetings.next(Isle.events, now)
+        val by = box.bottom - pad - 14 * dp
+        if (next != null) write(c, "${next.title} · ${timeText(next.begin)}", l, by - 30 * dp, 13f, grey, max = r - l)
         var x = l
         for (minutes in listOf(1, 5, 10, 25)) {
-            x += chip(c, "${minutes}m", x, cy, dim) { Isle.startFocus(minutes.toDouble()); Isle.island.open("timer"); Isle.changed() } + 8 * dp
+            x += chip(c, "${minutes}m", x, by, dim) { Isle.startFocus(minutes.toDouble()); Isle.island.open("timer"); Isle.changed() } + 8 * dp
         }
-        if (x + 120 * dp < r) {
-            x += chip(c, "Focus", x, cy, 0xff5a3a00.toInt(), orange) { Isle.startPomodoro(); Isle.island.open("timer"); Isle.changed() } + 8 * dp
-        }
-        if (x + 50 * dp < r) {
-            button(c, r - 15 * dp, cy, 30f, dim, Icon.Stopwatch) {
-                Isle.stopwatch.start(Isle.now())
-                Isle.syncTimers()
-                Isle.island.open("stopwatch")
-                Isle.changed()
-            }
+        if (x + 110 * dp < r) chip(c, "Focus", x, by, 0xff5a3a00.toInt(), orange) { Isle.startPomodoro(); Isle.island.open("timer"); Isle.changed() }
+        button(c, r - 15 * dp, by, 30f, dim, Icon.Stopwatch) {
+            Isle.stopwatch.start(Isle.now())
+            Isle.syncTimers()
+            Isle.island.open("stopwatch")
+            Isle.changed()
         }
     }
 

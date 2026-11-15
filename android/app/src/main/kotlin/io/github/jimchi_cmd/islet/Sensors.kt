@@ -86,9 +86,15 @@ object Sensors {
                     } catch (e: SecurityException) {
                         null
                     } ?: "Bluetooth device"
-                    Isle.pop(Pop.Bluetooth(name, intent.action == BluetoothDevice.ACTION_ACL_CONNECTED))
+                    val connected = intent.action == BluetoothDevice.ACTION_ACL_CONNECTED
+                    Isle.btName = if (connected) name else null
+                    Isle.pop(Pop.Bluetooth(name, connected))
                 }
                 AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED -> readAlarm()
+                android.net.wifi.WifiManager.WIFI_STATE_CHANGED_ACTION, android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED -> {
+                    readRadios()
+                    Isle.changed()
+                }
                 Intent.ACTION_SCREEN_OFF, Intent.ACTION_SCREEN_ON -> {
                     Isle.screenOn = intent.action == Intent.ACTION_SCREEN_ON
                     Isle.changed()
@@ -134,11 +140,75 @@ object Sensors {
         Isle.changed()
     }
 
-    private val wifi = object : ConnectivityManager.NetworkCallback() {
-        override fun onAvailable(network: Network) {
+    /** Wi-Fi coming and going, and its name. */
+    private object WifiEvents {
+        fun available() {
             if (fresh() || !Isle.prefs.popConnections) return
-            Isle.pop(Pop.Wifi(""))
+            // Wait a moment for the network's name, then say so.
+            Handler(Looper.getMainLooper()).postDelayed({ Isle.pop(Pop.Wifi(Isle.wifiName.orEmpty())) }, 800)
         }
+
+        fun capabilities(caps: NetworkCapabilities) {
+            val name = wifiName(caps)
+            Isle.post {
+                Isle.wifiName = name
+                Isle.changed()
+            }
+        }
+
+        fun lost() = Isle.post {
+            Isle.wifiName = null
+            Isle.changed()
+        }
+    }
+
+    /** Android 12 and later share the network's name only when asked for it. */
+    @androidx.annotation.RequiresApi(31)
+    private class WifiWithName : ConnectivityManager.NetworkCallback(FLAG_INCLUDE_LOCATION_INFO) {
+        override fun onAvailable(network: Network) = WifiEvents.available()
+
+        override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) = WifiEvents.capabilities(caps)
+
+        override fun onLost(network: Network) = WifiEvents.lost()
+    }
+
+    private class WifiPlain : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) = WifiEvents.available()
+
+        override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) = WifiEvents.capabilities(caps)
+
+        override fun onLost(network: Network) = WifiEvents.lost()
+    }
+
+    private val wifi: ConnectivityManager.NetworkCallback by lazy {
+        if (Build.VERSION.SDK_INT >= 31) WifiWithName() else WifiPlain()
+    }
+
+    /** The network's name, if Android shares it (location access on), without the quotes. */
+    @Suppress("DEPRECATION")
+    private fun wifiName(caps: NetworkCapabilities): String? {
+        val info = if (Build.VERSION.SDK_INT >= 31) {
+            caps.transportInfo as? android.net.wifi.WifiInfo
+        } else {
+            ctx.getSystemService(android.net.wifi.WifiManager::class.java)?.connectionInfo
+        }
+        val ssid = info?.ssid?.removeSurrounding("\"") ?: return null
+        return ssid.takeIf { it.isNotBlank() && it != "<unknown ssid>" && it != "0x" }
+    }
+
+    private fun readRadios() {
+        Isle.wifiOn = try {
+            ctx.getSystemService(android.net.wifi.WifiManager::class.java)?.isWifiEnabled == true
+        } catch (e: Exception) {
+            false
+        }
+        Isle.btOn = try {
+            ctx.getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter?.isEnabled == true
+        } catch (e: SecurityException) {
+            false
+        }
+        if (!Isle.btOn) Isle.btName = null
+        if (!Isle.wifiOn) Isle.wifiName = null
     }
 
     private val cameras = object : CameraManager.AvailabilityCallback() {
@@ -201,6 +271,8 @@ object Sensors {
             addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
             addAction(AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED)
             addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(android.net.wifi.WifiManager.WIFI_STATE_CHANGED_ACTION)
+            addAction(android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED)
             addAction(Intent.ACTION_SCREEN_ON)
             if (Build.VERSION.SDK_INT < 31 || has(Manifest.permission.BLUETOOTH_CONNECT)) {
                 addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
@@ -211,6 +283,7 @@ object Sensors {
         Isle.airplane = Settings.Global.getInt(ctx.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
         readDnd()
         readAlarm()
+        readRadios()
         try {
             ctx.getSystemService(ConnectivityManager::class.java)?.registerNetworkCallback(
                 NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build(),

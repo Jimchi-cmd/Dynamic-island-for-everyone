@@ -49,6 +49,7 @@ class IslandRenderTest {
         Isle.weather = null
         Isle.airplane = false
         Isle.dnd = false
+        Isle.prefs.style = "black"
     }
 
     private fun cover(): Bitmap {
@@ -79,7 +80,8 @@ class IslandRenderTest {
 
     private fun drewSomething(b: Bitmap): Boolean {
         var dark = 0
-        for (y in 0 until b.height step 4) for (x in 0 until b.width step 4) if (Color.red(b.getPixel(x, y)) < 30) dark++
+        // Anything clearly darker than the grey background is the island.
+        for (y in 0 until b.height step 4) for (x in 0 until b.width step 4) if (Color.red(b.getPixel(x, y)) < 120) dark++
         return dark > 20
     }
 
@@ -110,7 +112,11 @@ class IslandRenderTest {
                 Isle.weather = Weather(23.4, 2, true, 27.0, 18.0)
                 Isle.prefs.worldClocks = listOf("Europe/London", "Asia/Tokyo")
                 Isle.prefs.todos = listOf(Todo("Finish the essay", false))
-                Isle.island.tap(now)
+                Isle.wifiOn = true
+                Isle.wifiName = "Turi Wireless"
+                Isle.btOn = true
+                Isle.island.tap(Isle.now())
+                Isle.island.tap(Isle.now())
             },
             "10-timer-open" to { Isle.startFocus(25.0); Isle.island.open("timer") },
             "11-stopwatch" to {
@@ -138,6 +144,21 @@ class IslandRenderTest {
             "16-download" to { Isle.island.put(Live.Progress("note:d", "photos.zip", "Files", 42)) },
             "17-low-battery" to { Isle.island.pop(Pop.LowBattery(9), Isle.now()) },
             "18-bluetooth" to { Isle.island.pop(Pop.Bluetooth("Buds Pro", true), Isle.now()) },
+            "19-message-with-buttons" to {
+                Isle.extras["m"] = NoteExtra("com.chat", pi, emptyList(), null)
+                Isle.island.pop(Pop.Note("m", "Chat", "Anna", "Hey! Look how the island looks now", listOf("Reply", "Mark as read"), 3), Isle.now())
+            },
+            "20-paid" to { Isle.island.pop(Pop.Payment("Coffee Corner", "\$12.50"), Isle.now()) },
+            "21-dnd" to { Isle.island.pop(Pop.DoNotDisturb(true), Isle.now()) },
+            "22-glass-music" to {
+                Isle.prefs.style = "glass"
+                Isle.island.put(music)
+                Isle.art = cover()
+                Isle.artColor = 0xe0446a
+            },
+            "24-peek" to { Isle.battery = 61; Isle.island.tap(Isle.now()) },
+            "25-calendar" to { Isle.island.showCalendar() },
+            "23-call-ongoing" to { Isle.prefs.style = "black"; Isle.island.put(Live.Call("note:c", "Mum", "Phone", false, Isle.now() - 61_000)) },
         )
         val shots = scenes.map { (name, setup) -> name to render(name, setup) }
         for ((name, b) in shots) assertTrue("$name drew nothing", drewSomething(b))

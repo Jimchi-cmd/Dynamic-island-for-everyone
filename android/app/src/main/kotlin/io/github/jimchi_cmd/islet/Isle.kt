@@ -40,6 +40,8 @@ class NoteExtra(
     val open: PendingIntent?,
     val actions: List<Pair<String, PendingIntent>>,
     val icon: Drawable?,
+    /** The buttons as Android gave them (a "Reply" one takes typed text). */
+    val raw: List<Notification.Action> = emptyList(),
 )
 
 /**
@@ -72,6 +74,9 @@ object Isle {
 
     // ---- Notifications ----
     val extras = HashMap<String, NoteExtra>()
+
+    /** When each app last sent a notification, for the pop-up's count. */
+    private val sent = HashMap<String, ArrayList<Long>>()
     private val icons = HashMap<String, Drawable?>()
 
     // ---- The rest ----
@@ -86,6 +91,12 @@ object Isle {
     var battery = -1
     var charging = false
     var screenOn = true
+    var wifiOn = false
+    /** The Wi-Fi network's name, where Android shares it (it needs location access). */
+    var wifiName: String? = null
+    var btOn = false
+    /** The Bluetooth device that last connected, while it stays connected. */
+    var btName: String? = null
 
     /** The view that draws the island, while one is attached. */
     var onChange: (() -> Unit)? = null
@@ -197,7 +208,8 @@ object Isle {
         } catch (e: Exception) {
             null
         }
-        extras[sbn.key] = NoteExtra(sbn.packageName, n.contentIntent, actions, icon)
+        val raw = n.actions.orEmpty().filter { it.actionIntent != null && !it.title.isNullOrBlank() }
+        extras[sbn.key] = NoteExtra(sbn.packageName, n.contentIntent, actions, icon, raw)
         val t = now()
         when (val kind = Notes.classify(f, app.packageName)) {
             is NoteKind.Call -> if (prefs.calls) {
@@ -211,8 +223,16 @@ object Isle {
             NoteKind.Popup -> {
                 island.remove(id)
                 if (!quiet && prefs.popNotes && sbn.packageName !in prefs.quietApps && !dnd) {
-                    island.pop(Pop.Note(sbn.key, f.app, f.title.trim(), f.text.trim()), t)
+                    val recent = sent.getOrPut(sbn.packageName) { ArrayList() }
+                    recent.removeAll { t - it > 10 * 60_000L }
+                    recent.add(t)
+                    val labels = raw.take(2).map { it.title.toString() }
+                    island.pop(Pop.Note(sbn.key, f.app, f.title.trim(), f.text.trim(), labels, recent.size), t)
                 }
+            }
+            is NoteKind.Payment -> {
+                island.remove(id)
+                if (!quiet && prefs.popNotes) island.pop(Pop.Payment(kind.merchant, kind.amount), t)
             }
             NoteKind.Ignore -> island.remove(id)
         }
@@ -230,6 +250,22 @@ object Isle {
             island.pop(Pop.Info("${live.title}: done"), now())
         }
         extras.remove(sbn.key)
+        changed()
+    }
+
+    /**
+     * Press a notification's button from its pop-up. "Reply" and the like
+     * take text: a small box opens to type it in.
+     */
+    fun act(key: String, index: Int) {
+        val action = extras[key]?.raw?.getOrNull(index) ?: return
+        island.dismissPop(now())
+        if (!action.remoteInputs.isNullOrEmpty()) {
+            ReplyActivity.pending = action
+            start(Intent(app, ReplyActivity::class.java))
+        } else {
+            send(action.actionIntent)
+        }
         changed()
     }
 

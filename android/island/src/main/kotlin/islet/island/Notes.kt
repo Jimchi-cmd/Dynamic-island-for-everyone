@@ -40,6 +40,9 @@ sealed class NoteKind {
     /** Worth a pop-up. */
     object Popup : NoteKind()
 
+    /** A wallet app's payment: "Paid", with the amount. */
+    data class Payment(val merchant: String, val amount: String) : NoteKind()
+
     object Ignore : NoteKind()
 }
 
@@ -59,6 +62,26 @@ object Notes {
     )
 
     private val ANSWER = listOf("answer", "accept", "pick up")
+
+    /** Wallet apps whose notification after a tap-to-pay names the amount. */
+    val WALLETS = setOf(
+        "com.google.android.apps.walletnfcrel",
+        "com.google.android.apps.nbu.paisa.user",
+        "com.samsung.android.spay",
+        "com.paypal.android.p2pmobile",
+        "com.revolut.revolut",
+        "com.transferwise.android",
+    )
+
+    private const val CODES = "USD|EUR|GBP|UGX|KES|TZS|RWF|NGN|ZAR|INR|CAD|AUD"
+
+    /** An amount of money: $12.50, 12,50 €, UGX 5,000, £3. */
+    private val AMOUNT = Regex(
+        """(?:[$€£¥₹₦]\s?|\b(?:$CODES)\s?)\d(?:[\d,.\s]*\d)?|\d(?:[\d,.\s]*\d)?\s?(?:[€£₽]|\b(?:$CODES)\b)""",
+    )
+
+    /** The amount in a payment's text, if there is one. */
+    fun amount(s: String): String? = AMOUNT.find(s)?.value?.trim()
 
     fun classify(n: NoteFacts, ownPackage: String): NoteKind {
         if (n.pkg == ownPackage) return NoteKind.Ignore
@@ -82,6 +105,11 @@ object Notes {
             return NoteKind.Progress(title.ifEmpty { n.app }, percent)
         }
         if (n.media || n.ongoing || n.groupSummary || n.secret) return NoteKind.Ignore
+        if (n.pkg in WALLETS) {
+            val inTitle = amount(title)
+            val amount = inTitle ?: amount(text)
+            if (amount != null) return NoteKind.Payment((if (inTitle != null) text else title).take(40), amount)
+        }
         when (n.category) {
             "transport", "service", "status", "sys", "progress", "recommendation" -> return NoteKind.Ignore
         }

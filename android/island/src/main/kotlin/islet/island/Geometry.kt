@@ -35,10 +35,10 @@ class Geometry(
 ) {
     private val k get() = size.scale
 
-    /** The empty pill's height: a little taller than the camera hole. */
-    val idleHeight get() = maxOf(28.0, (camera?.height ?: 0.0) + 8) * k
+    /** The empty pill's height: comfortably taller than the camera hole, which sits in its middle. */
+    val idleHeight get() = maxOf(32.0, (camera?.height ?: 0.0) + 12) * k
 
-    val idleWidth get() = maxOf(86.0, (camera?.width ?: 0.0) + 40) * k + extraWidth
+    val idleWidth get() = maxOf(100.0, (camera?.width ?: 0.0) + 64) * k + extraWidth
 
     private val centerX get() = (camera?.centerX ?: (screenWidth / 2)) + offsetX
 
@@ -61,12 +61,15 @@ class Geometry(
         Scene.Idle -> centered(idleWidth, idleHeight, idleHeight / 2)
         is Scene.Compact -> centered(idleWidth + 2 * wing, idleHeight, idleHeight / 2)
         is Scene.Popped -> when (scene.pop) {
-            is Pop.Note, is Pop.Screenshot, is Pop.TimerDone, is Pop.Bluetooth ->
+            is Pop.Note -> centered(cardWidth - 8, (if (scene.pop.actions.isEmpty()) 82.0 else 112.0) * k, 36.0 * k)
+            is Pop.Screenshot, is Pop.TimerDone, is Pop.Bluetooth ->
                 centered(cardWidth - 12, 78.0 * k, 34.0 * k)
             else -> centered(idleWidth + 2 * wing + 30 * k, idleHeight + 6 * k, (idleHeight + 6 * k) / 2)
         }
         is Scene.Expanded -> centered(cardWidth, expandedHeight(scene.live) * k, 40.0 * k)
         Scene.Controls -> centered(cardWidth, 252.0 * k, 40.0 * k)
+        Scene.Peek -> centered(idleWidth + 2 * (wing + 30 * k), idleHeight + 4 * k, (idleHeight + 4 * k) / 2)
+        Scene.Calendar -> centered(cardWidth, 300.0 * k, 40.0 * k)
     }
 
     private fun expandedHeight(live: Live?): Double = when (live) {
@@ -74,7 +77,7 @@ class Geometry(
         is Live.Call -> 120.0
         is Live.Navigation -> 120.0
         is Live.Stopwatch -> 140.0
-        null -> 196.0
+        null -> 216.0
         else -> 128.0
     }
 

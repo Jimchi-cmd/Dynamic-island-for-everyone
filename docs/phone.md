@@ -26,11 +26,13 @@ Optional permissions, each asked for with its own button:
 - **Calendar:** count down to meetings, with a **Join** button for Google Meet, Zoom, Teams, Webex, Whereby and Jitsi links.
 - **Photos:** show each new screenshot.
 - **Nearby devices:** name the Bluetooth device that connected.
+- **Location:** Android shares the Wi-Fi network's name only with apps allowed location. Islet reads no location.
 - **Modify system settings:** the brightness slider.
 
 ### Use it
 
-- **Tap** the island to open it. Tap again, swipe up, or tap anywhere else to close it.
+- **Tap the empty island** for a strip, as the computer's island shows when hovered: the battery on the left of the camera, the time and memory use on the right. **Tap the strip** for the card: the time and date, Wi-Fi and Bluetooth (blue while on, with the network's and device's names), and round buttons for notes, the speed test, the control centre, the calendar, a screenshot and lock. The calendar button shows the month with 1, 5, 10 and 25-minute timer buttons, focus rounds and the stopwatch.
+- **Tap** something going on (music, a call) to open it. Tap again, swipe up, or tap anywhere else to close it.
 - **Long-press** for the control centre.
 - **Swipe sideways** when two things are going on (a call and music, say) to switch which one leads. The second one sits in a small bubble beside the island; tap the bubble to open it.
 - Tap a notification pop-up to open it, or a screenshot pop-up to see the picture.
@@ -47,7 +49,9 @@ Optional permissions, each asked for with its own button:
 | **Another app's countdown** (the Clock app's timer) | Time left | Open the app |
 | **Meetings** (from 15 minutes before to 5 after) | Minutes to go | Join, or open the calendar |
 | **Downloads and uploads** | A ring filling up | The file, the app and the percentage |
-| **Nothing going on** | The empty pill; a plane or moon in airplane mode or Do Not Disturb | The clock card: time, date, weather, world clocks, your next meeting and alarm, your first to-do, and 1, 5, 10 and 25-minute timer buttons |
+| **Nothing going on** | The empty pill round the camera, with a soft glowing rim; a plane or moon in airplane mode or Do Not Disturb | The strip, then the card (see above) |
+
+Notification pop-ups show the sender's picture (or their initial), how many messages the app has sent lately, and the notification's own buttons, such as **Reply** and **Mark as read**. **Reply** opens a small box to type into, and the answer goes back through the app as it would from the notification. Payments from Google Wallet, Samsung Wallet, PayPal, Revolut and Wise show as **Paid** with the amount.
 
 Pop-ups, each with its own switch: new notifications, charging and low battery (20, 10 and 5 %), ring / vibrate / silent, airplane mode, Do Not Disturb, Wi-Fi and Bluetooth connecting, new screenshots, and timers ending. Notifications don't pop up during Do Not Disturb, and **Apps that never pop up** keeps chosen apps quiet.
 
@@ -57,7 +61,7 @@ Long-press the island: flashlight, Do Not Disturb, ring or vibrate, volume, brig
 
 ### Looks
 
-Size (small, medium, large); nudges left, right, up, down and wider for phones where the pill doesn't sit exactly on the camera; font (default, light, condensed, serif, mono); the empty pill on or off; a border in the album's colour while music plays; the moving bars; °C or °F; the plane and moon; green and orange dots while the camera or microphone is on; and hiding the island in landscape (videos and games).
+Black or frosted **Glass** (Android doesn't let the island blur what's behind it); a glowing rim; size (small, medium, large); nudges left, right, up, down and wider for phones where the pill doesn't sit exactly on the camera; font (default, light, condensed, serif, mono); the empty pill on or off; a border in the album's colour while music plays; the moving bars; °C or °F; the plane and moon; green and orange dots while the camera or microphone is on; and hiding the island in landscape (videos and games).
 
 ### Weather, clocks, to-do and notes
 
