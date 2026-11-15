@@ -4,6 +4,17 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+- **An island on your Android phone:** the Islet app now draws its own island round the phone's front camera (placed over the status bar through an accessibility switch that reads nothing, or below it with "display over other apps"). It shows:
+  - music from any player, with the cover, moving bars, a draggable progress bar, controls, synced lyrics and a border in the album's colour;
+  - calls with the phone app's own answer and hang-up buttons, directions from maps apps, other apps' countdowns, downloads with a progress ring, and meetings with a Join button;
+  - its own focus timer (with focus rounds) and stopwatch with laps;
+  - pop-ups for notifications, charging and low battery, ring / vibrate / silent, airplane mode, Do Not Disturb, Wi-Fi and Bluetooth, screenshots and finished timers;
+  - a clock card with weather (Open-Meteo), world clocks, the next meeting and alarm, and your first to-do;
+  - a control centre on a long press: flashlight, Do Not Disturb, ring or vibrate, volume, brightness, screenshot, lock and shortcut apps.
+  
+  The app also gains looks settings (size, position nudges, fonts, °C/°F), to-dos, quick notes and a speed test. See docs/phone.md, including what Android doesn't allow (clipboard history, per-app volume, the system monitor, plugins).
+
 ### Changed
 - **Pairing your Android phone is free:** it no longer needs Islet Pro. The pairing code has moved to Settings → **Wi-Fi, Bluetooth & phone** → Your Android phone.
 

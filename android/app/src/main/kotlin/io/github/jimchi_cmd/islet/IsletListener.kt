@@ -48,9 +48,15 @@ class IsletListener : NotificationListenerService(), LinkListener {
     }
 
     private val mediaCallback = object : MediaController.Callback() {
-        override fun onPlaybackStateChanged(state: PlaybackState?) = sendMedia()
+        override fun onPlaybackStateChanged(state: PlaybackState?) {
+            Isle.media(controller)
+            sendMedia()
+        }
 
-        override fun onMetadataChanged(metadata: MediaMetadata?) = sendMedia()
+        override fun onMetadataChanged(metadata: MediaMetadata?) {
+            Isle.media(controller)
+            sendMedia()
+        }
 
         override fun onSessionDestroyed() = pickSession()
     }
@@ -72,8 +78,16 @@ class IsletListener : NotificationListenerService(), LinkListener {
     override fun onListenerConnected() {
         instance = this
         sender = Executors.newSingleThreadExecutor()
+        Isle.init(this)
         watch()
         reload()
+        // What is already showing, without popping each one up again.
+        try {
+            activeNotifications?.forEach { Isle.posted(it, quiet = true) }
+        } catch (e: SecurityException) {
+            // Access withdrawn meanwhile.
+        }
+        IslandHost.listenerUp(this)
     }
 
     override fun onListenerDisconnected() {
@@ -123,6 +137,7 @@ class IsletListener : NotificationListenerService(), LinkListener {
 
     private fun teardown() {
         if (instance === this) instance = null
+        IslandHost.listenerDown()
         link?.stop()
         link = null
         Hub.computer = null
@@ -207,7 +222,12 @@ class IsletListener : NotificationListenerService(), LinkListener {
 
     // ---- Notifications ----------------------------------------------------
 
+    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+        if (sbn != null) Isle.removed(sbn)
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        if (sbn != null) Isle.posted(sbn)
         if (sbn == null || !Store.sendNotes(this)) return
         // Not our own, not the lasting ones (music players, downloads,
         // "app is running"), and not ones marked secret.
@@ -246,6 +266,7 @@ class IsletListener : NotificationListenerService(), LinkListener {
             controller = chosen
             chosen?.registerCallback(mediaCallback, main)
         }
+        Isle.media(controller)
         sendMedia()
     }
 

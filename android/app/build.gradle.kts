@@ -48,6 +48,11 @@ android {
     }
 
     sourceSets["main"].java.srcDirs("src/main/kotlin")
+    sourceSets["test"].java.srcDirs("src/test/kotlin")
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -56,4 +61,8 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     // QR scanning (Apache-2.0).
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+
+    // Draws the island off-device in tests (MIT).
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
 }

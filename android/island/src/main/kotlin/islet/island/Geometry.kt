@@ -73,8 +73,8 @@ class Geometry(
         is Live.Music -> 176.0
         is Live.Call -> 120.0
         is Live.Navigation -> 120.0
-        is Live.Stopwatch -> 150.0
-        null -> 168.0
+        is Live.Stopwatch -> 140.0
+        null -> 196.0
         else -> 128.0
     }
 

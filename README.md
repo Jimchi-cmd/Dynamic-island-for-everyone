@@ -25,7 +25,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 - **Controls:** volume and brightness sliders and a dark-mode switch, one tap from the clock card.
 - **Performance alert** (opt-in): says when one program hogs the processor or the memory, with a Close button.
 - **System panel:** processor, memory, disk, network speed and battery health.
-- **Your Android phone** (free): its notifications, music and battery on the island, through a small companion app. See [docs/phone.md](docs/phone.md).
+- **Android** (free): an island on the phone itself, round the front camera, with music, calls, directions, timers, meetings, downloads, pop-ups, weather, clocks, to-dos and a control centre. The same app also puts the phone's notifications, music and battery on your computer's island. See [docs/phone.md](docs/phone.md).
 - **Status at a glance:** point at the empty island and it widens to show the weather, your battery and how busy the processor is, either side of the time.
 - **Class timetable:** enter your week once; the island counts down to the next lesson and shows your free gaps.
 - **Alarms:** one-time or repeating. When one rings, the island opens with a swinging bell and a chime until you snooze or stop it.
@@ -108,7 +108,7 @@ Right-click the island for its menu: Islet Settings, hide it for an hour, pause 
 - On GNOME, the shortcut and the Caps Lock pop-up need the small [GNOME Shell extension](docs/install.md#gnome-shell-extension-gnome-4550).
 - Alarms ring only while the computer is awake and Islet is running.
 - macOS doesn't say which app uses the camera or microphone, so the dot there has no name. It has no public Bluetooth power switch either, so the Bluetooth toggle points to System Settings.
-- No live turn-by-turn from your phone yet. An Android companion is planned.
+- The computer's island doesn't show your phone's turn-by-turn directions yet; the phone's own island does.
 
 ## Contributing
 
