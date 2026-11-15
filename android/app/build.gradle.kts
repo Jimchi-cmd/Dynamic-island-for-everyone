@@ -52,6 +52,7 @@ android {
 
 dependencies {
     implementation(project(":protocol"))
+    implementation(project(":island"))
     implementation("androidx.appcompat:appcompat:1.7.0")
     // QR scanning (Apache-2.0).
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")

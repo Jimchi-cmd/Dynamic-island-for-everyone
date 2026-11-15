@@ -35,7 +35,7 @@ jobs:
         with:
           gradle-version: '8.14.3'
       - name: Protocol tests
-        run: gradle :protocol:test --no-daemon
+        run: gradle :protocol:test :island:test --no-daemon
       - name: Build the app
         run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v7

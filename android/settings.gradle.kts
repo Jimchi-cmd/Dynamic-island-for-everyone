@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "islet-android"
-include(":protocol", ":app")
+include(":protocol", ":island", ":app")

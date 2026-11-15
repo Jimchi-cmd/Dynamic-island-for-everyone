@@ -297,7 +297,7 @@ jobs:
           gradle-version: '8.14.3'
       - name: Protocol tests
         working-directory: android
-        run: gradle :protocol:test --no-daemon
+        run: gradle :protocol:test :island:test --no-daemon
       - name: Signed release build
         if: env.HAS_ANDROID_KEY == 'true'
         working-directory: android
