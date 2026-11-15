@@ -42,7 +42,7 @@ Optional permissions, each asked for with its own button:
 
 | | On the island | Opened |
 |---|---|---|
-| **Music** (any player) | The cover and moving bars | Cover, title, artist, a progress bar you can drag, previous / play / next. Tap the cover to open the player. Synced lyrics if you switch them on. |
+| **Music** (any player; paused music leaves after 15 seconds) | The cover and moving bars, with a border in the cover's colour | Cover, title, artist, a progress bar you can drag, previous / play / next, the sleep timer (moon) and the lyrics button. Tap the cover to open the player. |
 | **Calls** | A green phone and the call's length | The caller, with the phone app's own buttons (answer, decline, hang up, mute, speaker) |
 | **Directions** (Google Maps, Waze, Organic Maps, OsmAnd, HERE, Sygic, Yandex) | The turn arrow and the distance | The next turn and the road |
 | **Timers** | Time left | Pause, add a minute, stop. Focus rounds go focus → break, with a longer break after every fourth. A buzz and a sound when it ends. |
@@ -51,7 +51,7 @@ Optional permissions, each asked for with its own button:
 | **Meetings** (from 15 minutes before to 5 after) | Minutes to go | Join, or open the calendar |
 | **Downloads and uploads** | A ring filling up | The file, the app and the percentage |
 | **Lessons** (your class timetable, from 15 minutes before) | Minutes to go, then the time left | The lesson, its room and times, and how far through it you are |
-| **Nothing going on** | The empty pill round the camera, with a soft glowing rim; a plane or moon in airplane mode or Do Not Disturb | The strip, then the card (see above) |
+| **Nothing going on** | The time left of the camera and the battery right of it, with a soft glowing rim; a plane or moon in airplane mode or Do Not Disturb | The strip, then the card (see above) |
 
 Notification pop-ups show the sender's picture (or their initial), how many messages the app has sent lately, and the notification's own buttons, such as **Reply** and **Mark as read**. **Reply** opens a small box to type into, and the answer goes back through the app as it would from the notification. Payments from Google Wallet, Samsung Wallet, PayPal, Revolut and Wise show as **Paid** with the amount.
 

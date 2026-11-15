@@ -193,7 +193,12 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             (s is Scene.Expanded && s.live is Live.Music && (s.live as Live.Music).playing) ||
             (s is Scene.Expanded && s.live is Live.Stopwatch && (s.live as Live.Stopwatch).running)
         val ticking = fast || s is Scene.Compact || s is Scene.Expanded || s is Scene.Peek || s is Scene.Calendar
-        if (ticking) postDelayed(tick, if (fast) 33L else 1000L)
+        if (ticking) {
+            postDelayed(tick, if (fast) 33L else 1000L)
+        } else if (s == Scene.Idle && Isle.prefs.idleClock) {
+            // The empty island's time: redraw when the minute changes.
+            postDelayed(tick, 60_000L - Isle.now() % 60_000L + 50)
+        }
     }
 
     private val tick = Runnable {
@@ -448,6 +453,10 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         c.drawRoundRect(rect, h / 2, h / 2, fill)
     }
 
+    /** "4:32" (no AM/PM: it has to fit beside the camera). */
+    private fun shortTime(ms: Long): String =
+        DateFormat.format(if (DateFormat.is24HourFormat(context)) "H:mm" else "h:mm", ms).toString()
+
     private fun timeText(ms: Long, zone: TimeZone? = null): String {
         val f = DateFormat.getTimeFormat(context)
         if (zone != null) f.timeZone = zone
@@ -459,6 +468,33 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     private fun drawIdle(c: Canvas, box: RectF) {
         val cy = box.centerY()
         val p = Isle.prefs
+        if (p.idleClock) {
+            // As on the computer: the time beside the camera, the battery on the other side.
+            val h = box.height()
+            write(c, shortTime(Isle.now()), box.left + h * 0.5f, cy + 5 * dp, 14f, white, bold = true)
+            val dots = p.privacyDots && (Isle.cameraOn || Isle.micOn)
+            val modes = p.modeIcons && (Isle.airplane || Isle.dnd)
+            val right = box.right - h * 0.5f
+            when {
+                dots -> privacyDots(c, right, cy)
+                modes -> {
+                    var x = right - 5 * dp
+                    if (Isle.dnd) { icon(c, Icon.Moon, x, cy, 12f, purple); x -= 15 * dp }
+                    if (Isle.airplane) icon(c, Icon.Plane, x, cy, 12f, orange)
+                }
+                Isle.battery >= 0 -> {
+                    val level = Isle.battery
+                    val colour = when {
+                        Isle.charging || level > 20 -> green
+                        level > 10 -> orange
+                        else -> red
+                    }
+                    battery(c, right - 13 * dp, cy, level, colour)
+                    if (Isle.charging) icon(c, Icon.Bolt, right - 13 * dp, cy, 10f, Color.BLACK)
+                }
+            }
+            return
+        }
         if (p.modeIcons) {
             var x = box.left + box.height() * 0.55f
             if (Isle.airplane) {
@@ -872,8 +908,10 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         bars(c, r, t + 16 * dp, 18f, accent, m.playing)
         val position = seekTo?.let { (it * m.duration).toLong() } ?: Isle.mediaPositionNow()
         var y = t + 56 * dp
-        Isle.lyrics?.lineAt(position, Isle.prefs.lyricsOffset)?.let {
-            write(c, it, box.centerX(), y + 20 * dp, 13f, accent, bold = true, max = r - l, align = Paint.Align.CENTER)
+        val lyric = Isle.lyrics?.lineAt(position, Isle.prefs.lyricsOffset)
+            ?: if (Isle.prefs.lyrics && Isle.lyricsMissing) "No synced lyrics for this song" else null
+        lyric?.let {
+            write(c, it, box.centerX(), y + 20 * dp, 13f, if (Isle.lyrics != null) accent else grey, bold = Isle.lyrics != null, max = r - l, align = Paint.Align.CENTER)
             y += 8 * dp
         }
         if (m.duration > 0) {
@@ -895,7 +933,12 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val sleep = Isle.sleepMinutesLeft()
         button(c, l + 16 * dp, cy, 36f, if (sleep != null) 0xff2c2a5a.toInt() else Color.TRANSPARENT, Icon.Moon, if (sleep != null) 0xffbf9bff.toInt() else grey) { Isle.stepSleep() }
         if (sleep != null) write(c, "${sleep}m", l + 38 * dp, cy + 4.5f * dp, 12f, 0xffbf9bff.toInt(), bold = true)
+        // Lyrics on and off (from LRCLIB, only once switched on).
+        val on = Isle.prefs.lyrics
+        button(c, r - 16 * dp, cy, 36f, if (on) 0xff3a2a10.toInt() else Color.TRANSPARENT, Icon.Quote, if (on) accentOr(orange) else grey) { Isle.toggleLyrics() }
     }
+
+    private fun accentOr(fallback: Int): Int = Isle.artColor?.let { it or 0xff000000.toInt() } ?: fallback
 
     /** The clock card, as on the computer: the time, the date, Wi-Fi and Bluetooth, and round buttons. */
     private fun drawClockCard(c: Canvas, box: RectF) {

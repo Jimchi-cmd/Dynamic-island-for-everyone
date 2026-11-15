@@ -411,6 +411,7 @@ class MainActivity : AppCompatActivity() {
             }
         })
         look.add(kit.toggleRow("Show the empty island", "The black pill round the camera when nothing is going on.", prefs.showEmpty) { prefs.showEmpty = it; changed() })
+        look.add(kit.toggleRow("Time on the empty island", "The time left of the camera and the battery right of it, when nothing is playing.", prefs.idleClock) { prefs.idleClock = it; changed() })
         look.add(kit.toggleRow("Network speed in the strip", "The strip from a tap on the empty island shows download speed instead of memory use.", prefs.stripNetwork) { prefs.stripNetwork = it; changed() })
         look.add(kit.toggleRow("Glowing rim", "A soft light round the island's edge.", prefs.ring) { prefs.ring = it; changed() })
         look.add(kit.toggleRow("Border in the album's colour while music plays", null, prefs.albumBorder) { prefs.albumBorder = it; changed() })

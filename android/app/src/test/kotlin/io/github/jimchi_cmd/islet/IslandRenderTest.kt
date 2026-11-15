@@ -59,6 +59,7 @@ class IslandRenderTest {
         Isle.events = emptyList()
         Isle.nextAlarm = null
         Isle.setSleep(null)
+        Isle.prefs.lyrics = false
     }
 
     /** A lesson today from `from` to `to` minutes from now. */
@@ -199,6 +200,15 @@ class IslandRenderTest {
                 Isle.prefs.streak = Streak(Streak.dayOf(Isle.now()) - 1, 4, 6, 19, 2)
                 Isle.startPomodoro()
                 Isle.island.open("timer")
+            },
+            "32-idle-clock" to { Isle.battery = 78; Isle.charging = false },
+            "33-music-lyrics" to {
+                Isle.island.put(music)
+                Isle.art = cover()
+                Isle.artColor = 0xe0446a
+                Isle.prefs.lyrics = true
+                Isle.lyrics = Lyrics.parse("[00:00.00]Already rich, I don't need a thing")
+                Isle.island.open("music")
             },
             "31-peek-network" to { Isle.battery = 61; Isle.prefs.stripNetwork = true; Isle.island.tap(Isle.now()) },
         )

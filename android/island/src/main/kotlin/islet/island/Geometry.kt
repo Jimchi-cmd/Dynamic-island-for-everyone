@@ -32,6 +32,8 @@ class Geometry(
     val offsetY: Double = 0.0,
     /** Extra width round the camera, for phones where the pill should hide a wider cutout. */
     val extraWidth: Double = 0.0,
+    /** The empty island shows the time (left of the camera) and the battery (right), as the computer's does. */
+    val idleClock: Boolean = false,
 ) {
     private val k get() = size.scale
 
@@ -51,6 +53,9 @@ class Geometry(
         return Box(x, top, width, h, minOf(r, h / 2))
     }
 
+    /** Room each side of the camera for the empty island's time and battery. */
+    val clockWing get() = 40.0 * k
+
     /** Width for content beside the camera on each side. */
     val wing get() = 62.0 * k
 
@@ -58,7 +63,7 @@ class Geometry(
 
     fun box(scene: Scene): Box = when (scene) {
         Scene.Hidden -> centered(idleWidth * 0.6, idleHeight * 0.6, idleHeight)
-        Scene.Idle -> centered(idleWidth, idleHeight, idleHeight / 2)
+        Scene.Idle -> centered(idleWidth + if (idleClock) 2 * clockWing else 0.0, idleHeight, idleHeight / 2)
         is Scene.Compact -> centered(idleWidth + 2 * wing, idleHeight, idleHeight / 2)
         is Scene.Popped -> when (scene.pop) {
             is Pop.Note -> centered(cardWidth - 8, (if (scene.pop.actions.isEmpty()) 82.0 else 112.0) * k, 36.0 * k)

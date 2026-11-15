@@ -74,8 +74,22 @@ object Isle {
         internal set
     var lyrics: Lyrics? = null
         internal set
+
+    /** Lyrics were looked for and this song has none. */
+    var lyricsMissing = false
+        internal set
     private var lyricsFor = ""
     private var artFor = ""
+
+    /** The cover came from the song's details (not from its notification's picture). */
+    private var artFromSong = false
+
+    /** Each player's media notification picture: the cover, for players that don't put it in the song's details. */
+    private val mediaPictures = HashMap<String, Bitmap>()
+
+    /** When the music was paused; it leaves the island [PAUSE_LINGER] later, as on the computer. */
+    private var pausedSince: Long? = null
+    const val PAUSE_LINGER = 15_000L
 
     // ---- Notifications ----
     val extras = HashMap<String, NoteExtra>()
@@ -134,7 +148,10 @@ object Isle {
         focus.breakMinutes = prefs.breakMinutes
     }
 
-    fun now() = System.currentTimeMillis()
+    /** The wall clock (tests move it on). */
+    internal var clock: () -> Long = { System.currentTimeMillis() }
+
+    fun now() = clock()
 
     /** Something changed: redraw, and come back when the next change is due. */
     fun changed() {
@@ -146,6 +163,7 @@ object Isle {
         updateEvent()
         val timetable = prefs.timetable
         updateLesson(timetable)
+        dropPausedMusic()
         island.tick(now())
         onChange?.invoke()
         LiveBars.update()
@@ -156,6 +174,7 @@ object Isle {
             Meetings.nextCheck(events, now()),
             timetable.nextCheck(now()).takeIf { prefs.lessons || prefs.lessonQuiet },
             sleepAt,
+            pausedSince?.takeIf { !island.isOpen }?.let { it + PAUSE_LINGER },
         ).minOrNull()
         if (next != null) main.postDelayed(due, (next - now()).coerceIn(50, 15 * 60_000))
     }
@@ -230,6 +249,7 @@ object Isle {
     fun posted(sbn: StatusBarNotification, quiet: Boolean = false) {
         if (!started) return
         val f = facts(sbn) ?: return
+        if (f.media) mediaPicture(sbn)
         val n = sbn.notification
         val id = "note:${sbn.key}"
         val actions = n.actions.orEmpty().mapNotNull { a -> a.actionIntent?.let { (a.title?.toString() ?: "") to it } }
@@ -341,13 +361,17 @@ object Isle {
     fun media(c: MediaController?) {
         if (!started) return
         controller = c
-        val meta = c?.metadata
-        val state = c?.playbackState
+        song(c?.packageName.orEmpty(), c?.metadata, c?.playbackState)
+    }
+
+    /** What a player says it's playing (split out so it can be tested without a real player). */
+    internal fun song(pkg: String, meta: MediaMetadata?, state: PlaybackState?) {
         val title = meta?.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty()
         val st = state?.state ?: PlaybackState.STATE_NONE
         val gone = title.isEmpty() || st == PlaybackState.STATE_NONE || st == PlaybackState.STATE_STOPPED || st == PlaybackState.STATE_ERROR
         if (gone) {
             island.remove("music")
+            pausedSince = null
             changed()
             return
         }
@@ -357,22 +381,49 @@ object Isle {
         val playing = st == PlaybackState.STATE_PLAYING || st == PlaybackState.STATE_BUFFERING
         val position = (state?.position ?: 0L).coerceAtLeast(0L)
         val at = state?.lastPositionUpdateTime?.takeIf { it > 0 } ?: SystemClock.elapsedRealtime()
-        island.put(Live.Music(title, artist, appName(c?.packageName.orEmpty()), playing, duration, position, at))
+        // As on the computer: paused music stays a little while, then the
+        // empty island (and its time) comes back. Music already paused when
+        // first seen doesn't come up at all.
+        val shown = island.get("music") as? Live.Music
+        if (playing) {
+            pausedSince = null
+        } else if (shown == null) {
+            changed()
+            return
+        } else if (pausedSince == null) {
+            pausedSince = now()
+        }
+        island.put(Live.Music(title, artist, appName(pkg), playing, duration, position, at))
         val song = "$title|$artist"
-        if (song != artFor) {
-            artFor = song
+        // The cover: from the song's details if the player puts it there
+        // (some only add it a moment later), else its notification's picture.
+        if (song != artFor || !artFromSong) {
             val bmp = meta?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
                 ?: meta?.getBitmap(MediaMetadata.METADATA_KEY_ART)
                 ?: meta?.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
-            art = bmp?.let { scaled(it) }
+                ?: localArt(meta)
+            val fresh = song != artFor
+            artFor = song
+            when {
+                bmp != null -> {
+                    art = scaled(bmp)
+                    artFromSong = true
+                }
+                fresh || art == null -> {
+                    art = mediaPictures[pkg]
+                    artFromSong = false
+                }
+            }
             artColor = art?.let { colourOf(it) }
         }
         if (prefs.lyrics && song != lyricsFor) {
             lyricsFor = song
             lyrics = null
+            lyricsMissing = false
             fetchLyrics(title, artist, duration, song)
         } else if (!prefs.lyrics) {
             lyrics = null
+            lyricsMissing = false
             lyricsFor = ""
         }
         changed()
@@ -397,10 +448,76 @@ object Isle {
             val found = Net.get(Lyrics.lrclibUrl(title, artist, duration))?.let { Lyrics.fromLrclib(it) }
             post {
                 if (lyricsFor == song) {
-                    lyrics = found
+                    lyrics = found?.takeIf { it.lines.isNotEmpty() }
+                    lyricsMissing = lyrics == null
                     changed()
                 }
             }
+        }
+    }
+
+    /** The lyrics button on the music card: switching it on is what lets Islet ask LRCLIB. */
+    fun toggleLyrics() {
+        prefs.lyrics = !prefs.lyrics
+        if (prefs.lyrics) island.pop(Pop.Info("Lyrics on · from LRCLIB"), now())
+        media(controller)
+    }
+
+    /** A cover the player shares as a file on the phone (never fetched from the internet). */
+    private fun localArt(meta: MediaMetadata?): Bitmap? {
+        meta ?: return null
+        val uri = listOf(
+            MediaMetadata.METADATA_KEY_ALBUM_ART_URI,
+            MediaMetadata.METADATA_KEY_ART_URI,
+            MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI,
+        ).firstNotNullOfOrNull { meta.getString(it)?.takeIf { s -> s.isNotBlank() } } ?: return null
+        val u = Uri.parse(uri)
+        if (u.scheme !in setOf("content", "file", "android.resource")) return null
+        return try {
+            app.contentResolver.openInputStream(u)?.use { android.graphics.BitmapFactory.decodeStream(it) }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** A player's media notification: keep its picture (the cover) for players that don't share it otherwise. */
+    private fun mediaPicture(sbn: StatusBarNotification) {
+        val d = try {
+            sbn.notification.getLargeIcon()?.loadDrawable(app)
+        } catch (e: Exception) {
+            null
+        } ?: return
+        val bmp = (d as? android.graphics.drawable.BitmapDrawable)?.bitmap ?: try {
+            Bitmap.createBitmap(160, 160, Bitmap.Config.ARGB_8888).also { b ->
+                val cv = android.graphics.Canvas(b)
+                d.setBounds(0, 0, 160, 160)
+                d.draw(cv)
+            }
+        } catch (e: Exception) {
+            null
+        } ?: return
+        val small = scaled(bmp) ?: return
+        mediaPictures[sbn.packageName] = small
+        if (mediaPictures.size > 6) mediaPictures.remove(mediaPictures.keys.first { it != sbn.packageName })
+        // The playing song has no cover of its own: use this one.
+        if (controller?.packageName == sbn.packageName && !artFromSong) {
+            art = small
+            artColor = colourOf(small)
+            changed()
+        }
+    }
+
+    /** Paused music leaves once its time is up (not while its card is open). */
+    private fun dropPausedMusic() {
+        val since = pausedSince ?: return
+        val m = island.get("music") as? Live.Music
+        if (m == null || m.playing) {
+            pausedSince = null
+            return
+        }
+        if (now() - since >= PAUSE_LINGER && !island.isOpen) {
+            island.remove("music")
+            pausedSince = null
         }
     }
 

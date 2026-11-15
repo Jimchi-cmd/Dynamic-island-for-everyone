@@ -53,6 +53,11 @@ class Prefs(context: Context) {
         get() = p.getString("style", "black") ?: "black"
         set(v) = p.edit().putString("style", v).apply()
 
+    /** The empty island shows the time and the battery beside the camera. */
+    var idleClock: Boolean
+        get() = flag("idle_clock", true)
+        set(v) = set("idle_clock", v)
+
     /** A soft glowing rim round the island. */
     var ring: Boolean
         get() = flag("ring", true)

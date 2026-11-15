@@ -14,7 +14,7 @@ enum class Icon {
     Play, Pause, Next, Previous, Phone, HangUp, Bell, BellOff, Vibrate, Plane, Moon, Wifi, Bluetooth, Bolt,
     Timer, Stopwatch, Arrow, Download, Camera, Mic, Flashlight, Sun, Cloud, Rain, Snow, Storm, Fog, Lock,
     Screenshot, Note, Check, Plus, Minus, Calendar, Video, Close, Gear, Sound, Brightness, Music, Flag, Reset, Clipboard, Gauge, Toggles,
-    Book, Search, Battery, Link,
+    Book, Search, Battery, Link, Quote,
 }
 
 object Icons {
@@ -307,6 +307,13 @@ object Icons {
                 c.drawRoundRect(3f, 7f, 18.5f, 17f, 2.5f, 2.5f, stroke)
                 c.drawRoundRect(5.5f, 9.5f, 12.5f, 14.5f, 1f, 1f, fill)
                 p(21f, 10.5f, 21f, 13.5f)
+            }
+            Icon.Quote -> {
+                // A speech bubble with lines: lyrics.
+                c.drawRoundRect(3f, 4f, 21f, 16.5f, 4f, 4f, stroke)
+                p(8f, 16.5f, 7f, 21f, 12.5f, 16.5f)
+                p(7.5f, 9f, 16.5f, 9f)
+                p(7.5f, 12f, 13f, 12f)
             }
             Icon.Link -> {
                 c.drawRoundRect(3f, 9f, 13f, 15f, 3f, 3f, stroke)

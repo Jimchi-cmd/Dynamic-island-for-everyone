@@ -137,6 +137,7 @@ class IslandWindow(private val context: Context, private val type: Int) {
             prefs.offsetX.toDouble(),
             prefs.offsetY.toDouble() + extraY,
             prefs.extraWidth.toDouble(),
+            prefs.idleClock,
         )
         // Round the camera either way. (As an ordinary overlay, some phones'
         // status bars take taps on the small pill; the accessibility switch
