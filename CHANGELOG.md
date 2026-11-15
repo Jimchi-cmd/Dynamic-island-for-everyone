@@ -2,7 +2,7 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.3] - 2026-11-15
 
 ### Added
 - The phone's empty island shows the **time** beside the camera and the **battery** on the other side, as the computer's does (Look → Time on the empty island).
