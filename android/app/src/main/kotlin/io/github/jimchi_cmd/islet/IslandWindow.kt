@@ -128,14 +128,31 @@ class IslandWindow(private val context: Context, private val type: Int) {
         val camera = cutout?.takeIf { it.width() > 0 && it.height() > 0 && !landscape }?.let {
             Camera(it.exactCenterX() / d.toDouble(), it.exactCenterY() / d.toDouble(), it.width() / d.toDouble(), it.height() / d.toDouble())
         }
-        return Geometry(
+        fun make(extraY: Double) = Geometry(
             width / d,
             camera,
             prefs.size,
             prefs.offsetX.toDouble(),
-            prefs.offsetY.toDouble(),
+            prefs.offsetY.toDouble() + extraY,
             prefs.extraWidth.toDouble(),
         )
+        val g = make(0.0)
+        // An ordinary overlay sits under the status bar, which would take
+        // its taps (and pull down the shade): keep it just below the bar.
+        if (type == WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY) {
+            val below = statusBarHeight() / d + 4 - g.top
+            if (below > 0) return make(below)
+        }
+        return g
+    }
+
+    private fun statusBarHeight(): Double {
+        if (Build.VERSION.SDK_INT >= 30) {
+            return wm.currentWindowMetrics.windowInsets.getInsets(android.view.WindowInsets.Type.statusBars()).top.toDouble()
+        }
+        @android.annotation.SuppressLint("DiscouragedApi", "InternalInsetResource")
+        val id = context.resources.getIdentifier("status_bar_height", "dimen", "android")
+        return if (id > 0) context.resources.getDimensionPixelSize(id).toDouble() else 24.0 * density
     }
 
     companion object {

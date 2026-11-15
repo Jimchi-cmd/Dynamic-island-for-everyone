@@ -85,6 +85,7 @@ object Isle {
     var torchOn = false
     var battery = -1
     var charging = false
+    var screenOn = true
 
     /** The view that draws the island, while one is attached. */
     var onChange: (() -> Unit)? = null

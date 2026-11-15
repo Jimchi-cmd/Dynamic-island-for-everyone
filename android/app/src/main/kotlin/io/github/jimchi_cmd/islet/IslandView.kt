@@ -17,7 +17,6 @@ import android.os.Build
 import android.os.SystemClock
 import android.provider.CalendarContract
 import android.text.TextPaint
-import android.text.TextUtils
 import android.text.format.DateFormat
 import android.util.Size
 import android.view.GestureDetector
@@ -167,7 +166,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     private fun announce(s: Scene) {
         val words = when (s) {
             is Scene.Popped -> when (val p = s.pop) {
-                is Pop.Note -> "${p.app}: ${p.title}. ${p.text}"
+                is Pop.Note -> "Notification from ${p.app}"
                 is Pop.Charging -> if (p.charging) "Charging, ${p.level} percent" else "Not charging"
                 is Pop.LowBattery -> "Low battery, ${p.level} percent"
                 is Pop.TimerDone -> p.label
@@ -183,6 +182,8 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
 
     private fun tickLater() {
         removeCallbacks(tick)
+        // Nothing moves while the screen is off.
+        if (!Isle.screenOn) return
         val s = scene
         val fast = (s is Scene.Compact && s.live is Live.Music && (s.live as Live.Music).playing && Isle.prefs.bars) ||
             (s is Scene.Expanded && s.live is Live.Music && (s.live as Live.Music).playing) ||
@@ -310,7 +311,11 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         text.color = color
         text.typeface = typeface(bold)
         text.textAlign = align
-        val shownText = TextUtils.ellipsize(s, text, max, TextUtils.TruncateAt.END).toString()
+        var shownText = s
+        if (text.measureText(s) > max) {
+            val n = text.breakText(s, true, (max - text.measureText("…")).coerceAtLeast(0f), null)
+            shownText = s.take(n).trimEnd() + "…"
+        }
         c.drawText(shownText, x, y, text)
         return text.measureText(shownText)
     }
@@ -521,13 +526,17 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val pad = 16 * dp
         when (p) {
             is Pop.Note -> {
+                // On the lock screen, only which app: the message waits for an unlock.
+                val locked = context.getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true
+                val title = if (locked) p.app else p.title.ifEmpty { p.app }
+                val body = if (locked) "New notification" else p.text.ifEmpty { p.app }
                 val ix = box.left + pad + 20 * dp
                 val extra = Isle.extras[p.key]
                 if (!drawable(c, extra?.let { Isle.appIcon(it.pkg) }, ix, cy, 40f)) icon(c, Icon.Bell, ix, cy, 24f, white)
                 val x = ix + 30 * dp
                 val max = box.right - pad - x
-                write(c, p.title.ifEmpty { p.app }, x, cy - 4 * dp, 15f, white, bold = true, max = max - 40 * dp)
-                write(c, p.text.ifEmpty { p.app }, x, cy + 16 * dp, 14f, grey, max = max)
+                write(c, title, x, cy - 4 * dp, 15f, white, bold = true, max = max - 40 * dp)
+                write(c, body, x, cy + 16 * dp, 14f, grey, max = max)
                 write(c, "now", box.right - pad, cy - 4 * dp, 12f, grey, align = Paint.Align.RIGHT)
             }
             is Pop.Screenshot -> {

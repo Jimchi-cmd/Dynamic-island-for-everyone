@@ -89,6 +89,10 @@ object Sensors {
                     Isle.pop(Pop.Bluetooth(name, intent.action == BluetoothDevice.ACTION_ACL_CONNECTED))
                 }
                 AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED -> readAlarm()
+                Intent.ACTION_SCREEN_OFF, Intent.ACTION_SCREEN_ON -> {
+                    Isle.screenOn = intent.action == Intent.ACTION_SCREEN_ON
+                    Isle.changed()
+                }
             }
         }
     }
@@ -196,6 +200,8 @@ object Sensors {
             addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
             addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
             addAction(AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED)
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
             if (Build.VERSION.SDK_INT < 31 || has(Manifest.permission.BLUETOOTH_CONNECT)) {
                 addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
                 addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
