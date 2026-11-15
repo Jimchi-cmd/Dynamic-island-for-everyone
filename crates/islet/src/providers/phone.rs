@@ -1,4 +1,4 @@
-//! The phone companion's listener (Islet Pro): once a phone is paired, the
+//! The phone companion's listener: once a phone is paired, the
 //! island accepts its connection on the local network and shows the
 //! phone's notifications, music and battery. See `islet_core::phone` for
 //! how the link is secured. Nothing listens until a phone is paired and

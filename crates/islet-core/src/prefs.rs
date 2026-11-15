@@ -64,7 +64,7 @@ pub struct IslandPrefs {
     /// Pointing at the empty island shows the weather, the battery and
     /// how busy the processor is, either side of the time.
     pub hover_status: bool,
-    /// Islet Pro: listen for the paired phone (its notifications, music
+    /// Listen for the paired phone (its notifications, music
     /// and battery). Set by `islet phone pair`; nothing listens without it.
     pub phone: bool,
     /// Islet Pro: show each new screenshot on the island for a moment.

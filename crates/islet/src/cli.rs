@@ -32,7 +32,7 @@ Usage:
                                            a lesson for your timetable (mon 9:00 10:00 Maths)
   islet class [--json]                     your timetable; the clock card counts down to lessons
   islet class remove <n>                   delete lesson n
-  islet phone pair [--new] [--json]        pair an Android phone (Islet Pro): shows the code the
+  islet phone pair [--new] [--json]        pair an Android phone: shows the code the
                                            Islet app scans; --new makes a fresh key
   islet phone status [--json]              is a phone paired, and where the island listens
   islet phone unpair                       forget the phone
@@ -1275,7 +1275,6 @@ fn qr_rows(text: &str) -> Result<Vec<String>, String> {
 /// switch the link on, and show what the phone must scan.
 fn phone_pair(new_key: bool, json: bool) -> Result<String, String> {
     use islet_core::phone::{Pairing, KEY_LEN};
-    needs_pro()?;
     let key = match secrets::phone_key().filter(|_| !new_key) {
         Some(k) => k,
         None => {
@@ -1386,14 +1385,14 @@ fn windows_text(list: &[crate::switcher::OpenWindow]) -> String {
 
 fn phone_status(json: bool) -> String {
     let paired = secrets::phone_key().is_some();
-    let on = config::load_prefs().phone && paired && crate::pro::active();
+    let on = config::load_prefs().phone && paired;
     let (hosts, port) = (crate::providers::phone::local_addresses(), phone_port());
     if json {
         return serde_json::json!({ "paired": paired, "on": on, "hosts": hosts, "port": port }).to_string();
     }
     match (paired, on) {
         (false, _) => "No phone is paired. Pair one with: islet phone pair".into(),
-        (true, false) => "A phone is paired, but the link is off (islet set phone on; it needs Islet Pro).".into(),
+        (true, false) => "A phone is paired, but the link is off. Turn it on with: islet set phone on".into(),
         (true, true) => format!("Listening for your phone on {} port {port}.", hosts.join(", ")),
     }
 }

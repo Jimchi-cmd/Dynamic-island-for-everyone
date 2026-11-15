@@ -1,4 +1,4 @@
-//! The phone companion's link (Islet Pro): an Android phone on the same
+//! The phone companion's link: an Android phone on the same
 //! network sends its notifications, music and battery level to the island.
 //!
 //! Pairing: the computer makes a random 256-bit key and shows it in a QR

@@ -75,7 +75,7 @@ class MainActivity : AppCompatActivity() {
     private fun pairWith(code: String) {
         val pairing = Pairing.fromUri(code)
         if (pairing == null) {
-            message("That isn't an Islet pairing code. On your computer, open Islet Settings → Islet Pro → Your Android phone.")
+            message("That isn't an Islet pairing code. On your computer, open Islet Settings → Wi-Fi, Bluetooth & phone → Your Android phone.")
             return
         }
         Store.pair(this, pairing)
@@ -129,7 +129,7 @@ class MainActivity : AppCompatActivity() {
         }
         detail.text = when {
             pairing == null ->
-                "On your computer, open Islet Settings → Islet Pro → Your Android phone and choose Pair a phone. " +
+                "On your computer, open Islet Settings → Wi-Fi, Bluetooth & phone → Your Android phone and choose Pair a phone. " +
                     "Then scan the code it shows. Both devices must be on the same Wi-Fi."
             !access -> "One more step: allow notification access, so Islet can see your notifications and what is playing."
             computer != null -> "Your notifications, music and battery level now show on the island."

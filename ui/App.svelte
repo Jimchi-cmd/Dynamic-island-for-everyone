@@ -66,7 +66,7 @@
     },
     {
       id: 'connections',
-      label: 'Wi-Fi & Bluetooth',
+      label: 'Wi-Fi, Bluetooth & phone',
       tint: 'linear-gradient(160deg, #46a4ff, #0a6fe8)',
       icon: 'M4.5 10.5a10.6 10.6 0 0 1 15 0M7.8 14a6 6 0 0 1 8.4 0',
       dots: [[12, 17.6, 1.5]],
@@ -222,6 +222,7 @@
 
   $effect(() => {
     if (page === 'connections' && !wifi) void loadConnections(true);
+    if (page === 'connections' && !phoneState) void loadPhone();
     // General needs to know about Pro too, for the Pro-only island styles.
     if ((page === 'pro' || page === 'general') && !pro) void loadPro();
     if (page === 'timer') {
@@ -887,7 +888,6 @@
     void loadWorld();
     void loadTodos();
     void loadNotesPath();
-    void loadPhone();
     void loadShortcuts();
     try {
       pro = parsePro(await api.islet(['pro', 'status', '--json']));
@@ -1861,6 +1861,43 @@
             speed-test servers (speed.cloudflare.com), so mind a metered connection.
           </p>
         </div>
+        <div class="card">
+          <h2>Your Android phone</h2>
+          <p class="muted">
+            With the Islet app on your phone, its notifications, music and battery show on the island, and the
+            island’s music buttons control the phone. The two talk directly over your Wi-Fi, encrypted with a key
+            only they hold. Nothing goes through the internet.
+          </p>
+          {#if pairing}
+            <div class="pairing">
+              <svg class="qr" viewBox="-2 -2 {pairing.rows.length + 4} {pairing.rows.length + 4}" role="img" aria-label="Pairing code">
+                <rect x="-2" y="-2" width={pairing.rows.length + 4} height={pairing.rows.length + 4} fill="#fff" />
+                <path d={qrPath(pairing.rows)} fill="#000" />
+              </svg>
+              <ol>
+                <li>Install the Islet app on your phone (the APK is on Islet’s download page).</li>
+                <li>Join the same Wi-Fi as this computer.</li>
+                <li>In the app, tap <b>Scan the code</b> and point the camera here.</li>
+                <li>Allow notification access when the app asks.</li>
+              </ol>
+            </div>
+            <p class="small muted">
+              Keep this code to yourself: it holds the pairing key. This computer listens on
+              {pairing.hosts.join(', ')} port {pairing.port}; if your firewall asks, allow Islet on private networks.
+            </p>
+          {/if}
+          <div class="actions left">
+            <button class="primary" onclick={() => phoneRun(['phone', 'pair', '--json'])}>
+              {pairing ? 'Show the code again' : phoneState?.paired ? 'Show the pairing code' : 'Pair a phone'}
+            </button>
+            {#if phoneState?.paired}
+              <button onclick={() => phoneRun(['phone', 'pair', '--new', '--json'])}>New code</button>
+              <button onclick={() => phoneRun(['phone', 'unpair'])}>Unpair</button>
+            {/if}
+            <button onclick={() => api.openLink(`${info?.repo}/releases`)}>Get the app</button>
+          </div>
+          {#if phoneNote}<p class="small" role="status">{phoneNote}</p>{/if}
+        </div>
         {#if connNote}<p class="small" role="status">{connNote}</p>{/if}
       {:else if page === 'timer'}
         <h1>Timer &amp; focus</h1>
@@ -2255,43 +2292,6 @@
                 onchange={(v) => v && worldChange(true, v)}
               />
             {/if}
-          </div>
-          <div class="card">
-            <h2>Your Android phone</h2>
-            <p class="muted">
-              With the Islet app on your phone, its notifications, music and battery show on the island, and the
-              island’s music buttons control the phone. The two talk directly over your Wi-Fi, encrypted with a key
-              only they hold. Nothing goes through the internet.
-            </p>
-            {#if pairing}
-              <div class="pairing">
-                <svg class="qr" viewBox="-2 -2 {pairing.rows.length + 4} {pairing.rows.length + 4}" role="img" aria-label="Pairing code">
-                  <rect x="-2" y="-2" width={pairing.rows.length + 4} height={pairing.rows.length + 4} fill="#fff" />
-                  <path d={qrPath(pairing.rows)} fill="#000" />
-                </svg>
-                <ol>
-                  <li>Install the Islet app on your phone (the APK is on Islet’s download page).</li>
-                  <li>Join the same Wi-Fi as this computer.</li>
-                  <li>In the app, tap <b>Scan the code</b> and point the camera here.</li>
-                  <li>Allow notification access when the app asks.</li>
-                </ol>
-              </div>
-              <p class="small muted">
-                Keep this code to yourself: it holds the pairing key. This computer listens on
-                {pairing.hosts.join(', ')} port {pairing.port}; if your firewall asks, allow Islet on private networks.
-              </p>
-            {/if}
-            <div class="actions left">
-              <button class="primary" onclick={() => phoneRun(['phone', 'pair', '--json'])}>
-                {pairing ? 'Show the code again' : phoneState?.paired ? 'Show the pairing code' : 'Pair a phone'}
-              </button>
-              {#if phoneState?.paired}
-                <button onclick={() => phoneRun(['phone', 'pair', '--new', '--json'])}>New code</button>
-                <button onclick={() => phoneRun(['phone', 'unpair'])}>Unpair</button>
-              {/if}
-              <button onclick={() => api.openLink(`${info?.repo}/releases`)}>Get the app</button>
-            </div>
-            {#if phoneNote}<p class="small" role="status">{phoneNote}</p>{/if}
           </div>
           <div class="card">
             <h2>Quick notes</h2>

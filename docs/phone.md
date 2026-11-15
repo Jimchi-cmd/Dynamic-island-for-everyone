@@ -6,13 +6,13 @@ With the Islet app on an Android phone, the island on your computer shows:
 - **what is playing** on the phone, with working play, next and previous buttons;
 - the phone's **battery level**, when it connects and when it runs low.
 
-The computer side is part of Islet Pro. The phone app is free and open source, in the [`android`](../android) folder.
+Both sides are free: no Islet Pro needed. The phone app is open source, in the [`android`](../android) folder.
 
 iPhones can't do this: iOS doesn't let an app read other apps' notifications.
 
 ## What you need
 
-- Islet 0.3.0 or later on the computer, with Islet Pro active.
+- Islet 0.3.3 or later on the computer (0.3.0 to 0.3.2 needed Islet Pro for this).
 - A phone with Android 8 or later.
 - Both on the same Wi-Fi (or other local network).
 
@@ -27,7 +27,7 @@ Builds made before a release are on the repository's **Actions** tab: open the l
 
 ## Pair
 
-1. On the computer: Islet Settings → **Islet Pro** → **Your Android phone** → **Pair a phone**. A QR code appears.
+1. On the computer: Islet Settings → **Wi-Fi, Bluetooth & phone** → **Your Android phone** → **Pair a phone**. A QR code appears.
 2. On the phone: open Islet and tap **Scan the code**. Allow the camera, and point it at the code.
 3. The app asks for **notification access**. Tap **Open settings** and turn on Islet.
 

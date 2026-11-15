@@ -2,6 +2,11 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **Pairing your Android phone is free:** it no longer needs Islet Pro. The pairing code has moved to Settings → **Wi-Fi, Bluetooth & phone** → Your Android phone.
+
 ## [0.3.2] - 2026-11-14
 
 ### Fixed

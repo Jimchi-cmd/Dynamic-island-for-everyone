@@ -656,17 +656,26 @@ fn attach_console() {
 
 /// Open Islet Settings (installed next to the island) at a page.
 /// What the phone link needs to listen: the pairing key, the port and
-/// this computer's name. None unless a phone is paired, the link is on
-/// and Islet Pro is active.
+/// this computer's name. None unless a phone is paired and the link is on.
+/// Free: it doesn't need Islet Pro.
 fn phone_pairing(prefs: &islet_core::prefs::IslandPrefs) -> Option<([u8; islet_core::phone::KEY_LEN], u16, String)> {
-    if !prefs.phone || !pro::active() {
+    let key = if prefs.phone { secrets::phone_key() } else { None };
+    phone_link(prefs, key, cli::phone_port())
+}
+
+fn phone_link(
+    prefs: &islet_core::prefs::IslandPrefs,
+    key: Option<[u8; islet_core::phone::KEY_LEN]>,
+    port: u16,
+) -> Option<([u8; islet_core::phone::KEY_LEN], u16, String)> {
+    if !prefs.phone {
         return None;
     }
     let name = match pro::computer_name() {
         n if n.is_empty() => "Computer".to_string(),
         n => n,
     };
-    Some((secrets::phone_key()?, cli::phone_port(), name))
+    Some((key?, port, name))
 }
 
 fn open_settings(page: &str) {
@@ -735,5 +744,24 @@ fn unscale(e: Event, k: f64) -> Event {
         Event::PointerUp { x, y, button } => Event::PointerUp { x: x / k, y: y / k, button },
         Event::DragOver { x, y } => Event::DragOver { x: x / k, y: y / k },
         e => e,
+    }
+}
+
+#[cfg(test)]
+mod phone_link_tests {
+    use super::*;
+
+    #[test]
+    fn a_paired_phone_connects_without_islet_pro() {
+        assert!(!pro::active(), "tests run without Pro");
+        let mut prefs = islet_core::prefs::IslandPrefs::default();
+        let raw = [7u8; islet_core::phone::KEY_LEN];
+        let key = Some(raw);
+        assert_eq!(phone_link(&prefs, key, 5000), None, "the link is off until a phone is paired");
+        prefs.phone = true;
+        let (k, port, name) = phone_link(&prefs, key, 5000).expect("listens for the phone");
+        assert_eq!((k, port), (raw, 5000));
+        assert!(!name.is_empty());
+        assert_eq!(phone_link(&prefs, None, 5000), None, "no key in the keychain");
     }
 }
