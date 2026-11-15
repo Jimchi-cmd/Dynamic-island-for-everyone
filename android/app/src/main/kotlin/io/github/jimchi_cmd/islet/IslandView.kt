@@ -63,6 +63,9 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     private class Slider(val rect: RectF, val set: (Float) -> Unit)
 
     private val hits = ArrayList<Hit>()
+
+    /** The view's place on screen, in pixels. */
+    private val at = IntArray(2)
     private val sliders = ArrayList<Slider>()
     private var dragging: Slider? = null
     private var seeking: RectF? = null
@@ -263,7 +266,11 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val box = currentBox() ?: return
         if (scene == Scene.Hidden && morph.settled) return
         c.save()
-        c.translate(-window.originX.toFloat(), -window.originY.toFloat())
+        // Where the window really is on screen, not where it was last asked
+        // to go: a move or resize lands a frame later, and drawing for the
+        // new place too early made the island jump sideways for a frame.
+        getLocationOnScreen(at)
+        c.translate(-at[0].toFloat(), -at[1].toFloat())
         val l = (box.x * dp).toFloat()
         val t = (box.y * dp).toFloat()
         val r = (box.right * dp).toFloat()
@@ -1220,8 +1227,9 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             override fun onDown(e: MotionEvent) = true
 
             override fun onSingleTapUp(e: MotionEvent): Boolean {
-                val x = e.x + window.originX
-                val y = e.y + window.originY
+                getLocationOnScreen(at)
+                val x = e.x + at[0]
+                val y = e.y + at[1]
                 val near = 6 * dp
                 hits.lastOrNull { RectF(it.rect).apply { inset(-near, -near) }.contains(x, y) }?.let {
                     it.action()
@@ -1279,8 +1287,9 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             }
             return false
         }
-        val x = e.x + window.originX
-        val y = e.y + window.originY
+        getLocationOnScreen(at)
+        val x = e.x + at[0]
+        val y = e.y + at[1]
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> dragging = sliders.firstOrNull { it.rect.contains(x, y) }
             MotionEvent.ACTION_MOVE -> dragging?.let {

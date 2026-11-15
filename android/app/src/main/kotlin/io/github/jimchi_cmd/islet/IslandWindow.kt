@@ -52,10 +52,6 @@ class IslandWindow(private val context: Context, private val type: Int) {
         if (Build.VERSION.SDK_INT >= 30) setFitInsetsTypes(0)
     }
 
-    /** The window's top left on screen, in pixels. */
-    val originX get() = params.x
-    val originY get() = params.y
-
     fun attach() {
         if (attached) return
         try {

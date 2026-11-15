@@ -11,6 +11,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ### Fixed
 - Phone: the album cover (and the island's border in its colour) was missing for players that add the cover a moment after the song, or only put it in their notification, such as Spotify. The island now takes it from either.
 - Phone: the island opens and closes faster (about a third of a second, and what's inside shows sooner), and stays smooth while music plays: the glowing rim, the clock and the control centre no longer ask the system for slow readings on every frame.
+- Phone: the island no longer twitches sideways when it grows or shrinks (a Bluetooth or Wi-Fi pop-up, for example). Android moves the island's window a frame after it's asked to, and the island was drawn for the new place a frame too early.
 - Phone: paused music no longer stays on the island for good. As on the computer, it leaves 15 seconds after you pause, and the time comes back.
 
 ## [0.4.2] - 2026-11-15
