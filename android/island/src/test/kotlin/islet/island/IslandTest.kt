@@ -191,7 +191,7 @@ class IslandTest {
         }
         assertEquals(1.0, s.value)
         assertTrue(peak in 1.0..1.15, "overshoot $peak")
-        assertTrue(steps in 20..120, "settles in about a second: $steps frames")
+        assertTrue(steps in 12..30, "quick, as on an iPhone: about a third of a second, $steps frames")
     }
 
     @Test

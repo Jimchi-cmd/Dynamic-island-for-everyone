@@ -8,12 +8,13 @@ import kotlin.math.sqrt
  * grows and shrinks with. `damping` is the ratio to critical damping:
  * below 1 it overshoots a little before it settles.
  */
-class Spring(var value: Double = 0.0, var stiffness: Double = 320.0, var damping: Double = 0.78) {
+class Spring(var value: Double = 0.0, var stiffness: Double = 600.0, var damping: Double = 0.82) {
     var target = value
     var velocity = 0.0
         private set
 
-    val settled get() = abs(target - value) < 0.0005 && abs(velocity) < 0.001
+    /** Close enough that nothing on screen would move by a pixel more. */
+    val settled get() = abs(target - value) < 0.002 && abs(velocity) < 0.02
 
     /** Jump straight to `v` (reduced motion, first frame). */
     fun snap(v: Double) {

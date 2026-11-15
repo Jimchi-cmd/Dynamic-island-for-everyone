@@ -54,7 +54,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     private var from: Box? = null
     private var to: Box? = null
     private val morph = Spring(1.0)
-    private val fade = Spring(1.0, stiffness = 500.0, damping = 1.0)
+    private val fade = Spring(1.0, stiffness = 1800.0, damping = 1.0)
     private var lastFrame = 0L
 
     /** Buttons drawn this frame, in view pixels. */
@@ -75,6 +75,11 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     private val clip = Path()
     private val thumbs = HashMap<String, Bitmap?>()
 
+    private companion object {
+        /** The rim's glow, outside in: (width in dp, colour). */
+        val GLOW = listOf(7f to 0x149f8cff, 4.5f to 0x2a9f8cff, 2.5f to 0x559f8cff, 1.3f to 0xffd6ccff.toInt())
+    }
+
     private val white = Color.WHITE
     private val grey = 0xff9a9aa0.toInt()
     private val dim = 0xff2c2c2e.toInt()
@@ -91,8 +96,15 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
     }
 
+    private val typefaces = HashMap<String, Typeface>()
+
     private fun typeface(bold: Boolean): Typeface {
-        val family = when (Isle.prefs.font) {
+        val font = Isle.prefs.font
+        return typefaces.getOrPut("$font$bold") { makeTypeface(font, bold) }
+    }
+
+    private fun makeTypeface(font: String, bold: Boolean): Typeface {
+        val family = when (font) {
             "serif" -> "serif"
             "mono" -> "monospace"
             "condensed" -> "sans-serif-condensed"
@@ -107,6 +119,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     /** The model changed: work out the scene, and move to it. */
     fun update() {
         geometry = window.geometry()
+        readFormats()
         val p = Isle.prefs
         val next = when {
             !p.islandOn -> Scene.Hidden
@@ -273,12 +286,13 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             c.drawRoundRect(rect, radius, radius, fill)
         }
         if (Isle.prefs.ring && borderFor(shown) == null && scene != Scene.Hidden) {
-            line.color = 0xffd6ccff.toInt()
-            line.strokeWidth = 1.5f * dp
-            line.setShadowLayer(6 * dp, 0f, 0f, 0xcc9f8cff.toInt())
+            // The glow as a few soft strokes: a blurred shadow costs far more every frame.
             rect.set(l + 0.75f * dp, t + 0.75f * dp, r - 0.75f * dp, b - 0.75f * dp)
-            c.drawRoundRect(rect, radius, radius, line)
-            line.clearShadowLayer()
+            for ((width, colour) in GLOW) {
+                line.color = colour
+                line.strokeWidth = width * dp
+                c.drawRoundRect(rect, radius, radius, line)
+            }
         }
         borderFor(shown)?.let { colour ->
             line.color = colour
@@ -295,8 +309,9 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         c.save()
         c.clipPath(clip)
         val alpha = (fade.value.coerceIn(0.0, 1.0) * 255).toInt()
-        c.saveLayerAlpha(rect, alpha)
-        if (morph.value > 0.35 || morph.settled) drawScene(c, s, RectF(l, t, r, b))
+        // An offscreen layer only while fading: drawing straight is much cheaper.
+        if (alpha < 255) c.saveLayerAlpha(rect, alpha) else c.save()
+        if (morph.value > 0.2 || morph.settled) drawScene(c, s, RectF(l, t, r, b))
         c.restore()
         c.restore()
         c.restore()
@@ -454,13 +469,37 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     }
 
     /** "4:32" (no AM/PM: it has to fit beside the camera). */
-    private fun shortTime(ms: Long): String =
-        DateFormat.format(if (DateFormat.is24HourFormat(context)) "H:mm" else "h:mm", ms).toString()
+    /** Time formats, read once per change (making them every frame is slow). */
+    private var h24 = true
+    private var shortFormat = java.text.SimpleDateFormat("H:mm", java.util.Locale.getDefault())
+    private var timeFormat: java.text.DateFormat = java.text.SimpleDateFormat("H:mm", java.util.Locale.getDefault())
+
+    private fun readFormats() {
+        h24 = DateFormat.is24HourFormat(context)
+        shortFormat = java.text.SimpleDateFormat(if (h24) "H:mm" else "h:mm", java.util.Locale.getDefault())
+        timeFormat = DateFormat.getTimeFormat(context)
+    }
+
+    private fun shortTime(ms: Long): String {
+        shortFormat.timeZone = TimeZone.getDefault()
+        return shortFormat.format(Date(ms))
+    }
 
     private fun timeText(ms: Long, zone: TimeZone? = null): String {
-        val f = DateFormat.getTimeFormat(context)
-        if (zone != null) f.timeZone = zone
-        return f.format(Date(ms))
+        timeFormat.timeZone = zone ?: TimeZone.getDefault()
+        return timeFormat.format(Date(ms))
+    }
+
+    /** Readings from the system (binder calls), at most once a second rather than every frame. */
+    private val readings = HashMap<String, Pair<Long, Any>>()
+
+    @Suppress("UNCHECKED_CAST")
+    private fun <T : Any> reading(key: String, read: () -> T): T {
+        val now = SystemClock.uptimeMillis()
+        readings[key]?.let { (at, v) -> if (now - at < 1000) return v as T }
+        val v = read()
+        readings[key] = now to v
+        return v
     }
 
     // ---- Idle --------------------------------------------------------------------------
@@ -1021,7 +1060,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             write(c, timeText(Isle.now()), right - nw - 22 * dp, cy + 5.5f * dp, 15f, white, bold = true, align = Paint.Align.RIGHT)
             return
         }
-        val mem = memoryUse()
+        val mem = reading("memory") { memoryUse() }
         val mw = write(c, "$mem%", right, cy + 5.5f * dp, 15f, white, bold = true, align = Paint.Align.RIGHT)
         icon(c, Icon.Gauge, right - mw - 10 * dp, cy, 15f, white)
         write(c, timeText(Isle.now()), right - mw - 24 * dp, cy + 5.5f * dp, 15f, white, bold = true, align = Paint.Align.RIGHT)
@@ -1071,7 +1110,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val rows = ArrayList<Triple<Icon, Int, String>>()
         val p = Isle.prefs
         if (p.lessons) {
-            p.timetable.line(Timetable.weekday(now), Timetable.minuteOfDay(now), DateFormat.is24HourFormat(context))?.let { rows.add(Triple(Icon.Book, cyan, it)) }
+            p.timetable.line(Timetable.weekday(now), Timetable.minuteOfDay(now), h24)?.let { rows.add(Triple(Icon.Book, cyan, it)) }
         }
         islet.island.Meetings.next(Isle.events, now)?.let { rows.add(Triple(Icon.Calendar, red, "${it.title} · ${timeText(it.begin)}")) }
         if (p.deadlines) {
@@ -1125,7 +1164,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         }
         tileAt(0, Isle.torchOn, white, Icon.Flashlight) { Controls.flashlight() }
         tileAt(1, Isle.dnd, purple, Icon.Moon) { Controls.doNotDisturb() }
-        val vibrate = Controls.ringerMode != android.media.AudioManager.RINGER_MODE_NORMAL
+        val vibrate = reading("ringer") { Controls.ringerMode } != android.media.AudioManager.RINGER_MODE_NORMAL
         tileAt(2, vibrate, orange, if (vibrate) Icon.Vibrate else Icon.Bell) { Controls.ringer() }
         tileAt(3, Isle.airplane, orange, Icon.Plane) { Controls.airplane() }
         tileAt(4, false, blue, Icon.Wifi) { Controls.wifi() }
@@ -1151,8 +1190,9 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             }
             y += h + 10 * dp
         }
-        slider(Icon.Sound, Controls.volume, true, { Controls.volume = it }) {}
-        slider(Icon.Brightness, Controls.brightness, Controls.canSetBrightness, { Controls.brightness = it }) { Controls.askForBrightness() }
+        // While a slider is dragged it shows the finger's place; otherwise the system's, read once a second.
+        slider(Icon.Sound, reading("volume") { Controls.volume }, true, { readings.remove("volume"); Controls.volume = it }) {}
+        slider(Icon.Brightness, reading("brightness") { Controls.brightness }, reading("canWrite") { Controls.canSetBrightness }, { readings.remove("brightness"); Controls.brightness = it }) { Controls.askForBrightness() }
         val apps = Isle.prefs.shortcuts
         var x = l + 14 * dp
         for (pkg in apps) {
