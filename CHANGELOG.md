@@ -2,7 +2,7 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.0] - 2026-11-15
 
 ### Added
 - **An island on your Android phone:** the Islet app now draws its own island round the phone's front camera (placed over the status bar through an accessibility switch that reads nothing, or below it with "display over other apps"). It shows:
