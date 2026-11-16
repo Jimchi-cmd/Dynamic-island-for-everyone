@@ -306,6 +306,8 @@ object Sensors {
     fun stop() {
         users = (users - 1).coerceAtLeast(0)
         if (users > 0 || !::ctx.isInitialized) return
+        // Nothing left to show the island: let go of the sound reading too.
+        LiveBars.stop()
         try {
             ctx.unregisterReceiver(receiver)
         } catch (e: IllegalArgumentException) {

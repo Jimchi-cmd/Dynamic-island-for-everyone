@@ -9,6 +9,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Fixed
 - Phone: the cover beside a new song shows straight away and is never the last song's. Covers and lyrics now have their own worker, so they no longer wait behind the weather, the calendar or a speed test, and a player's notification picture is only used when it's for the song playing.
+- Computer: on the open music card, a lyric line leaving at the top no longer slides over the play buttons; it rises half a row and is gone.
+- Phone: the bars that follow the sound stop reading when Islet's service stops.
 - Phone: the big time on the clock card shrinks to fit instead of being cut to "10:08…" on narrow phones that show AM/PM.
 - Phone: lyrics keep time better: each line shows 0.15 s early, as on the computer, and podcasts or audiobooks played faster keep their lines in step.
 

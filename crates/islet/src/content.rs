@@ -3218,11 +3218,17 @@ pub fn card_lyrics(pill: Rect, lyrics: &Lyrics, pos: f64, o: f32, engine: &mut T
         } else {
             0.0
         };
-        // Rows fade out as they leave the two-row window.
-        let edge = (1.0 - (-row).max(row - 1.0).max(0.0)).clamp(0.0, 1.0);
+        // Rows fade out as they leave the two-row window. A line leaving
+        // at the top rises only half a row and is gone by then, so it never
+        // passes over the controls above.
+        let edge = if row < 0.0 { 1.0 + 2.0 * row } else { 1.0 - (row - 1.0).max(0.0) }.clamp(0.0, 1.0);
+        if edge <= 0.0 {
+            continue;
+        }
         let style = TextStyle { opacity: o * edge * (LYRIC_DIM + (1.0 - LYRIC_DIM) * lit), ..style };
         let line = engine.ellipsize(lyrics.text(i), &style, w);
-        v.push(text(line, style, cx, top + 18.0 + row * ROW));
+        let y = if row < 0.0 { row * ROW * 0.5 } else { row * ROW };
+        v.push(text(line, style, cx, top + 18.0 + y));
     }
     v
 }
@@ -3239,6 +3245,24 @@ pub fn brighten(c: [u8; 3]) -> [u8; 3] {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn card_lyrics_never_rise_over_the_controls() {
+        let mut engine = TextEngine::new();
+        let l = islet_core::lyrics::parse_lrc("[00:01.00]One\n[00:03.00]Two\n[00:05.00]Three\n[00:07.00]Four\n");
+        let pill = Rect::new(0.0, 0.0, 380.0, MEDIA_CONTENT_H + CARD_LYRICS_H);
+        // Every moment of a line change: nothing visible above the lyrics' rows.
+        for k in 0..200 {
+            let pos = 2.5 + f64::from(k) * 0.01;
+            for e in card_lyrics(pill, &l, pos, 1.0, &mut engine) {
+                if let Element::Text(t) = e {
+                    if t.style.opacity > 0.01 {
+                        assert!(t.baseline >= MEDIA_CONTENT_H as f32 + 8.0, "{} at {} (pos {pos})", t.text, t.baseline);
+                    }
+                }
+            }
+        }
+    }
+
     use super::*;
     use islet_core::activity::MediaCaps;
 
