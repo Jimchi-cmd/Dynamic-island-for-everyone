@@ -2,7 +2,7 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.4] - 2026-11-16
 
 ### Fixed
 - Phone: taps on the small pill open it reliably. A quick thumb tap that slid a little was taken for a sideways swipe and did nothing; now only a real swipe (about a third of an inch) counts as one, and the area just under the pill takes taps too. A light buzz confirms each tap.
