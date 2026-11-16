@@ -7468,4 +7468,101 @@ mod tests {
         }
         sheet.save_png(out).unwrap();
     }
+
+    /// Frames for the laptop promo video, drawn by the island's own code
+    /// with its real springs, 30 a second. Off unless ISLET_PROMO_DIR names
+    /// a folder to write them to (scripts/promo/make-videos.py runs it).
+    #[test]
+    fn promo_frames() {
+        use islet_core::weather::{Sky, Weather};
+        use tiny_skia::Pixmap;
+        let Some(dir) = std::env::var_os("ISLET_PROMO_DIR") else { return };
+        let dir = std::path::PathBuf::from(dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut engine = TextEngine::new();
+        let mut app = App::new(Demo::None, false);
+        app.set_prefs(lyrics_on());
+        app.set_time(LocalTime { hour: 10, minute: 8, second: 0, ..NOW }, 0.0);
+        let w =
+            Weather { place: "Home".into(), temp_c: 24.0, high_c: None, low_c: None, sky: Sky::Clear, is_day: true };
+        app.report(Report::Weather(Some(w)), 0.0);
+        app.report(Report::Laptop(laptop(84, false)), 0.0);
+        // A cover: a soft pink-to-violet gradient.
+        let side = 64usize;
+        let mut rgba = Vec::with_capacity(side * side * 4);
+        for y in 0..side {
+            for x in 0..side {
+                let f = (x + y) as f32 / (2 * side) as f32;
+                rgba.extend_from_slice(&[
+                    (224.0 - 133.0 * f) as u8,
+                    (68.0 - 26.0 * f) as u8,
+                    (106.0 + 108.0 * f) as u8,
+                    255,
+                ]);
+            }
+        }
+        let art = islet_core::activity::ArtImage {
+            width: side as u32,
+            height: side as u32,
+            rgba: Arc::new(rgba),
+            dominant: [224, 68, 106],
+        };
+        let tune = MediaInfo {
+            title: "Midnight Drive".into(),
+            artist: "The Example Band".into(),
+            art: Some(art),
+            duration: Some(215.0),
+            position: Some(40.0),
+            ..song(true)
+        };
+        let words = Arc::new(islet_core::lyrics::parse_lrc(
+            "[00:44.00]Headlights on the empty road\n[00:46.60]Every sign is glowing gold\n[00:49.20]Turn it up and let it go\n[00:51.80]We're nearly home\n[00:54.40]Nearly home\n",
+        ));
+        let scale = 2.5f32;
+        let (cw, ch) = ((WINDOW.0 * f64::from(scale)) as u32, (WINDOW.1 * f64::from(scale)) as u32);
+        let fps = 30.0;
+        let seconds = 15.0;
+        type Step = Box<dyn Fn(&mut App, f64)>;
+        let steps: Vec<(f64, Step)> = vec![
+            (1.0, Box::new(hover)),
+            (
+                3.4,
+                Box::new(|a, t| {
+                    a.handle(Event::PointerLeave, t);
+                }),
+            ),
+            (
+                4.4,
+                Box::new(move |a, t| {
+                    a.report(Report::Media(Some(MediaInfo { position_at: t, ..tune.clone() })), t);
+                    if let Some(k) = a.lyrics_wanted().map(|w| w.key()) {
+                        a.report(Report::Lyrics(k, Some(words.clone())), t);
+                    }
+                }),
+            ),
+            (7.0, Box::new(click)),
+            (
+                11.4,
+                Box::new(|a, t| {
+                    a.handle(Event::Key(Key::Escape), t);
+                }),
+            ),
+        ];
+        let mut next = 0;
+        for i in 0..(seconds * fps) as u32 {
+            let t = f64::from(i) / fps;
+            while next < steps.len() && steps[next].0 <= t {
+                (steps[next].1)(&mut app, t);
+                next += 1;
+            }
+            app.tick(t);
+            let mut cell = Pixmap::new(cw, ch).unwrap();
+            let frame = app.frame(t);
+            islet_render::draw(&mut cell, &frame, scale);
+            let els = app.elements(t, &mut engine);
+            let mask = islet_render::clip_mask(&frame, cw, ch, scale);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, scale, mask.as_ref());
+            cell.save_png(dir.join(format!("f{i:04}.png"))).unwrap();
+        }
+    }
 }

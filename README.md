@@ -7,7 +7,20 @@
 
 The island is a tiny native program with no web browser inside. It idles at **about 5 MB of RAM, 0 % CPU and zero wakeups**, starts in well under a second, and its installers are 3–5 MB, so it runs happily on a 4 GB laptop. CI enforces these numbers on every change ([perf.md](docs/perf.md)).
 
-> **Status:** v0.1.0 is being prepared. Everything below works and is tested on Linux. The Windows and macOS code builds and passes CI, but needs testing on real machines. See [what each OS supports](docs/roadmap.md).
+## Download (free)
+
+**[Get the latest version →](https://github.com/Jimchi-cmd/Dynamic-island-for-everyone/releases/latest)** Under **Assets**, pick the file for your device:
+
+| Your device | The file to download |
+|---|---|
+| Android phone (8 or later) | `Islet-…-android-debug.apk` · then follow [the phone guide](docs/phone.md#set-it-up) |
+| Windows 10/11 | `Islet_…_x64-setup.exe` |
+| Mac | `Islet_…_universal.dmg` |
+| Linux | `.deb`, `.rpm` or `.AppImage` |
+
+Islet is free and open source. [Islet Pro](docs/pro.md) is an optional one-time purchase for extras; everything free stays free.
+
+> **Status:** everything below is tested on Linux and Android. The Windows and macOS code builds and passes CI on every change. See [what each OS supports](docs/roadmap.md).
 
 ## What it does
 

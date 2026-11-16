@@ -385,6 +385,18 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         return text.measureText(shownText)
     }
 
+    /** The largest size (sp) up to `size`, down to `smallest`, at which `s` fits in `max` pixels. */
+    private fun fit(s: String, max: Float, size: Float, smallest: Float, bold: Boolean = false): Float {
+        text.typeface = typeface(bold)
+        var sp = size
+        while (sp > smallest) {
+            text.textSize = sp * dp
+            if (text.measureText(s) <= max) return sp
+            sp -= 2f
+        }
+        return smallest
+    }
+
     private fun icon(c: Canvas, i: Icon, cx: Float, cy: Float, sizeDp: Float, color: Int) =
         Icons.draw(c, i, cx, cy, sizeDp * dp, color)
 
@@ -1005,7 +1017,9 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val r = box.right - pad
         val t = box.top + pad
         val now = Isle.now()
-        write(c, timeText(now), l - 2 * dp, t + 50 * dp, 54f, white, bold = true, max = (r - l) * 0.7f)
+        // The big time shrinks to fit (a phone with AM/PM and a narrow card cut it to "10:08…").
+        val time = timeText(now)
+        write(c, time, l - 2 * dp, t + 50 * dp, fit(time, (r - l) * 0.68f, 54f, 30f, bold = true), white, bold = true)
         write(c, DateFormat.format("EEEE, d MMMM", now).toString(), l, t + 76 * dp, 15f, grey)
         Isle.weather?.let { w ->
             val p = Isle.prefs

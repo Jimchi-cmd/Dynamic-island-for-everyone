@@ -4,8 +4,12 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+- A download table at the top of the README, and promo videos made from the island's own drawing code (docs/promo.md, scripts/promo/make-videos.py).
+
 ### Fixed
 - Phone: the cover beside a new song shows straight away and is never the last song's. Covers and lyrics now have their own worker, so they no longer wait behind the weather, the calendar or a speed test, and a player's notification picture is only used when it's for the song playing.
+- Phone: the big time on the clock card shrinks to fit instead of being cut to "10:08…" on narrow phones that show AM/PM.
 - Phone: lyrics keep time better: each line shows 0.15 s early, as on the computer, and podcasts or audiobooks played faster keep their lines in step.
 
 ## [0.4.4] - 2026-11-16
