@@ -15,6 +15,7 @@ object IslandHost {
     private var window: IslandWindow? = null
     private var accessibility: AccessibilityService? = null
     private var listener: Context? = null
+    private var toldAboutTaps = false
 
     fun accessibilityUp(s: AccessibilityService) {
         accessibility = s
@@ -63,6 +64,12 @@ object IslandHost {
         w.attach()
         window = w
         IslandWindow.current = w
+        // As an ordinary overlay, most phones' status bars take taps on the
+        // island: say once how to fix it.
+        if (a == null && !toldAboutTaps) {
+            toldAboutTaps = true
+            Isle.pop(islet.island.Pop.Info("For taps, turn on Round the camera in Islet"))
+        }
         Isle.changed()
     }
 }

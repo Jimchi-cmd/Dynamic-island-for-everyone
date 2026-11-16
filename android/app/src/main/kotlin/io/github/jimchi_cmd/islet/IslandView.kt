@@ -83,6 +83,9 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         /** The rim's glow, outside in: (width in dp, colour). */
         /** How far (dp) a finger may move and still tap; how far it must move to swipe. */
         const val TAP_SLOP = 24f
+
+        /** Taps closer together than this (ms) count once. */
+        const val TAP_GAP = 220L
         const val SWIPE = 36f
 
         val GLOW = listOf(7f to 0x149f8cff, 4.5f to 0x2a9f8cff, 2.5f to 0x559f8cff, 1.3f to 0xffd6ccff.toInt())
@@ -1281,7 +1284,13 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     )
 
     /** A tap at (x, y) on screen: a button if there's one there (with some room round it), else the island itself. */
+    /** When the last tap was handled: a second one straight after is the same tap (a double tap would undo it). */
+    private var lastTap = -TAP_GAP
+
     private fun tapAt(x: Float, y: Float) {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastTap < TAP_GAP) return
+        lastTap = now
         performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
         val near = 8 * dp
         hits.lastOrNull { RectF(it.rect).apply { inset(-near, -near) }.contains(x, y) }?.let {
@@ -1304,6 +1313,9 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 }
                 Isle.island.dismissPop(now)
             }
+            // An open card stays open when tapped (only its buttons act):
+            // swipe up, tap outside or press back to close it.
+            is Scene.Expanded, Scene.Controls, Scene.Calendar -> Unit
             else -> Isle.island.tap(now)
         }
         Isle.changed()

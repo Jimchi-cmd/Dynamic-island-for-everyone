@@ -33,7 +33,7 @@ Optional permissions, each asked for with its own button:
 ### Use it
 
 - **Tap the empty island** for a strip, as the computer's island shows when hovered: the battery on the left of the camera, the time and memory use (or download speed, under Look) on the right. **Tap the strip** for the card: the time and date, Wi-Fi and Bluetooth (blue while on, with the network's and device's names), and round buttons for the quick launcher, notes, the speed test, the control centre, the calendar, a screenshot and lock. The calendar button shows the month; under it, your next class, meeting, deadline and alarm, then 1, 5, 10 and 25-minute timer buttons, focus rounds, alarms and the stopwatch.
-- **Tap** something going on (music, a call) to open it. Tap again, swipe up, or tap anywhere else to close it.
+- **Tap** something going on (music, a call) to open it. Swipe up, tap anywhere else, or press back to close it; tapping the open card itself leaves it open.
 - **Long-press** for the control centre.
 - **Swipe sideways** when two things are going on (a call and music, say) to switch which one leads. The second one sits in a small bubble beside the island; tap the bubble to open it.
 - Tap a notification pop-up to open it, or a screenshot pop-up to see the picture.

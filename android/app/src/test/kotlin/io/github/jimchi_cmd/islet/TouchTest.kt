@@ -27,6 +27,8 @@ class TouchTest {
         Isle.island.dismissPop(0)
         Isle.island.put(Live.Music("Song", "Band", "Player", true, 200_000, 0, SystemClock.elapsedRealtime()))
         val v = IslandWindow(ctx, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY).view
+        // As in the app: the view follows every change.
+        Isle.onChange = { v.update() }
         v.update()
         v.settle()
         return v
@@ -47,6 +49,24 @@ class TouchTest {
         touch(v, 100 * dp, 30 * dp, 114 * dp, 32 * dp, 60)
         val s = Isle.island.scene(Isle.now())
         assertTrue("opened: $s", s is Scene.Expanded)
+    }
+
+    @Test
+    fun quick_repeated_taps_open_the_card_and_leave_it_open() {
+        val v = view()
+        // Three quick taps (a thumb that taps again because nothing seemed to happen).
+        for (k in 0 until 3) {
+            touch(v, 100 * dp, 30 * dp, 102 * dp, 31 * dp, 40)
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(90))
+        }
+        assertTrue("open after quick taps: ${Isle.island.scene(Isle.now())}", Isle.island.scene(Isle.now()) is Scene.Expanded)
+        // A later tap on the open card keeps it open; a swipe up closes it.
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(600))
+        touch(v, 100 * dp, 60 * dp, 101 * dp, 60 * dp, 40)
+        assertTrue(Isle.island.isOpen)
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(600))
+        touch(v, 100 * dp, 120 * dp, 100 * dp, 40 * dp, 90)
+        assertEquals(false, Isle.island.isOpen)
     }
 
     @Test
