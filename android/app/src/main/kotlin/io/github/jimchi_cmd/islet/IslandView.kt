@@ -1323,6 +1323,15 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        getLocationOnScreen(at)
+        return touch(e, at[0], at[1])
+    }
+
+    /**
+     * A touch, from this view or from the window that catches touches for
+     * it (see IslandWindow): (ox, oy) is where the touched view is on screen.
+     */
+    fun touch(e: MotionEvent, ox: Int, oy: Int): Boolean {
         if (e.actionMasked == MotionEvent.ACTION_OUTSIDE) {
             if (Isle.island.isOpen) {
                 Isle.island.close(Isle.now())
@@ -1330,9 +1339,8 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             }
             return false
         }
-        getLocationOnScreen(at)
-        val x = e.x + at[0]
-        val y = e.y + at[1]
+        val x = e.x + ox
+        val y = e.y + oy
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 dragging = sliders.firstOrNull { it.rect.contains(x, y) }

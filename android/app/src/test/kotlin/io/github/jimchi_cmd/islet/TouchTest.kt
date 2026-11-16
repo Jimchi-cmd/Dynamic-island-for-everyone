@@ -91,6 +91,44 @@ class TouchTest {
     }
 
     @Test
+    fun over_the_status_bar_the_drawing_window_never_moves_and_taps_still_land() {
+        Isle.init(ctx)
+        Isle.island.all.forEach { Isle.island.remove(it.id) }
+        Isle.island.close(0)
+        Isle.island.dismissPop(0)
+        Isle.island.put(Live.Music("Song", "Band", "Player", true, 200_000, 0, SystemClock.elapsedRealtime()))
+        val w = IslandWindow(ctx, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
+        w.attach()
+        val v = w.view
+        Isle.onChange = { v.update() }
+        v.update()
+        v.settle()
+        v.draw(android.graphics.Canvas(android.graphics.Bitmap.createBitmap(10, 10, android.graphics.Bitmap.Config.ARGB_8888)))
+        val drawn = w.drawFrame()
+        val small = w.touchFrame()
+        // Open the card through the touch window, as a finger would.
+        val t = SystemClock.uptimeMillis()
+        val tv = w.touchView
+        val cx = small[2] / 2f
+        val cy = small[3] / 3f
+        tv.dispatchTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, cx, cy, 0))
+        tv.dispatchTouchEvent(MotionEvent.obtain(t, t + 50, MotionEvent.ACTION_UP, cx, cy, 0))
+        assertTrue("opened by the touch window", Isle.island.isOpen)
+        v.settle()
+        v.draw(android.graphics.Canvas(android.graphics.Bitmap.createBitmap(10, 10, android.graphics.Bitmap.Config.ARGB_8888)))
+        val big = w.touchFrame()
+        assertTrue("the touch window grew with the card: $small → $big", big[3] > small[3] && big[2] > small[2])
+        assertEquals("the drawing window didn't move", drawn.take(2), w.drawFrame().take(2))
+        Isle.island.close(Isle.now())
+        Isle.changed()
+        v.settle()
+        v.draw(android.graphics.Canvas(android.graphics.Bitmap.createBitmap(10, 10, android.graphics.Bitmap.Config.ARGB_8888)))
+        assertEquals("…nor when it shrank back", drawn.take(2), w.drawFrame().take(2))
+        w.detach()
+        Isle.onChange = null
+    }
+
+    @Test
     fun a_real_swipe_up_closes_and_is_not_a_tap() {
         val v = view()
         Isle.island.tap(Isle.now())

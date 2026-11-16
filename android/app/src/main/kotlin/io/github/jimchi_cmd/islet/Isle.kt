@@ -463,9 +463,19 @@ object Isle {
         changed()
     }
 
+    /**
+     * The cover at 160 px. Players often hand it over as a GPU-only
+     * ("hardware") bitmap, which can't be scaled or read directly: copy it
+     * to an ordinary one first, or the cover silently goes missing.
+     */
     private fun scaled(b: Bitmap): Bitmap? = try {
         val side = 160
-        if (b.width <= side && b.height <= side) b.copy(Bitmap.Config.ARGB_8888, false) else Bitmap.createScaledBitmap(b, side, side * b.height / maxOf(1, b.width), true)
+        val soft = if (Build.VERSION.SDK_INT >= 26 && b.config == Bitmap.Config.HARDWARE) b.copy(Bitmap.Config.ARGB_8888, false) else b
+        when {
+            soft == null -> null
+            soft.width <= side && soft.height <= side -> soft.copy(Bitmap.Config.ARGB_8888, false)
+            else -> Bitmap.createScaledBitmap(soft, side, side * soft.height / maxOf(1, soft.width), true)
+        }
     } catch (e: Exception) {
         null
     }

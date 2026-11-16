@@ -6,6 +6,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Fixed
 - Phone: tapping the island several times no longer undoes itself. Taps closer together than a fifth of a second count once, and tapping an open card no longer closes it (its buttons still work); swipe up, tap outside or press back to close it.
+- Phone: the island no longer twitches when it grows or shrinks. With the accessibility switch on, it now draws in a window that never moves, and an invisible window that follows the pill takes its taps (on many phones a moving window lands a frame late, which was the twitch).
+- Phone: taps on the upper part of the small pill, and just under it, reach it more reliably: the touch area is wider and reaches further below.
+- Phone: covers that players hand over as GPU-only images (common with Spotify) no longer go missing; that's why the cover sometimes didn't show after switching songs.
 - Phone: when the island runs without the accessibility switch (where the status bar takes its taps), it says once how to fix that.
 
 ## [0.4.5] - 2026-11-16
