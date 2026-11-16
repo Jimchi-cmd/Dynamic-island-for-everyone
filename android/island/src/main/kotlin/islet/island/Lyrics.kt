@@ -16,6 +16,12 @@ class Lyrics(val lines: List<Pair<Long, String>>) {
     }
 
     companion object {
+        /**
+         * Show each line this much early (ms), as the computer does: a line
+         * that appears exactly on its beat reads as late.
+         */
+        const val LEAD = 150L
+
         private val TAG = Regex("""\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?]""")
 
         fun parse(lrc: String): Lyrics? {

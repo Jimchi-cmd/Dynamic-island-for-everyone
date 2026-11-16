@@ -29,6 +29,7 @@ import islet.island.Format
 import islet.island.Geometry
 import islet.island.Live
 import islet.island.Lists
+import islet.island.Lyrics
 import islet.island.Pop
 import islet.island.Scene
 import islet.island.Spring
@@ -965,7 +966,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         bars(c, r, t + 16 * dp, 18f, accent, m.playing)
         val position = seekTo?.let { (it * m.duration).toLong() } ?: Isle.mediaPositionNow()
         var y = t + 56 * dp
-        val lyric = Isle.lyrics?.lineAt(position, Isle.prefs.lyricsOffset)
+        val lyric = Isle.lyrics?.lineAt(position + Lyrics.LEAD, Isle.prefs.lyricsOffset)
             ?: if (Isle.prefs.lyrics && Isle.lyricsMissing) "No synced lyrics for this song" else null
         lyric?.let {
             write(c, it, box.centerX(), y + 20 * dp, 13f, if (Isle.lyrics != null) accent else grey, bold = Isle.lyrics != null, max = r - l, align = Paint.Align.CENTER)

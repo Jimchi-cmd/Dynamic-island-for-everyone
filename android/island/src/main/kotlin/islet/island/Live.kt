@@ -72,12 +72,14 @@ sealed class Live {
         val duration: Long,
         val position: Long,
         val at: Long,
+        /** 1 at normal speed (podcasts and audiobooks can play faster). */
+        val speed: Float = 1f,
     ) : Live() {
         override val id get() = "music"
         override val priority get() = 50
 
         fun positionAt(elapsed: Long): Long {
-            val p = if (playing) position + (elapsed - at).coerceAtLeast(0) else position
+            val p = if (playing) position + ((elapsed - at).coerceAtLeast(0) * speed).toLong() else position
             return if (duration > 0) p.coerceIn(0, duration) else p.coerceAtLeast(0)
         }
     }

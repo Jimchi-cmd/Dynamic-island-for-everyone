@@ -152,6 +152,15 @@ class ExtrasTest {
     }
 
     @Test
+    fun the_song_position_runs_at_the_playback_speed() {
+        val normal = Live.Music("A", "B", "P", true, 100_000, 10_000, at = 1_000)
+        assertEquals(12_000, normal.positionAt(3_000))
+        val fast = normal.copy(speed = 1.5f)
+        assertEquals(13_000, fast.positionAt(3_000), "a podcast at 1.5×")
+        assertEquals(10_000, normal.copy(playing = false).positionAt(9_000), "paused: it stays put")
+    }
+
+    @Test
     fun rates_and_the_sleep_timer_steps() {
         assertEquals("0 KB/s", Format.rate(0.0))
         assertEquals("340 KB/s", Format.rate(340_000.0))

@@ -56,6 +56,15 @@ class NoteExtra(
 object Isle {
     private val main = Handler(Looper.getMainLooper())
     private val work = Executors.newSingleThreadExecutor()
+
+    /**
+     * Covers and lyrics get a worker of their own, so they never wait
+     * behind the weather, the calendar or a speed test.
+     */
+    private val mediaWork = Executors.newSingleThreadExecutor()
+
+    /** Runs cover and lyrics work (tests run it straight away). */
+    internal var onMediaWorker: (() -> Unit) -> Unit = { r -> mediaWork.execute(r) }
     lateinit var app: Context
         private set
     lateinit var prefs: Prefs
@@ -84,8 +93,14 @@ object Isle {
     /** The cover came from the song's details (not from its notification's picture). */
     private var artFromSong = false
 
-    /** Each player's media notification picture: the cover, for players that don't put it in the song's details. */
-    private val mediaPictures = HashMap<String, Bitmap>()
+    /**
+     * Each player's media notification picture, with the song it was for:
+     * the cover, for players that don't put it in the song's details.
+     */
+    private val mediaPictures = HashMap<String, Pair<String, Bitmap>>()
+
+    /** Counts cover lookups, so a slow one for an old song never replaces a newer one. */
+    private var artSeq = 0
 
     /** When the music was paused; it leaves the island [PAUSE_LINGER] later, as on the computer. */
     private var pausedSince: Long? = null
@@ -393,28 +408,47 @@ object Isle {
         } else if (pausedSince == null) {
             pausedSince = now()
         }
-        island.put(Live.Music(title, artist, appName(pkg), playing, duration, position, at))
+        val speed = state?.playbackSpeed?.takeIf { it > 0f } ?: 1f
+        island.put(Live.Music(title, artist, appName(pkg), playing, duration, position, at, speed))
         val song = "$title|$artist"
         // The cover: from the song's details if the player puts it there
-        // (some only add it a moment later), else its notification's picture.
+        // (some only add it a moment later), else its notification's picture
+        // (only if that picture is for this song, never the last one's).
         if (song != artFor || !artFromSong) {
             val bmp = meta?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
                 ?: meta?.getBitmap(MediaMetadata.METADATA_KEY_ART)
                 ?: meta?.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
-                ?: localArt(meta)
             val fresh = song != artFor
             artFor = song
+            val seq = ++artSeq
             when {
                 bmp != null -> {
+                    // Small enough to do straight away, so the new cover shows with the new song.
                     art = scaled(bmp)
+                    artColor = art?.let { colourOf(it) }
                     artFromSong = true
                 }
                 fresh || art == null -> {
-                    art = mediaPictures[pkg]
+                    art = mediaPictures[pkg]?.takeIf { it.first == title }?.second
+                    artColor = art?.let { colourOf(it) }
                     artFromSong = false
+                    // A cover the player keeps as a file: read it off the main thread.
+                    if (meta != null) {
+                        onMediaWorker {
+                            val local = localArt(meta)?.let { scaled(it) }
+                            val colour = local?.let { colourOf(it) }
+                            post {
+                                if (local != null && seq == artSeq && artFor == song) {
+                                    art = local
+                                    artColor = colour
+                                    artFromSong = true
+                                    changed()
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            artColor = art?.let { colourOf(it) }
         }
         if (prefs.lyrics && song != lyricsFor) {
             lyricsFor = song
@@ -444,7 +478,7 @@ object Isle {
     }
 
     private fun fetchLyrics(title: String, artist: String, duration: Long, song: String) {
-        background {
+        onMediaWorker {
             val found = Net.get(Lyrics.lrclibUrl(title, artist, duration))?.let { Lyrics.fromLrclib(it) }
             post {
                 if (lyricsFor == song) {
@@ -482,28 +516,35 @@ object Isle {
 
     /** A player's media notification: keep its picture (the cover) for players that don't share it otherwise. */
     private fun mediaPicture(sbn: StatusBarNotification) {
-        val d = try {
-            sbn.notification.getLargeIcon()?.loadDrawable(app)
-        } catch (e: Exception) {
-            null
-        } ?: return
-        val bmp = (d as? android.graphics.drawable.BitmapDrawable)?.bitmap ?: try {
-            Bitmap.createBitmap(160, 160, Bitmap.Config.ARGB_8888).also { b ->
-                val cv = android.graphics.Canvas(b)
-                d.setBounds(0, 0, 160, 160)
-                d.draw(cv)
+        val icon = sbn.notification.getLargeIcon() ?: return
+        val pkg = sbn.packageName
+        val title = sbn.notification.extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+        // Loading another app's picture can be slow: off the main thread.
+        onMediaWorker {
+            val small = try {
+                val d = icon.loadDrawable(app)
+                val bmp = (d as? android.graphics.drawable.BitmapDrawable)?.bitmap ?: d?.let {
+                    Bitmap.createBitmap(160, 160, Bitmap.Config.ARGB_8888).also { b ->
+                        it.setBounds(0, 0, 160, 160)
+                        it.draw(android.graphics.Canvas(b))
+                    }
+                }
+                bmp?.let { scaled(it) }
+            } catch (e: Exception) {
+                null
+            } ?: return@onMediaWorker
+            val colour = colourOf(small)
+            post {
+                mediaPictures[pkg] = title to small
+                if (mediaPictures.size > 6) mediaPictures.remove(mediaPictures.keys.first { it != pkg })
+                // The playing song has no cover of its own and this picture is for it: use it.
+                val m = island.get("music") as? Live.Music
+                if (controller?.packageName == pkg && !artFromSong && m != null && m.title == title) {
+                    art = small
+                    artColor = colour
+                    changed()
+                }
             }
-        } catch (e: Exception) {
-            null
-        } ?: return
-        val small = scaled(bmp) ?: return
-        mediaPictures[sbn.packageName] = small
-        if (mediaPictures.size > 6) mediaPictures.remove(mediaPictures.keys.first { it != sbn.packageName })
-        // The playing song has no cover of its own: use this one.
-        if (controller?.packageName == sbn.packageName && !artFromSong) {
-            art = small
-            artColor = colourOf(small)
-            changed()
         }
     }
 
