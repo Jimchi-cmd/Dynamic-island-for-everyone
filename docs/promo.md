@@ -20,6 +20,26 @@ The first two draw the island's frames (the phone's and the laptop's); the last 
 
 The videos are silent on purpose. Add a sound when you post, from TikTok's, Instagram's or YouTube's own library: those are licensed for use on that app, and trending sounds help a video get shown.
 
+## "Islet in real life" (with music)
+
+Five more vertical videos, 25–26 s each, with an original soundtrack and smooth camera moves: Islet in a meeting, in class, on the way, at the gym and at your desk, then an Islet Pro card with its extras and the GitHub link.
+
+```bash
+python3 scripts/promo/make-life-videos.py --out promo-videos
+```
+
+The music is made from scratch by `scripts/promo/music.py` (a kick, claps, hi-hats, bass, chords and a melody, all synthesised), so it's yours to post anywhere; each video gets its own key and tempo, with a riser that lands on the Pro card.
+
+**Before posting the Pro ending:** make sure people can buy Pro (the store is set up and the Buy button works); until then, post the ten earlier videos.
+
+## The full install guide (YouTube)
+
+`scripts/promo/make-tutorial.py` makes a 3-minute, 1920×1080 guide in chapters: the phone (download, allowing the install, notification access, the accessibility switch and the "restricted settings" fix), Windows (SmartScreen), Mac (Open Anyway), Linux, and pairing the phone with the computer. Each step shows the screen with the exact button highlighted and a finger that taps it. It also writes the chapter list to paste into the YouTube description.
+
+```bash
+python3 scripts/promo/make-tutorial.py --out promo-videos --laptop-frames build/promo-laptop-desk
+```
+
 ## Posting
 
 - **Post one a day** rather than all at once, and pin the best one to your profile.

@@ -159,8 +159,8 @@ def laptop_base(reel):
     sw, sh = lx1 - lx0 - 36, ly1 - ly0 - 44
     screen = wallpaper((sw, sh), c1, c2, 11)
     d = ImageDraw.Draw(screen)
+    # A plain menu bar (the island shows the time).
     d.rectangle([0, 0, sw, 40], fill=(0, 0, 0, 90))
-    d.text((24, 20), "10:08", font=font(24, "SemiBold"), fill="white", anchor="lm")
     # Two soft windows on the desktop.
     d.rounded_rectangle([60, 210, sw * 0.62, sh - 60], 18, fill=(255, 255, 255, 40))
     d.rounded_rectangle([sw * 0.55, 260, sw - 60, sh - 110], 18, fill=(255, 255, 255, 55))

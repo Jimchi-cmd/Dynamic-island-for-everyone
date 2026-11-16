@@ -7521,33 +7521,99 @@ mod tests {
         let scale = 2.5f32;
         let (cw, ch) = ((WINDOW.0 * f64::from(scale)) as u32, (WINDOW.1 * f64::from(scale)) as u32);
         let fps = 30.0;
-        let seconds = 15.0;
         type Step = Box<dyn Fn(&mut App, f64)>;
-        let steps: Vec<(f64, Step)> = vec![
-            (1.0, Box::new(hover)),
-            (
-                3.4,
-                Box::new(|a, t| {
-                    a.handle(Event::PointerLeave, t);
-                }),
+        let escape = |a: &mut App, t: f64| {
+            a.handle(Event::Key(Key::Escape), t);
+        };
+        let play = move |a: &mut App, t: f64| {
+            a.report(Report::Media(Some(MediaInfo { position_at: t, ..tune.clone() })), t);
+            if let Some(k) = a.lyrics_wanted().map(|w| w.key()) {
+                a.report(Report::Lyrics(k, Some(words.clone())), t);
+            }
+        };
+        // Which video: the music tour (default), a meeting, or a day at the desk.
+        let reel = std::env::var("ISLET_PROMO_REEL").unwrap_or_default();
+        let (seconds, steps): (f64, Vec<(f64, Step)>) = match reel.as_str() {
+            "meeting" => {
+                // 09:55, with the standup at 10:00 and a video-call link.
+                app.set_time(LocalTime { hour: 9, minute: 55, second: 0, ..NOW }, 0.0);
+                // 09:55 UTC on the wall clock too, so the card's times match.
+                let wall0 = 1_799_971_200.0 + 9.0 * 3600.0 + 55.0 * 60.0;
+                app.set_wall(wall0, 0, 0.0);
+                let standup = islet_core::calendar::CalEvent {
+                    summary: "Team standup".into(),
+                    start: wall0 as i64 + 300,
+                    end: wall0 as i64 + 1200,
+                    all_day: false,
+                    location: Some("Video call".into()),
+                    link: Some("https://meet.google.com/abc-defg-hij".into()),
+                };
+                app.report(Report::Calendar(Some(vec![standup])), 0.0);
+                let call = |a: &mut App, t: f64| {
+                    a.report(Report::Calendar(Some(vec![])), t);
+                    a.report(
+                        Report::Privacy(islet_core::activity::Privacy {
+                            camera: Some(vec!["Meet".into()]),
+                            mic: Some(vec!["Meet".into()]),
+                        }),
+                        t,
+                    );
+                };
+                let mute = |a: &mut App, t: f64| {
+                    let r = content::call_mute_button(a.card_rect(t));
+                    press(a, r, t);
+                    a.report(Report::MicMuted(true), t);
+                };
+                (
+                    17.0,
+                    vec![
+                        (2.4, Box::new(click) as Step),
+                        (6.0, Box::new(escape)),
+                        (6.8, Box::new(call)),
+                        (11.0, Box::new(click)),
+                        (13.2, Box::new(mute)),
+                        (15.6, Box::new(escape)),
+                    ],
+                )
+            }
+            "desk" => {
+                app.report(Report::System(Some(stats(0.18))), 0.0);
+                let buds_in = |a: &mut App, t: f64| {
+                    a.report(Report::DeviceConnected(buds()), t);
+                };
+                (
+                    17.0,
+                    vec![
+                        (0.8, Box::new(hover) as Step),
+                        (
+                            3.2,
+                            Box::new(|a: &mut App, t: f64| {
+                                a.handle(Event::PointerLeave, t);
+                            }),
+                        ),
+                        (4.0, Box::new(buds_in)),
+                        (7.0, Box::new(play)),
+                        (10.4, Box::new(click)),
+                        (14.6, Box::new(escape)),
+                    ],
+                )
+            }
+            _ => (
+                15.0,
+                vec![
+                    (1.0, Box::new(hover) as Step),
+                    (
+                        3.4,
+                        Box::new(|a: &mut App, t: f64| {
+                            a.handle(Event::PointerLeave, t);
+                        }),
+                    ),
+                    (4.4, Box::new(play)),
+                    (7.0, Box::new(click)),
+                    (11.4, Box::new(escape)),
+                ],
             ),
-            (
-                4.4,
-                Box::new(move |a, t| {
-                    a.report(Report::Media(Some(MediaInfo { position_at: t, ..tune.clone() })), t);
-                    if let Some(k) = a.lyrics_wanted().map(|w| w.key()) {
-                        a.report(Report::Lyrics(k, Some(words.clone())), t);
-                    }
-                }),
-            ),
-            (7.0, Box::new(click)),
-            (
-                11.4,
-                Box::new(|a, t| {
-                    a.handle(Event::Key(Key::Escape), t);
-                }),
-            ),
-        ];
+        };
         let mut next = 0;
         for i in 0..(seconds * fps) as u32 {
             let t = f64::from(i) / fps;

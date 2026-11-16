@@ -205,11 +205,80 @@ class PromoFrames {
         )),
     )
 
+    /** "Islet in real life": a class, a commute, the gym. */
+    private fun life(): List<Reel> = listOf(
+        Reel("life-class", 16.0, listOf(
+            0.3 to {
+                val m = Timetable.minuteOfDay(now())
+                Isle.prefs.timetable = Timetable().add(Timetable.weekday(now()), m + 6, m + 56, "Maths", "B12").getOrThrow()
+                Isle.changed()
+            },
+            2.6 to { Isle.island.open(Isle.island.all.first().id) },
+            5.4 to { Isle.island.close(now()) },
+            6.0 to { Isle.dnd = true; Isle.island.pop(Pop.DoNotDisturb(true), now()) },
+            8.2 to {
+                Isle.deadlines = listOf(CalendarEvent(2, "Biology essay due", now() + 3 * 86_400_000L, now() + 3 * 86_400_000L + 3_600_000, false))
+                Isle.events = listOf(CalendarEvent(1, "Study group", now() + 5 * 3_600_000L, now() + 6 * 3_600_000L, false))
+                Isle.island.showCalendar()
+            },
+            11.6 to {
+                Isle.island.close(now())
+                Isle.prefs.timetable = Timetable()
+                Isle.prefs.streak = Streak(Streak.dayOf(now()) - 1, 6, 6, 31, 1)
+                Isle.startPomodoro()
+            },
+            13.2 to { Isle.island.open("timer") },
+        )),
+        Reel("life-commute", 16.0, listOf(
+            0.5 to { Isle.island.put(Live.Navigation("note:n", "200 m", "Turn left onto Market Street", "Maps")) },
+            2.4 to { Isle.island.open("note:n") },
+            5.0 to { Isle.island.close(now()) },
+            5.6 to { song() },
+            7.6 to {
+                Isle.extras["c"] = NoteExtra("com.phone", pi, listOf("Decline" to pi, "Answer" to pi), null)
+                Isle.island.put(Live.Call("note:c", "Alex", "Phone", true, 0))
+                Isle.island.open("note:c")
+            },
+            10.6 to {
+                Isle.island.put(Live.Call("note:c", "Alex", "Phone", false, now()))
+                Isle.island.close(now())
+            },
+            13.2 to { Isle.island.cycle() },
+        )),
+        Reel("life-gym", 16.0, listOf(
+            0.5 to {
+                Isle.island.put(music("Run It Up", "The Example Band", 61_000))
+                Isle.art = cover(0xff22c55e.toInt(), 0xff0ea5e9.toInt())
+                Isle.artColor = 0x22c55e
+            },
+            2.0 to { Isle.island.pop(Pop.Bluetooth("Buds Pro", true), now()) },
+            4.2 to {
+                Isle.prefs.lyrics = true
+                Isle.lyrics = Lyrics.parse(
+                    "[01:04.00]One more rep, don't stop now\n[01:06.40]Feel the beat, we're breaking out\n" +
+                        "[01:08.80]Push it up, push it loud\n[01:11.20]Run it up",
+                )
+                Isle.island.open("music")
+            },
+            7.4 to { Isle.island.close(now()) },
+            8.0 to {
+                Isle.stopwatch.reset()
+                Isle.stopwatch.start(now())
+                Isle.syncTimers()
+                Isle.island.open("stopwatch")
+            },
+            9.6 to { Isle.stopwatch.lap(now()); Isle.syncTimers() },
+            11.0 to { Isle.stopwatch.lap(now()); Isle.syncTimers() },
+            12.2 to { Isle.stopwatch.pause(now()); Isle.syncTimers(); Isle.island.close(now()) },
+            12.8 to { Isle.startFocus(0.04, "Rest") },
+        )),
+    )
+
     @Test
     fun render() {
         assumeTrue("set ISLET_PROMO to draw the promo frames", System.getenv("ISLET_PROMO") != null)
         val only = System.getenv("ISLET_PROMO").takeIf { it.length > 1 }
-        for (reel in reels().filter { only == null || it.name.startsWith(only) }) draw(reel)
+        for (reel in (reels() + life()).filter { only == null || it.name.startsWith(only) }) draw(reel)
     }
 
     private fun draw(reel: Reel) {
