@@ -2,7 +2,7 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.5] - 2026-11-16
 
 ### Added
 - A download table at the top of the README, and promo videos made from the island's own drawing code (docs/promo.md, scripts/promo/make-videos.py).
