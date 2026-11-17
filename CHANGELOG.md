@@ -2,7 +2,7 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.6] - 2026-11-17
 
 ### Fixed
 - Phone: tapping the island several times no longer undoes itself. Taps closer together than a fifth of a second count once, and tapping an open card no longer closes it (its buttons still work); swipe up, tap outside or press back to close it.
