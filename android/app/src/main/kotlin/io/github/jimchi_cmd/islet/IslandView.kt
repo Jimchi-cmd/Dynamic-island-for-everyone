@@ -54,8 +54,21 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     private var shown: Scene = Scene.Hidden
     private var from: Box? = null
     private var to: Box? = null
-    private val morph = Spring(1.0)
-    private val fade = Spring(1.0, stiffness = 1800.0, damping = 1.0)
+    // Nearly critically damped: it settles without a visible bounce back.
+    private val morph = Spring(1.0, damping = 0.9)
+    /**
+     * What was shown before the last change, and when the change began: the
+     * old and the new contents cross-fade (no blink in the middle), and so
+     * do the rim, the album border and the bubble.
+     */
+    private var prev: Scene? = null
+    private var crossAt = 0L
+
+    private fun crossP(now: Long = SystemClock.uptimeMillis()): Float {
+        if (prev == null) return 1f
+        val x = ((now - crossAt) / CROSS_MS.toFloat()).coerceIn(0f, 1f)
+        return x * x * x * (x * (x * 6 - 15) + 10)
+    }
     private var lastFrame = 0L
 
     /** Buttons drawn this frame, in view pixels. */
@@ -86,6 +99,9 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
 
         /** Taps closer together than this (ms) count once. */
         const val TAP_GAP = 220L
+
+        /** How long the old and new contents cross-fade (ms). */
+        const val CROSS_MS = 260L
         const val SWIPE = 36f
 
         val GLOW = listOf(7f to 0x149f8cff, 4.5f to 0x2a9f8cff, 2.5f to 0x559f8cff, 1.3f to 0xffd6ccff.toInt())
@@ -143,7 +159,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val sameBox = next == Scene.Hidden || scene == Scene.Hidden || to == null || geometry.box(next) == to
         if (sameShape(next, scene) && sameBox) {
             scene = next
-            if (fade.target == 1.0 && fade.settled) shown = next
+            shown = next
             invalidate()
             tickLater()
             return
@@ -155,8 +171,9 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         morph.snap(0.0)
         morph.target = 1.0
         if (reducedMotion()) morph.snap(1.0)
-        fade.snap(1.0)
-        fade.target = 0.0
+        prev = shown
+        shown = next
+        crossAt = SystemClock.uptimeMillis()
         lastFrame = 0
         window.place((boxFor(next) ?: current).union(current))
         announce(next)
@@ -166,7 +183,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     /** Jump to the end of any change (tests, and drawing for a preview). */
     fun settle() {
         morph.snap(1.0)
-        fade.snap(1.0)
+        prev = null
         shown = scene
         lastFrame = 0
     }
@@ -262,16 +279,10 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val now = SystemClock.uptimeMillis()
         val dt = if (lastFrame == 0L) 1.0 / 60 else (now - lastFrame) / 1000.0
         lastFrame = now
-        val moving = !morph.settled || !fade.settled
         if (!morph.settled) morph.step(dt)
-        if (!fade.settled) {
-            fade.step(dt)
-            // Half way out, swap to the new content and fade it in.
-            if (fade.target == 0.0 && fade.value < 0.15) {
-                shown = scene
-                fade.target = 1.0
-            }
-        }
+        val p = crossP(now)
+        if (p >= 1f) prev = null
+        val moving = !morph.settled || prev != null
         if (moving) {
             postInvalidateOnAnimation()
         } else {
@@ -307,37 +318,66 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             fill.color = Color.BLACK
             c.drawRoundRect(rect, radius, radius, fill)
         }
-        if (Isle.prefs.ring && borderFor(shown) == null && scene != Scene.Hidden) {
-            // The glow as a few soft strokes: a blurred shadow costs far more every frame.
-            rect.set(l + 0.75f * dp, t + 0.75f * dp, r - 0.75f * dp, b - 0.75f * dp)
-            for ((width, colour) in GLOW) {
-                line.color = colour
-                line.strokeWidth = width * dp
-                c.drawRoundRect(rect, radius, radius, line)
+        // The edge: the soft rim, or the border in the album's colour, blended
+        // between the old and the new scene.
+        val old = prev
+        val hidden = scene == Scene.Hidden
+        fun edge(sc: Scene, weight: Float) {
+            if (weight <= 0.01f) return
+            val border = borderFor(sc)
+            if (border == null && Isle.prefs.ring && !hidden) {
+                // The glow as a few soft strokes: a blurred shadow costs far more every frame.
+                rect.set(l + 0.75f * dp, t + 0.75f * dp, r - 0.75f * dp, b - 0.75f * dp)
+                for ((width, colour) in GLOW) {
+                    line.color = withAlpha(colour, weight)
+                    line.strokeWidth = width * dp
+                    c.drawRoundRect(rect, radius, radius, line)
+                }
+            }
+            if (border != null) {
+                line.color = withAlpha(border, weight)
+                line.strokeWidth = 2f * dp
+                rect.set(l + dp, t + dp, r - dp, b - dp)
+                c.drawRoundRect(rect, radius - dp, radius - dp, line)
             }
         }
-        borderFor(shown)?.let { colour ->
-            line.color = colour
-            line.strokeWidth = 2f * dp
-            rect.set(l + dp, t + dp, r - dp, b - dp)
-            c.drawRoundRect(rect, radius - dp, radius - dp, line)
+        if (old != null) edge(old, 1f - p)
+        edge(shown, p)
+        // The second activity's bubble fades in and out instead of popping.
+        fun bubble(sc: Scene?, weight: Float) {
+            if (sc !is Scene.Compact || sc.second == null || weight <= 0.01f) return
+            c.saveLayerAlpha(null, (weight * 255).toInt())
+            drawBubble(c, sc.second!!, geometry.bubble(box))
+            c.restore()
         }
-        val s = shown
-        if (s is Scene.Compact && s.second != null && morph.settled) drawBubble(c, s.second!!, geometry.bubble(box))
-        // The content, clipped to the pill.
+        val grown = morph.value.toFloat().coerceIn(0f, 1f)
+        bubble(old, (1f - p) * (1f - grown))
+        bubble(shown, p * grown)
+        // The contents, clipped to the pill, cross-fading.
         clip.reset()
         rect.set(l, t, r, b)
         clip.addRoundRect(rect, radius, radius, Path.Direction.CW)
         c.save()
         c.clipPath(clip)
-        val alpha = (fade.value.coerceIn(0.0, 1.0) * 255).toInt()
+        val area = RectF(l, t, r, b)
+        if (old != null && p < 1f) {
+            c.saveLayerAlpha(rect, ((1f - p) * 255).toInt())
+            drawScene(c, old, area)
+            c.restore()
+            // Only the new scene's buttons take taps.
+            hits.clear()
+            sliders.clear()
+        }
         // An offscreen layer only while fading: drawing straight is much cheaper.
-        if (alpha < 255) c.saveLayerAlpha(rect, alpha) else c.save()
-        if (morph.value > 0.2 || morph.settled) drawScene(c, s, RectF(l, t, r, b))
+        if (p < 1f) c.saveLayerAlpha(rect, (p * 255).toInt()) else c.save()
+        drawScene(c, shown, area)
         c.restore()
         c.restore()
         c.restore()
     }
+
+    private fun withAlpha(colour: Int, weight: Float): Int =
+        (colour and 0x00ffffff) or (((colour ushr 24) * weight.coerceIn(0f, 1f)).toInt() shl 24)
 
     private fun borderFor(s: Scene): Int? {
         if (!Isle.prefs.albumBorder) return null

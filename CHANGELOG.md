@@ -2,6 +2,11 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Phone: the island changes shape without a twitch. Its old and new contents now cross-fade (they used to fade out to nothing and back, a blink half way), the rim and the album border blend instead of switching, the second activity's bubble fades instead of popping, and the shape settles without bouncing back. A frame-by-frame test checks that it shrinks steadily, stays centred and never goes blank.
+
 ## [0.4.6] - 2026-11-17
 
 ### Fixed
