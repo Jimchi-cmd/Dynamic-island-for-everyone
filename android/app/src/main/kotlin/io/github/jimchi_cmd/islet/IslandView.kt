@@ -360,8 +360,9 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         c.save()
         c.clipPath(clip)
         val area = RectF(l, t, r, b)
+        // (The layers use `area`: drawing a scene reuses `rect` for its own shapes.)
         if (old != null && p < 1f) {
-            c.saveLayerAlpha(rect, ((1f - p) * 255).toInt())
+            c.saveLayerAlpha(area, ((1f - p) * 255).toInt())
             drawScene(c, old, area)
             c.restore()
             // Only the new scene's buttons take taps.
@@ -369,7 +370,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             sliders.clear()
         }
         // An offscreen layer only while fading: drawing straight is much cheaper.
-        if (p < 1f) c.saveLayerAlpha(rect, (p * 255).toInt()) else c.save()
+        if (p < 1f) c.saveLayerAlpha(area, (p * 255).toInt()) else c.save()
         drawScene(c, shown, area)
         c.restore()
         c.restore()

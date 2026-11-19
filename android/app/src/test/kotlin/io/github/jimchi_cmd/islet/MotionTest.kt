@@ -26,11 +26,15 @@ import java.time.Duration
 class MotionTest {
     private val ctx = RuntimeEnvironment.getApplication()
 
+    private companion object {
+        val BACKGROUND = Color.rgb(200, 200, 200)
+    }
+
     /** One drawn frame: the island's left and right edges (px) and how much of it is lit. */
     private data class Shot(val left: Int, val right: Int, val lit: Int)
 
     private fun shoot(v: IslandView, bmp: Bitmap): Shot {
-        bmp.eraseColor(Color.rgb(200, 200, 200))
+        bmp.eraseColor(BACKGROUND)
         v.draw(Canvas(bmp))
         var l = bmp.width
         var r = -1
@@ -47,7 +51,7 @@ class MotionTest {
                 }
                 // How bright the contents are (text, cover, bars) on the island's black:
                 // a cross-fade keeps the total up; a blink drops it to nothing.
-                if (y < bmp.height / 2 && Color.red(c) < 200) lit += maxOf(0, (Color.red(c) + Color.green(c) + Color.blue(c)) / 3 - 40)
+                if (y < bmp.height / 2 && c != BACKGROUND) lit += maxOf(0, (Color.red(c) + Color.green(c) + Color.blue(c)) / 3 - 40)
             }
         }
         return Shot(l, r, lit)
