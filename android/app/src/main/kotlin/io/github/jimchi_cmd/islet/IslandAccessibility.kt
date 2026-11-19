@@ -32,5 +32,17 @@ class IslandAccessibility : AccessibilityService() {
 
     companion object {
         @Volatile var instance: IslandAccessibility? = null
+
+        /**
+         * Whether Islet island is switched on in the phone's settings. It can be
+         * on and still not running: some phones stop accessibility services of
+         * apps from outside the Play Store, and turning it off and on again
+         * starts it.
+         */
+        fun switchedOn(c: android.content.Context): Boolean {
+            val on = android.provider.Settings.Secure.getString(c.contentResolver, android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
+            val me = android.content.ComponentName(c, IslandAccessibility::class.java)
+            return on.split(':').any { android.content.ComponentName.unflattenFromString(it) == me }
+        }
     }
 }

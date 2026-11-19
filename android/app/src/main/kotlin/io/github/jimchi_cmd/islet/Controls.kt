@@ -78,15 +78,28 @@ object Controls {
     val canScreenshot get() = Build.VERSION.SDK_INT >= 28 && IslandAccessibility.instance != null
 
     private fun global(action: Int) {
+        if (Build.VERSION.SDK_INT < 28) {
+            Isle.pop(Pop.Info("Needs Android 9 or later"))
+            return
+        }
         val a = IslandAccessibility.instance
-        if (a == null || Build.VERSION.SDK_INT < 28) {
-            Isle.pop(Pop.Info("Needs Islet's accessibility switch"))
+        if (a == null) {
+            // Android lets only an accessibility service press these. Say so, and go
+            // straight to the switch (it may be on but stopped by the phone: off and on fixes it).
+            Isle.pop(Pop.Info(if (IslandAccessibility.switchedOn(app)) "Turn Islet island off and on again" else "Turn on Islet island to use this"))
+            Isle.island.close(Isle.now())
+            Isle.changed()
+            Isle.start(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             return
         }
         Isle.island.close(Isle.now())
         Isle.changed()
         // Let the island shrink out of the picture first.
-        Isle.app.mainLooper.let { android.os.Handler(it).postDelayed({ a.performGlobalAction(action) }, 450) }
+        Isle.app.mainLooper.let {
+            android.os.Handler(it).postDelayed({
+                if (!a.performGlobalAction(action)) Isle.pop(Pop.Info("Your phone didn't allow that"))
+            }, 450)
+        }
     }
 
     /** 0..1 */

@@ -19,6 +19,8 @@ Install the app first (see [Install the app](#install-the-app)); Android 8 or la
 2. **Round the camera (recommended)** → **Open Accessibility** → **Islet island** → turn it on. This lets the island sit over the status bar, round the front camera, and gives the control centre its screenshot and lock buttons. Islet asks for no accessibility events and reads nothing on your screen.
    - **Or**, if you'd rather not use accessibility: **Display over other apps** → **Allow**. The island then shows just below the status bar.
 
+If **Set up** says the switch is "stopped by your phone", it's on but Android isn't running it: turn **Islet island** off and on again, and set Islet's battery use to **Unrestricted** (Settings → Apps → Islet → Battery) so the phone doesn't stop it again. Without it running, the lock and screenshot buttons can't work and the status bar takes taps on the top of the island.
+
 On Android 13 and later, a switch may be greyed out because the app wasn't installed from a store. Open the phone's **Settings → Apps → Islet**, tap **⋮** at the top right, choose **Allow restricted settings**, and try again.
 
 Optional permissions, each asked for with its own button:

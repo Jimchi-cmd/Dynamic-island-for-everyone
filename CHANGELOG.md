@@ -5,6 +5,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ## [Unreleased]
 
 ### Fixed
+- Phone: the lock and screenshot buttons explain themselves when they can't work. Android lets only an accessibility service press them; if Islet island is off, or on but stopped by the phone (some phones stop apps from outside the Play Store), the button says so and opens Accessibility settings. Set up and the home page now show when the switch is on but not running, with the fix (off and on again, and battery use set to Unrestricted).
 - Phone: the island changes shape without a twitch. Its old and new contents now cross-fade (they used to fade out to nothing and back, a blink half way), the rim and the album border blend instead of switching, the second activity's bubble fades instead of popping, and the shape settles without bouncing back. A frame-by-frame test checks that it shrinks steadily, stays centred and never goes blank.
 
 ## [0.4.6] - 2026-11-17

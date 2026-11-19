@@ -268,6 +268,7 @@ class MainActivity : AppCompatActivity() {
         return when {
             !prefs.islandOn -> "The island is off" to t.muted
             IslandHost.overAccessibility -> "Showing round the camera" to t.ok
+            IslandAccessibility.switchedOn(this) -> "Your phone stopped the accessibility switch: open Set up to fix it" to t.warn
             IslandHost.hosted -> "Showing round the camera. For taps on the small pill, turn on the accessibility switch." to t.warn
             !hasAccess() -> "Not set up yet" to t.warn
             else -> "One more step" to t.warn
@@ -330,14 +331,25 @@ class MainActivity : AppCompatActivity() {
         val overlay = Settings.canDrawOverlays(this)
         val steps = kit.card(col, "Two steps", top = 14)
         steps.add(kit.row("Notification access", "For notifications, music, calls, directions and downloads.", kit.status(access), if (access) null else kit.button("Allow", primary = true) { askForAccess() }))
+        // On in the settings but not running: the phone stopped it.
+        val stopped = !accessibility && IslandAccessibility.switchedOn(this)
         steps.add(
             kit.row(
-                "Round the camera",
-                "Settings → Accessibility → Islet island. Puts the island over the status bar, round the front camera, where taps reach it. Islet reads nothing on your screen.",
+                if (stopped) "Round the camera: stopped by your phone" else "Round the camera",
+                if (stopped) {
+                    "It's switched on, but Android isn't running it, so taps on the top of the island, the lock and screenshot buttons and the smoothest motion don't work. Turn Islet island off and on again, and set Islet's battery use to Unrestricted so the phone doesn't stop it again."
+                } else {
+                    "Settings → Accessibility → Islet island. Puts the island over the status bar, round the front camera, where taps reach it, and makes the lock and screenshot buttons work. Islet reads nothing on your screen."
+                },
                 kit.status(accessibility),
                 if (accessibility) null else kit.button("Open", primary = true) { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
             ),
         )
+        if (stopped) {
+            steps.add(kit.row("Battery use", "Settings → Apps → Islet → Battery → Unrestricted.", right = kit.button("Open") {
+                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+            }))
+        }
         if (!accessibility) {
             steps.add(
                 kit.row(
