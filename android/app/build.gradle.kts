@@ -11,8 +11,8 @@ android {
         applicationId = "io.github.jimchi_cmd.islet"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "0.4.6"
+        versionCode = 11
+        versionName = "0.4.7"
     }
 
     compileOptions {

@@ -2,7 +2,7 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.7] - 2026-11-19
 
 ### Fixed
 - Phone: the lock and screenshot buttons explain themselves when they can't work. Android lets only an accessibility service press them; if Islet island is off, or on but stopped by the phone (some phones stop apps from outside the Play Store), the button says so and opens Accessibility settings. Set up and the home page now show when the switch is on but not running, with the fix (off and on again, and battery use set to Unrestricted).
