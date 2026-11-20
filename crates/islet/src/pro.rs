@@ -1,9 +1,10 @@
 //! Islet Pro on this computer: activating a key, the weekly check, and
 //! whether Pro is on (see `islet_core::pro` for the rules).
 //!
-//! The store's ids are set when a release is built (`ISLET_POLAR_ORG`, or
-//! `ISLET_LEMON_STORE` and `ISLET_LEMON_PRODUCT`; `ISLET_BUY_URL` is the
-//! checkout page). Builds without them say Pro isn't on sale.
+//! The store's ids are set when a release is built (`ISLET_GUMROAD_PRODUCT`,
+//! `ISLET_POLAR_ORG`, or `ISLET_LEMON_STORE` and `ISLET_LEMON_PRODUCT`;
+//! `ISLET_BUY_URL` is the checkout page). Builds without them say Pro isn't
+//! on sale.
 
 use crate::{config, net, secrets};
 use islet_core::pro::{self, ProState, Store, Verdict};
@@ -12,6 +13,7 @@ pub const BUY_URL: Option<&str> = option_env!("ISLET_BUY_URL");
 
 pub fn store() -> Option<Store> {
     Store::from_config(
+        option_env!("ISLET_GUMROAD_PRODUCT"),
         option_env!("ISLET_POLAR_ORG"),
         option_env!("ISLET_LEMON_STORE"),
         option_env!("ISLET_LEMON_PRODUCT"),
@@ -87,8 +89,11 @@ pub fn deactivate() -> Result<String, String> {
     let state = load();
     if let (Some(store), Some(key)) = (store(), secrets::pro_key()) {
         if !state.instance.is_empty() {
-            // Best effort: the slot is freed if the store can be reached.
-            let _ = send(&pro::deactivate_request(&store, &key, &state.instance));
+            // Best effort: the slot is freed if the store can be reached (and
+            // can free one: Gumroad can't, so Pro is only switched off here).
+            if let Some(r) = pro::deactivate_request(&store, &key, &state.instance) {
+                let _ = send(&r);
+            }
         }
     }
     secrets::clear_pro_key()?;

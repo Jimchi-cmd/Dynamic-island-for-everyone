@@ -6,7 +6,7 @@ Islet Pro is a one-time purchase that unlocks extra features. Everything Islet d
 
 1. Buy Pro from the **Buy Islet Pro** button in Settings → Islet Pro. Your key arrives by email and on the receipt page.
 2. Paste the key in Settings → Islet Pro and click **Activate**.
-3. One key works on up to three of your computers. To move it, click **Move Pro to another computer** on the old one first.
+3. One key works on several of your computers (three, or five where Pro is sold through Gumroad). To move it, click **Move Pro to another computer** on the old one first.
 
 **Privacy:**
 
@@ -114,20 +114,24 @@ islet set power-saver on
 
 ## For the maintainer: setting up the store
 
-Islet works with **Polar** or **Lemon Squeezy**. Both act as the merchant of record, so they handle payments, sales tax, VAT and refunds, and both issue license keys. You need to be 18 or older to open a seller account. Use whichever you prefer:
+Islet works with **Gumroad** (recommended: the best known, and the quickest to set up), **Polar** (popular with developers), or **Lemon Squeezy** (if you already sell there). Each handles the payment and issues license keys; check each one's current terms for how it handles sales tax and VAT where your buyers live. You need to be 18 or older to open a seller account.
 
-| | Polar | Lemon Squeezy |
+| | Gumroad | Polar |
 |---|---|---|
-| Sign up | polar.sh | lemonsqueezy.com |
-| Product | One-time product, price about $9 | One-time product, price about $9 |
-| Keys | Add a **License keys** benefit with an activation limit of 3 | Turn on **Generate license keys** with an activation limit of 3 |
-| Ids you need | Organization id (Settings → General) | Store id and product id |
+| Sign up | gumroad.com | polar.sh |
+| Product | A digital product, price about $9 | One-time product, price about $9 |
+| Keys | In the product's settings, turn on **Generate a unique license key per sale** | Add a **License keys** benefit with an activation limit of 3 |
+| Id you need | The **product id** shown with the license key setting | Organization id (Settings → General) |
+| Computers per key | 5 activations (Gumroad can't free one from the app; you can reset a buyer's count in Gumroad) | 3, and **Move Pro to another computer** frees one |
 
 Then, in the GitHub repository, open **Settings → Secrets and variables → Actions → Variables** and add the following. These ids are public (they appear in every checkout link), so they are variables, not secrets:
 
+- **For Gumroad:** `ISLET_GUMROAD_PRODUCT`, the product id.
 - **For Polar:** `ISLET_POLAR_ORG`, your organization id.
 - **For Lemon Squeezy:** `ISLET_LEMON_STORE` and `ISLET_LEMON_PRODUCT`.
-- **For both:** `ISLET_BUY_URL`, the product's checkout link (it must start with `https://`).
+- **For any of them:** `ISLET_BUY_URL`, the product's checkout link (it must start with `https://`; for Gumroad, something like `https://yourname.gumroad.com/l/islet-pro`).
+
+If more than one is set, Gumroad is used first, then Polar.
 
 The next release is built with these variables, and its Settings shows the Buy button. Builds without them say "Islet Pro isn't on sale in this build".
 

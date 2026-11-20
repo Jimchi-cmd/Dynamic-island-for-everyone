@@ -250,27 +250,27 @@ class Atmosphere:
 # ---- The films ------------------------------------------------------------------------------
 
 LIFE = [
-    dict(name="meeting", frames="laptop:meeting", tag="IN A MEETING", glow=(70, 90, 255), deep=(8, 8, 24), accent=(255, 90, 80), seed=0,
+    dict(name="meeting", song_bar=5, frames="laptop:meeting", tag="IN A MEETING", glow=(70, 90, 255), deep=(8, 8, 24), accent=(255, 90, 80), seed=0,
          beats=[(0.2, "Meeting in 5", "A countdown to your next call"), (2.4, "One-click join", "Meet, Zoom and Teams links"),
                 (6.8, "On a call", "A live timer, right up top"), (11.0, "Camera & mic", "Always know what's on"),
                 (13.2, "Mute", "Straight from the island")],
          also=["Calendar & deadlines", "Clipboard history", "Every device's battery", "Timers & focus rounds"]),
-    dict(name="class", frames="phone:life-class", tag="IN CLASS", glow=(40, 170, 230), deep=(4, 12, 24), accent=(100, 210, 255), seed=1,
+    dict(name="class", song_bar=33, frames="phone:life-class", tag="IN CLASS", glow=(40, 170, 230), deep=(4, 12, 24), accent=(100, 210, 255), seed=1,
          beats=[(0.3, "Class in 6 min", "Your timetable, counting down"), (2.6, "Room & time left", "Tap for the whole lesson"),
                 (6.0, "Quiet in class", "Do Not Disturb, by itself"), (8.2, "Deadlines", "From your calendar, counted down"),
                 (11.6, "Focus streak", "Pomodoro rounds, every day")],
          also=["Notifications with Reply", "Weather & world clocks", "To-do & quick notes", "Alarms"]),
-    dict(name="commute", frames="phone:life-commute", tag="ON THE WAY", glow=(40, 200, 120), deep=(4, 18, 14), accent=(60, 220, 110), seed=2,
+    dict(name="commute", song_bar=77, frames="phone:life-commute", tag="ON THE WAY", glow=(40, 200, 120), deep=(4, 18, 14), accent=(60, 220, 110), seed=2,
          beats=[(0.5, "Next turn", "Directions at a glance"), (2.4, "200 m", "Tap for the whole step"),
                 (5.6, "Music joins in", "Two things, side by side"), (7.6, "Incoming call", "Answer from the island"),
                 (10.6, "Swipe to switch", "Calls, music, maps")],
          also=["Payments show 'Paid'", "Downloads with a ring", "Control centre on a hold", "Wi-Fi & Bluetooth"]),
-    dict(name="gym", frames="phone:life-gym", tag="AT THE GYM", glow=(150, 60, 255), deep=(12, 4, 24), accent=(190, 120, 255), seed=3,
+    dict(name="gym", song_bar=49, frames="phone:life-gym", tag="AT THE GYM", glow=(150, 60, 255), deep=(12, 4, 24), accent=(190, 120, 255), seed=3,
          beats=[(0.5, "Your playlist", "Any music app"), (2.0, "Buds connected", "Pops up as they connect"),
                 (4.2, "Live lyrics", "Synced, line by line"), (8.0, "Stopwatch", "With laps"),
                 (12.8, "Rest timer", "It tells you when to go")],
          also=["Sleep timer for music", "Live bars that dance", "Battery health", "Speed test"]),
-    dict(name="desk", frames="laptop:desk", tag="AT YOUR DESK", glow=(255, 130, 40), deep=(20, 8, 4), accent=(255, 170, 60), seed=4,
+    dict(name="desk", song_bar=13, frames="laptop:desk", tag="AT YOUR DESK", glow=(255, 130, 40), deep=(20, 8, 4), accent=(255, 170, 60), seed=4,
          beats=[(0.8, "Hover it", "Processor, weather, time, battery"), (4.0, "Earbuds", "Battery the moment they connect"),
                 (7.0, "Lyrics", "Scrolling through the island"), (10.4, "Full player", "One click away"),
                 (14.6, "Every computer", "Windows · Mac · Linux")],
@@ -279,6 +279,8 @@ LIFE = [
 
 PRO_ITEMS = ["Glass & tinted looks", "Album-colour glow", "Stopwatch & world clocks", "Quick notes & to-do", "Your own shortcuts", "Clock faces"]
 URL = "github.com/Jimchi-cmd/Dynamic-island-for-everyone"
+# Where Islet Pro is sold (named on the Pro card and at the end).
+PRO_STORE = "Gumroad"
 
 
 def icon_tile(kind, colour, size=64):
@@ -346,21 +348,110 @@ def zoom_blur(frame, amount):
     return out
 
 
-def make(film, frames_dir, out_path):
+class Clock:
+    """Where the bars and beats fall in the video, and how hard the music hits
+    at each moment: from a real song's analysis (beats.py), or for the
+    built-in track, from its own steady grid."""
+
+    def __init__(self, story_bars, song=None, analysis=None, start_bar=0):
+        bars = (INTRO, story_bars, ALSO, PRO, END)
+        if analysis is None:
+            self.t0 = 0.0
+            self.beat = 60 / BPM
+            self.bars_at = [BAR * k for k in range(sum(bars) + 1)]
+            self.beats = [self.beat * k for k in range(4 * sum(bars) + 4)]
+            self.env = None
+        else:
+            db = analysis["downbeats"]
+            self.t0 = db[start_bar]
+            self.bars_at = [db[start_bar + k] - self.t0 for k in range(sum(bars) + 1)]
+            self.beat = 60 / analysis["bpm"]
+            self.beats = [b - self.t0 for b in analysis["beats"] if b >= self.t0 - 0.01]
+            self.env = {k: analysis[k] for k in ("kick", "snap", "loud", "hit")}
+        edges = [0]
+        for n in bars:
+            edges.append(edges[-1] + n)
+        self.t_story, self.t_also, self.t_pro, self.t_end, self.t_out = (self.bars_at[e] for e in edges[1:])
+        self.total = self.t_out + TAIL
+        self._smooth = {}
+
+    def level(self, name, t):
+        """0..1, quick to rise and slower to fall, so a hit reads as a punch."""
+        if self.env is None:
+            # The built-in track: a kick on every beat, a snare on 2 and 4.
+            ph = (t % self.beat) / self.beat
+            if name == "kick":
+                return math.exp(-ph * 7)
+            if name == "snap":
+                beat_no = int(t / self.beat) % 4
+                return math.exp(-ph * 9) if beat_no in (1, 3) else 0.0
+            return 0.8
+        arr = self.env[name]
+        i = int((self.t0 + t) * FPS)
+        raw = arr[i] if 0 <= i < len(arr) else 0.0
+        prev = self._smooth.get(name, 0.0)
+        val = raw if raw > prev else prev * (0.78 if name != "loud" else 0.95) + raw * (0.22 if name != "loud" else 0.05)
+        self._smooth[name] = val
+        return min(1.0, val)
+
+    def snap_to_beat(self, t, prefer_bar=0.45):
+        """The beat nearest `t`, or the bar line if one is close enough."""
+        bar = min(self.bars_at, key=lambda b: abs(b - t))
+        if abs(bar - t) <= prefer_bar:
+            return bar
+        return min(self.beats, key=lambda b: abs(b - t)) if self.beats else t
+
+
+def story_timing(clock, anchors):
+    """Map video time to the reel's own time so each of its moments (a tap,
+    a card opening) lands on a beat: between anchors the footage plays a
+    little faster or slower (never by more than about a fifth)."""
+    vid, reel = [clock.t_story], [0.0]
+    for e in anchors:
+        want = clock.snap_to_beat(clock.t_story + e)
+        span_r = e - reel[-1]
+        lo, hi = vid[-1] + span_r / 1.22, vid[-1] + span_r / 0.82
+        if span_r <= 0.25:
+            continue
+        v = min(max(want, lo), hi)
+        # Prefer a beat inside the allowed range.
+        inside = [b for b in clock.beats if lo <= b <= hi]
+        if inside:
+            v = min(inside, key=lambda b: abs(b - want))
+        vid.append(v)
+        reel.append(e)
+
+    def reel_time(t):
+        if t <= vid[-1]:
+            return float(np.interp(t, vid, reel))
+        return reel[-1] + (t - vid[-1])
+
+    return reel_time, dict(zip(reel[1:], vid[1:]))
+
+
+def make(film, frames_dir, out_path, song=None, analysis=None):
     files = sorted(f for f in os.listdir(frames_dir) if f.endswith(".png"))
     laptop = film["frames"].startswith("laptop")
-    story_s = at_bar(STORY)
-    total_bars = INTRO + STORY + ALSO + PRO + END
-    total_s = at_bar(total_bars) + TAIL
+    clock = Clock(STORY + (1 if laptop else 0), song, analysis, film.get("song_bar", 0))
+    t_story, t_also, t_pro, t_end = clock.t_story, clock.t_also, clock.t_pro, clock.t_end
+    total_s = clock.total
     total = int(total_s * FPS)
-    sections = (INTRO + STORY, INTRO + STORY + ALSO, INTRO + STORY + ALSO + PRO)
+    beat = clock.beat
     wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
-    music.write_wav(wav, music.banger(total_s, seed=film["seed"], bars_intro=INTRO, sections=sections, bpm=BPM))
+    if song is None:
+        sections = (INTRO + STORY, INTRO + STORY + ALSO, INTRO + STORY + ALSO + PRO)
+        music.write_wav(wav, music.banger(total_s, seed=film["seed"], bars_intro=INTRO, sections=sections, bpm=BPM))
+    else:
+        # The song, from two bars before its drop, faded out at the end.
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{clock.t0:.3f}", "-t", f"{total_s:.3f}", "-i", song,
+                        "-af", f"afade=t=in:d=0.04,afade=t=out:st={total_s - 1.3:.3f}:d=1.3", "-ar", "44100", "-ac", "2", wav], check=True)
+    reel_time, landed = story_timing(clock, [t0 for t0, _, _ in film["beats"]])
     atm = Atmosphere(film["glow"], film["deep"], film["seed"])
     accent = film["accent"]
     title3d = extruded("Islet", 250, (255, 255, 255), tuple(min(255, int(c * 0.8 + 60)) for c in film["glow"]))
     tag_img = tag(film["tag"], accent)
-    heads = [(t0, Kinetic(h, 96), Kinetic(s, 40, "Medium", GREY, gap=0.28)) for t0, h, s in film["beats"]]
+    # Each caption appears when its moment lands (on a beat).
+    heads = [(landed.get(t0, t_story + t0), Kinetic(h, 96), Kinetic(s, 40, "Medium", GREY, gap=0.28)) for t0, h, s in film["beats"]]
     also_title = Kinetic("And also…", 96)
     also_cards = [glass_card(a, None, tuple(int(v) for v in colorsys.hsv_to_rgb((i * 0.17 + 0.55) % 1, 0.6, 0.95 * 255)), i % 6) for i, a in enumerate(film["also"])]
     pro_title = extruded("Islet Pro", 150, (255, 236, 200), (255, 120, 170), depth=16)
@@ -375,142 +466,164 @@ def make(film, frames_dir, out_path):
     bd.polygon([(56, 64), (70, 82), (84, 64)], fill=(10, 10, 14))
     bd.text((110, 60), "Download on GitHub", font=mv.font(40, "Bold"), fill=(10, 10, 14), anchor="lm")
     url = Kinetic(URL, 30, "SemiBold", GREY)
+    get_pro = mv.text_block(f"Get Islet Pro on {PRO_STORE}", 46)
+    pro_line = Kinetic(f"Islet Pro on {PRO_STORE}", 36, "Bold", (255, 205, 140))
     plats = Kinetic("Android · Windows · Mac · Linux", 34, "SemiBold", (220, 220, 230))
-    # The hero's place and size follow it smoothly.
     hero_s, hero_cy, hero_h = 1.0, 760.0, 200.0
+    # Words land on the half-beats; list cards one per beat.
+    word_step = beat / 2
+    title_land = clock.bars_at[1]  # the intro's second bar line
     ff = subprocess.Popen(
         ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
-         "-i", wav, "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "medium", "-crf", "17", "-pix_fmt", "yuv420p",
+         "-i", wav, "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "slow", "-crf", "21", "-pix_fmt", "yuv420p",
          "-c:a", "aac", "-b:a", "192k", "-af", "loudnorm=I=-10:TP=-1:LRA=8", "-shortest", "-movflags", "+faststart", out_path],
         stdin=subprocess.PIPE,
     )
-    t_story, t_also, t_pro, t_end = at_bar(INTRO), at_bar(INTRO + STORY), at_bar(INTRO + STORY + ALSO), at_bar(INTRO + STORY + ALSO + PRO)
     for i in range(total):
         t = i / FPS
-        bar_phase = (t % BAR) / BAR
-        punch = (1 - expo(bar_phase * 3)) * 0.018 if t >= t_story else 0.0
-        warp = 1.0 + 2.5 * (1 - smooth((t - t_end) / 1.2)) * (t >= t_end) + (1.8 if t < t_story else 0.0) * smooth(t / t_story)
+        kick = clock.level("kick", t)
+        snap = clock.level("snap", t)
+        loud = clock.level("loud", t)
+        punch = 0.035 * kick if t >= t_story else 0.012 * kick
+        build = smooth(t / max(t_story, 0.1)) if t < t_story else 0.0
+        warp = 1.0 + 1.6 * snap + 1.8 * build + 2.5 * (1 - smooth((t - t_end) / 1.2)) * (t >= t_end)
         frame = atm.frame(t, warp=warp)
-        # ---- Intro: the island grows from a dot, the 3D title lands on the drop.
+        # ---- Intro: the island grows from a dot; the 3D title lands on the bar line.
         if t < t_story + 0.4:
             k_out = smooth((t - t_story + 0.2) / 0.4)
-            pw = int(40 + 520 * back((t - 0.2) / 0.9))
-            ph = int(40 + 100 * back((t - 0.2) / 0.9))
+            pw = int(40 + 520 * back((t - 0.15) / 0.9))
+            ph = int(40 + 100 * back((t - 0.15) / 0.9))
             pill = Image.new("RGBA", (pw + 120, ph + 120), (0, 0, 0, 0))
             pd = ImageDraw.Draw(pill)
-            pd.rounded_rectangle([60, 60, 60 + pw, 60 + ph], ph // 2, fill=(*film["glow"], 160))
+            pd.rounded_rectangle([60, 60, 60 + pw, 60 + ph], ph // 2, fill=(*film["glow"], int(110 + 110 * kick)))
             pill = pill.filter(ImageFilter.GaussianBlur(26))
             pd = ImageDraw.Draw(pill)
             pd.rounded_rectangle([60, 60, 60 + pw, 60 + ph], ph // 2, fill=(0, 0, 0, 255), outline=(214, 204, 255, 200), width=3)
             mv.put_fading(frame, pill, W / 2, 620, smooth(t / 0.3) * (1 - k_out))
-            land = back((t - BAR * 0.9) / 0.5)
-            if t > BAR * 0.9:
-                ti = title3d.resize((max(1, int(title3d.width * (1.25 - 0.25 * land))), max(1, int(title3d.height * (1.25 - 0.25 * land)))), Image.BICUBIC)
-                mv.put_fading(frame, ti, W / 2, 1000, smooth((t - BAR * 0.9) / 0.25) * (1 - k_out))
-            mv.put_fading(frame, tag("THE ISLAND FOR ANDROID & PC", accent), W / 2, 820, smooth((t - 0.4) / 0.4) * (1 - k_out))
-        # ---- The story: the island, big, with kinetic type below it.
+            land = back((t - title_land) / 0.45)
+            if t > title_land - 0.12:
+                k = (1.25 - 0.25 * land) * (1 + 0.02 * kick)
+                ti = title3d.resize((max(1, int(title3d.width * k)), max(1, int(title3d.height * k))), Image.BICUBIC)
+                mv.put_fading(frame, ti, W / 2, 1000, smooth((t - title_land + 0.12) / 0.2) * (1 - k_out))
+            mv.put_fading(frame, tag("THE ISLAND FOR ANDROID & PC", accent), W / 2, 820, smooth((t - beat) / 0.3) * (1 - k_out))
+        # ---- The story: the island, big, its moments on the beat, with kinetic type below it.
         if t_story - 0.1 <= t < t_also + 0.3:
-            st = t - t_story
+            st = reel_time(max(t, t_story))
             fi = min(len(files) - 1, max(0, int(st * FPS)))
             isl = Image.open(os.path.join(frames_dir, files[fi])).convert("RGBA")
             box = isl.getbbox() or (0, 0, isl.width, 10)
             isl = isl.crop((max(0, box[0] - 20), max(0, box[1] - 20), min(isl.width, box[2] + 20), min(isl.height, box[3] + 20)))
-            # Big, but never wider than the frame; follow changes smoothly.
             want = min(1.45 if not laptop else 1.25, 1000 / max(1, isl.width))
             hero_s += (want - hero_s) * 0.18
             hero_h += (isl.height * hero_s - hero_h) * 0.25
             want_cy = min(700, 1130 - hero_h / 2)
             hero_cy += (want_cy - hero_cy) * 0.2
-            s = hero_s * (1 + punch)
-            hero = isl.resize((max(1, int(isl.width * s)), max(1, int(isl.height * s))), Image.BICUBIC)
-            leave = smooth((t - t_also + 0.1) / 0.35)
-            enter = smooth(st / 0.35)
+            sc = hero_s * (1 + punch)
+            hero = isl.resize((max(1, int(isl.width * sc)), max(1, int(isl.height * sc))), Image.BICUBIC)
+            leave = smooth((t - t_also + 0.1) / 0.3)
+            enter = smooth((t - t_story) / 0.3)
             a = enter * (1 - leave)
-            mv.put_fading(frame, glow_under(hero.width, hero.height, film["glow"]), W / 2, hero_cy + 20, a * 0.9)
+            # The glow breathes with the music's loudness and flares on each kick.
+            mv.put_fading(frame, glow_under(hero.width, hero.height, film["glow"]), W / 2, hero_cy + 20, a * min(1.0, 0.45 + 0.35 * loud + 0.35 * kick))
             mv.put_fading(frame, hero, W / 2, hero_cy, a)
-            # The tag, then the words for this moment.
             text_top = hero_cy + hero_h / 2 + 110
             mv.put_fading(frame, tag_img, W / 2, text_top - 20, a)
-            for j, (t0, head, sub) in enumerate(heads):
-                t1 = heads[j + 1][0] if j + 1 < len(heads) else story_s + 1
-                if t0 <= st < t1 + 0.3:
-                    out = smooth((st - t1) / 0.25)
-                    head.draw(frame, W / 2, text_top + 90, st - t0, out=max(out, leave))
-                    sub.draw(frame, W / 2, text_top + 175, st - t0 - 0.18, out=max(out, leave), stagger=0.03)
-        # ---- And also…
+            for j, (v0, head, sub) in enumerate(heads):
+                v1 = heads[j + 1][0] if j + 1 < len(heads) else t_also + 1
+                if v0 - 0.05 <= t < v1 + 0.3:
+                    out = smooth((t - v1) / 0.22)
+                    head.draw(frame, W / 2, text_top + 90, t - v0, out=max(out, leave), stagger=word_step, dur=min(0.42, word_step * 1.6))
+                    sub.draw(frame, W / 2, text_top + 175, t - v0 - beat, out=max(out, leave), stagger=0.03)
+        # ---- And also… (a card on each beat)
         if t_also - 0.1 <= t < t_pro + 0.3:
             at_ = t - t_also
-            leave = smooth((t - t_pro + 0.1) / 0.35)
-            also_title.draw(frame, W / 2, 470, at_, out=leave)
+            leave = smooth((t - t_pro + 0.1) / 0.3)
+            also_title.draw(frame, W / 2, 470, at_, out=leave, stagger=word_step)
             for j, card in enumerate(also_cards):
-                p = back((at_ - 0.25 - j * BAR / 4) / 0.5)
+                on = beat * (j + 1)
+                p = back((at_ - on) / 0.4)
                 if p <= 0:
                     continue
                 c = tilt(card, -3 + j * 1.5)
-                mv.put_fading(frame, c, W / 2 + (j % 2) * 30 - 15, 690 + j * 175 + 140 * (1 - p), smooth((at_ - 0.25 - j * BAR / 4) / 0.3) * (1 - leave))
-        # ---- Islet Pro.
+                mv.put_fading(frame, c, W / 2 + (j % 2) * 30 - 15, 690 + j * 175 + 140 * (1 - p), smooth((at_ - on) / 0.2) * (1 - leave))
+        # ---- Islet Pro (its extras one per beat).
         if t_pro - 0.1 <= t < t_end + 0.3:
             pt = t - t_pro
-            leave = smooth((t - t_end + 0.1) / 0.35)
-            # A glowing island, its rim cycling through album colours.
+            leave = smooth((t - t_end + 0.1) / 0.3)
             r, g, b = (int(v * 255) for v in colorsys.hsv_to_rgb((pt * 0.4) % 1, 0.6, 1))
             pill = Image.new("RGBA", (720, 260), (0, 0, 0, 0))
             pd = ImageDraw.Draw(pill)
-            pd.rounded_rectangle([90, 70, 630, 190], 60, fill=(r, g, b, 190))
+            pd.rounded_rectangle([90, 70, 630, 190], 60, fill=(r, g, b, int(120 + 130 * kick)))
             pill = pill.filter(ImageFilter.GaussianBlur(30))
             pd = ImageDraw.Draw(pill)
             pd.rounded_rectangle([90, 70, 630, 190], 60, fill=(0, 0, 0, 255), outline=(r, g, b, 255), width=4)
             pd.rounded_rectangle([118, 92, 194, 168], 18, fill=(r, g, b, 255))
             for k in range(5):
-                hh = 20 + 34 * (0.5 + 0.5 * math.sin(pt * 11 + k * 1.4))
+                # Bars that jump with the music.
+                hh = 18 + 50 * min(1.0, 0.25 + 0.75 * (kick if k % 2 == 0 else snap) * (0.6 + 0.4 * math.sin(pt * 9 + k)))
                 x = 520 + k * 18
                 pd.rounded_rectangle([x, 130 - hh / 2, x + 9, 130 + hh / 2], 4, fill=(r, g, b, 255))
-            mv.put_fading(frame, pill, W / 2, 380, smooth(pt / 0.3) * (1 - leave))
-            land = back(pt / 0.5)
-            pti = pro_title.resize((max(1, int(pro_title.width * (1.2 - 0.2 * land))), max(1, int(pro_title.height * (1.2 - 0.2 * land)))), Image.BICUBIC)
-            mv.put_fading(frame, pti, W / 2, 610, smooth(pt / 0.25) * (1 - leave))
-            pro_sub.draw(frame, W / 2, 740, pt - 0.3, out=leave, stagger=0.03)
+            mv.put_fading(frame, pill, W / 2, 380, smooth(pt / 0.25) * (1 - leave))
+            land = back(pt / 0.45)
+            k = (1.2 - 0.2 * land) * (1 + 0.02 * kick)
+            pti = pro_title.resize((max(1, int(pro_title.width * k)), max(1, int(pro_title.height * k))), Image.BICUBIC)
+            mv.put_fading(frame, pti, W / 2, 610, smooth(pt / 0.2) * (1 - leave))
+            pro_sub.draw(frame, W / 2, 740, pt - beat, out=leave, stagger=0.03)
+            # Where to get it, after the last extra, with a pop on its beat.
+            gp = back((pt - beat * 9) / 0.4)
+            if gp > 0:
+                k = (0.85 + 0.15 * gp) * (1 + 0.025 * kick)
+                gi = get_pro.resize((max(1, int(get_pro.width * k)), max(1, int(get_pro.height * k))), Image.BICUBIC)
+                mv.put_fading(frame, gi, W / 2, 1330, smooth((pt - beat * 9) / 0.2) * (1 - leave))
             for j, card in enumerate(pro_cards):
                 col, row = j % 2, j // 2
-                p = back((pt - 0.5 - j * BAR / 6) / 0.45)
+                on = beat * (2 + j)
+                p = back((pt - on) / 0.4)
                 if p <= 0:
                     continue
-                sc = 0.7 + 0.3 * p
-                c = card.resize((int(card.width * sc), int(card.height * sc)), Image.BICUBIC)
-                mv.put_fading(frame, c, W / 2 + (col - 0.5) * 512, 880 + row * 140, smooth((pt - 0.5 - j * BAR / 6) / 0.25) * (1 - leave))
-        # ---- The link.
+                s2 = 0.7 + 0.3 * p
+                c = card.resize((int(card.width * s2), int(card.height * s2)), Image.BICUBIC)
+                mv.put_fading(frame, c, W / 2 + (col - 0.5) * 512, 880 + row * 140, smooth((pt - on) / 0.2) * (1 - leave))
+        # ---- The link: the pill grows on the bar line, then a piece per beat.
         if t >= t_end - 0.1:
             et = t - t_end
-            grow = back(et / 0.7)
+            grow = back(et / 0.6)
             pw, ph = int(60 + 480 * grow), 110
             pill = Image.new("RGBA", (pw + 200, ph + 200), (0, 0, 0, 0))
             pd = ImageDraw.Draw(pill)
-            pd.rounded_rectangle([100, 100, 100 + pw, 100 + ph], ph // 2, fill=(*film["glow"], 170))
+            pd.rounded_rectangle([100, 100, 100 + pw, 100 + ph], ph // 2, fill=(*film["glow"], int(130 + 100 * kick)))
             pill = pill.filter(ImageFilter.GaussianBlur(34))
             pd = ImageDraw.Draw(pill)
             pd.rounded_rectangle([100, 100, 100 + pw, 100 + ph], ph // 2, fill=(0, 0, 0, 255), outline=(214, 204, 255, 220), width=3)
             if pw > 200:
                 pd.ellipse([100 + pw - 80, 136, 100 + pw - 42, 174], fill=(59, 147, 255, 255))
-            mv.put_fading(frame, pill, W / 2, 470, smooth(et / 0.25))
-            end_title.draw(frame, W / 2, 720, et - 0.2)
-            end_sub.draw(frame, W / 2, 815, et - 0.4, stagger=0.04)
-            bp = back((et - 0.6) / 0.5)
+            mv.put_fading(frame, pill, W / 2, 470, smooth(et / 0.2))
+            end_title.draw(frame, W / 2, 720, et - beat, stagger=word_step)
+            end_sub.draw(frame, W / 2, 815, et - 2 * beat, stagger=0.04)
+            bp = back((et - 3 * beat) / 0.4)
             if bp > 0:
-                bt = button.resize((max(1, int(button.width * (0.8 + 0.2 * bp))), max(1, int(button.height * (0.8 + 0.2 * bp)))), Image.BICUBIC)
-                mv.put_fading(frame, bt, W / 2, 990, smooth((et - 0.6) / 0.3))
-            url.draw(frame, W / 2, 1110, et - 0.9, stagger=0.0)
-            plats.draw(frame, W / 2, 1190, et - 1.1, stagger=0.04)
-        # Zoom-blur on the cuts between parts.
+                k = (0.8 + 0.2 * bp) * (1 + 0.03 * kick)
+                bt = button.resize((max(1, int(button.width * k)), max(1, int(button.height * k))), Image.BICUBIC)
+                mv.put_fading(frame, bt, W / 2, 990, smooth((et - 3 * beat) / 0.2))
+            url.draw(frame, W / 2, 1110, et - 4 * beat, stagger=0.0)
+            plats.draw(frame, W / 2, 1190, et - 5 * beat, stagger=0.04)
+            pro_line.draw(frame, W / 2, 1275, et - 6 * beat, stagger=word_step)
+        # A zoom-blur on each cut, which all fall on bar lines.
         for cut in (t_story, t_also, t_pro, t_end):
             d = abs(t - cut)
-            if d < 0.2:
-                frame = zoom_blur(frame, 1 - d / 0.2)
+            if d < 0.16:
+                frame = zoom_blur(frame, 1 - d / 0.16)
         ff.stdin.write(frame.convert("RGB").tobytes())
     ff.stdin.close()
     ff.wait()
     os.unlink(wav)
-    print(f"wrote {out_path} ({total_s:.1f} s)")
-    return ff.returncode == 0
+    ok = ff.returncode == 0
+    if ok and song is not None:
+        # And a silent copy, to post with the app's own licensed sound (same timing).
+        silent = os.path.splitext(out_path)[0] + "-silent.mp4"
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", out_path, "-an", "-c:v", "copy", silent], check=True)
+    print(f"wrote {out_path} ({total_s:.1f} s{', song from %.2f s' % clock.t0 if song else ''})")
+    return ok
 
 
 def main():
@@ -519,15 +632,20 @@ def main():
     ap.add_argument("--phone-frames", default=os.path.join(ROOT, "android/app/build/promo"))
     ap.add_argument("--laptop-frames", default=os.path.join(ROOT, "build"), help="holds promo-laptop-<reel> folders")
     ap.add_argument("--only")
+    ap.add_argument("--song", help="cut every reel to this song (its beats are found automatically)")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
+    analysis = None
+    if a.song:
+        analysis = _load("beats", "beats.py").analyse(a.song)
+        print(f"song: {analysis['bpm']:.1f} BPM, {len(analysis['downbeats'])} bars")
     ok = True
     for film in LIFE:
         if a.only and film["name"] != a.only:
             continue
         kind, name = film["frames"].split(":")
         src = os.path.join(a.phone_frames, name) if kind == "phone" else os.path.join(a.laptop_frames, f"promo-laptop-{name}")
-        ok &= make(film, src, os.path.join(a.out, f"islet-{film['name']}.mp4"))
+        ok &= make(film, src, os.path.join(a.out, f"islet-{film['name']}.mp4"), a.song, analysis)
     return 0 if ok else 1
 
 

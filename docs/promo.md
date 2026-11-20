@@ -28,6 +28,16 @@ Five 29-second vertical reels in the style of an app-launch video: the island fl
 python3 scripts/promo/make-reels.py --out promo-videos
 ```
 
+### Cut to a song of your choice
+
+```bash
+python3 scripts/promo/make-reels.py --out promo-videos --song your-song.mp3
+```
+
+`beats.py` finds the song's tempo, beats and bars; each reel starts two bars before a drop (set per reel with `song_bar`), every cut lands on a bar line, the island's moments are nudged onto beats, and the punches, light streaks and glow follow the song's kicks, snares and loudness. Each reel is written twice: with the song, and silent (`-silent.mp4`).
+
+**Copyright:** a commercial song inside the video file is often muted or claimed. Post the silent version and pick the same song from the app's own sound library (TikTok and Instagram license their libraries); the timing still matches if the in-app sound starts at the same point.
+
 ## "Islet in real life" (with music)
 
 Five more vertical videos, 25–26 s each, with an original soundtrack and smooth camera moves: Islet in a meeting, in class, on the way, at the gym and at your desk, then an Islet Pro card with its extras and the GitHub link.

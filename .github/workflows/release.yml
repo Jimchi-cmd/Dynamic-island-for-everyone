@@ -68,6 +68,7 @@ jobs:
       TAG: ${{ inputs.tag || github.ref_name }}
       # Islet Pro's store (docs/pro.md). These ids are public, so they are
       # repository variables, not secrets. Unset: the build says Pro isn't on sale.
+      ISLET_GUMROAD_PRODUCT: ${{ vars.ISLET_GUMROAD_PRODUCT }}
       ISLET_POLAR_ORG: ${{ vars.ISLET_POLAR_ORG }}
       ISLET_LEMON_STORE: ${{ vars.ISLET_LEMON_STORE }}
       ISLET_LEMON_PRODUCT: ${{ vars.ISLET_LEMON_PRODUCT }}

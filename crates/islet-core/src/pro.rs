@@ -1,7 +1,7 @@
 //! Islet Pro: a one-time purchase that unlocks the extra features. Keys are
-//! sold through a merchant of record (Polar or Lemon Squeezy, whichever the
-//! maintainer sells through), and checked with that store's public
-//! license-key API, which needs no secret in the app.
+//! sold through a store that handles the sale and its taxes (Gumroad, Polar
+//! or Lemon Squeezy, whichever the maintainer sells through), and checked
+//! with that store's public license-key API, which needs no secret in the app.
 //!
 //! Only this module's pure parts live here: building the requests, reading
 //! the answers, and deciding whether Pro is on. The HTTP calls are in the
@@ -19,6 +19,9 @@ use serde::{Deserialize, Serialize};
 /// link) and are set when a release is built.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Store {
+    /// Gumroad: the product id (from the product's page in Gumroad, under
+    /// "License key").
+    Gumroad { product: String },
     /// Polar: the organization id (a UUID).
     Polar { org: String },
     /// Lemon Squeezy: the store id and, optionally, the product id.
@@ -28,18 +31,23 @@ pub enum Store {
 impl Store {
     pub fn id(&self) -> &'static str {
         match self {
+            Store::Gumroad { .. } => "gumroad",
             Store::Polar { .. } => "polar",
             Store::Lemon { .. } => "lemon",
         }
     }
 
-    /// From the build's settings: a Polar organization id, or a Lemon
-    /// Squeezy store id (and product id). Polar wins if both are set.
+    /// From the build's settings: a Gumroad product id, a Polar organization
+    /// id, or a Lemon Squeezy store id (and product id), in that order.
     pub fn from_config(
+        gumroad_product: Option<&str>,
         polar_org: Option<&str>,
         lemon_store: Option<&str>,
         lemon_product: Option<&str>,
     ) -> Option<Store> {
+        if let Some(product) = gumroad_product.map(str::trim).filter(|s| !s.is_empty()) {
+            return Some(Store::Gumroad { product: product.to_string() });
+        }
         let polar_org = polar_org.map(str::trim).filter(|s| !s.is_empty());
         if let Some(org) = polar_org {
             return Some(Store::Polar { org: org.to_string() });
@@ -60,15 +68,35 @@ pub struct Request {
     pub body: String,
 }
 
+const GUMROAD: &str = "https://api.gumroad.com/v2/licenses/verify";
 const POLAR: &str = "https://api.polar.sh/v1/customer-portal/license-keys";
 const LEMON: &str = "https://api.lemonsqueezy.com/v1/licenses";
 const JSON: &str = "application/json";
 const FORM: &str = "application/x-www-form-urlencoded";
 
+/// How many computers one Gumroad key may be activated on. Gumroad counts
+/// activations ("uses") but can't hand one back from the app, so a few
+/// spare are allowed for reinstalls.
+pub const GUMROAD_COMPUTERS: u64 = 5;
+
+/// Gumroad's verify call: counting this as a new use (activation) or not.
+fn gumroad_verify(product: &str, key: &str, count: bool) -> Request {
+    Request {
+        url: GUMROAD.to_string(),
+        content_type: FORM,
+        body: form(&[
+            ("product_id", product),
+            ("license_key", key),
+            ("increment_uses_count", if count { "true" } else { "false" }),
+        ]),
+    }
+}
+
 /// Take up one of the key's device slots. `label` names this computer in
 /// the buyer's account (e.g. "Islet on Windows").
 pub fn activate_request(store: &Store, key: &str, label: &str) -> Request {
     match store {
+        Store::Gumroad { product } => gumroad_verify(product, key, true),
         Store::Polar { org } => Request {
             url: format!("{POLAR}/activate"),
             content_type: JSON,
@@ -85,6 +113,7 @@ pub fn activate_request(store: &Store, key: &str, label: &str) -> Request {
 /// Is the key (and this computer's activation) still good?
 pub fn validate_request(store: &Store, key: &str, instance: &str) -> Request {
     match store {
+        Store::Gumroad { product } => gumroad_verify(product, key, false),
         Store::Polar { org } => Request {
             url: format!("{POLAR}/validate"),
             content_type: JSON,
@@ -98,9 +127,12 @@ pub fn validate_request(store: &Store, key: &str, instance: &str) -> Request {
     }
 }
 
-/// Give this computer's slot back (to move Pro to another computer).
-pub fn deactivate_request(store: &Store, key: &str, instance: &str) -> Request {
-    match store {
+/// Give this computer's slot back (to move Pro to another computer). None
+/// where the store has no way to do that without the seller's own token
+/// (Gumroad): Pro is then just switched off here.
+pub fn deactivate_request(store: &Store, key: &str, instance: &str) -> Option<Request> {
+    Some(match store {
+        Store::Gumroad { .. } => return None,
         Store::Polar { org } => Request {
             url: format!("{POLAR}/deactivate"),
             content_type: JSON,
@@ -111,7 +143,7 @@ pub fn deactivate_request(store: &Store, key: &str, instance: &str) -> Request {
             content_type: FORM,
             body: form(&[("license_key", key), ("instance_id", instance)]),
         },
-    }
+    })
 }
 
 /// What the store said about a key.
@@ -130,8 +162,48 @@ pub fn parse_answer(store: &Store, status: u16, body: &str, instance: Option<&st
     let v: serde_json::Value =
         serde_json::from_str(body).map_err(|_| format!("unexpected answer from the store (HTTP {status})"))?;
     match store {
+        Store::Gumroad { .. } => parse_gumroad(status, &v, instance),
         Store::Polar { org } => parse_polar(org, status, &v, instance),
         Store::Lemon { store, product } => parse_lemon(*store, *product, status, &v, instance),
+    }
+}
+
+fn parse_gumroad(status: u16, v: &serde_json::Value, instance: Option<&str>) -> Result<Verdict, String> {
+    let ok = v.get("success").and_then(|b| b.as_bool());
+    match (status, ok) {
+        (200, Some(true)) => {}
+        // Gumroad answers 404 with "success": false for a key it doesn't know.
+        (400..=499, _) | (_, Some(false)) => {
+            let m = v.get("message").and_then(|m| m.as_str()).unwrap_or("");
+            return Ok(Verdict::Refused(if m.is_empty() || m.to_lowercase().contains("does not exist") {
+                "That key wasn't recognised. Check it against your receipt.".into()
+            } else {
+                m.to_string()
+            }));
+        }
+        _ => return Err(format!("the store isn't answering right now (HTTP {status})")),
+    }
+    let p = v.get("purchase");
+    let flag = |k: &str| p.and_then(|p| p.get(k)).and_then(|b| b.as_bool()).unwrap_or(false);
+    let set = |k: &str| p.and_then(|p| p.get(k)).is_some_and(|x| !x.is_null());
+    if flag("refunded") {
+        return Ok(Verdict::Refused("This purchase was refunded.".into()));
+    }
+    if flag("chargebacked") || (flag("disputed") && !flag("dispute_won")) {
+        return Ok(Verdict::Refused("This purchase is disputed.".into()));
+    }
+    if set("subscription_ended_at") || set("subscription_failed_at") {
+        return Ok(Verdict::Refused("This subscription has ended.".into()));
+    }
+    let uses = v.get("uses").and_then(|u| u.as_u64()).unwrap_or(1);
+    match instance {
+        // A weekly check: the activation is the one made before.
+        Some(id) => Ok(Verdict::Valid { instance: id.to_string(), expires: None }),
+        // A new activation: within the computers allowed?
+        None if uses > GUMROAD_COMPUTERS => Ok(Verdict::Refused(format!(
+            "This key has been activated on {GUMROAD_COMPUTERS} computers already. Write to the seller to reset it."
+        ))),
+        None => Ok(Verdict::Valid { instance: format!("gumroad-{uses}"), expires: None }),
     }
 }
 
@@ -232,7 +304,7 @@ fn lemon_reason(v: &serde_json::Value) -> String {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ProState {
-    /// "polar" or "lemon".
+    /// "gumroad", "polar" or "lemon".
     pub store: String,
     /// This computer's activation id.
     pub instance: String,
@@ -355,6 +427,56 @@ mod tests {
 
     const ORG: &str = "1dbfc517-0bbf-4301-9ba8-555ca42b9737";
 
+    fn gumroad() -> Store {
+        Store::Gumroad { product: "gP3x==".into() }
+    }
+
+    #[test]
+    fn gumroad_activates_by_counting_a_use_and_checks_without() {
+        let a = activate_request(&gumroad(), "ABCD-1234", "Islet on Linux");
+        assert_eq!(a.url, "https://api.gumroad.com/v2/licenses/verify");
+        assert_eq!(a.content_type, "application/x-www-form-urlencoded");
+        assert!(a.body.contains("product_id=gP3x%3D%3D") && a.body.contains("license_key=ABCD-1234"), "{}", a.body);
+        assert!(a.body.contains("increment_uses_count=true"));
+        assert!(validate_request(&gumroad(), "ABCD-1234", "gumroad-2").body.contains("increment_uses_count=false"));
+        assert_eq!(deactivate_request(&gumroad(), "K", "gumroad-2"), None, "Gumroad can't free a slot from the app");
+    }
+
+    #[test]
+    fn gumroad_answers_are_read() {
+        let ok = r#"{"success":true,"uses":2,"purchase":{"refunded":false,"disputed":false,"dispute_won":false,"chargebacked":false,"subscription_ended_at":null,"subscription_failed_at":null}}"#;
+        assert_eq!(
+            parse_answer(&gumroad(), 200, ok, None),
+            Ok(Verdict::Valid { instance: "gumroad-2".into(), expires: None })
+        );
+        assert_eq!(
+            parse_answer(&gumroad(), 200, ok, Some("gumroad-1")),
+            Ok(Verdict::Valid { instance: "gumroad-1".into(), expires: None })
+        );
+        let many = ok.replace("\"uses\":2", "\"uses\":6");
+        assert!(
+            matches!(parse_answer(&gumroad(), 200, &many, None), Ok(Verdict::Refused(m)) if m.contains("5 computers"))
+        );
+        assert!(
+            matches!(parse_answer(&gumroad(), 200, &many, Some("gumroad-1")), Ok(Verdict::Valid { .. })),
+            "a weekly check isn't a new use"
+        );
+        let refunded = ok.replace("\"refunded\":false", "\"refunded\":true");
+        assert!(
+            matches!(parse_answer(&gumroad(), 200, &refunded, Some("g")), Ok(Verdict::Refused(m)) if m.contains("refunded"))
+        );
+        let disputed = ok.replace("\"disputed\":false", "\"disputed\":true");
+        assert!(matches!(parse_answer(&gumroad(), 200, &disputed, Some("g")), Ok(Verdict::Refused(_))));
+        let won = disputed.replace("\"dispute_won\":false", "\"dispute_won\":true");
+        assert!(matches!(parse_answer(&gumroad(), 200, &won, Some("g")), Ok(Verdict::Valid { .. })));
+        let missing = r#"{"success":false,"message":"That license does not exist for the provided product."}"#;
+        assert!(
+            matches!(parse_answer(&gumroad(), 404, missing, None), Ok(Verdict::Refused(m)) if m.contains("wasn't recognised"))
+        );
+        assert!(parse_answer(&gumroad(), 502, "<html>", None).is_err());
+        assert!(parse_answer(&gumroad(), 503, r#"{"error":"busy"}"#, None).is_err());
+    }
+
     fn polar() -> Store {
         Store::Polar { org: ORG.into() }
     }
@@ -365,11 +487,16 @@ mod tests {
 
     #[test]
     fn picks_the_configured_store() {
-        assert_eq!(Store::from_config(None, None, None), None);
-        assert_eq!(Store::from_config(Some(" "), Some("x"), None), None);
-        assert_eq!(Store::from_config(Some(ORG), Some("1"), None), Some(polar()));
-        assert_eq!(Store::from_config(None, Some("1234"), Some("56")), Some(lemon()));
-        assert_eq!(Store::from_config(None, Some("1234"), None), Some(Store::Lemon { store: 1234, product: None }));
+        assert_eq!(Store::from_config(None, None, None, None), None);
+        assert_eq!(Store::from_config(None, Some(" "), Some("x"), None), None);
+        assert_eq!(Store::from_config(None, Some(ORG), Some("1"), None), Some(polar()));
+        assert_eq!(Store::from_config(None, None, Some("1234"), Some("56")), Some(lemon()));
+        assert_eq!(
+            Store::from_config(None, None, Some("1234"), None),
+            Some(Store::Lemon { store: 1234, product: None })
+        );
+        assert_eq!(Store::from_config(Some(" gP3x== "), Some(ORG), None, None), Some(gumroad()), "Gumroad first");
+        assert_eq!(Store::from_config(Some(" "), Some(ORG), None, None), Some(polar()));
     }
 
     #[test]
@@ -383,7 +510,7 @@ mod tests {
         assert_eq!(v["label"], "Islet on Linux");
         let v: serde_json::Value = serde_json::from_str(&validate_request(&polar(), "K", "act-1").body).unwrap();
         assert_eq!(v["activation_id"], "act-1");
-        assert!(deactivate_request(&polar(), "K", "a").url.ends_with("/deactivate"));
+        assert!(deactivate_request(&polar(), "K", "a").unwrap().url.ends_with("/deactivate"));
     }
 
     #[test]

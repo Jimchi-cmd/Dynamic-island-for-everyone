@@ -2,6 +2,12 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Islet Pro can be sold through **Gumroad** (set `ISLET_GUMROAD_PRODUCT`), as well as Polar and Lemon Squeezy. Keys are checked with Gumroad's public license API; a key works on up to five computers.
+- The launch reels can be cut to any song: `scripts/promo/beats.py` finds its tempo, beats and bars, and `make-reels.py --song` starts each reel two bars before a drop, puts every cut on a bar line, times the island's moments to the beat, and drives the punches, streaks and glow from the song's kicks, snares and loudness.
+
 ## [0.4.7] - 2026-11-19
 
 ### Fixed
