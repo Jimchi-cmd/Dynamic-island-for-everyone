@@ -21,3 +21,4 @@ Thumbs.db
 
 # Sidecars staged for bundling (scripts/stage-island.sh)
 /src-tauri/binaries/
+__pycache__/
