@@ -58,6 +58,18 @@ The music is made from scratch by `scripts/promo/music.py` (a kick, claps, hi-ha
 python3 scripts/promo/make-tutorial.py --out promo-videos --laptop-frames build/promo-laptop-desk
 ```
 
+## Store cover
+
+The Islet Pro cover (2560 x 1440) and square thumbnail (1200 x 1200) for the store page, drawn from an island frame (the open music card looks best):
+
+```bash
+ISLET_PROMO_DIR=/tmp/islet-desk ISLET_PROMO_REEL=desk cargo test -p islet --bin islet promo_frames
+```
+
+```bash
+python3 scripts/promo/make-cover.py /tmp/islet-desk/f0400.png /tmp/islet-cover
+```
+
 ## Posting
 
 - **Post one a day** rather than all at once, and pin the best one to your profile.
