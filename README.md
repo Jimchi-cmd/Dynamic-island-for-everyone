@@ -10,3 +10,7 @@ To download one, click its name above, then click the download button (the arrow
 ## YouTube tutorial
 
 `islet-youtube-tutorial.mp4` (3 min 10 s) shows how to install Islet on an Android phone, Windows, Mac and Linux, step by step. When you upload it to YouTube, paste the lines from `islet-youtube-tutorial-chapters.txt` into the description: YouTube turns them into chapters.
+
+## Store cover
+
+`islet-pro-cover.png` (wide) and `islet-pro-thumbnail.png` (square) are for the Islet Pro page on Gumroad.
