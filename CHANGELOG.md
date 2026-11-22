@@ -2,7 +2,7 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.8] - 2026-11-22
 
 ### Added
 - Islet Pro can be sold through **Gumroad** (set `ISLET_GUMROAD_PRODUCT`), as well as Polar and Lemon Squeezy. Keys are checked with Gumroad's public license API; a key works on up to five computers.
