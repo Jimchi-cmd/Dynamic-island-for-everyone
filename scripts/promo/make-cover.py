@@ -6,6 +6,10 @@
 FRAME is an island frame with a transparent background, as the laptop
 promo test writes them (ISLET_PROMO_DIR); the open music card looks best.
 Writes islet-pro-cover.png (2560 x 1440) and islet-pro-thumbnail.png (1200 x 1200).
+
+  python3 scripts/promo/make-cover.py --profile OUT_DIR
+
+Writes islet-profile.png (1024 x 1024), a profile picture safe for a round crop.
 """
 
 import importlib.util
@@ -142,7 +146,43 @@ def thumbnail(frame, path):
     img.convert("RGB").save(path, optimize=True)
 
 
+def profile(path):
+    """A square profile picture: a black island with a pink glow over 'Islet'.
+
+    Everything sits inside the middle circle, so a round crop cuts nothing off.
+    """
+    S = 1024
+    img = background(S, S, (0.5, 0.45))
+    pw, ph = 560, 168
+    x0, y0 = (S - pw) // 2, 300
+    glow = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).rounded_rectangle([x0, y0 + 24, x0 + pw, y0 + ph + 24], ph // 2, fill=(*PINK, 170))
+    img.alpha_composite(glow.filter(ImageFilter.GaussianBlur(60)))
+    pill = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(pill)
+    d.rounded_rectangle([x0, y0, x0 + pw, y0 + ph], ph // 2, fill=(0, 0, 0, 255), outline=(255, 255, 255, 40), width=3)
+    # A tiny album square, moving bars and the camera dot: the island playing music.
+    a = 92
+    ax, ay = x0 + 38, y0 + (ph - a) // 2
+    d.rounded_rectangle([ax, ay, ax + a, ay + a], 22, fill=PINK)
+    d.rounded_rectangle([ax + 20, ay + 20, ax + a - 20, ay + a - 20], 14, fill=(255, 140, 170))
+    bx, cy = x0 + pw - 190, y0 + ph // 2
+    for i, h in enumerate([36, 70, 48, 84, 30]):
+        d.rounded_rectangle([bx + i * 24, cy - h // 2, bx + i * 24 + 12, cy + h // 2], 6, fill=(255, 140, 170))
+    r = 18
+    cx = x0 + pw - 52
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(22, 20, 32), outline=(60, 58, 80), width=3)
+    img.alpha_composite(pill)
+    t = reels.extruded("Islet", 210, (255, 255, 255), (200, 196, 220), depth=15)
+    img.alpha_composite(t, ((S - t.width) // 2, 540))
+    img.convert("RGB").save(path, optimize=True)
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--profile":
+        os.makedirs(sys.argv[2], exist_ok=True)
+        profile(os.path.join(sys.argv[2], "islet-profile.png"))
+        return 0
     if len(sys.argv) != 3:
         print(__doc__)
         return 2
