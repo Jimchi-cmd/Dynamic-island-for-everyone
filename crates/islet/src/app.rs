@@ -238,7 +238,7 @@ pub struct App {
     timer_ringing: bool,
     timer_control: Option<TimerControl>,
     timer_sec: i64,
-    /// The stopwatch (Islet Pro), the card button being pressed, and the
+    /// The stopwatch, the card button being pressed, and the
     /// last tenth/second drawn.
     stopwatch: Option<Stopwatch>,
     stopwatch_control: Option<StopwatchControl>,
@@ -249,7 +249,7 @@ pub struct App {
     dragging: bool,
     drag_opened: bool,
     shelf_dirty: bool,
-    /// Notes and to-dos (Islet Pro; todo.json), and whether to save them.
+    /// Notes and to-dos (todo.json), and whether to save them.
     todo: islet_core::todo::Todo,
     todo_dirty: bool,
     /// The class timetable, and the day its lessons were last laid out for.
@@ -275,7 +275,8 @@ pub struct App {
     notes_open: bool,
     /// island.json: which pop-ups are on, weather, calendar…
     prefs: IslandPrefs,
-    pro: bool,
+    /// A low-end computer: Performance "auto" keeps the light limits.
+    low_end: bool,
     /// Unix time and UTC offset at the last `set_wall` (for calendar events).
     wall: f64,
     utc_offset: i64,
@@ -301,6 +302,8 @@ pub struct App {
     /// Latest wall-clock time (the clock), and 12/24-hour style.
     clock: Option<LocalTime>,
     h24: bool,
+    /// What the system's language prefers (Settings → Look → Clock can override it).
+    locale_h24: bool,
     /// Height of the card when the island last opened: content fades
     /// relative to it, so short cards (a device list) fade in fully too.
     open_h: f64,
@@ -427,7 +430,7 @@ impl App {
             top: TOP_GAP,
             notes_open: false,
             prefs: IslandPrefs::default(),
-            pro: false,
+            low_end: false,
             wall: 0.0,
             utc_offset: 0,
             panel: None,
@@ -446,6 +449,7 @@ impl App {
             quit: false,
             clock: None,
             h24: true,
+            locale_h24: true,
             open_h: MEDIA_H,
             closed: Presentation::Idle,
             notch: None,
@@ -502,7 +506,8 @@ impl App {
     }
 
     pub fn set_clock_style(&mut self, h24: bool) {
-        self.h24 = h24;
+        self.locale_h24 = h24;
+        self.h24 = self.prefs.h24(h24);
     }
 
     /// Wrap a physical notch (width, height in logical px): idle becomes the
@@ -647,11 +652,8 @@ impl App {
         changed
     }
 
-    /// Start, pause, lap or reset the stopwatch (Islet Pro only).
+    /// Start, pause, lap or reset the stopwatch.
     pub fn stopwatch_command(&mut self, cmd: StopwatchCommand, t: f64) -> bool {
-        if !self.pro {
-            return false;
-        }
         match (&mut self.stopwatch, cmd) {
             (None, StopwatchCommand::Start | StopwatchCommand::Resume) => self.stopwatch = Some(Stopwatch::started(t)),
             (Some(sw), StopwatchCommand::Start | StopwatchCommand::Resume) => sw.resume(t),
@@ -1093,12 +1095,10 @@ impl App {
             let detail = self.sleep_at.map_or("Off".to_string(), left);
             v.push(MenuItem { detail: Some(detail), ..item(MenuAction::Sleep, Icon::Moon, "Sleep timer") });
         }
-        // Islet Pro: your first shortcuts, in the rows that are left.
-        if self.pro {
-            let room = content::MENU_MAX_ROWS.saturating_sub(v.len() + 1).min(2);
-            for (i, sc) in self.prefs.shortcuts.iter().enumerate().take(room) {
-                v.push(item(MenuAction::Shortcut(i as u8), Icon::Bolt, &sc.name));
-            }
+        // Your first shortcuts, in the rows that are left.
+        let room = content::MENU_MAX_ROWS.saturating_sub(v.len() + 1).min(2);
+        for (i, sc) in self.prefs.shortcuts.iter().enumerate().take(room) {
+            v.push(item(MenuAction::Shortcut(i as u8), Icon::Bolt, &sc.name));
         }
         v.push(item(MenuAction::Quit, Icon::Close, "Quit Islet"));
         v
@@ -1552,7 +1552,7 @@ impl App {
                 }
                 (Some(Panel::Bluetooth), _) => self.ui_actions.push(UiAction::Url(BLUETOOTH_SETTINGS.into())),
                 (Some(Panel::Clipboard), _) => self.clip.clear(),
-                (Some(Panel::Todo | Panel::Shortcuts), _) => self.ui_actions.push(UiAction::Settings("pro".into())),
+                (Some(Panel::Todo | Panel::Shortcuts), _) => self.ui_actions.push(UiAction::Settings("extras".into())),
                 _ => {}
             },
         }
@@ -1946,17 +1946,18 @@ impl App {
         self.top = top;
     }
 
-    /// Islet Pro is on (its features show; see `islet_core::pro`).
-    pub fn set_pro(&mut self, on: bool) {
-        self.pro = on;
+    /// A low-end computer (see `limits::is_low_end`): Performance "auto"
+    /// keeps the light limits on it.
+    pub fn set_low_end(&mut self, low: bool) {
+        self.low_end = low;
         self.apply_limits();
     }
 
-    /// How much is kept and how smoothly things move: the light limits in
-    /// the free app, none of them with Islet Pro, and with Pro's Power
-    /// saver the light ones again with the island held still.
+    /// How much is kept and how smoothly things move (Settings → Extras →
+    /// Performance): full, light, or Power saver's light limits with the
+    /// island held still.
     pub fn limits(&self) -> Limits {
-        Limits::pick(self.pro, self.prefs.power_saver)
+        Limits::pick(&self.prefs.performance, self.low_end)
     }
 
     fn apply_limits(&mut self) {
@@ -1976,6 +1977,7 @@ impl App {
     pub fn set_prefs(&mut self, prefs: IslandPrefs) {
         content::set_accent(prefs.accent_rgb());
         self.prefs = prefs;
+        self.h24 = self.prefs.h24(self.locale_h24);
         self.apply_limits();
         if !self.prefs.lyrics {
             self.lyrics = None;
@@ -2316,26 +2318,22 @@ impl App {
         ClockRow {
             shelf: !self.shelf.is_empty(),
             clipboard: self.prefs.clipboard,
-            pro: self.pro,
+            todo: !self.prefs.hides("todo"),
+            stopwatch: !self.prefs.hides("stopwatch"),
             todo_left: self.todo.left(),
-            shortcuts: self.pro && !self.prefs.shortcuts.is_empty(),
-            world: self.pro && self.prefs.world_clocks.iter().any(|c| islet_core::worldclock::find(c).is_some()),
+            shortcuts: !self.prefs.shortcuts.is_empty(),
+            world: self.prefs.world_clocks.iter().any(|c| islet_core::worldclock::find(c).is_some()),
             no_timer: self.prefs.hides("timer"),
             no_calendar: self.prefs.hides("calendar"),
             no_screenshot: self.prefs.hides("screenshot"),
             no_lock: self.prefs.hides("lock"),
             no_system: self.prefs.hides("system"),
             no_controls: self.prefs.hides("controls"),
-            no_todo: self.prefs.hides("todo"),
-            no_stopwatch: self.prefs.hides("stopwatch"),
         }
     }
 
-    /// The chosen world clocks (Islet Pro): name, local time, days ahead.
+    /// The chosen world clocks: name, local time, days ahead.
     fn world_clocks(&self) -> Vec<(String, islet_core::clock::LocalTime, i32)> {
-        if !self.pro {
-            return Vec::new();
-        }
         let here = (self.utc_offset / 60) as i32;
         self.prefs
             .world_clocks
@@ -2601,7 +2599,7 @@ impl App {
                     engine,
                 )),
                 OpenContent::Media(m) => {
-                    let visual = self.pro && self.prefs.visualizer;
+                    let visual = self.prefs.visualizer;
                     out.extend(content::expanded_media(card, m, t, eo, self.scrub, self.volume, visual, engine));
                     if let Some(l) = self.song_lyrics() {
                         let pos = self.lyrics_pos(m, t);
@@ -3264,7 +3262,7 @@ impl App {
     }
 
     /// How often to draw while something moves on its own: 60 fps for the
-    /// shape, 30 fps for a waveform (60 with Islet Pro, and not at all with
+    /// shape, 60 fps for a waveform (30 in Light, and not at all with
     /// Power saver); None when nothing moves (zero wakeups).
     pub fn frame_interval(&self, t: f64) -> Option<Duration> {
         if self.animating(t) {
@@ -3472,8 +3470,8 @@ impl App {
         r.inflate(1.0)
     }
 
-    /// What the island is made of: black, or with Islet Pro the chosen
-    /// style (tinted, glass…). A notched Mac stays black to match its notch.
+    /// What the island is made of: the chosen style (black, tinted,
+    /// glass…). A notched Mac stays black to match its notch.
     fn skin(&self) -> islet_render::Skin {
         if self.notch.is_some() {
             return islet_render::Skin::default();
@@ -3485,9 +3483,6 @@ impl App {
             .filter(|m| self.prefs.album_border && m.playing)
             .and_then(|m| m.art.as_ref())
             .map(|a| content::brighten(a.dominant));
-        if !self.pro {
-            return islet_render::Skin { border, ..islet_render::Skin::default() };
-        }
         let (color, alpha, glass) = islet_core::prefs::style_body(&self.prefs.style, self.prefs.accent_rgb());
         // While music plays, a glow in its cover's colour.
         let glow = self
@@ -3499,13 +3494,9 @@ impl App {
         islet_render::Skin { color, alpha, glass, glow, border }
     }
 
-    /// What the empty island shows: the time, unless Islet Pro chose more.
+    /// What the empty island shows (Settings → Look).
     fn clock_face(&self) -> content::ClockFace {
-        if self.pro {
-            content::ClockFace::from_pref(&self.prefs.clock_face)
-        } else {
-            content::ClockFace::Time
-        }
+        content::ClockFace::from_pref(&self.prefs.clock_face)
     }
 
     /// The seconds face is ticking on the empty island (not with Power
@@ -3516,11 +3507,10 @@ impl App {
             && self.idle_clock_opacity(t, &self.live(t)) > 0.0
     }
 
-    /// Square top corners: a Mac's notch, or the "notch" shape (Islet Pro)
+    /// Square top corners: a Mac's notch, or the "notch" shape
     /// while the island touches the top of the screen.
     fn flat_top(&self) -> bool {
-        self.notch.is_some()
-            || (self.pro && self.prefs.shape == "notch" && self.top <= 0.0 && !self.placement.from_bottom())
+        self.notch.is_some() || (self.prefs.shape == "notch" && self.top <= 0.0 && !self.placement.from_bottom())
     }
 
     pub fn frame(&self, t: f64) -> PillFrame {
@@ -3664,8 +3654,10 @@ mod tests {
         let dim = lines.iter().find(|(s, _)| s == "Hold on to the night" || s == "Fades into the sky");
         assert!(dim.is_some_and(|(_, o)| *o > 0.2 && *o < 0.5), "lines not being sung stay visible, dimmer: {lines:?}");
         // The strip slides at 60 fps as a new line starts, then calms down.
+        app.set_low_end(true);
         assert_eq!(app.frame_interval(10.0 - islet_core::lyrics::LEAD + 0.1), Some(FRAME));
-        assert_eq!(app.frame_interval(12.0), Some(WAVE_FRAME));
+        assert_eq!(app.frame_interval(12.0), Some(WAVE_FRAME), "light: back to 30 fps");
+        app.set_low_end(false);
 
         // Music keeps the island visible even with hover-only on.
         app.set_prefs(IslandPrefs { auto_hide: true, ..lyrics_on() });
@@ -4309,7 +4301,10 @@ mod tests {
         let els = app.elements(5.0, &mut engine);
         assert!(els.iter().any(|e| matches!(e, Element::Art { .. })), "album art on the left");
         assert_eq!(els.iter().filter(|e| matches!(e, Element::Bar { .. })).count(), 4, "waveform on the right");
-        assert_eq!(app.frame_interval(5.0), Some(WAVE_FRAME), "the waveform moves at 30 fps");
+        assert_eq!(app.frame_interval(5.0), Some(FRAME), "the waveform moves at 60 fps");
+        app.set_low_end(true);
+        assert_eq!(app.frame_interval(5.0), Some(WAVE_FRAME), "30 on a low-end computer");
+        app.set_low_end(false);
 
         app.report(Report::Media(Some(song(false))), 6.0);
         assert_eq!(app.frame_interval(6.5), None, "paused: nothing moves, no frames");
@@ -4446,7 +4441,7 @@ mod tests {
         assert_eq!(app.presentation(), Expanded, "the alarm opens the island");
         assert!(texts(&app, 22.0, &mut engine).iter().any(|s| s == "Tea"));
         assert!(bell_shown(&app, 22.0, &mut engine));
-        assert_eq!(app.frame_interval(22.0), Some(WAVE_FRAME), "the bell swings");
+        assert_eq!(app.frame_interval(22.0), Some(FRAME), "the bell swings");
 
         // Collapsed, the compact pill keeps the bell at its right end.
         app.handle(Event::Key(Key::Escape), 23.0);
@@ -4645,18 +4640,17 @@ mod tests {
     }
 
     #[test]
-    fn stopwatch_is_pro_and_starts_from_control_centre() {
+    fn stopwatch_starts_from_control_centre() {
         let mut app = App::new(Demo::None, false);
         let mut engine = TextEngine::new();
         app.set_time(NOW, 0.0);
-        assert!(!app.stopwatch_command(StopwatchCommand::Start, 0.0), "free: no stopwatch");
         click(&mut app, 0.0);
         let cr = app.content_rect(app.pill_rect(5.0));
-        assert!(!content::clock_chips(cr, app.clock_row()).iter().any(|(_, p)| *p == Panel::Stopwatch));
-
-        app.set_pro(true);
+        assert!(!content::clock_chips(cr, app.clock_row()).iter().any(|(_, p)| *p == Panel::Stopwatch), "off at first");
+        app.set_prefs(IslandPrefs { card_shown: vec!["stopwatch".into()], ..IslandPrefs::default() });
+        let cr = app.content_rect(app.pill_rect(5.0));
         let chips = content::clock_chips(cr, app.clock_row());
-        let (button, _) = *chips.iter().find(|(_, p)| *p == Panel::Stopwatch).expect("Pro: a stopwatch button");
+        let (button, _) = *chips.iter().find(|(_, p)| *p == Panel::Stopwatch).expect("a stopwatch button");
         press(&mut app, button, 5.0);
         let shown = texts(&app, 9.0, &mut engine);
         assert!(shown.contains(&"0:00.0".to_string()) && shown.contains(&"Start".to_string()), "{shown:?}");
@@ -4810,12 +4804,12 @@ mod tests {
     #[test]
     fn labels_are_never_cut_short_on_a_crowded_clock_card() {
         let mut engine = TextEngine::new();
-        // The fullest row: a shelf, clipboard history and Pro's buttons.
+        // The fullest row: a shelf, clipboard history, stopwatch and to-do.
         let mut app = App::new(Demo::None, false);
         app.set_time(NOW, 0.0);
-        app.set_pro(true);
         let mut p = app.prefs().clone();
         p.clipboard = true;
+        p.card_shown = vec!["todo".into(), "stopwatch".into()];
         app.set_prefs(p);
         app.set_shelf(vec![islet_core::shelf::ShelfItem { path: "/tmp/a.pdf".into(), dir: false }]);
         click(&mut app, 0.0);
@@ -4885,16 +4879,14 @@ mod tests {
     }
 
     #[test]
-    fn island_styles_are_pro_and_a_notched_mac_stays_black() {
+    fn island_styles_and_a_notched_mac_stays_black() {
         use islet_render::Skin;
         let mut app = App::new(Demo::None, false);
+        assert_eq!(app.frame(0.0).skin, Skin::default(), "black to begin with");
         let mut p = app.prefs().clone();
         p.style = "tinted-glass".into();
         p.accent = "pink".into();
         app.set_prefs(p);
-        assert_eq!(app.frame(0.0).skin, Skin::default(), "free: solid black whatever the file says");
-
-        app.set_pro(true);
         let skin = app.frame(0.0).skin;
         assert!(skin.glass && skin.alpha < 1.0 && skin.color[0] > skin.color[1], "pink-tinted glass: {skin:?}");
         let mut p = app.prefs().clone();
@@ -4909,7 +4901,7 @@ mod tests {
     }
 
     #[test]
-    fn shortcuts_open_from_control_centre_with_pro() {
+    fn shortcuts_open_from_control_centre() {
         use islet_core::prefs::Shortcut;
         let mut app = App::new(Demo::None, false);
         let mut engine = TextEngine::new();
@@ -4922,13 +4914,10 @@ mod tests {
         app.set_prefs(p);
         click(&mut app, 0.0);
         let cr = app.content_rect(app.pill_rect(5.0));
-        assert!(!content::clock_chips(cr, app.clock_row()).iter().any(|(_, p)| *p == Panel::Shortcuts), "free: none");
-
-        app.set_pro(true);
         let (button, _) = *content::clock_chips(cr, app.clock_row())
             .iter()
             .find(|(_, p)| *p == Panel::Shortcuts)
-            .expect("Pro: a shortcuts button");
+            .expect("a shortcuts button");
         press(&mut app, button, 5.0);
         let shown = texts(&app, 9.0, &mut engine);
         assert!(shown.contains(&"Homework".to_string()) && shown.contains(&"Mail".to_string()), "{shown:?}");
@@ -4946,7 +4935,7 @@ mod tests {
         let mut app = App::new(Demo::None, false);
         let mut engine = TextEngine::new();
         app.set_time(NOW, 0.0);
-        app.set_pro(true);
+        app.set_prefs(IslandPrefs { card_shown: vec!["todo".into()], ..IslandPrefs::default() });
         let mut todo = islet_core::todo::Todo::default();
         let milk = todo.add("Buy milk").unwrap();
         todo.add("Call mum").unwrap();
@@ -4978,11 +4967,11 @@ mod tests {
         // Typing happens in Settings: the footer opens it.
         let footer = content::list_footer(app.content_rect(app.pill_rect(12.0)), 1);
         press(&mut app, footer, 12.0);
-        assert_eq!(app.take_ui_actions(), [UiAction::Settings("pro".into())]);
+        assert_eq!(app.take_ui_actions(), [UiAction::Settings("extras".into())]);
     }
 
     #[test]
-    fn world_clocks_show_on_the_clock_card_with_pro() {
+    fn world_clocks_show_on_the_clock_card() {
         let mut app = App::new(Demo::None, false);
         let mut engine = TextEngine::new();
         app.set_time(NOW, 0.0);
@@ -4992,11 +4981,13 @@ mod tests {
         p.world_clocks = vec!["Tokyo".into(), "Atlantis".into(), "New York".into()];
         app.set_prefs(p);
         click(&mut app, 0.0);
-        let free_h = app.pill_rect(5.0).h;
-        assert!(!texts(&app, 5.0, &mut engine).iter().any(|s| s.starts_with("Tokyo")), "free: none");
-
-        app.set_pro(true);
-        app.sync_live(5.0);
+        // The same card without world clocks.
+        let free_h = {
+            let mut none = App::new(Demo::None, false);
+            none.set_time(NOW, 0.0);
+            click(&mut none, 0.0);
+            none.pill_rect(9.0).h
+        };
         let shown = texts(&app, 9.0, &mut engine);
         assert!(shown.contains(&"Tokyo ".to_string()) && shown.contains(&"23:05".to_string()), "{shown:?}");
         assert!(shown.contains(&"09:05".to_string()), "New York is on EST in November: {shown:?}");
@@ -5276,7 +5267,7 @@ mod tests {
         assert!(!texts(&playing, 5.0, &mut engine).contains(&"82%".to_string()));
     }
 
-    /// The Pro looks, for visual review:
+    /// The looks, for visual review:
     /// `ISLET_LOOKS_SHEET=/path/out.png cargo test -p islet looks_sheet`
     #[test]
     fn looks_sheet() {
@@ -5286,7 +5277,6 @@ mod tests {
         let pro = |p: IslandPrefs| {
             let mut a = App::new(Demo::None, false);
             a.set_time(NOW, 0.0);
-            a.set_pro(true);
             a.set_prefs(p);
             a
         };
@@ -5315,6 +5305,59 @@ mod tests {
         sheet.save_png(out).unwrap();
     }
 
+    /// The free app's new choices, for visual review: 24- and 12-hour
+    /// clocks, the notch shape (idle, with music, open) and the clock card
+    /// with its stopwatch and to-do buttons switched on.
+    /// `ISLET_FREE_SHEET=/path/out.png cargo test -p islet free_sheet`
+    #[test]
+    fn free_sheet() {
+        let Some(out) = std::env::var_os("ISLET_FREE_SHEET") else { return };
+        use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
+        let mut engine = TextEngine::new();
+        let make = |p: IslandPrefs, h24: bool| {
+            let mut a = App::new(Demo::None, false);
+            a.set_clock_style(h24);
+            a.set_time(NOW, 0.0);
+            a.set_prefs(p);
+            a
+        };
+        let pill24 = make(IslandPrefs::default(), true);
+        let pill12 = make(IslandPrefs { clock_hours: "12".into(), ..IslandPrefs::default() }, true);
+        let notch = IslandPrefs { shape: "notch".into(), ..IslandPrefs::default() };
+        let notch_idle = make(notch.clone(), true);
+        let mut notch_music = make(notch.clone(), true);
+        notch_music.report(Report::Media(Some(song_with_art(true))), 0.0);
+        let mut notch_card = make(notch.clone(), true);
+        notch_card.report(Report::Media(Some(song_with_art(true))), 0.0);
+        click(&mut notch_card, 1.0);
+        let mut card = make(
+            IslandPrefs {
+                shape: "notch".into(),
+                clock_hours: "12".into(),
+                card_shown: vec!["todo".into(), "stopwatch".into()],
+                ..IslandPrefs::default()
+            },
+            true,
+        );
+        click(&mut card, 0.0);
+        let apps = [pill24, pill12, notch_idle, notch_music, notch_card, card];
+        let (cw, ch) = (WINDOW.0 as u32, 260u32);
+        let mut sheet = Pixmap::new(cw * 2, ch * 3).unwrap();
+        sheet.fill(Color::from_rgba8(226, 230, 236, 255));
+        for (i, a) in apps.iter().enumerate() {
+            let mut cell = Pixmap::new(cw, ch).unwrap();
+            let t = 30.3;
+            let frame = a.frame(t);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, ch, 1.0);
+            let els = a.elements(t, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 1.0, clip.as_ref());
+            let (x, y) = ((i as u32 % 2 * cw) as i32, (i as u32 / 2 * ch) as i32);
+            sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+        }
+        sheet.save_png(out).unwrap();
+    }
+
     /// The Controls panel, for visual review:
     /// `ISLET_CONTROLS_SHEET=/path/out.png cargo test -p islet controls_sheet`
     #[test]
@@ -5329,7 +5372,6 @@ mod tests {
         both.report(Report::Brightness(0.8), 6.0);
         let mut card = App::new(Demo::None, false);
         card.set_time(NOW, 0.0);
-        card.set_pro(true);
         click(&mut card, 0.0);
         let mut system = App::new(Demo::None, false);
         system.set_time(NOW, 0.0);
@@ -5578,7 +5620,14 @@ mod tests {
     #[test]
     fn the_clock_card_never_squeezes_wifi_and_bluetooth_away() {
         let pill = Rect::new(24.0, 0.0, 372.0, 232.0);
-        let everything = ClockRow { shelf: true, clipboard: true, pro: true, shortcuts: true, ..ClockRow::default() };
+        let everything = ClockRow {
+            shelf: true,
+            clipboard: true,
+            shortcuts: true,
+            todo: true,
+            stopwatch: true,
+            ..ClockRow::default()
+        };
         let chips = content::clock_chips(pill, everything);
         let tools = chips.iter().filter(|(_, p)| !matches!(p, Panel::Wifi | Panel::Bluetooth)).count();
         assert_eq!(tools, content::MAX_TOOLS, "seven are on, five fit");
@@ -5678,8 +5727,8 @@ mod tests {
         assert_eq!(app.frame(0.0).skin.border, None, "nothing playing: no border");
         app.report(Report::Media(Some(song_with_art(true))), 1.0);
         let skin = app.frame(2.0).skin;
-        assert_eq!(skin.border, Some([200, 60, 90]), "free for everyone");
-        assert_eq!((skin.color, skin.glow), ([0, 0, 0], None), "otherwise the plain black island");
+        assert_eq!(skin.border, Some([200, 60, 90]));
+        assert_eq!(skin.color, [0, 0, 0], "otherwise the plain black island");
         app.report(Report::Media(Some(song_with_art(false))), 3.0);
         assert_eq!(app.frame(4.0).skin.border, None, "paused: gone");
         app.report(Report::Media(Some(song_with_art(true))), 5.0);
@@ -5688,21 +5737,33 @@ mod tests {
     }
 
     #[test]
-    fn pro_looks_glow_visualizer_notch_and_clock_faces() {
+    fn the_clock_setting_picks_12_or_24_hours_whatever_the_language() {
         let mut engine = TextEngine::new();
-        // Free: none of it, whatever the settings say.
-        let looks = IslandPrefs { shape: "notch".into(), clock_face: "date".into(), ..IslandPrefs::default() };
-        let mut free = App::new(Demo::None, false);
-        free.set_time(NOW, 0.0);
-        free.set_prefs(looks.clone());
-        assert_eq!(texts(&free, 1.0, &mut engine), ["14:05"]);
-        assert!(!free.frame(1.0).flat_top);
-        free.report(Report::Media(Some(song_with_art(true))), 2.0);
-        assert_eq!(free.frame(6.0).skin.glow, None);
+        let mut app = App::new(Demo::None, false);
+        app.set_clock_style(true); // a language that writes 14:05
+        app.set_time(NOW, 0.0);
+        assert_eq!(texts(&app, 1.0, &mut engine), ["14:05"]);
+        app.set_prefs(IslandPrefs { clock_hours: "12".into(), ..IslandPrefs::default() });
+        assert_eq!(texts(&app, 1.0, &mut engine), ["2:05", "PM"], "12-hour, chosen in Settings");
+        app.set_prefs(IslandPrefs { clock_hours: "24".into(), ..IslandPrefs::default() });
+        app.set_clock_style(false); // a language that writes 2:05 PM
+        assert_eq!(texts(&app, 1.0, &mut engine), ["14:05"], "24-hour stays");
+        app.set_prefs(IslandPrefs::default());
+        assert_eq!(texts(&app, 1.0, &mut engine), ["2:05", "PM"], "automatic follows the language");
+    }
 
+    #[test]
+    fn looks_glow_visualizer_notch_and_clock_faces() {
+        let mut engine = TextEngine::new();
+        // The plain island: a pill with the time.
+        let mut plain = App::new(Demo::None, false);
+        plain.set_time(NOW, 0.0);
+        assert_eq!(texts(&plain, 1.0, &mut engine), ["14:05"]);
+        assert!(!plain.frame(1.0).flat_top);
+
+        let looks = IslandPrefs { shape: "notch".into(), clock_face: "date".into(), ..IslandPrefs::default() };
         let mut app = App::new(Demo::None, false);
         app.set_time(NOW, 0.0);
-        app.set_pro(true);
         app.set_prefs(looks);
         // The date face, on a notch-shaped island.
         assert_eq!(texts(&app, 1.0, &mut engine), ["Wed 4", "14:05"]);
@@ -5719,7 +5780,11 @@ mod tests {
         let wake = app.next_timer(1.0).unwrap();
         assert!(wake - 1.0 <= 1.02, "wakes for the next second: {wake}");
         assert!(app.set_time(LocalTime { second: 43, ..NOW }, 2.0), "a new second redraws");
-        app.set_prefs(IslandPrefs { clock_face: "seconds".into(), power_saver: true, ..IslandPrefs::default() });
+        app.set_prefs(IslandPrefs {
+            clock_face: "seconds".into(),
+            performance: "saver".into(),
+            ..IslandPrefs::default()
+        });
         assert!(!app.set_time(LocalTime { second: 44, ..NOW }, 3.0));
         assert!(app.next_timer(3.0).unwrap() - 3.0 > 1.5);
 
@@ -5742,7 +5807,7 @@ mod tests {
     }
 
     #[test]
-    fn the_right_click_menu_offers_your_shortcuts_with_pro() {
+    fn the_right_click_menu_offers_your_shortcuts() {
         use content::MenuAction;
         use islet_core::prefs::Shortcut;
         let shortcuts: Vec<Shortcut> = ["Homework", "Timetable", "Music"]
@@ -5750,12 +5815,10 @@ mod tests {
             .map(|n| Shortcut::new(n, &format!("https://example.com/{n}")).unwrap())
             .collect();
         let prefs = IslandPrefs { shortcuts, ..IslandPrefs::default() };
-        let mut free = App::new(Demo::None, false);
-        free.set_prefs(prefs.clone());
-        assert!(!free.menu_items(1.0).iter().any(|m| matches!(m.action, MenuAction::Shortcut(_))));
+        let none = App::new(Demo::None, false);
+        assert!(!none.menu_items(1.0).iter().any(|m| matches!(m.action, MenuAction::Shortcut(_))), "none yet");
 
         let mut app = App::new(Demo::None, false);
-        app.set_pro(true);
         app.set_prefs(prefs.clone());
         let items = app.menu_items(1.0);
         let names: Vec<&str> =
@@ -5772,7 +5835,6 @@ mod tests {
 
         // With music and lyrics the menu is full: it never grows past the window.
         let mut busy = App::new(Demo::None, false);
-        busy.set_pro(true);
         busy.set_prefs(IslandPrefs { lyrics: true, ..prefs });
         busy.report(Report::Media(Some(song(true))), 0.0);
         assert!(busy.menu_items(1.0).len() <= content::MENU_MAX_ROWS);
@@ -6174,41 +6236,41 @@ mod tests {
     }
 
     #[test]
-    fn pro_lifts_the_limits_and_power_saver_stills_the_island() {
+    fn performance_modes_and_power_saver_stills_the_island() {
         use islet_core::limits::{FULL, LIGHT, SAVER};
-        // The free app: the light limits, a waveform at 30 fps.
+        // Light (and "auto" on a low-end computer): a waveform at 30 fps.
         let mut app = App::new(Demo::None, false);
+        app.set_low_end(true);
         app.report(Report::Media(Some(song(true))), 0.0);
         assert_eq!(app.limits(), LIGHT);
         assert_eq!(app.frame_interval(5.0), Some(WAVE_FRAME));
-        // Power saver is a Pro switch: alone it changes nothing.
-        app.set_prefs(IslandPrefs { power_saver: true, ..IslandPrefs::default() });
-        assert_eq!(app.limits(), LIGHT);
-        assert_eq!(app.frame_interval(5.0), Some(WAVE_FRAME));
+        app.set_low_end(false);
+        app.set_prefs(IslandPrefs { performance: "light".into(), ..IslandPrefs::default() });
+        assert_eq!(app.limits(), LIGHT, "chosen by hand");
 
-        // Islet Pro: no limits, and the waveform moves at 60 fps.
+        // Full (the usual "auto"): no limits, and the waveform moves at 60 fps.
         app.set_prefs(IslandPrefs { clipboard: true, ..IslandPrefs::default() });
-        app.set_pro(true);
         assert_eq!(app.limits(), FULL);
         assert_eq!(app.frame_interval(5.0), Some(FRAME));
         for i in 0..(LIGHT.clipboard_items + 30) {
             app.report(Report::Clipboard(islet_core::clipboard::Clip::Text(format!("copy {i}")), None), 5.0);
         }
-        assert_eq!(app.clip.len(), LIGHT.clipboard_items + 30, "history runs past the free cap");
+        assert_eq!(app.clip.len(), LIGHT.clipboard_items + 30, "history runs past the light cap");
         let files: Vec<(String, bool)> = (0..LIGHT.shelf + 8).map(|i| (format!("/tmp/f{i}"), false)).collect();
         let mut shelf = App::new(Demo::None, false);
+        shelf.set_prefs(IslandPrefs { performance: "light".into(), ..IslandPrefs::default() });
         shelf.drop_files(files.clone(), 6.0);
-        assert_eq!(shelf.shelf.len(), LIGHT.shelf, "the free shelf is full at twelve");
-        shelf.set_pro(true);
+        assert_eq!(shelf.shelf.len(), LIGHT.shelf, "the light shelf is full at twelve");
+        shelf.set_prefs(IslandPrefs::default());
         shelf.drop_files(files, 7.0);
-        assert_eq!(shelf.shelf.len(), LIGHT.shelf + 8, "with Pro all twenty fit");
+        assert_eq!(shelf.shelf.len(), LIGHT.shelf + 8, "in Full all twenty fit");
         // Power saver never drops a file that is already there.
-        shelf.set_prefs(IslandPrefs { power_saver: true, ..IslandPrefs::default() });
+        shelf.set_prefs(IslandPrefs { performance: "saver".into(), ..IslandPrefs::default() });
         shelf.drop_files(vec![("/tmp/one-more".into(), false)], 8.0);
         assert_eq!(shelf.shelf.len(), LIGHT.shelf + 9);
 
         // Power saver: the light limits again, and nothing moves by itself.
-        app.set_prefs(IslandPrefs { power_saver: true, clipboard: true, ..IslandPrefs::default() });
+        app.set_prefs(IslandPrefs { performance: "saver".into(), clipboard: true, ..IslandPrefs::default() });
         assert_eq!(app.limits(), SAVER);
         assert_eq!(app.presentation(), Compact);
         assert_eq!(app.frame_interval(20.0), None, "a still waveform wakes nothing");
@@ -7080,7 +7142,6 @@ mod tests {
         let make = |style: &str, accent: &str, music: bool| {
             let mut a = App::new(Demo::None, false);
             a.set_time(NOW, 0.0);
-            a.set_pro(true);
             let mut p = a.prefs().clone();
             p.style = style.into();
             p.accent = accent.into();
@@ -7111,21 +7172,22 @@ mod tests {
     }
 
     /// The clock card, calendar, stopwatch and to-do list for visual review:
-    /// `ISLET_PRO_SHEET=/path/out.png cargo test -p islet pro_sheet`
+    /// `ISLET_CARDS_SHEET=/path/out.png cargo test -p islet cards_sheet`
     #[test]
-    fn pro_sheet() {
-        let Some(out) = std::env::var_os("ISLET_PRO_SHEET") else { return };
+    fn cards_sheet() {
+        let Some(out) = std::env::var_os("ISLET_CARDS_SHEET") else { return };
         use content::Quick;
         use tiny_skia::{Color, Pixmap, PixmapPaint, Transform};
         let mut engine = TextEngine::new();
-        let open = |pro: bool| {
+        // The clock card with world clocks, or without.
+        let open = |world: bool| {
             let mut a = App::new(Demo::None, false);
             a.set_time(NOW, 0.0);
             a.set_wall(1_793_801_100.0, 0, 0.0);
-            a.set_pro(pro);
             a.set_alarms(vec![Alarm { id: 1, hour: 7, minute: 30, label: "Up".into(), days: 0, enabled: true }]);
             let mut p = a.prefs().clone();
-            p.world_clocks = vec!["London".into(), "Tokyo".into()];
+            p.world_clocks = if world { vec!["London".into(), "Tokyo".into()] } else { Vec::new() };
+            p.card_shown = vec!["todo".into(), "stopwatch".into()];
             a.set_prefs(p);
             let mut todo = islet_core::todo::Todo::default();
             for (i, s) in ["Buy milk", "Call mum", "Finish the essay"].iter().enumerate() {
@@ -7154,8 +7216,8 @@ mod tests {
             click(&mut a, 0.0);
             a
         };
-        let free = open(false);
-        let pro = open(true);
+        let plain = open(false);
+        let world = open(true);
         let mut calendar = open(true);
         press_quick(&mut calendar, 5.0, Quick::Calendar);
         let panel = |p: Panel| {
@@ -7175,7 +7237,7 @@ mod tests {
         pill.stopwatch_command(StopwatchCommand::Start, 6.0);
         pill.handle(Event::Key(Key::Escape), 7.0);
         pill.tick(8.0);
-        let apps = [free, pro, calendar, todo, stopwatch, pill];
+        let apps = [plain, world, calendar, todo, stopwatch, pill];
         let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
         let mut sheet = Pixmap::new(cw * 2, ch * 3).unwrap();
         sheet.fill(Color::from_rgba8(226, 230, 236, 255));

@@ -2,6 +2,20 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **Islet is completely free.** Islet Pro is gone: no licence key, no store, no Gumroad check. Everything it had is in the free app for everyone: the tinted and glass styles, the notch shape, the clock faces, the album glow and moving bars, the screenshot preview, the stopwatch, world clocks, quick notes, the to-do list, your own shortcut buttons, early builds, and no low-end limits. The Pro page in Settings is now **Extras**.
+- **Performance** (Settings → Extras, or `islet performance`): Automatic, Full, Light or Power saver. Automatic is Full, or Light on a computer with 4 GB of memory or less or two cores; an old Power saver setting carries over.
+- The clock card's **To-do list** and **Stopwatch** buttons are switched on in Settings → General → Clock card buttons, so Wi-Fi and Bluetooth keep their names.
+
+### Added
+- Computer: a **12-hour or 24-hour clock** (Settings → General → Clock, or `islet look hours 12|24|auto`). Automatic follows the system's language.
+- Computer: the **Notch** shape (Settings → General → Shape) is free: square top corners that join the island to the top of the screen.
+
+### Removed
+- `islet pro …` commands, the stored Pro key, and the release workflow's store variables (`ISLET_GUMROAD_PRODUCT`, `ISLET_BUY_URL` and the rest).
+
 ## [0.4.9] - 2026-11-22
 
 ### Changed

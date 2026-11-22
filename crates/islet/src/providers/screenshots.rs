@@ -1,4 +1,4 @@
-//! Screenshot preview (Islet Pro): watches the folder the system saves
+//! Screenshot preview: watches the folder the system saves
 //! screenshots into and shows each new one on the island for a few
 //! seconds. The thread sleeps until the folder changes.
 
@@ -15,7 +15,7 @@ use std::time::{Duration, Instant, SystemTime};
 /// Pictures larger than this aren't read (a thumbnail isn't worth it).
 const MAX_BYTES: u64 = 40 * 1024 * 1024;
 
-/// Stops the watcher when dropped (turned off, or Pro ended).
+/// Stops the watcher when dropped (turned off).
 pub struct Watcher {
     on: Arc<AtomicBool>,
 }

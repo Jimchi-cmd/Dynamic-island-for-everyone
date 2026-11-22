@@ -27,7 +27,7 @@ Usage:
                                            keychain (reads one line from stdin)
   islet key routes --clear                 remove it
   islet stopwatch start|pause|resume|lap|reset
-                                           a stopwatch on the island (Islet Pro)
+                                           a stopwatch on the island
   islet class add <day> <start> <end> <name> [--room <where>]
                                            a lesson for your timetable (mon 9:00 10:00 Maths)
   islet class [--json]                     your timetable; the clock card counts down to lessons
@@ -44,24 +44,25 @@ Usage:
   islet windows focus <id>                 bring one of them to the front
   islet launcher                           open the quick launcher (apps, web, sums, conversions);
                                            bind it to a key in your system's keyboard settings
-  islet note [<text>]                      add a line to Islet notes.txt in Documents (Islet Pro);
+  islet note [<text>]                      add a line to Islet notes.txt in Documents;
                                            bind it to a key in your system's keyboard settings
   islet note --where                       where that file is
-  islet todo add                           add a note or to-do (one line from stdin; Islet Pro)
+  islet todo add                           add a note or to-do (one line from stdin)
   islet todo [--json]                      your list
   islet todo done|remove <id>              tick an item (again to untick), or delete it
   islet todo clear-done                    delete the finished ones
   islet shortcut add --name <name> --target <folder, file, script or https link>
-                                           a button of your own on the island (Islet Pro)
+                                           a button of your own on the island
   islet shortcut [--json]                  your shortcuts
   islet shortcut remove <number>           delete one
-  islet world add|remove <city>            world clocks on the clock card (Islet Pro)
+  islet world add|remove <city>            world clocks on the clock card
   islet world [--json]                     your world clocks
   islet world cities                       the cities to choose from
-  islet pro activate                       turn on Islet Pro with your key (read from stdin)
-  islet pro status [--json]                is Pro on?
-  islet pro check                          ask the store again whether the key is valid
-  islet pro deactivate                     turn Pro off here (frees the key for another computer)
+  islet performance [auto|full|light|saver]
+                                           how much Islet keeps and how smoothly it moves: full
+                                           (60 fps, long histories), light (for 4 GB laptops),
+                                           saver (light and still, for battery), or auto (full,
+                                           light on a low-end computer)
   islet alarm add <time> [--label <name>] [--days <days>]
                                            set an alarm: 7:30, 19:30 or 7:30pm; days:
                                            once (default), daily, weekdays, weekends, mon,wed,…
@@ -107,12 +108,15 @@ Usage:
   islet caps-lock on|off                   show the Caps Lock pop-up (used by the GNOME extension)
   islet look accent <colour>               blue, indigo, purple, pink, red, orange, yellow, lime,
                                            green, mint, teal or graphite
-  islet look style <style>                 what the island is made of: black, or with Islet Pro
-                                           tinted, glass or tinted-glass
-  islet look shape pill|notch              the outline; notch (Islet Pro) is square at the top
+  islet look style <style>                 what the island is made of: black, tinted, glass or
+                                           tinted-glass
+  islet look shape pill|notch              the outline; notch is square at the top and joins the
+                                           top of the screen
   islet fonts [--json]                     the fonts installed on this computer
   islet look font <name>|default           the island's text in one of them, or the built-in font
-  islet look clock time|date|seconds       what the empty island shows (date, seconds: Islet Pro)
+  islet look clock time|date|seconds       what the empty island shows
+  islet look hours auto|12|24              12-hour (2:05 PM) or 24-hour (14:05) times; auto follows
+                                           the system's language
   islet card                               the clock card's buttons
   islet card show|hide <button>            timer, calendar, screenshot, lock, system, todo, stopwatch
   islet look size small|medium|large       the island's size
@@ -129,15 +133,14 @@ Usage:
                                            notifications, calendar, fahrenheit, web-artwork,
                                            spotify, privacy-dots, clipboard, lyrics, auto-hide, calls, downloads,
                                            idle-clock, hover-status, wifi-popup, focus-quiet, performance-alert, plugins,
-                                           album-border, mode-indicators,
-                                           and with Islet Pro: power-saver, album-glow, visualizer,
+                                           album-border, mode-indicators, album-glow, visualizer,
                                            screenshot-preview, phone
   islet prefs [--json]                     the island's settings
   islet autostart on|off                   start Islet when you log in (or stop doing so)
   islet status [--json]                    is Islet running, and how it is set up
   islet quit                               close the running island
   islet update check [--early] [--json]    ask GitHub for the latest release (--early: early
-                                           builds too, Islet Pro)
+                                           builds too)
   islet --version
   islet --help                             this text";
 
@@ -200,10 +203,8 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         }
         ["todo"] => Ok(todo_text()),
         ["todo", "--json"] => serde_json::to_string(&load_todo().items).map_err(|e| e.to_string()),
-        ["todo", "add"] => read_line("Type a note and press Enter:").and_then(|line| {
-            needs_pro()?;
-            edit_todo(|t| t.add(&line).map(|_| "Added.".to_string()))
-        }),
+        ["todo", "add"] => read_line("Type a note and press Enter:")
+            .and_then(|line| edit_todo(|t| t.add(&line).map(|_| "Added.".to_string()))),
         ["todo", "done", id] => todo_id(id)
             .and_then(|id| edit_todo(|t| if t.toggle(id) { Ok("Done.".into()) } else { Err(format!("no item {id}")) })),
         ["todo", "remove", id] => todo_id(id).and_then(|id| {
@@ -223,22 +224,9 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         }
         ["world", "add", city @ ..] if !city.is_empty() => world(true, &city.join(" ")),
         ["world", "remove", city @ ..] if !city.is_empty() => world(false, &city.join(" ")),
-        ["pro", "activate"] => read_line("Paste your Islet Pro key and press Enter:").and_then(|k| {
-            let r = crate::pro::activate(&k);
-            prefs_changed();
-            r
-        }),
-        ["pro", "status"] => Ok(crate::pro::status_text()),
-        ["pro", "status", "--json"] => Ok(crate::pro::status_json()),
-        ["pro", "check"] => crate::pro::check(true).map(|on| {
-            prefs_changed();
-            if on {
-                "Your key is valid. Islet Pro is on.".into()
-            } else {
-                crate::pro::status_text()
-            }
-        }),
-        ["pro", "deactivate"] => crate::pro::deactivate().inspect(|_| prefs_changed()),
+        ["pro", ..] => Err("Islet Pro is gone: everything it had is now free for everyone.".into()),
+        ["performance"] => Ok(config::load_prefs().performance),
+        ["performance", mode] => set_performance(mode),
         ["key", "routes", "--clear"] => secrets::clear_routes_key().map(|()| "Removed.".into()),
         ["autostart", "on"] => autostart::set(true).map(|()| "Islet will start when you log in.".into()),
         ["autostart", "off"] => autostart::set(false).map(|()| "Islet will no longer start at login.".into()),
@@ -361,6 +349,7 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         }),
         ["look", "font", name] => set_font(name),
         ["look", "clock", name] => set_choice(name, &islet_core::prefs::CLOCK_FACES, "clock", |p, v| p.clock_face = v),
+        ["look", "hours", name] => set_choice(name, &islet_core::prefs::CLOCK_HOURS, "hours", |p, v| p.clock_hours = v),
         ["card"] => Ok(card_text()),
         ["card", show @ ("show" | "hide"), button] => set_look(|p| {
             p.set_card_button(button, *show == "show")?;
@@ -874,9 +863,9 @@ fn set_extra_hotkey(which: &str, combo: &str) -> Result<String, String> {
 
 fn set_switch(key: &str, value: &str) -> Result<String, String> {
     let on = islet_core::prefs::parse_on_off(value).ok_or_else(|| format!("say on or off, not {value:?}"))?;
-    // Power saver belongs to Islet Pro (the free app is already light).
-    if key == "power-saver" && on {
-        needs_pro()?;
+    // Power saver used to be a switch: it is a Performance mode now.
+    if key == "power-saver" {
+        return set_performance(if on { "saver" } else { "auto" });
     }
     let mut p = config::load_prefs();
     p.set_switch(key, on)?;
@@ -1069,13 +1058,8 @@ fn status(json: bool) -> String {
 
 fn update_check(json: bool, early: bool) -> Result<String, String> {
     let current = env!("CARGO_PKG_VERSION");
-    // Early builds (pre-releases) are an Islet Pro perk.
-    let (latest, url) = if early {
-        needs_pro()?;
-        net::newest_release()?
-    } else {
-        net::latest_release()?
-    };
+    // Early builds: pre-releases count too.
+    let (latest, url) = if early { net::newest_release()? } else { net::latest_release()? };
     let newer = islet_core::version::is_newer(&latest, current);
     Ok(if json {
         serde_json::json!({ "current": current, "latest": latest, "newer": newer, "url": url }).to_string()
@@ -1086,13 +1070,23 @@ fn update_check(json: bool, early: bool) -> Result<String, String> {
     })
 }
 
-/// Islet Pro features say so when Pro is off.
-fn needs_pro() -> Result<(), String> {
-    if crate::pro::active() {
-        Ok(())
-    } else {
-        Err("That's an Islet Pro feature. See Settings → Islet Pro.".into())
-    }
+/// Full, light, Power saver, or auto (see `islet_core::limits`).
+fn set_performance(mode: &str) -> Result<String, String> {
+    let modes = islet_core::limits::MODES;
+    let mode = modes
+        .iter()
+        .find(|m| m.eq_ignore_ascii_case(mode))
+        .ok_or_else(|| format!("performance is one of: {}", modes.join(", ")))?;
+    set_look(|p| {
+        p.performance = (*mode).into();
+        Ok(match *mode {
+            "full" => "Performance: full.",
+            "light" => "Performance: light.",
+            "saver" => "Power saver is on.",
+            _ => "Performance: automatic.",
+        }
+        .into())
+    })
 }
 
 /// The clock card's buttons and whether each shows.
@@ -1105,24 +1099,20 @@ fn card_text() -> String {
         .join("\n")
 }
 
-/// What the island is made of. Everything but black is an Islet Pro look.
+/// What the island is made of.
 fn set_style(name: &str) -> Result<String, String> {
     let styles = islet_core::prefs::STYLES;
     let style = styles
         .iter()
         .find(|s| s.eq_ignore_ascii_case(name))
         .ok_or_else(|| format!("style is one of: {}", styles.join(", ")))?;
-    if *style != "black" {
-        needs_pro()?;
-    }
     set_look(|p| {
         p.style = (*style).into();
         Ok(format!("Style: {style}."))
     })
 }
 
-/// Set one of a few named looks. The first choice is free; the rest are
-/// Islet Pro.
+/// Set one of a few named looks.
 fn set_choice(
     name: &str,
     choices: &[&str],
@@ -1133,9 +1123,6 @@ fn set_choice(
         .iter()
         .find(|c| c.eq_ignore_ascii_case(name))
         .ok_or_else(|| format!("{what} is one of: {}", choices.join(", ")))?;
-    if *choice != choices[0] {
-        needs_pro()?;
-    }
     set_look(|p| {
         set(p, (*choice).to_string());
         Ok(format!("{what}: {choice}."))
@@ -1156,7 +1143,6 @@ fn shortcuts_text() -> String {
 
 fn shortcut_add(name: &str, target: &str) -> Result<String, String> {
     use islet_core::prefs::{Shortcut, MAX_SHORTCUTS};
-    needs_pro()?;
     let s = Shortcut::new(name, target)?;
     let mut p = config::load_prefs();
     if p.shortcuts.len() >= MAX_SHORTCUTS {
@@ -1271,7 +1257,7 @@ fn qr_rows(text: &str) -> Result<Vec<String>, String> {
     Ok((0..n).map(|y| (0..n).map(|x| if qr.get_module(x, y) { '1' } else { '0' }).collect()).collect())
 }
 
-/// Pair a phone (Islet Pro): make the key if there is none (or a new one),
+/// Pair a phone: make the key if there is none (or a new one),
 /// switch the link on, and show what the phone must scan.
 fn phone_pair(new_key: bool, json: bool) -> Result<String, String> {
     use islet_core::phone::{Pairing, KEY_LEN};
@@ -1295,7 +1281,7 @@ fn phone_pair(new_key: bool, json: bool) -> Result<String, String> {
     if hosts.is_empty() {
         return Err("This computer isn't on a network. Join the Wi-Fi your phone is on, then pair again.".into());
     }
-    let name = match crate::pro::computer_name() {
+    let name = match config::computer_name() {
         n if n.is_empty() => "My computer".to_string(),
         n => n,
     };
@@ -1421,10 +1407,9 @@ fn notes_file() -> Result<std::path::PathBuf, String> {
     Ok(if docs.is_dir() { docs } else { home }.join(islet_core::quicknote::FILE_NAME))
 }
 
-/// Add one line to the quick-notes file (Islet Pro).
+/// Add one line to the quick-notes file.
 fn add_note(text: &str) -> Result<String, String> {
     use std::io::Write;
-    needs_pro()?;
     let line = islet_core::quicknote::entry(text, &crate::clock::now())?;
     let path = notes_file()?;
     let mut file = std::fs::OpenOptions::new()
@@ -1467,7 +1452,6 @@ fn stopwatch(cmd: &str) -> Result<String, String> {
         "reset" => (S::Reset, "Reset."),
         other => return Err(format!("unknown stopwatch command {other:?} (start, pause, resume, lap or reset)")),
     };
-    needs_pro()?;
     control::send(&Control::Stopwatch(cmd)).map(|()| msg.into())
 }
 
@@ -1476,7 +1460,6 @@ fn world(add: bool, city: &str) -> Result<String, String> {
     use islet_core::worldclock::{find, MAX};
     let mut p = config::load_prefs();
     if add {
-        needs_pro()?;
         let (name, _, _) = find(city).ok_or_else(|| format!("{city:?} isn't in the list (see: islet world cities)"))?;
         if !p.world_clocks.iter().any(|c| c.eq_ignore_ascii_case(name)) {
             if p.world_clocks.len() >= MAX {

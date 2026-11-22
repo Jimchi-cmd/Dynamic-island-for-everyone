@@ -79,6 +79,7 @@ describe('connections', () => {
     expect(parsePage('wifi:My Cafe:2')).toEqual({ page: 'connections', ssid: 'My Cafe:2' });
     expect(parsePage('bluetooth')).toEqual({ page: 'connections', ssid: null });
     expect(parsePage(null)).toBeNull();
+    expect(parsePage('pro')).toEqual({ page: 'extras', ssid: null });
   });
 
   it('draws signal bars', () => {
@@ -99,20 +100,7 @@ describe('switches', () => {
   });
 });
 
-import { parsePro } from './settings';
-
-describe('parsePro', () => {
-  it('reads the status, and treats anything odd as "off"', () => {
-    const on = parsePro(
-      '{"active":true,"forSale":true,"buyUrl":"https://buy.example/islet","keyHint":"…7F2C","features":["Stopwatch"]}',
-    );
-    expect(on).toMatchObject({ active: true, forSale: true, keyHint: '…7F2C', features: ['Stopwatch'] });
-    expect(parsePro('{}')).toMatchObject({ active: false, forSale: false, buyUrl: null, features: [] });
-    expect(parsePro('{"active":"yes","buyUrl":"javascript:alert(1)"}')).toMatchObject({ active: false, buyUrl: null });
-  });
-});
-
-import { ACCENTS, CARD_BUTTONS, STYLES } from './settings';
+import { ACCENTS, CARD_BUTTONS, cardShows, PERFORMANCE, STYLES } from './settings';
 
 describe('looks', () => {
   const rust = readFileSync(new URL('../../crates/islet-core/src/prefs.rs', import.meta.url), 'utf8');
@@ -129,13 +117,28 @@ describe('looks', () => {
   it('offer the styles the island knows', () => {
     const list = rust.match(/pub const STYLES: \[&str; \d+\] = \[([^\]]*)\]/)?.[1] ?? '';
     expect(STYLES.map((s) => s.id)).toEqual([...list.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]));
-    expect(STYLES.filter((s) => !s.pro).map((s) => s.id)).toEqual(['black']);
   });
 
   it('offer the clock-card buttons the island knows', () => {
     const block = rust.match(/pub const CARD_BUTTONS: [^=]*= \[([\s\S]*?)\];/)?.[1] ?? '';
     const fromRust = [...block.matchAll(/\("([a-z]+)", "([^"]+)"\)/g)].map((m) => [m[1], m[2]]);
     expect(CARD_BUTTONS.map((b) => [b.id, b.label])).toEqual(fromRust);
+    const optIn = rust.match(/pub const CARD_OPT_IN: [^=]*= \[([^\]]*)\]/)?.[1] ?? '';
+    expect(CARD_BUTTONS.filter((b) => b.optIn).map((b) => b.id)).toEqual([...optIn.matchAll(/"([a-z]+)"/g)].map((m) => m[1]));
+  });
+
+  it('show opt-in buttons only once switched on', () => {
+    const todo = CARD_BUTTONS.find((b) => b.id === 'todo')!;
+    const timer = CARD_BUTTONS.find((b) => b.id === 'timer')!;
+    expect([cardShows(todo, null), cardShows(timer, null)]).toEqual([false, true]);
+    expect(cardShows(todo, { cardShown: ['todo'] })).toBe(true);
+    expect(cardShows(timer, { cardHidden: ['timer'] })).toBe(false);
+  });
+
+  it('offer the performance modes the island knows', () => {
+    const limits = readFileSync(new URL('../../crates/islet-core/src/limits.rs', import.meta.url), 'utf8');
+    const list = limits.match(/pub const MODES: \[&str; \d+\] = \[([^\]]*)\]/)?.[1] ?? '';
+    expect(PERFORMANCE.map((m) => m.id)).toEqual([...list.matchAll(/"([a-z]+)"/g)].map((m) => m[1]));
   });
 });
 

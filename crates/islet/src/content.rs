@@ -61,15 +61,15 @@ pub enum Panel {
     System,
     /// Recently copied texts (when clipboard history is on).
     Clipboard,
-    /// The stopwatch before it starts (Islet Pro).
+    /// The stopwatch before it starts.
     Stopwatch,
-    /// Quick notes and to-dos (Islet Pro).
+    /// Quick notes and to-dos.
     Todo,
     /// A month's days, with the calendar link's events.
     Calendar,
     /// Volume and brightness sliders, and the dark-mode switch.
     Controls,
-    /// The user's own buttons (Islet Pro).
+    /// The user's own buttons.
     Shortcuts,
 }
 
@@ -820,7 +820,7 @@ pub fn waveform(x: f32, cy: f32, n: usize, t: f64, playing: bool, color: [u8; 3]
         .collect()
 }
 
-/// The progress bar as a row of moving bars (Islet Pro). The motion is
+/// The progress bar as a row of moving bars. The motion is
 /// drawn, not measured: Islet doesn't listen to what is playing.
 #[allow(clippy::too_many_arguments)]
 pub fn visualizer_track(
@@ -1347,7 +1347,7 @@ pub fn expanded_media(
         let frac = scrub.unwrap_or(pos / dur).clamp(0.0, 1.0);
         let shown = frac * dur;
         if visualizer && scrub.is_none() {
-            // Islet Pro: the bar itself moves with the music. Bars up to
+            // The bar itself moves with the music. Bars up to
             // the playhead take the album's colour; the rest wait in grey.
             v.pop();
             v.extend(visualizer_track(x + pad, by + 2.0, track_w, frac as f32, t, m.playing, tint, o));
@@ -1919,11 +1919,12 @@ pub struct ClockRow {
     /// The shelf has files on it.
     pub shelf: bool,
     pub clipboard: bool,
-    /// Islet Pro: the stopwatch and to-do buttons.
-    pub pro: bool,
+    /// The to-do and stopwatch buttons, once switched on in Settings.
+    pub todo: bool,
+    pub stopwatch: bool,
     /// To-dos left (a badge on the to-do button).
     pub todo_left: usize,
-    /// The user has shortcuts of their own (Islet Pro).
+    /// The user has shortcuts of their own.
     pub shortcuts: bool,
     /// A line of world clocks under the date.
     pub world: bool,
@@ -1934,8 +1935,6 @@ pub struct ClockRow {
     pub no_lock: bool,
     pub no_system: bool,
     pub no_controls: bool,
-    pub no_todo: bool,
-    pub no_stopwatch: bool,
 }
 
 /// Height of the world-clock line.
@@ -1950,8 +1949,8 @@ pub fn clock_chips(pill: Rect, row: ClockRow) -> Vec<(Rect, Panel)> {
     let wanted = [
         (Panel::Shelf, row.shelf),
         (Panel::Shortcuts, row.shortcuts),
-        (Panel::Todo, row.pro && !row.no_todo),
-        (Panel::Stopwatch, row.pro && !row.no_stopwatch),
+        (Panel::Todo, row.todo),
+        (Panel::Stopwatch, row.stopwatch),
         (Panel::Clipboard, row.clipboard),
         (Panel::System, !row.no_system),
         (Panel::Controls, !row.no_controls),
@@ -2620,7 +2619,7 @@ pub enum MenuAction {
     LyricsTiming,
     /// The sleep timer: off → 15 → 30 → 45 → 60 minutes → off.
     Sleep,
-    /// One of the user's own shortcuts (Islet Pro), by its place in the list.
+    /// One of the user's own shortcuts, by its place in the list.
     Shortcut(u8),
     Quit,
 }

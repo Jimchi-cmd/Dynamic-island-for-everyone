@@ -1,9 +1,10 @@
-//! How much Islet keeps and how smoothly it draws.
-//!
-//! The free app is tuned for a 4 GB laptop: short histories, small album
-//! art, and a waveform at 30 fps. Islet Pro lifts those limits, and has a
-//! Power saver switch that goes the other way: the light limits again, and
-//! nothing on the island moves on its own.
+//! How much Islet keeps and how smoothly it draws, by the Performance
+//! setting (`MODES`):
+//! - "full": long histories, sharp album art, and a waveform at 60 fps;
+//! - "light": tuned for a 4 GB laptop: short histories, small album art,
+//!   and a waveform at 30 fps;
+//! - "saver": light, and nothing on the island moves on its own;
+//! - "auto" (the default): full, or light on a low-end computer.
 
 /// The caps for one mode. Every list still has an end, so a runaway script
 /// can't fill the memory; with `FULL` it is far past what anyone reaches.
@@ -23,26 +24,37 @@ pub struct Limits {
     pub ambient_fps: u32,
 }
 
-/// The free app.
+/// Light: for a 4 GB laptop.
 pub const LIGHT: Limits =
     Limits { clipboard_items: 20, clipboard_chars: 10_000, shelf: 12, notes: 20, art_px: 112, ambient_fps: 30 };
 
-/// Islet Pro.
+/// Full: no low-end limits.
 pub const FULL: Limits =
     Limits { clipboard_items: 500, clipboard_chars: 100_000, shelf: 100, notes: 200, art_px: 256, ambient_fps: 60 };
 
-/// Islet Pro with Power saver on: as light as the free app, and still.
-/// The shelf keeps its room, so switching this on never drops a file.
+/// Power saver: as light as Light, and still. The shelf keeps its room, so
+/// switching this on never drops a file.
 pub const SAVER: Limits = Limits { ambient_fps: 0, shelf: FULL.shelf, ..LIGHT };
 
+/// The Performance setting's choices, as `islet performance <mode>` takes them.
+pub const MODES: [&str; 4] = ["auto", "full", "light", "saver"];
+
+/// A computer Islet treats as low-end in "auto": 4 GB of memory or less, or
+/// two cores or fewer. Memory it couldn't read (0) doesn't count against it.
+pub const fn is_low_end(memory_bytes: u64, cores: usize) -> bool {
+    let four_and_a_bit_gb = 4_608 * 1024 * 1024;
+    (memory_bytes > 0 && memory_bytes <= four_and_a_bit_gb) || cores <= 2
+}
+
 impl Limits {
-    /// The limits in force. Power saver is a Pro switch: without Pro it
-    /// does nothing, because the free app is already light.
-    pub const fn pick(pro: bool, power_saver: bool) -> Self {
-        match (pro, power_saver) {
-            (false, _) => LIGHT,
-            (true, false) => FULL,
-            (true, true) => SAVER,
+    /// The limits for a Performance mode. Unknown modes count as "auto".
+    pub fn pick(mode: &str, low_end: bool) -> Self {
+        match mode {
+            "full" => FULL,
+            "light" => LIGHT,
+            "saver" => SAVER,
+            _ if low_end => LIGHT,
+            _ => FULL,
         }
     }
 
@@ -60,7 +72,7 @@ impl Limits {
 
 impl Default for Limits {
     fn default() -> Self {
-        LIGHT
+        FULL
     }
 }
 
@@ -69,22 +81,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pro_lifts_every_limit() {
-        let (free, pro) = (Limits::pick(false, false), Limits::pick(true, false));
-        assert_eq!(free, LIGHT);
-        assert!(pro.clipboard_items > free.clipboard_items && pro.clipboard_chars > free.clipboard_chars);
-        assert!(pro.shelf > free.shelf && pro.notes > free.notes);
-        assert!(pro.art_px > free.art_px && pro.ambient_fps > free.ambient_fps);
+    fn full_lifts_every_limit_and_auto_follows_the_computer() {
+        let (light, full) = (Limits::pick("light", false), Limits::pick("full", true));
+        assert_eq!((light, full), (LIGHT, FULL), "a chosen mode is kept whatever the computer");
+        assert!(full.clipboard_items > light.clipboard_items && full.clipboard_chars > light.clipboard_chars);
+        assert!(full.shelf > light.shelf && full.notes > light.notes);
+        assert!(full.art_px > light.art_px && full.ambient_fps > light.ambient_fps);
+        assert_eq!(Limits::pick("auto", false), FULL);
+        assert_eq!(Limits::pick("auto", true), LIGHT, "auto is light on a low-end computer");
+        assert_eq!(Limits::pick("nonsense", false), FULL);
+        assert_eq!(Limits::default(), FULL);
     }
 
     #[test]
-    fn power_saver_is_a_pro_switch() {
-        assert_eq!(Limits::pick(false, true), LIGHT, "without Pro the switch changes nothing");
-        let saver = Limits::pick(true, true);
+    fn power_saver_holds_the_island_still() {
+        let saver = Limits::pick("saver", false);
         assert_eq!(saver.ambient_fps, 0);
         assert_eq!(saver.ambient_frame_micros(), None, "nothing wakes the computer");
         assert_eq!((saver.clipboard_items, saver.art_px), (LIGHT.clipboard_items, LIGHT.art_px));
         assert_eq!(saver.shelf, FULL.shelf, "files already on the shelf stay");
+    }
+
+    #[test]
+    fn low_end_computers() {
+        const GB: u64 = 1024 * 1024 * 1024;
+        assert!(is_low_end(4 * GB, 4), "4 GB");
+        assert!(is_low_end(16 * GB, 2), "two cores");
+        assert!(!is_low_end(8 * GB, 4));
+        assert!(!is_low_end(0, 4), "unknown memory doesn't count");
     }
 
     #[test]

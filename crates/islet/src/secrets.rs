@@ -6,14 +6,12 @@
 //!   development only);
 //! - the private calendar (ICS) link, which contains its own secret token;
 //! - the Spotify refresh token (and the user's own client id);
-//! - the Islet Pro key;
 //! - the phone companion's pairing key.
 
 const SERVICE: &str = "islet";
 const ROUTES: &str = "google-routes";
 const CALENDAR: &str = "calendar-ics";
 const SPOTIFY: &str = "spotify";
-const PRO: &str = "pro-key";
 const PHONE: &str = "phone-key";
 
 pub fn routes_key() -> Result<String, String> {
@@ -56,18 +54,6 @@ pub fn set_spotify(value: &str) -> Result<(), String> {
 
 pub fn clear_spotify() -> Result<(), String> {
     clear(SPOTIFY)
-}
-
-pub fn pro_key() -> Option<String> {
-    get(PRO)
-}
-
-pub fn set_pro_key(key: &str) -> Result<(), String> {
-    set(PRO, key, "Islet Pro key")
-}
-
-pub fn clear_pro_key() -> Result<(), String> {
-    clear(PRO)
 }
 
 /// The key shared with the paired phone (base64url of 32 bytes).

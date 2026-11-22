@@ -211,7 +211,7 @@ In every list, the round **‹** button at the top left goes back to Control Cen
 1. Drag files or folders from your desktop or file manager onto the island.
 2. Open Control Centre → **Shelf** to see them. Tap one to open it, or drag it out of the island into a folder, an email or any app; tap **×** to take it off the shelf. The shelf keeps shortcuts only: your files stay where they are.
 
-**Clipboard history** (off until you turn it on in Settings → General → Privacy) keeps your last 20 copied texts and pictures in memory (500 with Islet Pro; pictures are shown with a thumbnail, and only the newest few are kept). Tap one to copy it again. Copies from password managers are never kept, and neither is anything copied from an app on the **Never keep copies from** list (password managers are on it already; add any app you like, or use `islet clipboard exclude add <app>`).
+**Clipboard history** (off until you turn it on in Settings → General → Privacy) keeps your last 500 copied texts and pictures in memory (20 in the Light performance mode; pictures are shown with a thumbnail, and only the newest few are kept). Tap one to copy it again. Copies from password managers are never kept, and neither is anything copied from an app on the **Never keep copies from** list (password managers are on it already; add any app you like, or use `islet clipboard exclude add <app>`).
 
 **System monitor:** CPU, memory and disk, read only while that page is open.
 
@@ -340,7 +340,7 @@ Islet restarts itself to apply a new size, position, gap or display.
 
 **Settings → General → Shortcut:** click the box, press the keys you want (for example **Ctrl+Alt+I**) and click **Save**; they then open and close the island from the keyboard. It needs Ctrl, Alt or the Windows/Command key. On native Wayland desktops, set a shortcut in your desktop's keyboard settings that runs `islet toggle` instead.
 
-Two more shortcuts sit under it: one opens the **launcher**, and one opens it ready for a **quick note** (Islet Pro): type the note and press Enter, and it is added to `Islet notes.txt`. In the launcher, starting with `note:` does the same. On native Wayland, bind keys to `islet launcher` and `islet note` instead.
+Two more shortcuts sit under it: one opens the **launcher**, and one opens it ready for a **quick note**: type the note and press Enter, and it is added to `Islet notes.txt`. In the launcher, starting with `note:` does the same. On native Wayland, bind keys to `islet launcher` and `islet note` instead.
 
 **Plugin widgets:** your own scripts, shown as live activities on their own schedule. Switch them on in Settings → General → Plugin widgets; [plugins.md](plugins.md) explains the `plugin.json` and the output.
 

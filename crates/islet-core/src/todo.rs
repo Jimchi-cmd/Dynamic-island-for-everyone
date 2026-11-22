@@ -1,4 +1,4 @@
-//! Quick notes and to-dos (Islet Pro), kept in todo.json on this computer
+//! Quick notes and to-dos, kept in todo.json on this computer
 //! only. Unfinished items first (oldest first), then finished ones.
 
 use serde::{Deserialize, Serialize};

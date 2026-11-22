@@ -51,33 +51,6 @@ export function parseStatus(json: string): Status {
   };
 }
 
-export interface ProStatus {
-  active: boolean;
-  forSale: boolean;
-  buyUrl: string | null;
-  keyHint: string;
-  /** The store stopped accepting the key (refunded, revoked). */
-  refused: boolean;
-  checkedAt: number;
-  expiresAt: number | null;
-  features: string[];
-}
-
-/** `islet pro status --json`. Anything missing reads as "Pro is off". */
-export function parsePro(json: string): ProStatus {
-  const v = JSON.parse(json);
-  const buy = typeof v.buyUrl === 'string' && v.buyUrl.startsWith('https://') ? v.buyUrl : null;
-  return {
-    active: v.active === true,
-    forSale: v.forSale === true,
-    buyUrl: buy,
-    keyHint: typeof v.keyHint === 'string' ? v.keyHint : '',
-    refused: v.refused === true,
-    checkedAt: Number(v.checkedAt) || 0,
-    expiresAt: typeof v.expiresAt === 'number' ? v.expiresAt : null,
-    features: Array.isArray(v.features) ? v.features.map(String) : [],
-  };
-}
 
 /** Arguments for `islet nav start`, or an error to show next to the form. */
 export function navStartArgs(t: Trip): string[] | { error: string } {
@@ -235,6 +208,8 @@ export function parsePage(arg: string | null): { page: string; ssid: string | nu
   const [page, ...rest] = arg.split(':');
   const ssid = rest.join(':');
   if (page === 'wifi' || page === 'bluetooth') return { page: 'connections', ssid: ssid || null };
+  // Islet Pro's page became Extras.
+  if (page === 'pro') return { page: 'extras', ssid: null };
   return { page: page ?? '', ssid: null };
 }
 
@@ -267,8 +242,8 @@ export interface IslandPrefs {
   idleClock: boolean;
   calls: boolean;
   downloads: boolean;
-  /** Islet Pro: the light limits again, and a still island. */
-  powerSaver: boolean;
+  /** "auto", "full", "light" or "saver" (see `islet_core::limits::MODES`). */
+  performance: string;
   /** Hold pop-ups while a focus work round runs. */
   focusQuiet: boolean;
   /** Weather, battery and processor beside the time when you point at the island. */
@@ -285,19 +260,23 @@ export interface IslandPrefs {
   font: string;
   /** Say when a program hogs the processor or memory. */
   performanceAlert: boolean;
-  /** Islet Pro looks. */
+  /** Looks. */
   albumGlow: boolean;
   visualizer: boolean;
   screenshotPreview: boolean;
   phone: boolean;
   shape: string;
   clockFace: string;
+  /** "auto", "12" or "24". */
+  clockHours: string;
   hotkey: string;
   launcherHotkey: string;
   noteHotkey: string;
   accent: string;
   style: string;
   cardHidden: string[];
+  /** Opt-in buttons (to-do, stopwatch) switched on. */
+  cardShown: string[];
   size: string;
   /** "top", "top-left", "top-right" or "bottom". */
   position: string;
@@ -324,23 +303,36 @@ export const ACCENTS: Record<string, string> = {
 };
 
 /** The clock card's optional buttons, as in `islet_core::prefs::CARD_BUTTONS`. */
-export const CARD_BUTTONS: { id: string; label: string; pro: boolean }[] = [
-  { id: 'timer', label: 'Quick timer', pro: false },
-  { id: 'calendar', label: 'Calendar', pro: false },
-  { id: 'screenshot', label: 'Screenshot', pro: false },
-  { id: 'lock', label: 'Lock', pro: false },
-  { id: 'system', label: 'System monitor', pro: false },
-  { id: 'controls', label: 'Volume and brightness', pro: false },
-  { id: 'todo', label: 'To-do list', pro: true },
-  { id: 'stopwatch', label: 'Stopwatch', pro: true },
+export const CARD_BUTTONS: { id: string; label: string; optIn: boolean }[] = [
+  { id: 'timer', label: 'Quick timer', optIn: false },
+  { id: 'calendar', label: 'Calendar', optIn: false },
+  { id: 'screenshot', label: 'Screenshot', optIn: false },
+  { id: 'lock', label: 'Lock', optIn: false },
+  { id: 'system', label: 'System monitor', optIn: false },
+  { id: 'controls', label: 'Volume and brightness', optIn: false },
+  { id: 'todo', label: 'To-do list', optIn: true },
+  { id: 'stopwatch', label: 'Stopwatch', optIn: true },
 ];
 
-/** What the island is made of, as in `islet_core::prefs::STYLES`. All but black are Islet Pro. */
-export const STYLES: { id: string; label: string; pro: boolean }[] = [
-  { id: 'black', label: 'Black', pro: false },
-  { id: 'tinted', label: 'Tinted', pro: true },
-  { id: 'glass', label: 'Glass', pro: true },
-  { id: 'tinted-glass', label: 'Tinted glass', pro: true },
+/** Does the clock card show this button? Opt-in ones show once switched on. */
+export function cardShows(b: { id: string; optIn: boolean }, p: { cardHidden?: string[]; cardShown?: string[] } | null): boolean {
+  return b.optIn ? (p?.cardShown ?? []).includes(b.id) : !(p?.cardHidden ?? []).includes(b.id);
+}
+
+/** What the island is made of, as in `islet_core::prefs::STYLES`. */
+export const STYLES: { id: string; label: string }[] = [
+  { id: 'black', label: 'Black' },
+  { id: 'tinted', label: 'Tinted' },
+  { id: 'glass', label: 'Glass' },
+  { id: 'tinted-glass', label: 'Tinted glass' },
+];
+
+/** The Performance choices, as in `islet_core::limits::MODES`. */
+export const PERFORMANCE: { id: string; label: string; hint: string }[] = [
+  { id: 'auto', label: 'Automatic', hint: 'full, or light on a 4 GB laptop' },
+  { id: 'full', label: 'Full', hint: '60 fps, sharp art, long histories' },
+  { id: 'light', label: 'Light', hint: 'for 4 GB laptops' },
+  { id: 'saver', label: 'Power saver', hint: 'light, and nothing moves by itself' },
 ];
 
 /** Each switch's name for `islet set <name> on|off`. */
@@ -360,7 +352,6 @@ export const SWITCH_NAMES: Record<string, string> = {
   idleClock: 'idle-clock',
   calls: 'calls',
   downloads: 'downloads',
-  powerSaver: 'power-saver',
   focusQuiet: 'focus-quiet',
   hoverStatus: 'hover-status',
   wifiPopup: 'wifi-popup',

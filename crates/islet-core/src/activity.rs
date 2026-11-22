@@ -314,7 +314,7 @@ pub enum Live {
         reason: PeekReason,
     },
     Timer(crate::timer::Timer),
-    /// The stopwatch (Islet Pro), running or paused.
+    /// The stopwatch, running or paused.
     Stopwatch(crate::stopwatch::Stopwatch),
     /// A script's live activity.
     Custom(Custom),

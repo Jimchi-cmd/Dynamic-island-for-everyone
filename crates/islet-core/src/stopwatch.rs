@@ -1,4 +1,4 @@
-//! The stopwatch (Islet Pro): start, pause, laps, reset. Times are on the
+//! The stopwatch: start, pause, laps, reset. Times are on the
 //! app clock (seconds); like the timer, it keeps wall-clock time across
 //! sleep because the app clock is corrected for sleep.
 

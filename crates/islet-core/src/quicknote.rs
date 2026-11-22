@@ -1,4 +1,4 @@
-//! Quick notes (Islet Pro): one line at a time, added to the end of a plain
+//! Quick notes: one line at a time, added to the end of a plain
 //! text file you can open in any editor.
 
 use crate::clock::LocalTime;

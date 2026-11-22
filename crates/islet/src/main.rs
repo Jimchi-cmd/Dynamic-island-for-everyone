@@ -25,7 +25,6 @@ mod hidden;
 mod msix;
 mod net;
 mod platform;
-mod pro;
 mod providers;
 mod quick;
 mod secrets;
@@ -107,6 +106,11 @@ fn run() -> platform::Result<()> {
     };
     let mut app = App::new(demo, env_on("ISLET_REDUCE_MOTION"));
     app.set_clock_style(clock::prefers_24h());
+    // "auto" performance keeps the light limits on a low-end computer.
+    app.set_low_end(islet_core::limits::is_low_end(
+        providers::sysmon::memory_total(),
+        std::thread::available_parallelism().map_or(1, |n| n.get()),
+    ));
     // Fonts load on first use, so an island that is never opened never pays for them.
     let mut text: Option<TextEngine> = None;
     // The font the text engine was last given (Settings → Look → Font).
@@ -169,18 +173,6 @@ fn run() -> platform::Result<()> {
     trace("providers started");
     let (control_tx, control_rx) = std::sync::mpsc::channel::<Control>();
     if mirror.is_none() {
-        // Islet Pro: is the key still valid? Asked at most once a week, and
-        // only once a key has been entered (see pro.rs).
-        if std::env::var_os("ISLET_DEMO").is_none() && demo == Demo::None {
-            let (tx, waker) = (control_tx.clone(), win.waker());
-            std::thread::spawn(move || loop {
-                let before = pro::active();
-                if pro::check(false).is_ok() && pro::active() != before && tx.send(Control::PrefsChanged).is_ok() {
-                    waker.wake();
-                }
-                std::thread::sleep(std::time::Duration::from_secs(6 * 3600));
-            });
-        }
         control::serve(control_tx, win.waker());
     } else {
         // A mirror hears from the main island on stdin: "prefs" when the
@@ -218,7 +210,6 @@ fn run() -> platform::Result<()> {
             app.set_alarms(config::load_alarms());
         }
         app.set_prefs(load_prefs());
-        app.set_pro(pro::active());
         app.set_shelf(config::load_shelf());
         app.set_todo(config::load_json("todo.json").unwrap_or_default());
         app.set_streak(config::load_json("focus.json").unwrap_or_default());
@@ -240,7 +231,7 @@ fn run() -> platform::Result<()> {
     if !scripted {
         providers::modes::start(providers.sink());
     }
-    providers.screenshots(pro::active() && app.prefs().screenshot_preview && !scripted);
+    providers.screenshots(app.prefs().screenshot_preview && !scripted);
     providers.phone(phone_pairing(app.prefs()).filter(|_| !scripted && mirror.is_none()));
     let mut alarm_sound = sound::AlarmSound::default();
     // Windows' screen-reader adapter must exist before the window shows.
@@ -375,7 +366,6 @@ fn run() -> platform::Result<()> {
                 Control::Stopwatch(cmd) => needs_frame |= app.stopwatch_command(cmd, t),
                 Control::PrefsChanged if !scripted => {
                     app.set_prefs(load_prefs());
-                    app.set_pro(pro::active());
                     // `islet todo …` and Settings edit todo.json too.
                     app.set_todo(config::load_json("todo.json").unwrap_or_default());
                     // …and `islet class …` edits timetable.json.
@@ -414,7 +404,7 @@ fn run() -> platform::Result<()> {
                     providers.downloads(app.prefs().downloads);
                     providers.plugins(app.prefs().plugins, false);
                     providers.hog(app.prefs().performance_alert);
-                    providers.screenshots(pro::active() && app.prefs().screenshot_preview);
+                    providers.screenshots(app.prefs().screenshot_preview);
                     providers.phone(phone_pairing(app.prefs()).filter(|_| mirror.is_none()));
                 }
                 Control::PrefsChanged => {}
@@ -657,7 +647,6 @@ fn attach_console() {
 /// Open Islet Settings (installed next to the island) at a page.
 /// What the phone link needs to listen: the pairing key, the port and
 /// this computer's name. None unless a phone is paired and the link is on.
-/// Free: it doesn't need Islet Pro.
 fn phone_pairing(prefs: &islet_core::prefs::IslandPrefs) -> Option<([u8; islet_core::phone::KEY_LEN], u16, String)> {
     let key = if prefs.phone { secrets::phone_key() } else { None };
     phone_link(prefs, key, cli::phone_port())
@@ -671,7 +660,7 @@ fn phone_link(
     if !prefs.phone {
         return None;
     }
-    let name = match pro::computer_name() {
+    let name = match config::computer_name() {
         n if n.is_empty() => "Computer".to_string(),
         n => n,
     };
@@ -752,8 +741,7 @@ mod phone_link_tests {
     use super::*;
 
     #[test]
-    fn a_paired_phone_connects_without_islet_pro() {
-        assert!(!pro::active(), "tests run without Pro");
+    fn a_paired_phone_connects() {
         let mut prefs = islet_core::prefs::IslandPrefs::default();
         let raw = [7u8; islet_core::phone::KEY_LEN];
         let key = Some(raw);

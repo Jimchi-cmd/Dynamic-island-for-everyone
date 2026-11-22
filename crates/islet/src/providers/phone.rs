@@ -27,7 +27,7 @@ const HANDSHAKE: Duration = Duration::from_secs(8);
 /// The sending half of the live connection, if there is one.
 type Outbox = Arc<Mutex<Option<(TcpStream, Channel)>>>;
 
-/// Stops the listener when dropped (unpaired, switched off, Pro ended).
+/// Stops the listener when dropped (unpaired or switched off).
 pub struct Link {
     on: Arc<AtomicBool>,
     outbox: Outbox,

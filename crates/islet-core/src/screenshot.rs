@@ -1,4 +1,4 @@
-//! The screenshot preview (Islet Pro): when the system saves a screenshot,
+//! The screenshot preview: when the system saves a screenshot,
 //! the island shows it for a few seconds; a tap opens it. Islet only looks
 //! at the folder the system saves into, and reads the new picture to draw
 //! its thumbnail. Nothing leaves the computer.

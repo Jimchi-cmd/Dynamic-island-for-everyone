@@ -332,7 +332,7 @@ impl Providers {
         }
     }
 
-    /// Start or stop showing new screenshots (Islet Pro).
+    /// Start or stop showing new screenshots.
     pub fn screenshots(&mut self, on: bool) {
         if on && self.screenshots.is_none() {
             self.screenshots = screenshots::start(self.sink.clone());
@@ -389,7 +389,7 @@ impl Providers {
         let _ = self.spotify.send(spotify::SpotifyMsg::Enable(on));
     }
 
-    /// Listen for the paired phone (Islet Pro) with this pairing key, or
+    /// Listen for the paired phone with this pairing key, or
     /// stop. Asking again with the link already up changes nothing.
     pub fn phone(&mut self, pairing: Option<([u8; islet_core::phone::KEY_LEN], u16, String)>) {
         match pairing {

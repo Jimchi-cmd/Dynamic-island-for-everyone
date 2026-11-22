@@ -48,7 +48,7 @@ python3 scripts/promo/make-life-videos.py --out promo-videos
 
 The music is made from scratch by `scripts/promo/music.py` (a kick, claps, hi-hats, bass, chords and a melody, all synthesised), so it's yours to post anywhere; each video gets its own key and tempo, with a riser that lands on the Pro card.
 
-**Before posting the Pro ending:** make sure people can buy Pro (the store is set up and the Buy button works); until then, post the ten earlier videos.
+**Don't post the Pro ending:** Islet Pro is gone and everything is free, so that card is out of date. Post the ten earlier videos, or trim the last few seconds.
 
 ## The full install guide (YouTube)
 
@@ -58,9 +58,9 @@ The music is made from scratch by `scripts/promo/music.py` (a kick, claps, hi-ha
 python3 scripts/promo/make-tutorial.py --out promo-videos --laptop-frames build/promo-laptop-desk
 ```
 
-## Store cover
+## Covers, profile picture and YouTube thumbnail
 
-The Islet Pro cover (2560 x 1440) and square thumbnail (1200 x 1200) for the store page, drawn from an island frame (the open music card looks best):
+The old Islet Pro cover (2560 x 1440) and square thumbnail (1200 x 1200) were for a store page that is gone. The same script also makes a profile picture (`--profile`) and the tutorial's YouTube thumbnail (`--youtube`). They are drawn from an island frame (the open music card looks best):
 
 ```bash
 ISLET_PROMO_DIR=/tmp/islet-desk ISLET_PROMO_REEL=desk cargo test -p islet --bin islet promo_frames

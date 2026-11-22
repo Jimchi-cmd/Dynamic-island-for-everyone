@@ -67,17 +67,20 @@ pub struct IslandPrefs {
     /// Listen for the paired phone (its notifications, music
     /// and battery). Set by `islet phone pair`; nothing listens without it.
     pub phone: bool,
-    /// Islet Pro: show each new screenshot on the island for a moment.
+    /// Show each new screenshot on the island for a moment.
     pub screenshot_preview: bool,
-    /// Islet Pro looks: a glow in the album's colour while music plays,
+    /// A glow in the album's colour while music plays,
     /// and the progress bar drawn as moving bars.
     pub album_glow: bool,
     pub visualizer: bool,
-    /// Islet Pro: the island's outline, "pill" or "notch" (square at the
+    /// The island's outline, "pill" or "notch" (square at the
     /// top, as if it grew out of the screen's edge; see `SHAPES`).
     pub shape: String,
-    /// Islet Pro: what the empty island shows (see `CLOCK_FACES`).
+    /// What the empty island shows (see `CLOCK_FACES`).
     pub clock_face: String,
+    /// 12- or 24-hour times: "auto" (as the system's language has it),
+    /// "12" or "24" (see `CLOCK_HOURS`).
+    pub clock_hours: String,
     /// The island's text in a font installed on this computer ("" = the
     /// built-in one), and that font's files (read, never copied).
     pub font: String,
@@ -88,8 +91,12 @@ pub struct IslandPrefs {
     /// Hold pop-ups (notifications, volume, battery, calendar) while a
     /// focus session's work round runs; breaks let them through.
     pub focus_quiet: bool,
-    /// Islet Pro: go back to the light limits, and keep the island still
-    /// (see `limits`). Without Pro this does nothing.
+    /// How much Islet keeps and how smoothly it moves: "auto", "full",
+    /// "light" or "saver" (see `limits::MODES`).
+    pub performance: String,
+    /// Older files had a Power saver switch instead; `migrated` turns it
+    /// into `performance: "saver"`. Never written.
+    #[serde(skip_serializing)]
     pub power_saver: bool,
     /// The global shortcut that opens and closes the island ("" = none),
     /// e.g. "Ctrl+Alt+I".
@@ -99,8 +106,8 @@ pub struct IslandPrefs {
     pub note_hotkey: String,
     /// Accent colour for buttons and highlights (see `ACCENTS`).
     pub accent: String,
-    /// What the island is made of (see `STYLES`): "black", or with Islet
-    /// Pro "tinted", "glass" or "tinted-glass".
+    /// What the island is made of (see `STYLES`): "black", "tinted",
+    /// "glass" or "tinted-glass".
     pub style: String,
     /// Island size: "small", "medium" or "large" (applies on restart).
     pub size: String,
@@ -116,14 +123,16 @@ pub struct IslandPrefs {
     /// The display to show the island on, by name ("" = the primary one,
     /// `ALL_DISPLAYS` = one island on every display).
     pub display: String,
-    /// World clocks on the clock card (Islet Pro): city names from
+    /// World clocks on the clock card: city names from
     /// `worldclock::CITIES`, at most `worldclock::MAX`.
     pub world_clocks: Vec<String>,
-    /// Your own buttons (Islet Pro): each opens a folder, file, script or
+    /// Your own buttons: each opens a folder, file, script or
     /// web page. At most `MAX_SHORTCUTS`.
     pub shortcuts: Vec<Shortcut>,
     /// Clock-card buttons the user switched off (ids from `CARD_BUTTONS`).
     pub card_hidden: Vec<String>,
+    /// Buttons from `CARD_OPT_IN` the user switched on.
+    pub card_shown: Vec<String>,
 }
 
 /// The clock card's optional buttons: id and name. Wi-Fi and Bluetooth
@@ -138,6 +147,10 @@ pub const CARD_BUTTONS: [(&str, &str); 8] = [
     ("todo", "To-do list"),
     ("stopwatch", "Stopwatch"),
 ];
+
+/// Clock-card buttons that show only once switched on in Settings: the
+/// row keeps Wi-Fi's and Bluetooth's names with two tools beside them.
+pub const CARD_OPT_IN: [&str; 2] = ["todo", "stopwatch"];
 
 /// A button of your own: a name, and what it opens (a path or an
 /// `https://` link). Paths open as they would from the file manager, so a
@@ -188,7 +201,7 @@ pub const ACCENTS: [(&str, [u8; 3]); 12] = [
     ("graphite", [150, 152, 162]),
 ];
 
-/// What the island is made of. "black" is free; the others are Islet Pro.
+/// What the island is made of.
 /// - "tinted": a deep shade of the accent colour.
 /// - "glass": see-through dark glass with a bright rim.
 /// - "tinted-glass": the same, coloured by the accent.
@@ -207,14 +220,18 @@ pub fn style_body(style: &str, accent: [u8; 3]) -> ([u8; 3], f32, bool) {
     }
 }
 
-/// The island's outline. "notch" (Islet Pro) has square top corners.
+/// The island's outline. "notch" has square top corners and joins the
+/// top of the screen, as if the island grew out of its edge.
 pub const SHAPES: [&str; 2] = ["pill", "notch"];
 
-/// What the empty island shows. All but "time" are Islet Pro:
+/// What the empty island shows:
 /// - "time": 14:05
 /// - "date": Wed 4 · 14:05
 /// - "seconds": 14:05:09 (redraws every second while it shows)
 pub const CLOCK_FACES: [&str; 3] = ["time", "date", "seconds"];
+
+/// 12- or 24-hour times: as the system's language has it, or always one.
+pub const CLOCK_HOURS: [&str; 3] = ["auto", "12", "24"];
 
 /// `display` value for an island on every display.
 pub const ALL_DISPLAYS: &str = "all";
@@ -247,6 +264,7 @@ impl Default for IslandPrefs {
             album_border: true,
             mode_indicators: true,
             plugins: false,
+            performance: "auto".into(),
             power_saver: false,
             focus_quiet: false,
             hover_status: true,
@@ -258,6 +276,7 @@ impl Default for IslandPrefs {
             visualizer: true,
             shape: "pill".into(),
             clock_face: "time".into(),
+            clock_hours: "auto".into(),
             font: String::new(),
             font_files: Vec::new(),
             hotkey: String::new(),
@@ -273,12 +292,13 @@ impl Default for IslandPrefs {
             world_clocks: Vec::new(),
             shortcuts: Vec::new(),
             card_hidden: Vec::new(),
+            card_shown: Vec::new(),
         }
     }
 }
 
 /// The switches `islet set <key> on|off` understands.
-pub const SWITCHES: [&str; 27] = [
+pub const SWITCHES: [&str; 26] = [
     "volume-hud",
     "brightness-hud",
     "caps-lock-hud",
@@ -294,7 +314,6 @@ pub const SWITCHES: [&str; 27] = [
     "idle-clock",
     "calls",
     "downloads",
-    "power-saver",
     "focus-quiet",
     "hover-status",
     "performance-alert",
@@ -309,6 +328,23 @@ pub const SWITCHES: [&str; 27] = [
 ];
 
 impl IslandPrefs {
+    /// Settings from an older island.json, brought up to date.
+    pub fn migrated(mut self) -> Self {
+        if std::mem::take(&mut self.power_saver) {
+            self.performance = "saver".into();
+        }
+        self
+    }
+
+    /// 24-hour times? `locale_24h` is what the system's language prefers.
+    pub fn h24(&self, locale_24h: bool) -> bool {
+        match self.clock_hours.as_str() {
+            "12" => false,
+            "24" => true,
+            _ => locale_24h,
+        }
+    }
+
     /// Is this media session from an app the user hid?
     pub fn excludes(&self, app_name: &str, source: &str) -> bool {
         let (name, source) = (app_name.to_lowercase(), source.to_lowercase());
@@ -349,7 +385,6 @@ impl IslandPrefs {
             "album-border" => &mut self.album_border,
             "mode-indicators" => &mut self.mode_indicators,
             "plugins" => &mut self.plugins,
-            "power-saver" => &mut self.power_saver,
             "focus-quiet" => &mut self.focus_quiet,
             "hover-status" => &mut self.hover_status,
             "performance-alert" => &mut self.performance_alert,
@@ -366,7 +401,11 @@ impl IslandPrefs {
 impl IslandPrefs {
     /// Did the user switch this clock-card button off?
     pub fn hides(&self, button: &str) -> bool {
-        self.card_hidden.iter().any(|b| b == button)
+        if CARD_OPT_IN.contains(&button) {
+            !self.card_shown.iter().any(|b| b == button)
+        } else {
+            self.card_hidden.iter().any(|b| b == button)
+        }
     }
 
     /// Show or hide a clock-card button (see `CARD_BUTTONS`).
@@ -376,7 +415,10 @@ impl IslandPrefs {
             .find(|(id, _)| *id == button)
             .ok_or_else(|| format!("no such button: {button} (see: islet card)"))?;
         self.card_hidden.retain(|b| b != id);
-        if !show {
+        self.card_shown.retain(|b| b != id);
+        if CARD_OPT_IN.contains(id) && show {
+            self.card_shown.push((*id).to_string());
+        } else if !CARD_OPT_IN.contains(id) && !show {
             self.card_hidden.push((*id).to_string());
         }
         Ok(())
@@ -499,6 +541,39 @@ mod tests {
         assert!(p.excludes("firefox", "org.mpris.MediaPlayer2.firefox.instance_1_23"));
         assert!(p.excludes("Spotify", "com.spotify.client"));
         assert!(!p.excludes("VLC", "org.mpris.MediaPlayer2.vlc"));
+    }
+
+    #[test]
+    fn old_power_saver_becomes_a_performance_mode() {
+        let old: IslandPrefs = serde_json::from_str(r#"{"powerSaver":true}"#).unwrap();
+        let p = old.migrated();
+        assert_eq!((p.performance.as_str(), p.power_saver), ("saver", false));
+        assert!(!serde_json::to_string(&p).unwrap().contains("powerSaver"), "never written again");
+        let fresh: IslandPrefs = serde_json::from_str("{}").unwrap();
+        assert_eq!(fresh.migrated().performance, "auto");
+    }
+
+    #[test]
+    fn twelve_or_twenty_four_hours() {
+        let mut p = IslandPrefs::default();
+        assert!(p.h24(true) && !p.h24(false), "auto follows the system");
+        p.clock_hours = "12".into();
+        assert!(!p.h24(true));
+        p.clock_hours = "24".into();
+        assert!(p.h24(false));
+    }
+
+    #[test]
+    fn stopwatch_and_todo_buttons_wait_to_be_switched_on() {
+        let mut p: IslandPrefs = serde_json::from_str(r#"{"cardHidden":[]}"#).unwrap();
+        assert!(p.hides("todo") && p.hides("stopwatch") && !p.hides("timer"));
+        p.set_card_button("todo", true).unwrap();
+        p.set_card_button("timer", false).unwrap();
+        assert!(!p.hides("todo") && p.hides("stopwatch") && p.hides("timer"));
+        p.set_card_button("todo", false).unwrap();
+        p.set_card_button("timer", true).unwrap();
+        assert!(p.hides("todo") && !p.hides("timer"));
+        assert!(p.card_hidden.is_empty() && p.card_shown.is_empty());
     }
 
     #[test]

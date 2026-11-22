@@ -5,7 +5,7 @@ The Islet app for Android does two things, and you can use either or both:
 1. **An island on the phone itself:** a black pill round the front camera that grows to show what is going on, like the one on your computer. See [The island on your phone](#the-island-on-your-phone).
 2. **Your phone on your computer's island:** the phone's notifications, what is playing (with working play, next and previous buttons) and its battery level show on the computer. See [Pair](#pair).
 
-Everything is free: no Islet Pro needed. The app is open source, in the [`android`](../android) folder.
+Everything is free. The app is open source, in the [`android`](../android) folder.
 
 iPhones can't do this: iOS doesn't let an app read other apps' notifications or draw over them.
 

@@ -54,8 +54,9 @@ pub fn save_trip(trip: Option<&Trip>) {
 pub fn load_prefs() -> islet_core::prefs::IslandPrefs {
     file("island.json")
         .and_then(|p| std::fs::read(p).ok())
-        .and_then(|b| serde_json::from_slice(&b).ok())
+        .and_then(|b| serde_json::from_slice::<islet_core::prefs::IslandPrefs>(&b).ok())
         .unwrap_or_default()
+        .migrated()
 }
 
 pub fn save_prefs(prefs: &islet_core::prefs::IslandPrefs) -> Result<(), String> {
@@ -110,4 +111,10 @@ pub fn write_private(path: &PathBuf, contents: &str) -> std::io::Result<()> {
     }
     #[cfg(not(unix))]
     std::fs::write(path, contents)
+}
+
+/// This computer's name, as far as the environment says (may be empty).
+pub fn computer_name() -> String {
+    let host = std::env::var("COMPUTERNAME").or_else(|_| std::env::var("HOSTNAME")).unwrap_or_default();
+    host.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(32).collect()
 }

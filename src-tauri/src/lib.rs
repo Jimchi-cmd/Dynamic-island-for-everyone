@@ -27,7 +27,7 @@ pub fn allowed(args: &[String]) -> bool {
         | ["key", "routes", "--clear"]
         | ["update", "check", "--json"]
         | ["update", "check", "--early", "--json"] => true,
-        ["pro", "activate" | "check" | "deactivate"] | ["pro", "status", "--json"] => true,
+        ["performance", mode] => islet_core::limits::MODES.contains(mode),
         ["stopwatch", "start" | "pause" | "resume" | "lap" | "reset"] => true,
         ["world", "--json"] | ["world", "cities", "--json"] => true,
         ["note"] | ["note", "--where"] => true,
@@ -80,6 +80,7 @@ pub fn allowed(args: &[String]) -> bool {
         ["look", "style", name] => islet_core::prefs::STYLES.contains(name),
         ["look", "shape", name] => islet_core::prefs::SHAPES.contains(name),
         ["look", "clock", name] => islet_core::prefs::CLOCK_FACES.contains(name),
+        ["look", "hours", name] => islet_core::prefs::CLOCK_HOURS.contains(name),
         ["card", "show" | "hide", button] => islet_core::prefs::CARD_BUTTONS.iter().any(|(id, _)| id == button),
         ["look", "size", name] => islet_core::prefs::SIZES.iter().any(|(n, _)| n == name),
         ["displays", "--json"] | ["look", "display", "primary"] => true,
@@ -413,8 +414,9 @@ mod tests {
         assert!(allowed(&args(&["wifi", "connect", "Cafe", "--password-stdin"])));
         assert!(!allowed(&args(&["wifi", "connect", "--evil"])));
         assert!(!allowed(&args(&[])), "running the island itself goes through start_island");
-        assert!(allowed(&args(&["pro", "activate"])) && allowed(&args(&["pro", "status", "--json"])));
-        assert!(!allowed(&args(&["pro", "activate", "KEY-ON-THE-COMMAND-LINE"])), "keys go through stdin");
+        assert!(allowed(&args(&["performance", "saver"])) && !allowed(&args(&["performance", "turbo"])));
+        assert!(allowed(&args(&["look", "hours", "12"])) && !allowed(&args(&["look", "hours", "13"])));
+        assert!(!allowed(&args(&["pro", "activate"])), "Islet Pro is gone");
     }
 
     #[test]

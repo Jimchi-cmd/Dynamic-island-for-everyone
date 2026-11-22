@@ -22,7 +22,6 @@ pub mod paths;
 pub mod phone;
 pub mod plugin;
 pub mod prefs;
-pub mod pro;
 pub mod quicknote;
 pub mod screenshot;
 pub mod shelf;

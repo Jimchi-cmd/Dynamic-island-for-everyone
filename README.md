@@ -18,7 +18,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 | Mac | `Islet_…_universal.dmg` |
 | Linux | `.deb`, `.rpm` or `.AppImage` |
 
-Islet is free and open source. [Islet Pro](docs/pro.md) is an optional one-time purchase for extras; everything free stays free.
+Islet is free and open source, with every feature included: no paid tier, no accounts. See the [extras](docs/extras.md).
 
 > **Status:** everything below is tested on Linux and Android. The Windows and macOS code builds and passes CI on every change. See [what each OS supports](docs/roadmap.md).
 
@@ -48,7 +48,7 @@ Islet is free and open source. [Islet Pro](docs/pro.md) is an optional one-time 
 - **Calls:** while Zoom, Teams, a browser call or any app has the microphone, the island shows how long the call has run, with a button that mutes your microphone.
 - **Camera and microphone dots:** a green dot while an app uses the camera, an orange one for the microphone (your screen reader hears which app).
 - **System monitor:** CPU, memory and disk on the clock card, read only while you look at it.
-- **Clipboard history** (opt-in): your last 20 copied texts and pictures (500 with Islet Pro), one tap to copy again. Kept in memory only; password-manager copies are skipped, and so are copies from any app you list.
+- **Clipboard history** (opt-in): your last 500 copied texts and pictures (20 in the Light performance mode), one tap to copy again. Kept in memory only; password-manager copies are skipped, and so are copies from any app you list.
 - **Live activities** for your scripts and apps: `islet activity start build --title Build --progress 40` puts a progress ring on the island.
 - **Make it yours:** accent colour, island size, gap from the top, which display (or every display), and a global shortcut to open it. Or hide the empty island until you point at it: anything live (music, timers, pop-ups) still shows.
 - **Navigation ETA** with live traffic, arrival time and the first turn, then one tap hands off to Google Maps or Waze. Destination suggestions as you type. Uses your own free-tier Google key ([setup](docs/navigation.md)).

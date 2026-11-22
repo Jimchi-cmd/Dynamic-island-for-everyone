@@ -2,7 +2,7 @@
 
 Islet has hard budgets because it targets low-end laptops (4 GB RAM, 2 cores, integrated GPU).
 
-The budgets are for the free app, which is what CI measures. Islet Pro turns the low-end limits off (see [pro.md](pro.md)), so it may use more memory and more CPU while music plays. Its Power saver switch brings the limits back.
+The budgets are for a low-end laptop. On one, Performance "Automatic" keeps to the light limits (see [extras.md](extras.md#performance)). On a bigger computer, such as a CI runner, it runs in Full, so it may use more memory and more CPU while music plays. Light and Power saver bring the limits back.
 
 | Metric | Budget |
 |---|---|

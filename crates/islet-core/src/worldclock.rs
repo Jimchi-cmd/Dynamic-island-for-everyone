@@ -1,4 +1,4 @@
-//! World clocks (Islet Pro): the time in a few other cities, on the clock
+//! World clocks: the time in a few other cities, on the clock
 //! card. A small built-in table of cities with their UTC offsets and
 //! daylight-saving rules, so it works the same on every OS and offline.
 

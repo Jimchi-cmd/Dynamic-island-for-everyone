@@ -27,8 +27,8 @@
     MODES,
     navStartArgs,
     parsePage,
-    parsePro,
-    type ProStatus,
+    PERFORMANCE,
+    cardShows,
     permissionsFor,
     signalBars,
     SWITCH_NAMES,
@@ -50,7 +50,7 @@
     type Trip,
   } from './lib/settings';
 
-  type Page = 'general' | 'connections' | 'alarms' | 'timer' | 'navigation' | 'launcher' | 'pro' | 'updates' | 'about';
+  type Page = 'general' | 'connections' | 'alarms' | 'timer' | 'navigation' | 'launcher' | 'extras' | 'updates' | 'about';
   // Each section's icon is a few strokes on a 24×24 grid, drawn for Islet,
   // on a coloured tile (`tint`).
   const PAGES: { id: Page; label: string; tint: string; icon: string; dots?: [number, number, number][] }[] = [
@@ -96,8 +96,8 @@
       icon: 'M10.5 4.5a6 6 0 1 0 0 12a6 6 0 0 0 0-12zM15 15l4.5 4.5',
     },
     {
-      id: 'pro',
-      label: 'Islet Pro',
+      id: 'extras',
+      label: 'Extras',
       tint: 'linear-gradient(135deg, #ff9f0a, #ff375f)',
       icon: 'M12 3.5l2 6.5l6.5 2l-6.5 2l-2 6.5l-2-6.5l-6.5-2l6.5-2z',
     },
@@ -223,8 +223,7 @@
   $effect(() => {
     if (page === 'connections' && !wifi) void loadConnections(true);
     if (page === 'connections' && !phoneState) void loadPhone();
-    // General needs to know about Pro too, for the Pro-only island styles.
-    if ((page === 'pro' || page === 'general') && !pro) void loadPro();
+    if (page === 'extras' && !extrasLoaded) void loadExtras();
     if (page === 'timer') {
       void loadStreak();
       void loadLessons();
@@ -250,7 +249,7 @@
     const q = launcherText.trim();
     if (!q) return [];
     const rows: LauncherRow[] = [];
-    // "note: …" saves a quick note (Islet Pro) instead of searching.
+    // "note: …" saves a quick note instead of searching.
     const note = /^note:\s*(.*)$/i.exec(q);
     if (note) {
       const text = note[1]!.trim();
@@ -461,7 +460,7 @@
   }
 
   async function setLook(
-    what: 'accent' | 'style' | 'shape' | 'clock' | 'size' | 'position' | 'offset' | 'display' | 'font',
+    what: 'accent' | 'style' | 'shape' | 'clock' | 'hours' | 'size' | 'position' | 'offset' | 'display' | 'font',
     value: string,
   ) {
     try {
@@ -758,12 +757,11 @@
     });
   }
 
-  // Islet Pro
-  let pro: ProStatus | null = $state(null);
-  let proKey = $state('');
-  let proNote = $state('');
+  // Extras: performance, world clocks, notes, to-dos and shortcuts.
+  let extrasLoaded = $state(false);
+  let extrasNote = $state('');
 
-  // World clocks (Pro)
+  // World clocks
   let worldClocks: string[] = $state([]);
   let cities: string[] = $state([]);
 
@@ -772,22 +770,22 @@
       worldClocks = JSON.parse(await api.islet(['world', '--json']));
       if (!cities.length) cities = JSON.parse(await api.islet(['world', 'cities', '--json']));
     } catch (e) {
-      proNote = api.message(e);
+      extrasNote = api.message(e);
     }
   }
 
   async function worldChange(add: boolean, city: string) {
     if (!city) return;
-    proNote = '';
+    extrasNote = '';
     try {
       await api.islet(['world', add ? 'add' : 'remove', city]);
     } catch (e) {
-      proNote = api.message(e);
+      extrasNote = api.message(e);
     }
     await loadWorld();
   }
 
-  // Notes and to-dos (Pro)
+  // Notes and to-dos
   let todos: { id: number; text: string; done: boolean }[] = $state([]);
   let todoText = $state('');
 
@@ -844,22 +842,22 @@
     try {
       todos = JSON.parse(await api.islet(['todo', '--json']));
     } catch (e) {
-      proNote = api.message(e);
+      extrasNote = api.message(e);
     }
   }
 
   async function todoRun(args: string[], input?: string) {
-    proNote = '';
+    extrasNote = '';
     try {
       await api.islet(args, input);
       todoText = '';
     } catch (e) {
-      proNote = api.message(e);
+      extrasNote = api.message(e);
     }
     await loadTodos();
   }
 
-  // Your own buttons (Pro)
+  // Your own buttons
   let shortcuts: { name: string; target: string }[] = $state([]);
   let shortcutName = $state('');
   let shortcutTarget = $state('');
@@ -868,45 +866,36 @@
     try {
       shortcuts = JSON.parse(await api.islet(['shortcut', '--json']));
     } catch (e) {
-      proNote = api.message(e);
+      extrasNote = api.message(e);
     }
   }
 
   async function shortcutRun(args: string[]) {
-    proNote = '';
+    extrasNote = '';
     try {
       await api.islet(args);
       shortcutName = '';
       shortcutTarget = '';
     } catch (e) {
-      proNote = api.message(e);
+      extrasNote = api.message(e);
     }
     await loadShortcuts();
   }
 
-  async function loadPro() {
+  async function loadExtras() {
+    extrasLoaded = true;
     void loadWorld();
     void loadTodos();
     void loadNotesPath();
     void loadShortcuts();
-    try {
-      pro = parsePro(await api.islet(['pro', 'status', '--json']));
-    } catch (e) {
-      proNote = api.message(e);
-    }
   }
 
-  async function proRun(args: string[], input?: string) {
-    proNote = '';
-    busy = true;
+  async function setPerformance(mode: string) {
     try {
-      proNote = await api.islet(args, input);
-      proKey = '';
+      await api.islet(['performance', mode]);
+      await loadIslandPrefs();
     } catch (e) {
-      proNote = api.message(e);
-    } finally {
-      busy = false;
-      await loadPro();
+      problem = api.message(e);
     }
   }
 
@@ -969,7 +958,7 @@
     }
   }
 
-  // Early builds (Islet Pro): the newest release of all, pre-releases included.
+  // Early builds: the newest release of all, pre-releases included.
   let early = $state<{ current: string; latest: string; newer: boolean; url: string } | null>(null);
   let earlyNote = $state('');
   async function checkEarly() {
@@ -1333,14 +1322,14 @@
             {/each}
           </div>
           <p class="muted small">Buttons on the card that opens when you click the island. Wi-Fi and Bluetooth always show.</p>
-          {#each CARD_BUTTONS.filter((b) => !b.pro || pro?.active) as b (b.id)}
+          {#each CARD_BUTTONS as b (b.id)}
             <div class="net">
               <span class="name">{b.label}</span>
               <input
                 type="checkbox"
                 class="switch"
                 aria-label="Show {b.label} on the island's card"
-                checked={!(islandPrefs?.cardHidden ?? []).includes(b.id)}
+                checked={cardShows(b, islandPrefs)}
                 disabled={!islandPrefs}
                 onchange={(e) => setCardButton(b.id, e.currentTarget.checked)}
               />
@@ -1356,35 +1345,32 @@
                 class:chosen
                 role="radio"
                 aria-checked={chosen}
-                aria-label={s.pro && !pro?.active ? `${s.label} (Islet Pro)` : s.label}
+                aria-label={s.label}
                 disabled={!islandPrefs}
-                onclick={() => (s.pro && !pro?.active ? (page = 'pro') : setLook('style', s.id))}
+                onclick={() => setLook('style', s.id)}
               >
                 <span class="preview" style:--tint={accent}>
                   <span class="mini {s.id}"></span>
                 </span>
-                <span class="style-name">
-                  {s.label}
-                  {#if s.pro && !pro?.active}<span class="pro-tag">Pro</span>{/if}
-                </span>
+                <span class="style-name">{s.label}</span>
               </button>
             {/each}
           </div>
           <div class="net">
-            <span class="name">Shape {#if !pro?.active}<span class="pro-tag">Pro</span>{/if}</span>
+            <span class="name">Shape</span>
             <Picker
               label="Island shape"
               value={islandPrefs?.shape ?? 'pill'}
               disabled={!islandPrefs}
               options={[
                 { value: 'pill', label: 'Pill' },
-                { value: 'notch', label: 'Notch', hint: 'square at the top' },
+                { value: 'notch', label: 'Notch', hint: 'joins the top of the screen' },
               ]}
-              onchange={(v) => (pro?.active ? setLook('shape', v) : (page = 'pro'))}
+              onchange={(v) => setLook('shape', v)}
             />
           </div>
           <div class="net">
-            <span class="name">Empty island shows {#if !pro?.active}<span class="pro-tag">Pro</span>{/if}</span>
+            <span class="name">Empty island shows</span>
             <Picker
               label="What the empty island shows"
               value={islandPrefs?.clockFace ?? 'time'}
@@ -1394,8 +1380,19 @@
                 { value: 'date', label: 'The day and the time' },
                 { value: 'seconds', label: 'The time with seconds' },
               ]}
-              onchange={(v) => (pro?.active ? setLook('clock', v) : (page = 'pro'))}
+              onchange={(v) => setLook('clock', v)}
             />
+          </div>
+          <div class="net">
+            <span class="name">Clock</span>
+            <div class="segmented" role="radiogroup" aria-label="12- or 24-hour clock">
+              {#each [{ v: 'auto', l: 'Automatic' }, { v: '12', l: '12-hour' }, { v: '24', l: '24-hour' }] as o (o.v)}
+                {@const on = (islandPrefs?.clockHours ?? 'auto') === o.v}
+                <button role="radio" aria-checked={on} class:chosen={on} disabled={!islandPrefs} onclick={() => setLook('hours', o.v)}
+                  >{o.l}</button
+                >
+              {/each}
+            </div>
           </div>
           <div class="net">
             <span class="name">Font</span>
@@ -1426,8 +1423,7 @@
               onchange={(e) => setSwitch('albumBorder', e.currentTarget.checked)}
             />
           </div>
-          {#if pro?.active}
-            {#each [['albumGlow', 'Glow in the album’s colour while music plays'], ['visualizer', 'Moving bars as the song’s progress bar'], ['screenshotPreview', 'Show each new screenshot on the island']] as [key, label] (key)}
+          {#each [['albumGlow', 'Glow in the album’s colour while music plays'], ['visualizer', 'Moving bars as the song’s progress bar'], ['screenshotPreview', 'Show each new screenshot on the island']] as [key, label] (key)}
               <div class="net">
                 <span class="name">{label}</span>
                 <input
@@ -1440,7 +1436,6 @@
                 />
               </div>
             {/each}
-          {/if}
           <div class="net">
             <span class="name">Size</span>
             <div class="segmented" role="radiogroup" aria-label="Island size">
@@ -1537,7 +1532,7 @@
               <button type="button" onclick={() => saveHotkey('')}>Remove</button>
             {/if}
           </form>
-          {#each [['launcher', 'Open the launcher', islandPrefs?.launcherHotkey], ['note', 'Write a quick note (Islet Pro)', islandPrefs?.noteHotkey]] as [which, label, current] (which)}
+          {#each [['launcher', 'Open the launcher', islandPrefs?.launcherHotkey], ['note', 'Write a quick note', islandPrefs?.noteHotkey]] as [which, label, current] (which)}
             <p class="muted small">{label}. Current: <strong>{current || 'none'}</strong></p>
             <form
               class="join"
@@ -2193,232 +2188,183 @@
           Give the launcher and quick notes their own keys in General → Shortcut. Web searches go to DuckDuckGo, and
           only when you choose that row.
         </p>
-      {:else if page === 'pro'}
-        <h1>Islet Pro {#if pro?.active}<span class="badge">Supporter</span>{/if}</h1>
-        {#if pro?.active}
-          <div class="card">
-            <h2>Pro is on. Thank you!</h2>
-            <p class="muted">
-              Key {pro.keyHint}. You’re supporting an independent open-source app.
-              {#if pro.expiresAt}It runs until {new Date(pro.expiresAt * 1000).toLocaleDateString()}.{/if}
-            </p>
+      {:else if page === 'extras'}
+        <h1>Extras</h1>
+        <div class="card">
+          <h2>Performance</h2>
+          <p class="muted">
+            {#if islandPrefs?.performance === 'saver'}
+              Power saver is on. Islet keeps short histories and small album art, and the waveform stands still, so
+              playing music costs no extra battery.
+            {:else if islandPrefs?.performance === 'light'}
+              Light: short histories, small album art and a waveform at 30 frames a second. Made for laptops with 4 GB
+              of memory.
+            {:else if islandPrefs?.performance === 'full'}
+              Full: animation at 60 frames a second, sharper album art, a clipboard history of 500 copies and room for
+              100 files on the shelf. Islet uses more memory and a little more power for it.
+            {:else}
+              Automatic: full on this computer, unless it has 4 GB of memory or less, or two processor cores, when Islet
+              keeps to the light limits.
+            {/if}
+          </p>
+          <div class="net">
+            <span class="name">Mode</span>
+            <Picker
+              label="Performance"
+              value={islandPrefs?.performance ?? 'auto'}
+              disabled={!islandPrefs}
+              options={PERFORMANCE.map((m) => ({ value: m.id, label: m.label, hint: m.hint }))}
+              onchange={(v) => setPerformance(v)}
+            />
+          </div>
+          <p class="muted small">
+            Nothing you saved is removed when you switch: your shelf, notes and shortcuts stay as they are.
+          </p>
+        </div>
+        <div class="card">
+          <h2>World clocks</h2>
+          <p class="muted">Up to three cities on the clock card, with daylight saving taken care of.</p>
+          {#if worldClocks.length}
             <div class="actions left">
-              <button disabled={busy} onclick={() => proRun(['pro', 'check'])}>Check my key</button>
-              <button disabled={busy} onclick={() => proRun(['pro', 'deactivate'])}>Move Pro to another computer</button>
+              {#each worldClocks as c (c)}
+                <button onclick={() => worldChange(false, c)} aria-label={`Remove ${c}`}>{c} ✕</button>
+              {/each}
             </div>
-            <p class="small muted">
-              Islet asks the store once a week whether your key is still valid. Being offline never turns Pro off.
-            </p>
-          </div>
-        {:else}
-          <div class="card">
-            <h2>One payment, yours for good</h2>
-            <p class="muted">
-              Everything Islet does today stays free. Pro adds the extras below and helps keep Islet going. Use your key
-              on up to three of your computers.
-            </p>
-            {#if pro?.refused}
-              <p class="small" role="alert">The store no longer accepts the key on this computer (refunded or revoked).</p>
-            {/if}
-            {#if pro?.forSale}
-              <div class="actions left">
-                {#if pro.buyUrl}
-                  <button class="primary" onclick={() => pro?.buyUrl && api.openLink(pro.buyUrl)}>Buy Islet Pro</button>
-                {/if}
-              </div>
-              <label for="pro-key">Already bought it? Paste your key</label>
-              <input id="pro-key" type="password" autocomplete="off" spellcheck="false" bind:value={proKey} placeholder="Your key" />
-              <div class="actions left">
-                <button disabled={busy || !proKey.trim()} onclick={() => proRun(['pro', 'activate'], proKey.trim())}>
-                  Activate
-                </button>
-              </div>
-              <p class="small muted">
-                Activating sends the key to the store to check it. The key is kept in your system keychain.
-              </p>
-            {:else if pro}
-              <p class="muted">Islet Pro isn’t on sale in this build yet.</p>
-            {/if}
-          </div>
-        {/if}
-        {#if pro?.active}
-          <div class="card">
-            <h2>Performance</h2>
-            <p class="muted">
-              {#if islandPrefs?.powerSaver}
-                Power saver is on. Islet keeps short histories and small album art, and the waveform stands still, so
-                playing music costs no extra battery.
-              {:else}
-                The limits of the free app are off: animation at 60 frames a second, sharper album art, a clipboard
-                history of 500 copies and room for 100 files on the shelf. Islet uses more memory and a little more
-                power for it.
-              {/if}
-            </p>
-            <div class="net">
-              <span class="name">Power saver</span>
-              <input
-                type="checkbox"
-                class="switch"
-                aria-label="Power saver"
-                checked={islandPrefs?.powerSaver ?? false}
-                disabled={!islandPrefs}
-                onchange={(e) => setSwitch('powerSaver', e.currentTarget.checked)}
-              />
-            </div>
-            <p class="muted small">
-              For a long day on battery. Nothing you saved is removed: your shelf, notes and shortcuts stay as they are.
-            </p>
-          </div>
-          <div class="card">
-            <h2>World clocks</h2>
-            <p class="muted">Up to three cities on the clock card, with daylight saving taken care of.</p>
-            {#if worldClocks.length}
-              <div class="actions left">
-                {#each worldClocks as c (c)}
-                  <button onclick={() => worldChange(false, c)} aria-label={`Remove ${c}`}>{c} ✕</button>
-                {/each}
-              </div>
-            {/if}
-            {#if worldClocks.length < 3}
-              <span class="label">Add a city</span>
-              <Picker
-                label="Add a city"
-                value=""
-                searchable
-                options={[
-                  { value: '', label: 'Choose…' },
-                  ...cities.filter((c) => !worldClocks.includes(c)).map((c) => ({ value: c, label: c })),
-                ]}
-                onchange={(v) => v && worldChange(true, v)}
-              />
-            {/if}
-          </div>
-          <div class="card">
-            <h2>Quick notes</h2>
-            <p class="muted">
-              One line at a time, added with the date to a plain text file you can open anywhere:
-              <span class="path">{notesPath || '“Islet notes.txt” in Documents'}</span>
-            </p>
-            <form
-              class="actions left"
-              onsubmit={(e) => {
-                e.preventDefault();
-                if (quickNote.trim()) void saveQuickNote();
-              }}
-            >
-              <input
-                type="text"
-                maxlength="500"
-                aria-label="Quick note"
-                placeholder="Ask about the essay deadline…"
-                bind:value={quickNote}
-              />
-              <button class="primary" type="submit" disabled={!quickNote.trim()}>Save</button>
-            </form>
-            {#if quickNoteSaid}<p class="small" role="status">{quickNoteSaid}</p>{/if}
-            <p class="muted small">
-              For a hotkey, bind a key to <code>islet note</code> in your system’s keyboard settings, or run
-              <code>islet note "your text"</code> from a launcher.
-            </p>
-          </div>
-          <div class="card">
-            <h2>Notes &amp; to-do</h2>
-            <p class="muted">
-              Type here; tick things off on the island (Control Centre → the checklist button). Kept on this computer
-              only.
-            </p>
-            <form
-              class="actions left"
-              onsubmit={(e) => {
-                e.preventDefault();
-                if (todoText.trim()) void todoRun(['todo', 'add'], todoText.trim());
-              }}
-            >
-              <input
-                type="text"
-                maxlength="200"
-                aria-label="New note or to-do"
-                placeholder="Buy milk…"
-                bind:value={todoText}
-              />
-              <button class="primary" type="submit" disabled={!todoText.trim()}>Add</button>
-            </form>
-            {#if todos.length}
-              <ul class="todos">
-                {#each todos as t (t.id)}
-                  <li>
-                    <label class:done={t.done}>
-                      <input type="checkbox" checked={t.done} onchange={() => todoRun(['todo', 'done', String(t.id)])} />
-                      {t.text}
-                    </label>
-                    <button class="link" aria-label={`Delete ${t.text}`} onclick={() => todoRun(['todo', 'remove', String(t.id)])}>
-                      ✕
-                    </button>
-                  </li>
-                {/each}
-              </ul>
-              {#if todos.some((t) => t.done)}
-                <div class="actions left"><button onclick={() => todoRun(['todo', 'clear-done'])}>Clear finished</button></div>
-              {/if}
-            {/if}
-          </div>
-          <div class="card">
-            <h2>Shortcuts</h2>
-            <p class="muted">
-              Buttons of your own on the island (Control Centre → the bolt button). Each opens a folder, a file, a script
-              or a web page. Up to 50.
-            </p>
-            {#each shortcuts as s, i (i)}
-              <div class="net">
-                <span class="name">{s.name}</span>
-                <span class="muted small target">{s.target}</span>
-                <button class="link" aria-label={`Delete ${s.name}`} onclick={() => shortcutRun(['shortcut', 'remove', String(i + 1)])}>
-                  ✕
-                </button>
-              </div>
-            {/each}
-            {#if shortcuts.length < 50}
-              <div class="two">
-                <div>
-                  <label for="sc-name">Name</label>
-                  <input id="sc-name" type="text" maxlength="40" placeholder="Homework" bind:value={shortcutName} />
-                </div>
-                <div>
-                  <label for="sc-target">Opens</label>
-                  <input
-                    id="sc-target"
-                    type="text"
-                    spellcheck="false"
-                    placeholder={info?.os === 'windows' ? 'C:\\Users\\you\\Documents or https://…' : '/home/you/Documents or https://…'}
-                    bind:value={shortcutTarget}
-                  />
-                </div>
-              </div>
-              <div class="actions">
-                <button
-                  class="primary"
-                  disabled={!shortcutName.trim() || !shortcutTarget.trim()}
-                  onclick={() => shortcutRun(['shortcut', 'add', '--name', shortcutName.trim(), '--target', shortcutTarget.trim()])}
-                >
-                  Add shortcut
-                </button>
-              </div>
-            {/if}
-          </div>
-          <div class="card">
-            <h2>Stopwatch</h2>
-            <p class="muted">Open the island and tap the stopwatch button in Control Centre. Laps and pause work from the island.</p>
-          </div>
-        {/if}
-        {#if pro?.features.length}
-          <div class="card">
-            <h2>What Pro adds</h2>
-            <ul class="features">
-              {#each pro.features as f (f)}<li>{f}</li>{/each}
+          {/if}
+          {#if worldClocks.length < 3}
+            <span class="label">Add a city</span>
+            <Picker
+              label="Add a city"
+              value=""
+              searchable
+              options={[
+                { value: '', label: 'Choose…' },
+                ...cities.filter((c) => !worldClocks.includes(c)).map((c) => ({ value: c, label: c })),
+              ]}
+              onchange={(v) => v && worldChange(true, v)}
+            />
+          {/if}
+        </div>
+        <div class="card">
+          <h2>Quick notes</h2>
+          <p class="muted">
+            One line at a time, added with the date to a plain text file you can open anywhere:
+            <span class="path">{notesPath || '“Islet notes.txt” in Documents'}</span>
+          </p>
+          <form
+            class="actions left"
+            onsubmit={(e) => {
+              e.preventDefault();
+              if (quickNote.trim()) void saveQuickNote();
+            }}
+          >
+            <input
+              type="text"
+              maxlength="500"
+              aria-label="Quick note"
+              placeholder="Ask about the essay deadline…"
+              bind:value={quickNote}
+            />
+            <button class="primary" type="submit" disabled={!quickNote.trim()}>Save</button>
+          </form>
+          {#if quickNoteSaid}<p class="small" role="status">{quickNoteSaid}</p>{/if}
+          <p class="muted small">
+            For a hotkey, bind a key to <code>islet note</code> in your system’s keyboard settings, or run
+            <code>islet note "your text"</code> from a launcher.
+          </p>
+        </div>
+        <div class="card">
+          <h2>Notes &amp; to-do</h2>
+          <p class="muted">
+            Type here; tick things off on the island (Control Centre → the checklist button, once it is switched on in
+            General → Clock card buttons). Kept on this computer only.
+          </p>
+          <form
+            class="actions left"
+            onsubmit={(e) => {
+              e.preventDefault();
+              if (todoText.trim()) void todoRun(['todo', 'add'], todoText.trim());
+            }}
+          >
+            <input
+              type="text"
+              maxlength="200"
+              aria-label="New note or to-do"
+              placeholder="Buy milk…"
+              bind:value={todoText}
+            />
+            <button class="primary" type="submit" disabled={!todoText.trim()}>Add</button>
+          </form>
+          {#if todos.length}
+            <ul class="todos">
+              {#each todos as t (t.id)}
+                <li>
+                  <label class:done={t.done}>
+                    <input type="checkbox" checked={t.done} onchange={() => todoRun(['todo', 'done', String(t.id)])} />
+                    {t.text}
+                  </label>
+                  <button class="link" aria-label={`Delete ${t.text}`} onclick={() => todoRun(['todo', 'remove', String(t.id)])}>
+                    ✕
+                  </button>
+                </li>
+              {/each}
             </ul>
-          </div>
-        {/if}
-        {#if proNote}<p class="small" role="status">{proNote}</p>{/if}
+            {#if todos.some((t) => t.done)}
+              <div class="actions left"><button onclick={() => todoRun(['todo', 'clear-done'])}>Clear finished</button></div>
+            {/if}
+          {/if}
+        </div>
+        <div class="card">
+          <h2>Shortcuts</h2>
+          <p class="muted">
+            Buttons of your own on the island (Control Centre → the bolt button). Each opens a folder, a file, a script
+            or a web page. Up to 50.
+          </p>
+          {#each shortcuts as s, i (i)}
+            <div class="net">
+              <span class="name">{s.name}</span>
+              <span class="muted small target">{s.target}</span>
+              <button class="link" aria-label={`Delete ${s.name}`} onclick={() => shortcutRun(['shortcut', 'remove', String(i + 1)])}>
+                ✕
+              </button>
+            </div>
+          {/each}
+          {#if shortcuts.length < 50}
+            <div class="two">
+              <div>
+                <label for="sc-name">Name</label>
+                <input id="sc-name" type="text" maxlength="40" placeholder="Homework" bind:value={shortcutName} />
+              </div>
+              <div>
+                <label for="sc-target">Opens</label>
+                <input
+                  id="sc-target"
+                  type="text"
+                  spellcheck="false"
+                  placeholder={info?.os === 'windows' ? 'C:\\Users\\you\\Documents or https://…' : '/home/you/Documents or https://…'}
+                  bind:value={shortcutTarget}
+                />
+              </div>
+            </div>
+            <div class="actions">
+              <button
+                class="primary"
+                disabled={!shortcutName.trim() || !shortcutTarget.trim()}
+                onclick={() => shortcutRun(['shortcut', 'add', '--name', shortcutName.trim(), '--target', shortcutTarget.trim()])}
+              >
+                Add shortcut
+              </button>
+            </div>
+          {/if}
+        </div>
+        <div class="card">
+          <h2>Stopwatch</h2>
+          <p class="muted">
+            Switch on its button in General → Clock card buttons, then open the island and tap it. Laps and pause work
+            from the island.
+          </p>
+        </div>
+        {#if extrasNote}<p class="small" role="status">{extrasNote}</p>{/if}
       {:else if page === 'updates'}
         <h1>Updates</h1>
         <div class="card row">
@@ -2450,13 +2396,13 @@
         {/if}
         {#if updateNote}<p class="small" role="status">{updateNote}</p>{/if}
         <div class="card">
-          <h2>Early builds {#if !pro?.active}<span class="pro-tag">Pro</span>{/if}</h2>
+          <h2>Early builds</h2>
           <p class="muted">
             New features before they are released to everyone. They can have rough edges; you install them by hand from
             the download page.
           </p>
           <div class="actions left">
-            <button onclick={() => (pro?.active ? checkEarly() : (page = 'pro'))}>Look for an early build</button>
+            <button onclick={checkEarly}>Look for an early build</button>
             {#if early?.newer}
               <button class="primary" onclick={() => early && api.openLink(early.url)}>Open the download page</button>
             {/if}
@@ -2513,11 +2459,6 @@
   .todos label.done {
     opacity: 0.5;
     text-decoration: line-through;
-  }
-  .features {
-    margin: 4px 0 0;
-    padding-left: 18px;
-    line-height: 1.6;
   }
   .places {
     display: flex;
@@ -2605,14 +2546,6 @@
     justify-content: center;
     gap: 5px;
     font-weight: 550;
-  }
-  .pro-tag {
-    font-size: 9.5px;
-    font-weight: 700;
-    padding: 1px 5px;
-    border-radius: 999px;
-    color: #fff;
-    background: linear-gradient(135deg, #ff9f0a, #ff375f);
   }
   .layout {
     display: grid;
