@@ -21,6 +21,9 @@ const GREEN: [u8; 3] = [48, 209, 88];
 const DONE_FOR: Duration = Duration::from_secs(6);
 /// How often sizes are read while something downloads.
 const EVERY: Duration = Duration::from_secs(1);
+/// A partial file untouched this long is a download that stopped (paused,
+/// failed, or the browser closed): it no longer shows as downloading.
+const STALE: Duration = Duration::from_secs(120);
 
 /// Stops the watcher when dropped (turned off in Settings).
 pub struct Watcher {
@@ -81,7 +84,8 @@ fn size_of(path: &Path) -> u64 {
 }
 
 /// Downloads in progress: (file name, finished name, size, last change).
-fn scan(dir: &Path) -> Vec<(String, Option<String>, u64, SystemTime)> {
+/// Partial files left behind by a download that stopped are skipped.
+fn scan(dir: &Path, now: SystemTime) -> Vec<(String, Option<String>, u64, SystemTime)> {
     let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
     entries
         .flatten()
@@ -89,7 +93,9 @@ fn scan(dir: &Path) -> Vec<(String, Option<String>, u64, SystemTime)> {
             let name = e.file_name().to_string_lossy().into_owned();
             let finished = downloads::partial(&name)?;
             let modified = e.metadata().and_then(|m| m.modified()).unwrap_or(SystemTime::UNIX_EPOCH);
-            Some((name, finished, size_of(&e.path()), modified))
+            // A time in the future (a clock change) counts as just now.
+            let stale = now.duration_since(modified).is_ok_and(|age| age > STALE);
+            (!stale).then(|| (name, finished, size_of(&e.path()), modified))
         })
         .collect()
 }
@@ -109,7 +115,7 @@ fn run(dir: &Path, on: &AtomicBool, sink: &Sink) {
     };
     while on.load(Ordering::Relaxed) {
         let now = Instant::now();
-        let current = scan(dir);
+        let current = scan(dir, SystemTime::now());
         // Downloads that are gone: finished if the file they became is there.
         let mut finished: Option<(String, PathBuf)> = None;
         for (name, s) in &seen {
@@ -328,6 +334,24 @@ impl Drop for Change {
 mod tests {
     use super::*;
     use std::sync::mpsc::channel;
+
+    #[test]
+    fn a_download_that_stopped_long_ago_is_not_shown() {
+        let dir = std::env::temp_dir().join(format!("islet-dl-stale-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let old = dir.join("movie.mp4.part");
+        std::fs::write(&old, vec![0u8; 1000]).unwrap();
+        std::fs::write(dir.join("song.mp3.crdownload"), vec![0u8; 1000]).unwrap();
+        let now = SystemTime::now();
+        std::fs::File::options().write(true).open(&old).unwrap().set_modified(now - STALE * 3).unwrap();
+        let names: Vec<String> = scan(&dir, now).into_iter().map(|(n, ..)| n).collect();
+        assert_eq!(names, ["song.mp3.crdownload"], "the paused one is left out");
+        // Two minutes on with no writes, the other one has stopped too.
+        let later = now + STALE * 4;
+        assert!(scan(&dir, later).is_empty(), "both stopped by then");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn a_browser_download_shows_progress_then_done() {

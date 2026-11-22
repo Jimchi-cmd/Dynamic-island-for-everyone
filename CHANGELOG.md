@@ -2,6 +2,12 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Phone: a finished download no longer leaves its circle on the island. Apps such as Samsung's downloader and Chrome keep a full bar in their "Download complete" notification; Islet now reads that as done, takes the ring away and says "done" once.
+- Computer: a download that stopped (paused, failed, or the browser closed) no longer shows "Downloading" for ever: a partial file untouched for two minutes is left out.
+
 ## [0.5.0] - 2026-11-22
 
 ### Changed

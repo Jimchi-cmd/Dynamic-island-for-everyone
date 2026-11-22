@@ -276,7 +276,7 @@ object Isle {
         val kind = Notes.classify(f, app.packageName)
         // A download's notification changes many times a second and its
         // picture isn't shown (its app's icon is): don't decode it each time.
-        val icon = if (kind is NoteKind.Progress) {
+        val icon = if (kind is NoteKind.Progress || kind is NoteKind.Finished) {
             null
         } else {
             try {
@@ -297,6 +297,12 @@ object Isle {
             is NoteKind.Navigation -> if (prefs.navigation) island.put(Live.Navigation(id, kind.title, kind.text, f.app))
             is NoteKind.Countdown -> island.put(Live.Countdown(id, kind.label, kind.endsAt, f.app))
             is NoteKind.Progress -> if (prefs.progress) island.put(Live.Progress(id, kind.title, f.app, kind.percent))
+            is NoteKind.Finished -> {
+                // The bar is full and nothing runs: the ring goes, and it says so once.
+                val was = island.get(id)
+                island.remove(id)
+                if (was is Live.Progress && prefs.progress && !quiet) island.pop(Pop.Info("${kind.title}: done"), t)
+            }
             NoteKind.Popup -> {
                 island.remove(id)
                 if (!quiet && prefs.popNotes && sbn.packageName !in prefs.quietApps && !dnd) {

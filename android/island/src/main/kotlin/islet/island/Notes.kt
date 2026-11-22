@@ -37,6 +37,12 @@ sealed class NoteKind {
 
     data class Progress(val title: String, val percent: Int) : NoteKind()
 
+    /**
+     * A download or upload that has finished but whose notification stays
+     * (with its bar full): the ring goes, and "done" pops up once.
+     */
+    data class Finished(val title: String) : NoteKind()
+
     /** Worth a pop-up. */
     object Popup : NoteKind()
 
@@ -101,6 +107,9 @@ object Notes {
         }
         if (n.progressMax > 0 || n.indeterminate) {
             if (n.media) return NoteKind.Ignore
+            // "Download complete" often keeps a full bar; nothing is running
+            // any more once the notification can be swiped away.
+            if (!n.indeterminate && !n.ongoing && n.progress >= n.progressMax) return NoteKind.Finished(title.ifEmpty { n.app })
             val percent = if (n.indeterminate || n.progressMax <= 0) -1 else (n.progress * 100L / n.progressMax).toInt().coerceIn(0, 100)
             return NoteKind.Progress(title.ifEmpty { n.app }, percent)
         }
