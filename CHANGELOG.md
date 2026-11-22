@@ -11,6 +11,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Fixed
 - Phone: the island no longer twitches sideways as it grows or shrinks (opening and closing a card, or a pop-up such as Bluetooth on or off). Its window's top left corner now stays put and only its size changes: on many phones a window that moved showed up a frame apart from what was drawn in it.
+- Phone: a download's ring glides to each new percentage instead of jumping in steps, and a download that doesn't say how far it is spins smoothly (it moved once a second). A download's notification is no longer decoded on every update.
+- Phone: video players such as YouTube show their thumbnail on the island (their notification wasn't recognised as a player's), wide pictures are cropped to the middle instead of squashed, and a song or video with no picture shows its app's icon instead of a plain note.
+- Phone: the battery on the empty island shows its percentage inside it.
 - Phone: the island no longer jumps when the screen's insets briefly leave out the camera hole (for instance while the quick settings are open): the camera's place now comes from the screen itself, and is kept once found.
 
 ## [0.4.7] - 2026-11-19

@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
@@ -276,6 +277,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     override fun onDraw(c: Canvas) {
         hits.clear()
         sliders.clear()
+        easing = false
         val now = SystemClock.uptimeMillis()
         val dt = if (lastFrame == 0L) 1.0 / 60 else (now - lastFrame) / 1000.0
         lastFrame = now
@@ -375,6 +377,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         c.restore()
         c.restore()
         c.restore()
+        if (easing) postInvalidateOnAnimation()
     }
 
     private fun withAlpha(colour: Int, weight: Float): Int =
@@ -488,7 +491,10 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         c.save()
         val p = Path().apply { addRoundRect(RectF(l, t, l + s, t + s), cornerDp * dp, cornerDp * dp, Path.Direction.CW) }
         c.clipPath(p)
-        c.drawBitmap(b, null, RectF(l, t, l + s, t + s), fill.apply { color = white })
+        // The middle square of a wide picture (a video's thumbnail), not a squashed one.
+        val side = minOf(b.width, b.height)
+        val src = Rect((b.width - side) / 2, (b.height - side) / 2, (b.width + side) / 2, (b.height + side) / 2)
+        c.drawBitmap(b, src, RectF(l, t, l + s, t + s), fill.apply { color = white })
         c.restore()
         return true
     }
@@ -516,6 +522,43 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             rect.set(x, cy - h / 2, x + w, cy + h / 2)
             c.drawRoundRect(rect, w / 2, w / 2, fill)
         }
+    }
+
+    /**
+     * A download's progress, eased: apps report it in steps (often once a
+     * second or slower), and a ring that jumped from step to step looked
+     * stuck, then lagging. It now glides to each new value.
+     */
+    private class Ease(var shown: Float, var at: Long, var target: Float)
+
+    private val eases = HashMap<String, Ease>()
+
+    /** Something on screen is still easing (or spinning): draw again next frame. */
+    private var easing = false
+
+    /** For tests: how full a download's ring is drawn now (0..1). */
+    internal fun ringShown(id: String): Float? = eases[id]?.shown
+
+    private fun eased(id: String, percent: Int): Float {
+        if (percent < 0) {
+            easing = true
+            return -1f
+        }
+        val target = percent / 100f
+        val now = SystemClock.uptimeMillis()
+        if (eases.size > 8 && id !in eases) eases.clear()
+        val e = eases.getOrPut(id) { Ease(target, now, target) }
+        if (e.target != target) {
+            e.target = target
+            e.at = now
+        }
+        // Going back (a new download in the same place) is shown at once.
+        if (target < e.shown) e.shown = target
+        val dt = (now - e.at).coerceAtLeast(0L)
+        e.at = now
+        e.shown += (target - e.shown) * (1f - kotlin.math.exp(-dt / 150f))
+        if (kotlin.math.abs(target - e.shown) < 0.004f) e.shown = target else easing = true
+        return e.shown
     }
 
     private fun ring(c: Canvas, cx: Float, cy: Float, rDp: Float, fraction: Float, color: Int) {
@@ -603,8 +646,9 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                         level > 10 -> orange
                         else -> red
                     }
-                    battery(c, right - 13 * dp, cy, level, colour)
-                    if (Isle.charging) icon(c, Icon.Bolt, right - 13 * dp, cy, 10f, Color.BLACK)
+                    // The percentage inside the battery, as on the phone's own status bar.
+                    battery(c, right - 14 * dp, cy, level, colour, number = true)
+                    if (Isle.charging) icon(c, Icon.Bolt, right - 35 * dp, cy, 11f, green)
                 }
             }
             return
@@ -644,7 +688,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val now = Isle.now()
         when (live) {
             is Live.Music -> {
-                if (!bitmap(c, Isle.art, lx - 11 * dp, cy - 11 * dp, 22f, 6f)) icon(c, Icon.Music, lx, cy, 16f, white)
+                if (!bitmap(c, Isle.art, lx - 11 * dp, cy - 11 * dp, 22f, 6f) && !drawable(c, Isle.playerIcon, lx, cy, 20f)) icon(c, Icon.Music, lx, cy, 16f, white)
                 bars(c, rx + 8 * dp, cy, 16f, Isle.artColor?.let { it or 0xff000000.toInt() } ?: white, live.playing)
             }
             is Live.Call -> {
@@ -678,7 +722,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             is Live.Progress -> {
                 val extra = Isle.extras[live.id.removePrefix("note:")]
                 if (!drawable(c, extra?.let { Isle.appIcon(it.pkg) }, lx, cy, 18f)) icon(c, Icon.Download, lx, cy, 16f, blue)
-                ring(c, rx, cy, 8f, if (live.percent < 0) -1f else live.percent / 100f, blue)
+                ring(c, rx, cy, 8f, eased(live.id, live.percent), blue)
             }
             is Live.Lesson -> {
                 icon(c, Icon.Book, lx, cy, 16f, cyan)
@@ -697,13 +741,13 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val cx = l + s / 2
         val cy = t + s / 2
         when (live) {
-            is Live.Music -> if (!bitmap(c, Isle.art, cx - 9 * dp, cy - 9 * dp, 18f, 9f)) icon(c, Icon.Music, cx, cy, 14f, white)
+            is Live.Music -> if (!bitmap(c, Isle.art, cx - 9 * dp, cy - 9 * dp, 18f, 9f) && !drawable(c, Isle.playerIcon, cx, cy, 18f)) icon(c, Icon.Music, cx, cy, 14f, white)
             is Live.Call -> icon(c, Icon.Phone, cx, cy, 14f, green)
             is Live.Navigation -> icon(c, Icon.Arrow, cx, cy, 14f, green)
             is Live.Timer, is Live.Countdown -> icon(c, Icon.Timer, cx, cy, 14f, orange)
             is Live.Stopwatch -> icon(c, Icon.Stopwatch, cx, cy, 14f, orange)
             is Live.Event -> icon(c, Icon.Calendar, cx, cy, 14f, red)
-            is Live.Progress -> ring(c, cx, cy, 7f, if (live.percent < 0) -1f else live.percent / 100f, blue)
+            is Live.Progress -> ring(c, cx, cy, 7f, eased(live.id, live.percent), blue)
             is Live.Lesson -> icon(c, Icon.Book, cx, cy, 14f, cyan)
         }
         hits.add(Hit(RectF(l, t, l + s, t + s)) { Isle.island.open(live.id); Isle.changed() })
@@ -825,7 +869,26 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         drawable(c, app, cx + 14 * dp, cy + 14 * dp, 15f, round = true)
     }
 
-    private fun battery(c: Canvas, cx: Float, cy: Float, level: Int, color: Int) {
+    /** A battery `level` % full; with `number`, the percentage written inside it. */
+    private fun battery(c: Canvas, cx: Float, cy: Float, level: Int, color: Int, number: Boolean = false) {
+        val lv = level.coerceIn(0, 100)
+        if (number) {
+            // As on the phone's own status bar: a solid light battery, the
+            // charge in colour, the number in black on top (readable at any level).
+            val w = 26 * dp
+            val h = 14 * dp
+            fill.color = 0xff9a9aa2.toInt()
+            rect.set(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2)
+            c.drawRoundRect(rect, 4 * dp, 4 * dp, fill)
+            c.drawRoundRect(cx + w / 2 + 0.8f * dp, cy - 2.5f * dp, cx + w / 2 + 2.6f * dp, cy + 2.5f * dp, 1 * dp, 1 * dp, fill)
+            c.save()
+            c.clipRect(cx - w / 2, cy - h / 2, cx - w / 2 + w * lv / 100f, cy + h / 2)
+            fill.color = color
+            c.drawRoundRect(rect, 4 * dp, 4 * dp, fill)
+            c.restore()
+            write(c, lv.toString(), cx, cy + 3.6f * dp, 10f, Color.BLACK, bold = true, align = Paint.Align.CENTER)
+            return
+        }
         val w = 24 * dp
         val h = 12 * dp
         line.strokeWidth = 1.4f * dp
@@ -835,7 +898,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         fill.color = grey
         c.drawRect(cx + w / 2 + 1 * dp, cy - 2.5f * dp, cx + w / 2 + 2.5f * dp, cy + 2.5f * dp, fill)
         fill.color = color
-        rect.set(cx - w / 2 + 2 * dp, cy - h / 2 + 2 * dp, cx - w / 2 + 2 * dp + (w - 4 * dp) * level / 100f, cy + h / 2 - 2 * dp)
+        rect.set(cx - w / 2 + 2 * dp, cy - h / 2 + 2 * dp, cx - w / 2 + 2 * dp + (w - 4 * dp) * lv / 100f, cy + h / 2 - 2 * dp)
         c.drawRoundRect(rect, 2 * dp, 2 * dp, fill)
     }
 
@@ -997,7 +1060,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 write(c, live.title, l + 48 * dp, t + 14 * dp, 16f, white, bold = true, max = r - l - 110 * dp)
                 write(c, live.app, l + 48 * dp, t + 34 * dp, 13f, grey, max = r - l - 110 * dp)
                 if (live.percent >= 0) write(c, "${live.percent}%", r, t + 24 * dp, 20f, blue, bold = true, align = Paint.Align.RIGHT)
-                bar(c, l, r, box.bottom - pad - 14 * dp, if (live.percent < 0) 0f else live.percent / 100f, blue, 6f)
+                bar(c, l, r, box.bottom - pad - 14 * dp, eased(live.id, live.percent).coerceAtLeast(0f), blue, 6f)
                 hits.add(Hit(RectF(box)) { Isle.open(live.id) })
             }
         }
@@ -1013,7 +1076,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             fill.color = 0xff3a3a3c.toInt()
             rect.set(l, t, l + 56 * dp, t + 56 * dp)
             c.drawRoundRect(rect, 12 * dp, 12 * dp, fill)
-            icon(c, Icon.Music, l + 28 * dp, t + 28 * dp, 26f, white)
+            if (!drawable(c, Isle.playerIcon, l + 28 * dp, t + 28 * dp, 36f)) icon(c, Icon.Music, l + 28 * dp, t + 28 * dp, 26f, white)
         }
         hits.add(Hit(RectF(l, t, l + 56 * dp, t + 56 * dp)) { Isle.openPlayer() })
         val tx = l + 70 * dp

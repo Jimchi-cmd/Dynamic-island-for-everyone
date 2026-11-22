@@ -226,6 +226,9 @@ object Isle {
         pkg.substringAfterLast('.').replaceFirstChar { it.uppercase() }
     }
 
+    /** The playing app's icon, for a song or video with no picture of its own. */
+    val playerIcon: Drawable? get() = controller?.packageName?.takeIf { it.isNotEmpty() }?.let { appIcon(it) }
+
     fun appIcon(pkg: String): Drawable? = icons.getOrPut(pkg) {
         try {
             app.packageManager.getApplicationIcon(pkg)
@@ -254,7 +257,9 @@ object Isle {
             chronometer = x.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER, false),
             countDown = x.getBoolean(Notification.EXTRA_CHRONOMETER_COUNT_DOWN, false),
             whenMs = n.`when`,
-            media = template.contains("MediaStyle"),
+            // MediaStyle, or a player's own layout round a media session
+            // (YouTube's is "DecoratedMediaCustomViewStyle").
+            media = template.contains("Media") || x.containsKey(Notification.EXTRA_MEDIA_SESSION),
             callStyle = template.contains("CallStyle"),
             actions = n.actions.orEmpty().mapNotNull { it.title?.toString()?.lowercase() },
         )
@@ -268,15 +273,22 @@ object Isle {
         val n = sbn.notification
         val id = "note:${sbn.key}"
         val actions = n.actions.orEmpty().mapNotNull { a -> a.actionIntent?.let { (a.title?.toString() ?: "") to it } }
-        val icon = try {
-            n.getLargeIcon()?.loadDrawable(app)
-        } catch (e: Exception) {
+        val kind = Notes.classify(f, app.packageName)
+        // A download's notification changes many times a second and its
+        // picture isn't shown (its app's icon is): don't decode it each time.
+        val icon = if (kind is NoteKind.Progress) {
             null
+        } else {
+            try {
+                n.getLargeIcon()?.loadDrawable(app)
+            } catch (e: Exception) {
+                null
+            }
         }
         val raw = n.actions.orEmpty().filter { it.actionIntent != null && !it.title.isNullOrBlank() }
         extras[sbn.key] = NoteExtra(sbn.packageName, n.contentIntent, actions, icon, raw)
         val t = now()
-        when (val kind = Notes.classify(f, app.packageName)) {
+        when (kind) {
             is NoteKind.Call -> if (prefs.calls) {
                 val wasThere = island.get(id) != null
                 island.put(Live.Call(id, kind.name, f.app, kind.incoming, kind.since))
