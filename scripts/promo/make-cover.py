@@ -10,6 +10,10 @@ Writes islet-pro-cover.png (2560 x 1440) and islet-pro-thumbnail.png (1200 x 120
   python3 scripts/promo/make-cover.py --profile OUT_DIR
 
 Writes islet-profile.png (1024 x 1024), a profile picture safe for a round crop.
+
+  python3 scripts/promo/make-cover.py --youtube FRAME.png OUT_DIR
+
+Writes islet-youtube-thumbnail.png (1280 x 720) for the install tutorial.
 """
 
 import importlib.util
@@ -178,7 +182,34 @@ def profile(path):
     img.convert("RGB").save(path, optimize=True)
 
 
+def youtube(frame, path):
+    """The install tutorial's YouTube thumbnail (1280 x 720): few, big words that read when small."""
+    W, H = 1280, 720
+    img = background(W, H, (0.76, 0.45))
+    c = card(frame, 0.56)
+    img.alpha_composite(c, (W - c.width + 40, (H - c.height) // 2 + 10))
+    x = 64
+    d = ImageDraw.Draw(img)
+    # A yellow tag, then the title, then where it runs.
+    tag = "FREE · 3 MIN"
+    tf = mv.font(34, "Bold")
+    tw = int(d.textlength(tag, font=tf))
+    d.rounded_rectangle([x, 70, x + tw + 44, 70 + 62], 18, fill=(255, 214, 10))
+    d.text((x + 22, 101), tag, font=tf, fill=(10, 6, 22), anchor="lm")
+    a = reels.extruded("HOW TO", 92, (255, 255, 255), (200, 196, 220), depth=8)
+    b = reels.extruded("INSTALL", 128, (255, 140, 170), PINK, depth=10)
+    img.alpha_composite(a, (x - 12, 160))
+    img.alpha_composite(b, (x - 14, 262))
+    d.text((x, 470), "Islet", font=mv.font(84, "Bold"), fill=(255, 255, 255))
+    d.text((x, 590), "Android · Windows · Mac · Linux", font=mv.font(38, "SemiBold"), fill=GREY)
+    img.convert("RGB").save(path, optimize=True)
+
+
 def main():
+    if len(sys.argv) == 4 and sys.argv[1] == "--youtube":
+        os.makedirs(sys.argv[3], exist_ok=True)
+        youtube(sys.argv[2], os.path.join(sys.argv[3], "islet-youtube-thumbnail.png"))
+        return 0
     if len(sys.argv) == 3 and sys.argv[1] == "--profile":
         os.makedirs(sys.argv[2], exist_ok=True)
         profile(os.path.join(sys.argv[2], "islet-profile.png"))
