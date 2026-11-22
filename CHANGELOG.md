@@ -2,7 +2,7 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.9] - 2026-11-22
 
 ### Changed
 - Phone: the control centre looks like the computer's: the big time and date, the weather with its high and low, Wi-Fi and Bluetooth with the network's name, round to-do, speed and toggles buttons, and search, calendar, screenshot and lock under them. Opened from a card, **Now Playing ›** (or Timer ›, Directions ›…) goes back to it. The toggles button opens the flashlight, Do Not Disturb, volume and brightness, with **‹ Back** to the control centre. The clock card has the same look.
