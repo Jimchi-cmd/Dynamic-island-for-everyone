@@ -65,6 +65,25 @@ class IslandTest {
         i.close(0)
         i.back()
         assertEquals(false, i.isOpen, "back does nothing when the control centre isn't open")
+        // The control centre's toggles, and back from them.
+        i.put(music)
+        i.open("music")
+        i.showControls()
+        assertEquals(music, i.openedFrom, "it knows the card it came from (\"Now Playing ›\")")
+        i.showToggles()
+        assertEquals(Scene.Toggles, i.scene(0))
+        i.back()
+        assertEquals(Scene.Controls, i.scene(0), "back to the control centre")
+        i.back()
+        assertEquals(Scene.Expanded(music), i.scene(0), "and on to the music card")
+        i.showToggles()
+        i.back()
+        assertEquals(Scene.Expanded(music), i.scene(0), "toggles from a card go back to it")
+        i.longPress()
+        assertNull(i.openedFrom, "a long press comes from no card")
+        i.showToggles()
+        i.tap(0)
+        assertEquals(false, i.isOpen, "a tap closes the toggles")
     }
 
     @Test

@@ -61,11 +61,13 @@ Pop-ups, each with its own switch: new notifications, charging, fully charged an
 
 ### Control centre
 
-Long-press the island: flashlight, Do Not Disturb, ring or vibrate, volume, brightness, screenshot, lock, and up to four shortcut apps. Android doesn't let apps switch Wi-Fi, Bluetooth or airplane mode, so those buttons open the phone's own panel.
+Long-press the island, or tap **‹ Control Centre** on any open card. It looks like the computer's: the time and date, the weather with today's high and low, Wi-Fi and Bluetooth (blue while on, with the network's name), round buttons for to-do, the speed test and the toggles, and a second row with search, the calendar, a screenshot and lock. Opened from a card, a **Now Playing ›** button (or Timer ›, Directions › and so on) at the top goes back to it.
+
+The **toggles** button opens flashlight, Do Not Disturb, ring or vibrate, airplane mode, volume, brightness, and up to four shortcut apps; **‹ Back** returns to the control centre. Android doesn't let apps switch Wi-Fi, Bluetooth or airplane mode, so those buttons open the phone's own panel.
 
 ### Looks
 
-Black, **Tinted** (a dark shade of the accent colour) or frosted **Glass**; an **accent colour** for the rim (purple, blue, pink, green, orange or white); the clock on the empty island as 14:05, Wed 14:05 or 14:05:09; a **Notch shape** with square top corners joined to the top of the screen; when two things are going on, a liquid neck joins the pill and its bubble; (Android doesn't let the island blur what's behind it); a glowing rim; size (small, medium, large); nudges left, right, up, down and wider for phones where the pill doesn't sit exactly on the camera; font (default, light, condensed, serif, mono); the empty pill on or off; a border in the album's colour while music plays; the moving bars; °C or °F; the plane and moon; green and orange dots while the camera or microphone is on; and hiding the island in landscape (videos and games).
+Black, **Tinted** (a dark shade of the accent colour) or frosted **Glass**; an **accent colour** for the rim (purple, blue, pink, green, orange or white); the clock on the empty island as 14:05, Wed 14:05 or 14:05:09; a **Notch shape** with square top corners joined to the top of the screen; when two things are going on, a liquid neck joins the pill and its bubble; (Android doesn't let the island blur what's behind it); a glowing rim; size (small, medium, large); nudges left, right, up, down and wider for phones where the pill doesn't sit exactly on the camera; font (Inter, as on the computer, by default; or the phone's own, light, condensed, serif, mono); the empty pill on or off; a border in the album's colour while music plays; the moving bars; °C or °F; the plane and moon; green and orange dots while the camera or microphone is on; and hiding the island in landscape (videos and games).
 
 ### Weather, clocks, to-do and notes
 

@@ -148,6 +148,15 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     }
 
     private fun makeTypeface(font: String, bold: Boolean): Typeface {
+        // Inter, the computer's island's font (SIL Open Font License; bold is its semibold, as there).
+        if (font == "inter") {
+            val inter = try {
+                androidx.core.content.res.ResourcesCompat.getFont(context, if (bold) R.font.inter_semibold else R.font.inter_regular)
+            } catch (e: Exception) {
+                null
+            }
+            if (inter != null) return inter
+        }
         val family = when (font) {
             "serif" -> "serif"
             "mono" -> "monospace"
@@ -466,7 +475,8 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             is Scene.Compact -> drawCompact(c, s.live, box)
             is Scene.Popped -> drawPop(c, s.pop, box)
             is Scene.Expanded -> drawExpanded(c, s.live, box)
-            Scene.Controls -> drawControls(c, box)
+            Scene.Controls -> drawClockCard(c, box)
+            Scene.Toggles -> drawControls(c, box)
             Scene.Peek -> drawPeek(c, box)
             Scene.Calendar -> drawCalendar(c, box)
         }
@@ -1283,51 +1293,123 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
 
     private fun accentOr(fallback: Int): Int = Isle.artColor?.let { it or 0xff000000.toInt() } ?: fallback
 
-    /** The clock card, as on the computer: the time, the date, Wi-Fi and Bluetooth, and round buttons. */
+    /**
+     * The clock card, which is also the control centre, laid out as the
+     * computer's: the time and date, the weather in the corner, Wi-Fi and
+     * Bluetooth with the to-do, speed and toggles buttons beside them, and
+     * search, calendar, screenshot and lock under them. Opened from an
+     * activity's card, a "Now Playing ›" button at the top goes back to it.
+     */
     private fun drawClockCard(c: Canvas, box: RectF) {
-        val pad = 22 * dp
-        val l = box.left + pad
-        val r = box.right - pad
-        val t = box.top + pad
+        val left = box.left + 26 * dp
+        val right = box.right - 20 * dp
+        val top = box.top
         val now = Isle.now()
-        // The big time shrinks to fit (a phone with AM/PM and a narrow card cut it to "10:08…").
-        val time = timeText(now)
-        write(c, time, l - 2 * dp, t + 50 * dp, fit(time, (r - l) * 0.68f, 54f, 30f, bold = true), white, bold = true)
-        write(c, DateFormat.format("EEEE, d MMMM", now).toString(), l, t + 76 * dp, 15f, grey)
-        Isle.weather?.let { w ->
+        val faint = 0x24ffffff
+        // The way back to the card it was opened from.
+        val from = Isle.island.openedFrom
+        val back = when {
+            from != null -> when (from) {
+                is Live.Music -> "Now Playing"
+                is Live.Call -> "Call"
+                is Live.Navigation -> "Directions"
+                is Live.Timer, is Live.Countdown -> "Timer"
+                is Live.Stopwatch -> "Stopwatch"
+                is Live.Event -> "Meeting"
+                is Live.Progress -> "Download"
+                is Live.Lesson -> "Lesson"
+            }
+            Isle.island.openedFromCalendar -> "Calendar"
+            else -> null
+        }
+        if (back != null) {
+            val w = measure("$back", 12.5f, true) + 34 * dp
+            val y = top + 8 * dp
+            fill.color = faint
+            rect.set(left - 2 * dp, y, left - 2 * dp + w, y + 22 * dp)
+            c.drawRoundRect(rect, 11 * dp, 11 * dp, fill)
+            write(c, back, left + 9 * dp, y + 15.5f * dp, 12.5f, 0xe6ffffff.toInt(), bold = true)
+            write(c, "›", rect.right - 13 * dp, y + 16.5f * dp, 16f, 0xe6ffffff.toInt(), bold = true, align = Paint.Align.CENTER)
+            hits.add(Hit(RectF(rect.left, rect.top - 6 * dp, rect.right, rect.bottom + 6 * dp)) {
+                Isle.island.back()
+                Isle.changed()
+            })
+        }
+        // The time, big, with AM/PM smaller beside it; the date under it.
+        val weather = Isle.weather
+        val time = shortTime(now)
+        val room = (right - left) * if (weather != null) 0.58f else 0.8f
+        val size = fit(time, room, 52f, 34f, bold = true)
+        val tw = write(c, time, left, top + 74 * dp, size, white, bold = true)
+        if (!h24) write(c, DateFormat.format("a", now).toString(), left + tw + 6 * dp, top + 74 * dp, 20f, white, bold = true)
+        write(c, DateFormat.format("EEEE, d MMMM", now).toString(), left + 2 * dp, top + 102 * dp, 15f, 0x99ffffff.toInt(), max = room + 30 * dp)
+        // The weather in the corner, with Open-Meteo's credit.
+        weather?.let { w ->
             val p = Isle.prefs
-            write(c, Format.temperature(w.celsius, p.fahrenheit), r, t + 30 * dp, 22f, white, bold = true, align = Paint.Align.RIGHT)
-            icon(c, Icons.sky(w.sky, w.day), r - 62 * dp, t + 22 * dp, 22f, if (w.day) 0xffffd60a.toInt() else white)
-            write(c, w.words, r, t + 50 * dp, 12f, grey, max = (r - l) * 0.3f, align = Paint.Align.RIGHT)
+            write(c, Format.temperature(w.celsius, p.fahrenheit), right, top + 58 * dp, 30f, white, bold = true, align = Paint.Align.RIGHT)
+            icon(c, Icons.sky(w.sky, w.day), right - 90 * dp, top + 46 * dp, 28f, white)
+            if (w.highC != null && w.lowC != null) {
+                write(c, "H ${Format.temperature(w.highC!!, p.fahrenheit)}  L ${Format.temperature(w.lowC!!, p.fahrenheit)}", right, top + 80 * dp, 12.5f, 0x99ffffff.toInt(), align = Paint.Align.RIGHT)
+            }
+            write(c, "Open-Meteo", right, top + 102 * dp, 10f, 0x66ffffff, align = Paint.Align.RIGHT)
         }
-        // Wi-Fi and Bluetooth: blue while on, with the network's and device's names.
-        val cy = t + 112 * dp
-        val chipW = (r - l - 10 * dp) / 2
+        // Row one: Wi-Fi and Bluetooth (blue while on, with the names), then three round buttons.
+        val bh = 32 * dp
+        val gap = 10 * dp
+        val y1 = top + 122 * dp
+        val tools = 3
+        val chipW = (right - (left - 6 * dp) - tools * (bh + gap) - gap) / 2
         fun pill(x: Float, on: Boolean, i: Icon, label: String, action: () -> Unit) {
-            fill.color = if (on) 0xff0a84ff.toInt() else dim
-            rect.set(x, cy - 20 * dp, x + chipW, cy + 20 * dp)
-            c.drawRoundRect(rect, 20 * dp, 20 * dp, fill)
-            icon(c, i, x + 22 * dp, cy, 18f, white)
-            write(c, label, x + 38 * dp, cy + 5.5f * dp, 15f, white, bold = true, max = chipW - 50 * dp)
-            hits.add(Hit(RectF(rect), action))
+            fill.color = if (on) 0xe60a84ff.toInt() else faint
+            rect.set(x, y1, x + chipW, y1 + bh)
+            c.drawRoundRect(rect, bh / 2, bh / 2, fill)
+            val fits = measure(label, 13f, true) <= chipW - 44 * dp
+            if (!on || !fits && label.length <= 9) {
+                icon(c, i, x + chipW / 2, y1 + bh / 2, 18f, white)
+            } else {
+                icon(c, i, x + 19 * dp, y1 + bh / 2, 18f, white)
+                write(c, label, x + 34 * dp, y1 + bh / 2 + 4.5f * dp, 13f, white, bold = true, max = chipW - 44 * dp)
+            }
+            hits.add(Hit(RectF(x, y1 - 4 * dp, x + chipW, y1 + bh + 4 * dp), action))
         }
-        pill(l, Isle.wifiOn, Icon.Wifi, Isle.wifiName ?: if (Isle.wifiOn) "Wi-Fi" else "Wi-Fi off") { Controls.wifi() }
-        pill(l + chipW + 10 * dp, Isle.btOn, Icon.Bluetooth, Isle.btName ?: if (Isle.btOn) "Bluetooth" else "Bluetooth off") { Controls.bluetooth() }
-        // Round buttons, spread across the card.
-        val by = cy + 52 * dp
-        val buttons = listOf<Pair<Icon, () -> Unit>>(
-            Icon.Search to { openLauncher() },
-            Icon.Clipboard to { openApp("Todo") },
-            Icon.Gauge to { openApp("Speed") },
-            Icon.Toggles to { Isle.island.showControls() },
-            Icon.Calendar to { Isle.island.showCalendar() },
-            Icon.Screenshot to { Controls.screenshot() },
-            Icon.Lock to { Controls.lock() },
-        )
-        val step = (r - l - 40 * dp) / (buttons.size - 1)
-        buttons.forEachIndexed { i, (ic, action) ->
-            button(c, l + 20 * dp + i * step, by, 40f, dim, ic, action = action)
+        val x0 = left - 6 * dp
+        pill(x0, Isle.wifiOn, Icon.Wifi, Isle.wifiName ?: "Wi-Fi") { Controls.wifi() }
+        pill(x0 + chipW + gap, Isle.btOn, Icon.Bluetooth, Isle.btName ?: "Bluetooth") { Controls.bluetooth() }
+        fun round(i: Int, y: Float, ic: Icon, action: () -> Unit) {
+            val cx = right - bh / 2 - (tools - 1 - i) * (bh + gap)
+            fill.color = faint
+            c.drawCircle(cx, y + bh / 2, bh / 2, fill)
+            icon(c, ic, cx, y + bh / 2, 17f, white)
+            hits.add(Hit(RectF(cx - bh / 2 - 4 * dp, y - 4 * dp, cx + bh / 2 + 4 * dp, y + bh + 4 * dp), action))
         }
+        round(0, y1, Icon.Clipboard) { openApp("Todo") }
+        round(1, y1, Icon.Gauge) { openApp("Speed") }
+        round(2, y1, Icon.Toggles) {
+            Isle.island.showToggles()
+            Isle.changed()
+        }
+        // Row two: search on the left; calendar, screenshot and lock on the right.
+        val y2 = top + 164 * dp
+        val sw = measure("Search", 13f, true) + 50 * dp
+        fill.color = faint
+        rect.set(x0, y2, x0 + sw, y2 + bh)
+        c.drawRoundRect(rect, bh / 2, bh / 2, fill)
+        icon(c, Icon.Search, x0 + 19 * dp, y2 + bh / 2, 16f, white)
+        write(c, "Search", x0 + 34 * dp, y2 + bh / 2 + 4.5f * dp, 13f, white, bold = true)
+        hits.add(Hit(RectF(x0, y2 - 4 * dp, x0 + sw, y2 + bh + 4 * dp)) { openLauncher() })
+        round(0, y2, Icon.Calendar) {
+            Isle.island.showCalendar()
+            Isle.changed()
+        }
+        round(1, y2, Icon.Screenshot) { Controls.screenshot() }
+        round(2, y2, Icon.Lock) { Controls.lock() }
+    }
+
+    /** How wide `s` is drawn at `size` sp (px). */
+    private fun measure(s: String, size: Float, bold: Boolean): Float {
+        text.textSize = size * dp
+        text.typeface = typeface(bold)
+        return text.measureText(s)
     }
 
     private fun openLauncher() {
@@ -1477,7 +1559,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             Isle.island.back()
             Isle.changed()
         }
-        write(c, "Control Centre", r, hy + 5 * dp, 15f, white, bold = true, align = Paint.Align.RIGHT)
+        write(c, "Controls", r, hy + 5 * dp, 15f, white, bold = true, align = Paint.Align.RIGHT)
         val t = box.top + pad + 40 * dp
         val tile = 48 * dp
         val gap = ((r - l) - 4 * tile) / 3
@@ -1612,7 +1694,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             }
             // An open card stays open when tapped (only its buttons act):
             // swipe up, tap outside or press back to close it.
-            is Scene.Expanded, Scene.Controls, Scene.Calendar -> Unit
+            is Scene.Expanded, Scene.Controls, Scene.Toggles, Scene.Calendar -> Unit
             else -> Isle.island.tap(now)
         }
         Isle.changed()

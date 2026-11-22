@@ -125,6 +125,19 @@ class LooksTest {
         shot("card-timer", 260)
         Isle.island.close(0)
         Isle.island.all.forEach { Isle.island.remove(it.id) }
+        // The control centre, opened from the music card, as on the computer.
+        Isle.weather = Weather(24.0, 2, true, 24.0, 16.0)
+        Isle.wifiOn = true
+        Isle.wifiName = "Turi Wi-Fi"
+        Isle.btOn = false
+        Isle.island.put(Live.Music("Song", "Band", "Player", true, 200_000, 0, SystemClock.elapsedRealtime()))
+        Isle.island.open("music")
+        Isle.island.showControls()
+        shot("control-centre-laptop-style", 240)
+        Isle.island.showToggles()
+        shot("toggles", 320)
+        Isle.island.close(0)
+        Isle.island.all.forEach { Isle.island.remove(it.id) }
         Isle.weather = null
         Isle.onChange = null
     }

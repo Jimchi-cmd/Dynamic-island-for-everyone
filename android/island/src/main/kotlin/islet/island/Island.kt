@@ -17,8 +17,11 @@ sealed class Scene {
     /** The big card for one activity (or for the empty island: the clock card). */
     data class Expanded(val live: Live?) : Scene()
 
-    /** Long press: the control centre. */
+    /** Long press, or "‹ Control Centre" on a card: the control centre (the clock card, as on the computer). */
     object Controls : Scene()
+
+    /** The control centre's toggles button: flashlight, Do Not Disturb, volume and brightness. */
+    object Toggles : Scene()
 
     /**
      * A tap on the empty island: a strip with the battery, the time and
@@ -46,6 +49,10 @@ class Island(var showEmpty: Boolean = true) {
     private var expanded = false
     private var controls = false
     private var calendar = false
+    private var toggles = false
+
+    /** Whether the toggles panel's back button returns to the control centre (else to the clock card). */
+    private var togglesFromControls = false
     private var peekUntil = 0L
 
     private fun peeking(now: Long) = now < peekUntil
@@ -130,6 +137,7 @@ class Island(var showEmpty: Boolean = true) {
 
     fun scene(now: Long): Scene {
         tick(now)
+        if (toggles) return Scene.Toggles
         if (calendar) return Scene.Calendar
         if (controls) return Scene.Controls
         if (expanded) return Scene.Expanded(primary())
@@ -154,6 +162,7 @@ class Island(var showEmpty: Boolean = true) {
     fun tap(now: Long) {
         tick(now)
         when {
+            toggles -> toggles = false
             calendar -> calendar = false
             controls -> controls = false
             expanded -> expanded = false
@@ -168,6 +177,8 @@ class Island(var showEmpty: Boolean = true) {
 
     fun longPress() {
         backToCalendar = false
+        backToCard = false
+        toggles = false
         controls = true
         expanded = false
         calendar = false
@@ -176,6 +187,7 @@ class Island(var showEmpty: Boolean = true) {
 
     /** The clock card's calendar button. */
     fun showCalendar() {
+        toggles = false
         calendar = true
         controls = false
         expanded = false
@@ -184,37 +196,65 @@ class Island(var showEmpty: Boolean = true) {
     /** Whether the control centre's back button returns to the calendar (else to the main card). */
     private var backToCalendar = false
 
-    /** The clock card's controls button, or the music card's "Control Centre". */
+    /** Whether the control centre was opened from an activity's card (it shows a way back, "Now Playing ›"). */
+    private var backToCard = false
+
+    /** The activity whose card the control centre was opened from, if any: its return button names it. */
+    val openedFrom: Live? get() = if (controls && backToCard) primary() else null
+
+    /** The control centre was opened from the calendar: its return button goes back there. */
+    val openedFromCalendar: Boolean get() = controls && backToCalendar
+
+    /** A card's "‹ Control Centre". */
     fun showControls() {
         val fromCalendar = calendar
+        val fromCard = expanded && primary() != null
         longPress()
         backToCalendar = fromCalendar
+        backToCard = fromCard
+    }
+
+    /** The control centre's toggles button (or the clock card's). */
+    fun showToggles() {
+        togglesFromControls = controls
+        toggles = true
+        controls = false
+        expanded = false
+        calendar = false
     }
 
     /**
-     * The control centre's back button: back to the card it was opened
-     * from (the music card, the clock card, or the calendar).
+     * Back: from the toggles to the control centre (or the clock card);
+     * from the control centre to the card it was opened from (an
+     * activity's, or the calendar), else to the main card.
      */
     fun back() {
+        if (toggles) {
+            toggles = false
+            if (togglesFromControls) controls = true else expanded = true
+            return
+        }
         if (!controls) return
         controls = false
         if (backToCalendar) calendar = true else expanded = true
         backToCalendar = false
+        backToCard = false
     }
 
     /** Swipe up, the back gesture or a tap outside: close it. */
     fun close(now: Long) {
         peekUntil = 0
-        if (controls || expanded || calendar) {
+        if (controls || expanded || calendar || toggles) {
             controls = false
             expanded = false
             calendar = false
+            toggles = false
         } else if (current != null) {
             dismissPop(now)
         }
     }
 
-    val isOpen get() = controls || expanded || calendar
+    val isOpen get() = controls || expanded || calendar || toggles
 
     companion object {
         /** How long the strip stays after a tap. */
@@ -235,6 +275,7 @@ class Island(var showEmpty: Boolean = true) {
             chosen = id
             expanded = true
             controls = false
+            toggles = false
         }
     }
 }

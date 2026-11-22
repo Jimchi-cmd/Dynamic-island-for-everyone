@@ -86,9 +86,9 @@ class Prefs(context: Context) {
         get() = flag("fahrenheit", false)
         set(v) = set("fahrenheit", v)
 
-    /** "default", "light", "condensed", "serif" or "mono". */
+    /** "inter" (as on the computer), "default" (the phone's own), "light", "condensed", "serif" or "mono". */
     var font: String
-        get() = p.getString("font", "default") ?: "default"
+        get() = p.getString("font", "inter") ?: "inter"
         set(v) = p.edit().putString("font", v).apply()
 
     var hideInLandscape: Boolean

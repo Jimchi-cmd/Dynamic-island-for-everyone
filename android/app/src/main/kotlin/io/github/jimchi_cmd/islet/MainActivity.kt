@@ -419,9 +419,9 @@ class MainActivity : AppCompatActivity() {
         place.add(kit.stepperRow("Left and right", value = { "${prefs.offsetX} dp" }) { prefs.offsetX += it * 2; changed() })
         place.add(kit.stepperRow("Up and down", value = { "${prefs.offsetY} dp" }) { prefs.offsetY += it; changed() })
         place.add(kit.stepperRow("Wider", value = { "${prefs.extraWidth} dp" }) { prefs.extraWidth += it * 4; changed() })
-        val fonts = listOf("default" to "Default", "light" to "Light", "condensed" to "Condensed", "serif" to "Serif", "mono" to "Mono")
+        val fonts = listOf("inter" to "Inter (as on the computer)", "default" to "The phone's own", "light" to "Light", "condensed" to "Condensed", "serif" to "Serif", "mono" to "Mono")
         val look = kit.card(col, "Island")
-        look.add(kit.valueRow("Font", fonts.first { it.first == prefs.font || it.first == "default" && fonts.none { f -> f.first == prefs.font } }.second) {
+        look.add(kit.valueRow("Font", fonts.first { it.first == prefs.font || it.first == "inter" && fonts.none { f -> f.first == prefs.font } }.second) {
             choose("Font", fonts, prefs.font) { prefs.font = it; changed(); build() }
         })
         look.add(kit.valueRow("Temperature", if (prefs.fahrenheit) "°F" else "°C") {

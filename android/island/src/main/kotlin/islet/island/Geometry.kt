@@ -81,7 +81,9 @@ class Geometry(
             else -> centered(idleWidth + 2 * wing + 30 * k, idleHeight + 6 * k, (idleHeight + 6 * k) / 2)
         }
         is Scene.Expanded -> centered(cardWidth, expandedHeight(scene.live) * k, 40.0 * k)
-        Scene.Controls -> centered(cardWidth, 292.0 * k, 40.0 * k)
+        // The control centre is the clock card, as on the computer; its toggles button opens the toggles.
+        Scene.Controls -> centered(cardWidth, CLOCK_CARD * k, 40.0 * k)
+        Scene.Toggles -> centered(cardWidth, 292.0 * k, 40.0 * k)
         Scene.Peek -> centered(idleWidth + 2 * (wing + 30 * k), idleHeight + 4 * k, (idleHeight + 4 * k) / 2)
         Scene.Calendar -> centered(cardWidth, 344.0 * k, 40.0 * k)
     }
@@ -94,11 +96,14 @@ class Geometry(
         is Live.Call -> 120.0
         is Live.Navigation -> 120.0
         is Live.Stopwatch -> 140.0
-        null -> 216.0
+        null -> CLOCK_CARD
         else -> 128.0
     }
 
     companion object {
+        /** The clock card's (and the control centre's) height, as on the computer (dp). */
+        const val CLOCK_CARD = 210.0
+
         /** The lyrics row under the small music pill (dp). */
         const val LYRICS_ROW = 24.0
 
