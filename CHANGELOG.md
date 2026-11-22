@@ -2,7 +2,7 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0] - 2026-11-22
 
 ### Changed
 - **Islet is completely free.** Islet Pro is gone: no licence key, no store, no Gumroad check. Everything it had is in the free app for everyone: the tinted and glass styles, the notch shape, the clock faces, the album glow and moving bars, the screenshot preview, the stopwatch, world clocks, quick notes, the to-do list, your own shortcut buttons, early builds, and no low-end limits. The Pro page in Settings is now **Extras**.
