@@ -14,3 +14,5 @@ To download one, click its name above, then click the download button (the arrow
 ## Store cover
 
 `islet-pro-cover.png` (wide) and `islet-pro-thumbnail.png` (square) are for the Islet Pro page on Gumroad.
+
+`islet-profile.png` (1024 x 1024) is a profile picture; it still fits when an app crops it round.
