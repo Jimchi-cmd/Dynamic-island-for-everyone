@@ -394,12 +394,21 @@ class MainActivity : AppCompatActivity() {
     // ---- Look ------------------------------------------------------------------------------------
 
     private fun look(col: LinearLayout) {
-        val style = kit.card(col, "Style", "Glass is frosted with a light rim. Android doesn't let the island blur what's behind it.", top = 14)
-        style.add(kit.segmented(listOf("black" to "Black", "glass" to "Glass"), prefs.style) {
+        val style = kit.card(col, "Style", "Tinted is a dark shade of the accent colour. Glass is frosted with a light rim; Android doesn't let the island blur what's behind it.", top = 14)
+        style.add(kit.segmented(listOf("black" to "Black", "tinted" to "Tinted", "glass" to "Glass"), prefs.style) {
             prefs.style = it
             changed()
             build()
         })
+        val accents = listOf("purple" to "Purple", "blue" to "Blue", "pink" to "Pink", "green" to "Green", "orange" to "Orange", "white" to "White")
+        style.add(kit.valueRow("Accent colour", accents.firstOrNull { it.first == prefs.accent }?.second ?: "Purple") {
+            choose("Accent colour", accents, prefs.accent) { prefs.accent = it; changed(); build() }
+        })
+        val faces = listOf("time" to "14:05", "day" to "Wed 14:05", "seconds" to "14:05:09")
+        style.add(kit.valueRow("Clock on the empty island", faces.firstOrNull { it.first == prefs.clockFace }?.second ?: "14:05") {
+            choose("Clock on the empty island", faces, prefs.clockFace) { prefs.clockFace = it; changed(); build() }
+        })
+        style.add(kit.toggleRow("Notch shape", "Square top corners joined to the top of the screen, so the island grows out of the edge.", prefs.notch) { prefs.notch = it; changed() })
         val size = kit.card(col, "Size")
         size.add(kit.segmented(IslandSize.entries.map { it.name to it.name }, prefs.size.name) {
             prefs.size = IslandSize.valueOf(it)
@@ -450,6 +459,11 @@ class MainActivity : AppCompatActivity() {
         live.add(kit.toggleRow("Calls", "With the phone app's answer and hang-up buttons.", prefs.calls) { prefs.calls = it; changed() })
         live.add(kit.toggleRow("Directions", "From Google Maps, Waze and other maps apps.", prefs.navigation) { prefs.navigation = it; changed() })
         live.add(kit.toggleRow("Downloads and progress", null, prefs.progress) { prefs.progress = it; changed() })
+        live.add(kit.toggleRow(
+            "Activities from other apps",
+            "Automation apps such as Tasker can put a title and a progress ring on the island: send the broadcast io.github.jimchi_cmd.islet.ACTIVITY with command (start, update or end), id, title and progress (0–100). Up to three at once.",
+            prefs.automation,
+        ) { prefs.automation = it })
         live.add(kit.toggleRow("Meetings", "A countdown from 15 minutes before, with a Join button.", prefs.calendar) {
             prefs.calendar = it
             Sensors.refresh()
@@ -458,7 +472,8 @@ class MainActivity : AppCompatActivity() {
         pops.add(kit.toggleRow("Notifications", "On the lock screen only the app's name shows.", prefs.popNotes) { prefs.popNotes = it })
         pops.add(kit.toggleRow("Charging and low battery", null, prefs.popPower) { prefs.popPower = it })
         pops.add(kit.toggleRow("Ring, vibrate and silent", "Also airplane mode and Do Not Disturb.", prefs.popModes) { prefs.popModes = it })
-        pops.add(kit.toggleRow("Wi-Fi and Bluetooth", null, prefs.popConnections) { prefs.popConnections = it })
+        pops.add(kit.toggleRow("Wi-Fi and Bluetooth", "With the device's battery, when it says.", prefs.popConnections) { prefs.popConnections = it })
+        pops.add(kit.toggleRow("Volume and brightness", "Shown on the island as well as Android's own slider. Brightness only when set by hand.", prefs.popLevels) { prefs.popLevels = it })
         pops.add(kit.toggleRow("Screenshots", null, prefs.popScreenshots) { prefs.popScreenshots = it })
         val quiet = prefs.quietApps
         pops.add(kit.valueRow("Apps that never pop up", if (quiet.isEmpty()) "None" else quiet.size.toString()) { pickQuietApps() })
@@ -916,7 +931,27 @@ class MainActivity : AppCompatActivity() {
             // Charge left now, and roughly what a full charge holds today.
             c.add(kit.row("Holds now", "About ${uah / 10 / level} mAh when full", right = kit.text("${uah / 1000} mAh", 16f, bold = true)))
         }
+        // As the computer's system panel: memory and storage too.
+        val s = kit.card(col, "Memory and storage", null)
+        getSystemService(android.app.ActivityManager::class.java)?.let { am ->
+            val info = android.app.ActivityManager.MemoryInfo()
+            am.getMemoryInfo(info)
+            if (info.totalMem > 0) {
+                val used = info.totalMem - info.availMem
+                s.add(kit.row("Memory", "${gb(used)} of ${gb(info.totalMem)} in use", right = kit.text("${used * 100 / info.totalMem}%", 16f, bold = true)))
+            }
+        }
+        try {
+            val st = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+            val total = st.totalBytes
+            val free = st.availableBytes
+            if (total > 0) s.add(kit.row("Storage", "${gb(free)} free of ${gb(total)}", right = kit.text("${(total - free) * 100 / total}%", 16f, bold = true)))
+        } catch (e: Exception) {
+            // Not readable here.
+        }
     }
+
+    private fun gb(bytes: Long) = "%.1f GB".format(java.util.Locale.getDefault(), bytes / 1e9)
 
     // ---- Quick launcher ----------------------------------------------------------------------------------------
 

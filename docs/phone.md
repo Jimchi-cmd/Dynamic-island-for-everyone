@@ -34,7 +34,7 @@ Optional permissions, each asked for with its own button:
 
 ### Use it
 
-- **Tap the empty island** for a strip, as the computer's island shows when hovered: the battery on the left of the camera, the time and memory use (or download speed, under Look) on the right. **Tap the strip** for the card: the time and date, Wi-Fi and Bluetooth (blue while on, with the network's and device's names), and round buttons for the quick launcher, notes, the speed test, the control centre, the calendar, a screenshot and lock. The calendar button shows the month; under it, your next class, meeting, deadline and alarm, then 1, 5, 10 and 25-minute timer buttons, focus rounds, alarms and the stopwatch.
+- **Tap the empty island** for a strip, as the computer's island shows when hovered: the battery and the weather on the left of the camera, the time and memory use (or download speed, under Look) on the right. **Tap the strip** for the card: the time and date, Wi-Fi and Bluetooth (blue while on, with the network's and device's names), and round buttons for the quick launcher, notes, the speed test, the control centre, the calendar, a screenshot and lock. The calendar button shows the month; under it, your next class, what's left of today's agenda (or the next meeting), a deadline and the alarm, then 1, 5, 10 and 25-minute timer buttons, focus rounds, alarms and the stopwatch.
 - **Tap** something going on (music, a call) to open it. Swipe up, tap anywhere else, or press back to close it; tapping the open card itself leaves it open.
 - **Long-press** for the control centre.
 - **Swipe sideways** when two things are going on (a call and music, say) to switch which one leads. The second one sits in a small bubble beside the island; tap the bubble to open it.
@@ -44,7 +44,7 @@ Optional permissions, each asked for with its own button:
 
 | | On the island | Opened |
 |---|---|---|
-| **Music** (any player; paused music leaves after 15 seconds) | The cover and moving bars, with a border in the cover's colour | Cover, title, artist, a progress bar you can drag, previous / play / next, the sleep timer (moon) and the lyrics button. Tap the cover to open the player. |
+| **Music** (any player; paused music leaves after 15 seconds) | The cover and moving bars, with a border in the cover's colour; with lyrics on, the line being sung slides along a row under the camera | Cover, title, artist, a progress bar you can drag, previous / play / next, the sleep timer (moon) and the lyrics button. Tap the cover to open the player. |
 | **Calls** | A green phone and the call's length | The caller, with the phone app's own buttons (answer, decline, hang up, mute, speaker) |
 | **Directions** (Google Maps, Waze, Organic Maps, OsmAnd, HERE, Sygic, Yandex) | The turn arrow and the distance | The next turn and the road |
 | **Timers** | Time left | Pause, add a minute, stop. Focus rounds go focus → break, with a longer break after every fourth. A buzz and a sound when it ends. |
@@ -57,7 +57,7 @@ Optional permissions, each asked for with its own button:
 
 Notification pop-ups show the sender's picture (or their initial), how many messages the app has sent lately, and the notification's own buttons, such as **Reply** and **Mark as read**. **Reply** opens a small box to type into, and the answer goes back through the app as it would from the notification. Payments from Google Wallet, Samsung Wallet, PayPal, Revolut and Wise show as **Paid** with the amount.
 
-Pop-ups, each with its own switch: new notifications, charging and low battery (20, 10 and 5 %), ring / vibrate / silent, airplane mode, Do Not Disturb, Wi-Fi and Bluetooth connecting, new screenshots, and timers ending. Notifications don't pop up during Do Not Disturb, and **Apps that never pop up** keeps chosen apps quiet.
+Pop-ups, each with its own switch: new notifications, charging, fully charged and low battery (20, 10 and 5 %), ring / vibrate / silent, airplane mode, Do Not Disturb, Wi-Fi and Bluetooth connecting (with earbuds' and headphones' battery when they report it), volume and brightness (off until you switch it on; Android's own slider still shows too, and brightness shows only when set by hand), new screenshots, and timers ending. Every open card has a **‹ Control Centre** button at its top. Notifications don't pop up during Do Not Disturb, and **Apps that never pop up** keeps chosen apps quiet.
 
 ### Control centre
 
@@ -65,7 +65,7 @@ Long-press the island: flashlight, Do Not Disturb, ring or vibrate, volume, brig
 
 ### Looks
 
-Black or frosted **Glass** (Android doesn't let the island blur what's behind it); a glowing rim; size (small, medium, large); nudges left, right, up, down and wider for phones where the pill doesn't sit exactly on the camera; font (default, light, condensed, serif, mono); the empty pill on or off; a border in the album's colour while music plays; the moving bars; °C or °F; the plane and moon; green and orange dots while the camera or microphone is on; and hiding the island in landscape (videos and games).
+Black, **Tinted** (a dark shade of the accent colour) or frosted **Glass**; an **accent colour** for the rim (purple, blue, pink, green, orange or white); the clock on the empty island as 14:05, Wed 14:05 or 14:05:09; a **Notch shape** with square top corners joined to the top of the screen; when two things are going on, a liquid neck joins the pill and its bubble; (Android doesn't let the island blur what's behind it); a glowing rim; size (small, medium, large); nudges left, right, up, down and wider for phones where the pill doesn't sit exactly on the camera; font (default, light, condensed, serif, mono); the empty pill on or off; a border in the album's colour while music plays; the moving bars; °C or °F; the plane and moon; green and orange dots while the camera or microphone is on; and hiding the island in landscape (videos and games).
 
 ### Weather, clocks, to-do and notes
 
@@ -86,7 +86,8 @@ Black or frosted **Glass** (Android doesn't let the island blur what's behind it
 ### Also in the app
 
 - **Quick launcher:** the search button on the island's card opens a search box; type a few letters of an app or one of your own links (websites, `tel:` numbers, `mailto:` addresses or an app's own links, added under Quick launcher) and tap it, or press Enter for the first.
-- **Battery:** charge, how it's charging, health, temperature, voltage, type, roughly what a full charge holds today, and on Android 14 and later the number of charge cycles. Android doesn't tell apps how much a battery has worn.
+- **Battery:** charge, how it's charging, health, temperature, voltage, type, roughly what a full charge holds today, and on Android 14 and later the number of charge cycles. Android doesn't tell apps how much a battery has worn. Under it, memory and storage in use.
+- **Activities from other apps** (What it shows, off until you switch it on): automation apps such as Tasker put a title and a progress ring on the island, as `islet activity` does on the computer. Send the broadcast `io.github.jimchi_cmd.islet.ACTIVITY` with the extras `command` (`start`, `update` or `end`), `id` (letters, digits, `.`, `-`, `_`), `title` and `progress` (0–100; leave it out for a spinner). Up to three at once.
 - **Speed test:** about 35 MB with Cloudflare's public speed-test servers, only when you press the button. Above it, the phone's network use right now, every second; nothing goes online for that.
 - **Bars follow the sound** (Music): the bars beside a song move with the music rather than on their own. Off until you switch it on; some phones don't allow it, and then the bars move on their own as before.
 

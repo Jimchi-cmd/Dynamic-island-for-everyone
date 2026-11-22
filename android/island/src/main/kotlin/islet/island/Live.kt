@@ -154,8 +154,18 @@ sealed class Pop {
         override val lasts get() = 2500L
     }
 
-    data class Bluetooth(val name: String, val connected: Boolean) : Pop() {
+    /** `battery`: the device's charge (%), or -1 when it doesn't say. */
+    data class Bluetooth(val name: String, val connected: Boolean, val battery: Int = -1) : Pop() {
         override val lasts get() = 3000L
+        override val key get() = "bluetooth"
+    }
+
+    enum class LevelKind { Volume, Brightness }
+
+    /** The volume or brightness changed (0..1), as the computer's island shows it. */
+    data class Level(val kind: LevelKind, val fraction: Float) : Pop() {
+        override val lasts get() = 1500L
+        override val key get() = "level"
     }
 
     data class Screenshot(val uri: String) : Pop() {

@@ -105,7 +105,23 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         const val CROSS_MS = 260L
         const val SWIPE = 36f
 
-        val GLOW = listOf(7f to 0x149f8cff, 4.5f to 0x2a9f8cff, 2.5f to 0x559f8cff, 1.3f to 0xffd6ccff.toInt())
+        /** The accent colours (RGB), as on the computer. */
+        val ACCENTS = mapOf(
+            "purple" to 0x9f8cff,
+            "blue" to 0x5e9eff,
+            "pink" to 0xff6b8b,
+            "green" to 0x4cd97b,
+            "orange" to 0xffa64d,
+            "white" to 0xe8e8ee,
+        )
+
+        /** The soft rim: a few strokes, widest and faintest outside, in the accent colour. */
+        fun glow(accent: String): List<Pair<Float, Int>> {
+            val rgb = ACCENTS[accent] ?: 0x9f8cff
+            // The thin bright line: the colour mixed halfway to white.
+            val light = (((rgb shr 16 and 0xff) + 255) / 2 shl 16) or (((rgb shr 8 and 0xff) + 255) / 2 shl 8) or (((rgb and 0xff) + 255) / 2)
+            return listOf(7f to (0x14000000 or rgb), 4.5f to (0x2a000000 or rgb), 2.5f to (0x55000000 or rgb), 1.3f to (0xff000000.toInt() or light))
+        }
     }
 
     private val white = Color.WHITE
@@ -203,7 +219,8 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     private fun sameShape(a: Scene, b: Scene): Boolean = when {
         a is Scene.Compact && b is Scene.Compact -> a.live.id == b.live.id && (a.second?.id == b.second?.id)
         a is Scene.Expanded && b is Scene.Expanded -> a.live?.id == b.live?.id
-        a is Scene.Popped && b is Scene.Popped -> a.pop == b.pop
+        a is Scene.Popped && b is Scene.Popped -> a.pop == b.pop ||
+            (a.pop is Pop.Level && b.pop is Pop.Level && (a.pop as Pop.Level).kind == (b.pop as Pop.Level).kind)
         else -> a == b
     }
 
@@ -238,15 +255,16 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         // Nothing moves while the screen is off.
         if (!Isle.screenOn) return
         val s = scene
-        val fast = (s is Scene.Compact && s.live is Live.Music && (s.live as Live.Music).playing && Isle.prefs.bars) ||
+        val fast = (s is Scene.Compact && s.live is Live.Music && (s.live as Live.Music).playing && (Isle.prefs.bars || geometry.lyricsRow)) ||
             (s is Scene.Expanded && s.live is Live.Music && (s.live as Live.Music).playing) ||
             (s is Scene.Expanded && s.live is Live.Stopwatch && (s.live as Live.Stopwatch).running)
         val ticking = fast || s is Scene.Compact || s is Scene.Expanded || s is Scene.Peek || s is Scene.Calendar
         if (ticking) {
             postDelayed(tick, if (fast) 33L else 1000L)
         } else if (s == Scene.Idle && Isle.prefs.idleClock) {
-            // The empty island's time: redraw when the minute changes.
-            postDelayed(tick, 60_000L - Isle.now() % 60_000L + 50)
+            // The empty island's time: redraw when the minute (or second) changes.
+            val step = if (Isle.prefs.clockFace == "seconds") 1000L else 60_000L
+            postDelayed(tick, step - Isle.now() % step + 50)
         }
     }
 
@@ -304,21 +322,42 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val r = (box.right * dp).toFloat()
         val b = (box.bottom * dp).toFloat()
         val radius = (box.radius * dp).toFloat()
-        // The pill: black, or frosted glass with a light rim.
-        rect.set(l, t, r, b)
-        if (Isle.prefs.style == "glass") {
-            fill.color = 0xd92a2a30.toInt()
-            c.drawRoundRect(rect, radius, radius, fill)
-            fill.shader = android.graphics.LinearGradient(0f, t, 0f, t + (b - t) * 0.6f, 0x33ffffff, 0x00ffffff, android.graphics.Shader.TileMode.CLAMP)
-            c.drawRoundRect(rect, radius, radius, fill)
-            fill.shader = null
-            line.color = 0x40ffffff
-            line.strokeWidth = 1f * dp
-            rect.set(l + dp / 2, t + dp / 2, r - dp / 2, b - dp / 2)
-            c.drawRoundRect(rect, radius, radius, line)
-        } else {
-            fill.color = Color.BLACK
-            c.drawRoundRect(rect, radius, radius, fill)
+        val prefs = Isle.prefs
+        val notch = prefs.notch
+        // The pill's outline, `inset` px in: a rounded box, or with "Notch"
+        // square top corners joined to the top of the screen.
+        fun outline(inset: Float, rad: Float): Path {
+            shape.reset()
+            if (notch) {
+                rect.set(l + inset, minOf(t, 0f), r - inset, b - inset)
+                shape.addRoundRect(rect, floatArrayOf(0f, 0f, 0f, 0f, rad, rad, rad, rad), Path.Direction.CW)
+            } else {
+                rect.set(l + inset, t + inset, r - inset, b - inset)
+                shape.addRoundRect(rect, rad, rad, Path.Direction.CW)
+            }
+            return shape
+        }
+        // The pill: black, a dark shade of the accent colour, or frosted glass with a light rim.
+        when (prefs.style) {
+            "glass" -> {
+                fill.color = 0xd92a2a30.toInt()
+                c.drawPath(outline(0f, radius), fill)
+                fill.shader = android.graphics.LinearGradient(0f, t, 0f, t + (b - t) * 0.6f, 0x33ffffff, 0x00ffffff, android.graphics.Shader.TileMode.CLAMP)
+                c.drawPath(outline(0f, radius), fill)
+                fill.shader = null
+                line.color = 0x40ffffff
+                line.strokeWidth = 1f * dp
+                c.drawPath(outline(dp / 2, radius), line)
+            }
+            "tinted" -> {
+                val rgb = ACCENTS[prefs.accent] ?: 0x9f8cff
+                fill.color = Color.rgb((rgb shr 16 and 0xff) * 22 / 100, (rgb shr 8 and 0xff) * 22 / 100, (rgb and 0xff) * 22 / 100)
+                c.drawPath(outline(0f, radius), fill)
+            }
+            else -> {
+                fill.color = Color.BLACK
+                c.drawPath(outline(0f, radius), fill)
+            }
         }
         // The edge: the soft rim, or the border in the album's colour, blended
         // between the old and the new scene.
@@ -329,18 +368,17 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             val border = borderFor(sc)
             if (border == null && Isle.prefs.ring && !hidden) {
                 // The glow as a few soft strokes: a blurred shadow costs far more every frame.
-                rect.set(l + 0.75f * dp, t + 0.75f * dp, r - 0.75f * dp, b - 0.75f * dp)
-                for ((width, colour) in GLOW) {
+                val path = outline(0.75f * dp, radius)
+                for ((width, colour) in glow(prefs.accent)) {
                     line.color = withAlpha(colour, weight)
                     line.strokeWidth = width * dp
-                    c.drawRoundRect(rect, radius, radius, line)
+                    c.drawPath(path, line)
                 }
             }
             if (border != null) {
                 line.color = withAlpha(border, weight)
                 line.strokeWidth = 2f * dp
-                rect.set(l + dp, t + dp, r - dp, b - dp)
-                c.drawRoundRect(rect, radius - dp, radius - dp, line)
+                c.drawPath(outline(dp, radius - dp), line)
             }
         }
         if (old != null) edge(old, 1f - p)
@@ -353,12 +391,13 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             c.restore()
         }
         val grown = morph.value.toFloat().coerceIn(0f, 1f)
+        neck(c, old, box, (1f - p) * (1f - grown))
+        neck(c, shown, box, p * grown)
         bubble(old, (1f - p) * (1f - grown))
         bubble(shown, p * grown)
         // The contents, clipped to the pill, cross-fading.
         clip.reset()
-        rect.set(l, t, r, b)
-        clip.addRoundRect(rect, radius, radius, Path.Direction.CW)
+        clip.addPath(outline(0f, radius))
         c.save()
         c.clipPath(clip)
         val area = RectF(l, t, r, b)
@@ -378,6 +417,33 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         c.restore()
         c.restore()
         if (easing) postInvalidateOnAnimation()
+    }
+
+    /** Scratch path for the pill's outline. */
+    private val shape = Path()
+    private val neckPath = Path()
+
+    /**
+     * The liquid neck between the pill and the second activity's bubble, as
+     * on the computer: the two read as one drop that has started to split.
+     */
+    private fun neck(c: Canvas, sc: Scene?, pill: Box, weight: Float) {
+        if (sc !is Scene.Compact || sc.second == null || weight <= 0.01f) return
+        val bub = geometry.bubble(pill)
+        val pr = (pill.right * dp).toFloat()
+        val bl = (bub.x * dp).toFloat()
+        if (bl - pr > 14 * dp) return
+        val cy = ((bub.y + bub.h / 2) * dp).toFloat()
+        val half = (bub.h * dp).toFloat() * 0.30f
+        val mid = (pr + bl) / 2
+        neckPath.reset()
+        neckPath.moveTo(pr - 6 * dp, cy - half * 1.5f)
+        neckPath.quadTo(mid, cy - half * 0.35f, bl + 6 * dp, cy - half * 1.5f)
+        neckPath.lineTo(bl + 6 * dp, cy + half * 1.5f)
+        neckPath.quadTo(mid, cy + half * 0.35f, pr - 6 * dp, cy + half * 1.5f)
+        neckPath.close()
+        fill.color = withAlpha(if (Isle.prefs.style == "glass") 0xd92a2a30.toInt() else Color.BLACK, weight)
+        c.drawPath(neckPath, fill)
     }
 
     private fun withAlpha(colour: Int, weight: Float): Int =
@@ -598,6 +664,13 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         timeFormat = DateFormat.getTimeFormat(context)
     }
 
+    /** The empty island's clock, in the chosen face. */
+    private fun idleTime(ms: Long): String = when (Isle.prefs.clockFace) {
+        "day" -> DateFormat.format("EEE", ms).toString() + " " + shortTime(ms)
+        "seconds" -> shortTime(ms) + DateFormat.format(":ss", ms)
+        else -> shortTime(ms)
+    }
+
     private fun shortTime(ms: Long): String {
         shortFormat.timeZone = TimeZone.getDefault()
         return shortFormat.format(Date(ms))
@@ -628,7 +701,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         if (p.idleClock) {
             // As on the computer: the time beside the camera, the battery on the other side.
             val h = box.height()
-            write(c, shortTime(Isle.now()), box.left + h * 0.5f, cy + 5 * dp, 14f, white, bold = true)
+            write(c, idleTime(Isle.now()), box.left + h * 0.5f, cy + 5 * dp, 14f, white, bold = true)
             val dots = p.privacyDots && (Isle.cameraOn || Isle.micOn)
             val modes = p.modeIcons && (Isle.airplane || Isle.dnd)
             val right = box.right - h * 0.5f
@@ -680,8 +753,9 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     // ---- Compact ------------------------------------------------------------------------
 
     private fun drawCompact(c: Canvas, live: Live, box: RectF) {
-        val cy = box.centerY()
-        val h = box.height()
+        // The pill's own row (a lyrics row may hang below it).
+        val h = minOf(box.height(), (geometry.idleHeight * dp).toFloat())
+        val cy = box.top + h / 2
         val lx = box.left + h * 0.62f
         val rx = box.right - h * 0.5f
         val wing = (geometry.wing * dp).toFloat() - 8 * dp
@@ -690,6 +764,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             is Live.Music -> {
                 if (!bitmap(c, Isle.art, lx - 11 * dp, cy - 11 * dp, 22f, 6f) && !drawable(c, Isle.playerIcon, lx, cy, 20f)) icon(c, Icon.Music, lx, cy, 16f, white)
                 bars(c, rx + 8 * dp, cy, 16f, Isle.artColor?.let { it or 0xff000000.toInt() } ?: white, live.playing)
+                if (box.height() > h + 8 * dp) lyricsRow(c, box, box.top + h)
             }
             is Live.Call -> {
                 val pulse = if (live.since == 0L) (0.6f + 0.4f * sin(SystemClock.uptimeMillis() / 180.0).toFloat()) else 1f
@@ -730,6 +805,39 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 write(c, text, rx + 8 * dp, cy + 5 * dp, 13f, if (live.started(now)) cyan else white, bold = true, max = wing, align = Paint.Align.RIGHT)
             }
         }
+    }
+
+    /** The lyrics row's line, the one before it (sliding away) and when it changed. */
+    private var rowLine: String? = null
+    private var rowPrev: String? = null
+    private var rowAt = 0L
+
+    /**
+     * The line being sung, under the small music pill, as the computer's
+     * island shows it: a new line slides up into place as the old one
+     * slides away.
+     */
+    private fun lyricsRow(c: Canvas, box: RectF, top: Float) {
+        val line = Isle.lyrics?.lineAt(Isle.mediaPositionNow() + Lyrics.LEAD, Isle.prefs.lyricsOffset) ?: "♪"
+        val now = SystemClock.uptimeMillis()
+        if (line != rowLine) {
+            rowPrev = rowLine
+            rowLine = line
+            rowAt = now
+        }
+        val p = ((now - rowAt) / 320f).coerceIn(0f, 1f).let { it * it * (3 - 2 * it) }
+        val rowH = box.bottom - top
+        val base = top + rowH / 2 + 2 * dp
+        val accent = accentOr(white)
+        val max = box.width() - 32 * dp
+        c.save()
+        c.clipRect(box.left, top, box.right, box.bottom)
+        rowPrev?.takeIf { p < 1f }?.let {
+            write(c, it, box.centerX(), base - p * rowH * 0.8f, 13f, withAlpha(grey, 1f - p), bold = true, max = max, align = Paint.Align.CENTER)
+        }
+        write(c, line, box.centerX(), base + (1f - p) * rowH * 0.8f, 13f, withAlpha(accent, p), bold = true, max = max, align = Paint.Align.CENTER)
+        c.restore()
+        if (p < 1f) easing = true
     }
 
     private fun drawBubble(c: Canvas, live: Live, b: Box) {
@@ -807,14 +915,29 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             }
             is Pop.Bluetooth -> {
                 icon(c, Icon.Bluetooth, box.left + pad + 18 * dp, cy, 24f, blue)
-                write(c, p.name, box.left + pad + 46 * dp, cy - 3 * dp, 15f, white, bold = true, max = box.width() - 90 * dp)
+                val room = if (p.battery >= 0) 150 * dp else 90 * dp
+                write(c, p.name, box.left + pad + 46 * dp, cy - 3 * dp, 15f, white, bold = true, max = box.width() - room)
                 write(c, if (p.connected) "Connected" else "Disconnected", box.left + pad + 46 * dp, cy + 16 * dp, 13f, grey)
+                // The device's own battery, as the computer shows for earbuds and headphones.
+                if (p.battery >= 0) {
+                    val colour = if (p.battery > 20) green else if (p.battery > 10) orange else red
+                    battery(c, box.right - pad - 16 * dp, cy, p.battery, colour, number = true)
+                }
+            }
+            is Pop.Level -> {
+                // As on the computer: the icon and the amount by the camera, a bar under it.
+                val row = (geometry.idleHeight * dp).toFloat()
+                val ty = box.top + row / 2
+                val i = if (p.kind == Pop.LevelKind.Volume) Icon.Sound else Icon.Brightness
+                icon(c, i, box.left + row * 0.6f, ty, 16f, white)
+                write(c, "${(p.fraction * 100).toInt().coerceIn(0, 100)}%", box.right - row * 0.55f, ty + 5 * dp, 14f, white, bold = true, align = Paint.Align.RIGHT)
+                bar(c, box.left + row * 0.5f, box.right - row * 0.5f, box.top + row + 7 * dp, p.fraction, white, 5f)
             }
             else -> {
                 val lx = box.left + h * 0.6f
                 val rx = box.right - h * 0.55f
                 val (i, colour, left, right) = when (p) {
-                    is Pop.Charging -> Quad(Icon.Bolt, if (p.charging) green else grey, if (p.charging) "Charging" else "Not charging", "${p.level}%")
+                    is Pop.Charging -> Quad(Icon.Bolt, if (p.charging) green else grey, if (!p.charging) "Not charging" else if (p.level >= 100) "Fully charged" else "Charging", "${p.level}%")
                     is Pop.LowBattery -> Quad(Icon.Bolt, red, "Low battery", "${p.level}%")
                     is Pop.Ringer -> when (p.mode) {
                         Pop.RingerMode.Silent -> Quad(Icon.BellOff, red, "", "Silent")
@@ -928,7 +1051,19 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
 
     // ---- Expanded ---------------------------------------------------------------------------
 
-    private fun drawExpanded(c: Canvas, live: Live?, box: RectF) {
+    private fun drawExpanded(c: Canvas, live: Live?, whole: RectF) {
+        // As on the computer: every open card has a way to the control
+        // centre at its top (the music card draws its own; the clock card
+        // has the controls button).
+        val box = if (live != null && live !is Live.Music) {
+            chip(c, "‹  Control Centre", whole.left + 18 * dp, whole.top + 26 * dp, dim) {
+                Isle.island.showControls()
+                Isle.changed()
+            }
+            RectF(whole.left, whole.top + Geometry.CARD_HEADER.toFloat() * dp, whole.right, whole.bottom)
+        } else {
+            whole
+        }
         val pad = 20 * dp
         val l = box.left + pad
         val r = box.right - pad
@@ -1220,7 +1355,13 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val bx = box.left + h * 0.55f + 12 * dp
         battery(c, bx, cy, level, colour)
         if (Isle.charging) icon(c, Icon.Bolt, bx, cy, 10f, Color.BLACK)
-        write(c, "$level%", bx + 18 * dp, cy + 5.5f * dp, 15f, colour, bold = true)
+        val pw = write(c, "$level%", bx + 18 * dp, cy + 5.5f * dp, 15f, colour, bold = true)
+        // The weather beside it, as the computer's island shows when pointed at.
+        Isle.weather?.let { w ->
+            val wx = bx + 18 * dp + pw + 12 * dp
+            icon(c, Icons.sky(w.sky, w.day), wx + 8 * dp, cy, 15f, if (w.day) 0xffffd60a.toInt() else white)
+            write(c, Format.temperature(w.celsius, Isle.prefs.fahrenheit), wx + 19 * dp, cy + 5.5f * dp, 15f, white, bold = true)
+        }
         val right = box.right - h * 0.5f
         if (Isle.prefs.stripNetwork) {
             // Download speed instead of memory use.
@@ -1283,7 +1424,21 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         if (p.lessons) {
             p.timetable.line(Timetable.weekday(now), Timetable.minuteOfDay(now), h24)?.let { rows.add(Triple(Icon.Book, cyan, it)) }
         }
-        islet.island.Meetings.next(Isle.events, now)?.let { rows.add(Triple(Icon.Calendar, red, "${it.title} · ${timeText(it.begin)}")) }
+        // Today's agenda (what's left of it); else the next event, another day.
+        val midnight = java.util.Calendar.getInstance().apply {
+            timeInMillis = now
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+            add(java.util.Calendar.DAY_OF_MONTH, 1)
+        }.timeInMillis
+        val agenda = islet.island.Meetings.today(Isle.events, now, midnight)
+        if (agenda.isNotEmpty()) {
+            agenda.take(2).forEach { rows.add(Triple(Icon.Calendar, red, "${timeText(it.begin)}  ${it.title}")) }
+        } else {
+            islet.island.Meetings.next(Isle.events, now)?.let { rows.add(Triple(Icon.Calendar, red, "${it.title} · ${DateFormat.format("EEE", it.begin)} ${timeText(it.begin)}")) }
+        }
         if (p.deadlines) {
             Deadlines.next(Isle.deadlines, now)?.let { rows.add(Triple(Icon.Flag, orange, "${it.title} · ${Deadlines.countdown(it, now)}")) }
         }

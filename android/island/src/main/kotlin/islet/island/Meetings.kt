@@ -42,6 +42,13 @@ object Meetings {
     fun next(events: List<CalendarEvent>, now: Long): CalendarEvent? =
         events.filter { !it.allDay && it.end > now }.minByOrNull { it.begin }
 
+    /**
+     * Today's agenda, as on the computer's card: the timed events still to
+     * come or going on today (ending after `now`, starting before `dayEnd`), in order.
+     */
+    fun today(events: List<CalendarEvent>, now: Long, dayEnd: Long): List<CalendarEvent> =
+        events.filter { !it.allDay && it.end > now && it.begin < dayEnd }.sortedBy { it.begin }
+
     /** When to look again so a countdown starts on time. */
     fun nextCheck(events: List<CalendarEvent>, now: Long): Long? =
         events.filter { !it.allDay && it.begin - SOON > now }.minOfOrNull { it.begin - SOON }

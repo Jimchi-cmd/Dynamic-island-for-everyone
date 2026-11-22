@@ -88,7 +88,35 @@ object Sensors {
                     } ?: "Bluetooth device"
                     val connected = intent.action == BluetoothDevice.ACTION_ACL_CONNECTED
                     Isle.btName = if (connected) name else null
-                    Isle.pop(Pop.Bluetooth(name, connected))
+                    Isle.pop(Pop.Bluetooth(name, connected, if (connected) deviceBattery(device) else -1))
+                    justConnected = if (connected) device?.address to System.currentTimeMillis() else null
+                }
+                BATTERY_LEVEL_CHANGED -> if (p.popConnections) {
+                    // Earbuds and headphones report their charge a moment after connecting.
+                    val device: BluetoothDevice? = if (Build.VERSION.SDK_INT >= 33) {
+                        intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                    }
+                    val level = intent.getIntExtra(EXTRA_BATTERY_LEVEL, -1)
+                    val recent = justConnected
+                    if (level in 0..100 && device != null && recent != null && recent.first == device.address &&
+                        System.currentTimeMillis() - recent.second < 30_000
+                    ) {
+                        justConnected = null
+                        val name = try {
+                            device.name
+                        } catch (e: SecurityException) {
+                            null
+                        } ?: "Bluetooth device"
+                        Isle.pop(Pop.Bluetooth(name, true, level))
+                    }
+                }
+                VOLUME_CHANGED -> if (p.popLevels && !fresh() &&
+                    intent.getIntExtra(EXTRA_VOLUME_STREAM, -1) == AudioManager.STREAM_MUSIC
+                ) {
+                    Isle.pop(Pop.Level(Pop.LevelKind.Volume, Controls.volume))
                 }
                 AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED -> readAlarm()
                 android.net.wifi.WifiManager.WIFI_STATE_CHANGED_ACTION, android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED -> {
@@ -103,6 +131,35 @@ object Sensors {
         }
     }
 
+    /** The Bluetooth device that connected last, and when: its battery report may follow. */
+    private var justConnected: Pair<String?, Long>? = null
+
+    // Broadcasts Android sends but doesn't name in its public API.
+    private const val BATTERY_LEVEL_CHANGED = "android.bluetooth.device.action.BATTERY_LEVEL_CHANGED"
+    private const val EXTRA_BATTERY_LEVEL = "android.bluetooth.device.extra.BATTERY_LEVEL"
+    private const val VOLUME_CHANGED = "android.media.VOLUME_CHANGED_ACTION"
+    private const val EXTRA_VOLUME_STREAM = "android.media.EXTRA_VOLUME_STREAM_TYPE"
+
+    /** A connected device's charge, if Android knows it already (-1 if not). */
+    private fun deviceBattery(device: BluetoothDevice?): Int = try {
+        (device?.javaClass?.getMethod("getBatteryLevel")?.invoke(device) as? Int)?.takeIf { it in 0..100 } ?: -1
+    } catch (e: Throwable) {
+        -1
+    }
+
+    /** The screen's brightness changed (set by hand; automatic brightness moves on its own and isn't shown). */
+    private val brightness = object : android.database.ContentObserver(main) {
+        override fun onChange(selfChange: Boolean) {
+            if (!Isle.prefs.popLevels || fresh()) return
+            val manual = try {
+                Settings.System.getInt(ctx.contentResolver, Settings.System.SCREEN_BRIGHTNESS_MODE) == Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+            } catch (e: Exception) {
+                false
+            }
+            if (manual) Isle.pop(Pop.Level(Pop.LevelKind.Brightness, Controls.brightness))
+        }
+    }
+
     private fun battery(intent: Intent) {
         val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
         val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
@@ -113,11 +170,14 @@ object Sensors {
             intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
         val first = Isle.battery < 0
         val pluggedChanged = charging != Isle.charging
+        val was = Isle.battery
         Isle.battery = percent
         Isle.charging = charging
         if (first) return
         if (Isle.prefs.popPower) {
             if (pluggedChanged) Isle.pop(Pop.Charging(percent, charging))
+            // "Fully charged", once, as on the computer.
+            if (charging && !pluggedChanged && percent >= 100 && was in 0..99) Isle.pop(Pop.Charging(100, true))
             if (charging) {
                 lastLowWarning = 101
             } else {
@@ -277,9 +337,12 @@ object Sensors {
             if (Build.VERSION.SDK_INT < 31 || has(Manifest.permission.BLUETOOTH_CONNECT)) {
                 addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
                 addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+                addAction(BATTERY_LEVEL_CHANGED)
             }
+            addAction(VOLUME_CHANGED)
         }
         ContextCompat.registerReceiver(ctx, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
+        ctx.contentResolver.registerContentObserver(Settings.System.getUriFor(Settings.System.SCREEN_BRIGHTNESS), false, brightness)
         Isle.airplane = Settings.Global.getInt(ctx.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 0
         readDnd()
         readAlarm()
@@ -308,6 +371,7 @@ object Sensors {
         if (users > 0 || !::ctx.isInitialized) return
         // Nothing left to show the island: let go of the sound reading too.
         LiveBars.stop()
+        ctx.contentResolver.unregisterContentObserver(brightness)
         try {
             ctx.unregisterReceiver(receiver)
         } catch (e: IllegalArgumentException) {

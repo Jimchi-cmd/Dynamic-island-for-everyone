@@ -171,4 +171,19 @@ class ExtrasTest {
         assertEquals(15, Format.nextSleep(14))
         assertNull(Format.nextSleep(60))
     }
+
+    @Test
+    fun outside_apps_put_checked_activities_on_the_island() {
+        val a = Automation.live("build-1", "  Build  ", 40, "Tasker")!!
+        assertEquals(Live.Progress("auto:build-1", "Build", "Tasker", 40), a)
+        assertEquals(-1, Automation.live("x", "Sync", 140, "Tasker")!!.percent, "an odd number shows a spinner")
+        assertEquals(-1, Automation.live("x", "Sync", null, "Tasker")!!.percent)
+        assertNull(Automation.live("bad id!", "Build", 1, "Tasker"), "ids are plain")
+        assertNull(Automation.live("x", "  ", 1, "Tasker"), "a title is needed")
+        assertEquals(60, Automation.live("x", "y".repeat(200), 1, "Tasker")!!.title.length)
+        val three = (1..3).map { Automation.live("a$it", "A", 1, "T")!! }
+        assertFalse(Automation.fits(three, "a4"), "at most three")
+        assertTrue(Automation.fits(three, "a2"), "an update always fits")
+        assertTrue(Automation.fits(three.take(2), "a4"))
+    }
 }

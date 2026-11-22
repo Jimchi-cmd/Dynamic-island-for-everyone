@@ -303,6 +303,12 @@ class IslandWindow(private val context: Context, private val type: Int) {
             prefs.offsetY.toDouble() + extraY,
             prefs.extraWidth.toDouble(),
             prefs.idleClock,
+            prefs.lyrics && Isle.lyrics != null,
+            when (prefs.clockFace) {
+                "day" -> 26.0
+                "seconds" -> 14.0
+                else -> 0.0
+            },
         )
         // Round the camera either way. (As an ordinary overlay, some phones'
         // status bars take taps on the small pill; the accessibility switch

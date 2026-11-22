@@ -110,6 +110,15 @@
 
         <!-- Holds the island's window over the status bar, and presses
              screenshot and lock for the control centre. Reads nothing. -->
+        <!-- Live activities from automation apps; ignored unless switched on in Islet. -->
+        <receiver
+            android:name=".AutomationReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="io.github.jimchi_cmd.islet.ACTIVITY" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".IslandAccessibility"
             android:exported="true"

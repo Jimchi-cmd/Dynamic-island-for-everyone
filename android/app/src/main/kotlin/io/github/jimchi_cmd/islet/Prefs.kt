@@ -48,7 +48,22 @@ class Prefs(context: Context) {
         get() = p.getInt("extra_width", 0)
         set(v) = p.edit().putInt("extra_width", v.coerceIn(-40, 120)).apply()
 
-    /** "black", or "glass": frosted, with a light rim. */
+    /** The rim's colour (and the tinted style's): purple, blue, pink, green, orange or white. */
+    var accent: String
+        get() = p.getString("accent", "purple") ?: "purple"
+        set(v) = p.edit().putString("accent", v).apply()
+
+    /** The empty island's clock: "time" (14:05), "day" (Wed 14:05) or "seconds" (14:05:09). */
+    var clockFace: String
+        get() = p.getString("clock_face", "time") ?: "time"
+        set(v) = p.edit().putString("clock_face", v).apply()
+
+    /** Square top corners, joined to the top of the screen: the island grows out of the edge. */
+    var notch: Boolean
+        get() = flag("notch", false)
+        set(v) = set("notch", v)
+
+    /** "black", "tinted" (a dark shade of the accent colour), or "glass": frosted, with a light rim. */
     var style: String
         get() = p.getString("style", "black") ?: "black"
         set(v) = p.edit().putString("style", v).apply()
@@ -226,6 +241,16 @@ class Prefs(context: Context) {
     var liveBars: Boolean
         get() = flag("live_bars", false)
         set(v) = set("live_bars", v)
+
+    /** Volume and brightness pop-ups on the island (Android's own slider still shows too). */
+    var popLevels: Boolean
+        get() = flag("pop_levels", false)
+        set(v) = set("pop_levels", v)
+
+    /** Other apps (Tasker and the like) may put live activities on the island. */
+    var automation: Boolean
+        get() = flag("automation", false)
+        set(v) = set("automation", v)
 
     fun listen(l: SharedPreferences.OnSharedPreferenceChangeListener) = p.registerOnSharedPreferenceChangeListener(l)
 

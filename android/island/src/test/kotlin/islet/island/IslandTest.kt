@@ -280,6 +280,12 @@ class IslandTest {
         assertNull(Meetings.current(listOf(e), 1_000_000 + Meetings.GRACE + 1))
         assertEquals(1_000_000 - Meetings.SOON, Meetings.nextCheck(listOf(e), 0))
         assertEquals(e, Meetings.next(listOf(allDay, e), 0))
+        // Today's agenda: what's left of today, in order; not all-day events, not tomorrow's.
+        val later = e.copy(id = 3, title = "Review", begin = 3_000_000, end = 4_000_000)
+        val tomorrow = e.copy(id = 4, begin = 9_000_000, end = 9_500_000)
+        val over = e.copy(id = 5, begin = 100, end = 500)
+        assertEquals(listOf(e, later), Meetings.today(listOf(tomorrow, later, allDay, over, e), 1_000, 5_000_000))
+        assertEquals(listOf(later), Meetings.today(listOf(e, later), 2_500_000, 5_000_000), "one that's over drops off")
     }
 
     @Test

@@ -9,6 +9,13 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - The launch reels can be cut to any song: `scripts/promo/beats.py` finds its tempo, beats and bars, and `make-reels.py --song` starts each reel two bars before a drop, puts every cut on a bar line, times the island's moments to the beat, and drives the punches, streaks and glow from the song's kicks, snares and loudness.
 - Islet Pro cover and thumbnail for the store page (`scripts/promo/make-cover.py`).
 - Phone: a bigger music card, like a phone's own player: a large cover, the song in bigger type, the lyrics line being sung and the next one, a full-width progress bar, a volume slider and big buttons.
+- Phone: the laptop's extras, ported:
+  - with lyrics on, the line being sung slides along a row under the small music pill;
+  - a **‹ Control Centre** button on every open card;
+  - volume and brightness pop-ups (opt-in), earbuds' and headphones' battery in the Bluetooth pop-up, and "Fully charged";
+  - the weather in the strip, what's left of today's agenda on the calendar card, and memory and storage on the Battery page;
+  - a Tinted style, an accent colour for the rim, a Notch shape, the day or seconds on the empty island's clock, and a liquid neck between the pill and its bubble;
+  - activities from automation apps such as Tasker (opt-in): a title and a progress ring, by broadcast.
 - Phone: a **‹ Control Centre** button on the music card, and a **‹ Back** button in the control centre that returns to the card it was opened from (the music card, the clock card or the calendar).
 
 ### Fixed

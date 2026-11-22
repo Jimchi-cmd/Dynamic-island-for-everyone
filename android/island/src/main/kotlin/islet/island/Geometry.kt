@@ -34,6 +34,10 @@ class Geometry(
     val extraWidth: Double = 0.0,
     /** The empty island shows the time (left of the camera) and the battery (right), as the computer's does. */
     val idleClock: Boolean = false,
+    /** The song has synced lyrics showing: the small music pill grows a row for the line being sung. */
+    val lyricsRow: Boolean = false,
+    /** Extra room each side of the camera for a longer clock ("Wed 14:05", seconds), dp. */
+    val clockExtra: Double = 0.0,
 ) {
     private val k get() = size.scale
 
@@ -63,10 +67,15 @@ class Geometry(
 
     fun box(scene: Scene): Box = when (scene) {
         Scene.Hidden -> centered(idleWidth * 0.6, idleHeight * 0.6, idleHeight)
-        Scene.Idle -> centered(idleWidth + if (idleClock) 2 * clockWing else 0.0, idleHeight, idleHeight / 2)
-        is Scene.Compact -> centered(idleWidth + 2 * wing, idleHeight, idleHeight / 2)
+        Scene.Idle -> centered(idleWidth + if (idleClock) 2 * (clockWing + clockExtra * k) else 0.0, idleHeight, idleHeight / 2)
+        is Scene.Compact -> if (lyricsRow && scene.live is Live.Music) {
+            centered(idleWidth + 2 * wing + 60 * k, idleHeight + LYRICS_ROW * k, idleHeight / 2)
+        } else {
+            centered(idleWidth + 2 * wing, idleHeight, idleHeight / 2)
+        }
         is Scene.Popped -> when (scene.pop) {
             is Pop.Note -> centered(cardWidth - 8, (if (scene.pop.actions.isEmpty()) 82.0 else 112.0) * k, 36.0 * k)
+            is Pop.Level -> centered(idleWidth + 2 * wing + 30 * k, idleHeight + 22 * k, idleHeight / 2)
             is Pop.Screenshot, is Pop.TimerDone, is Pop.Bluetooth ->
                 centered(cardWidth - 12, 78.0 * k, 34.0 * k)
             else -> centered(idleWidth + 2 * wing + 30 * k, idleHeight + 6 * k, (idleHeight + 6 * k) / 2)
@@ -78,6 +87,9 @@ class Geometry(
     }
 
     private fun expandedHeight(live: Live?): Double = when (live) {
+        null, is Live.Music -> 0.0
+        else -> CARD_HEADER
+    } + when (live) {
         is Live.Music -> 346.0
         is Live.Call -> 120.0
         is Live.Navigation -> 120.0
@@ -86,9 +98,17 @@ class Geometry(
         else -> 128.0
     }
 
+    companion object {
+        /** The lyrics row under the small music pill (dp). */
+        const val LYRICS_ROW = 24.0
+
+        /** Room at the top of an open card for its "‹ Control Centre" button (dp). */
+        const val CARD_HEADER = 40.0
+    }
+
     /** The second activity's round bubble, right of the pill. */
     fun bubble(pill: Box): Box {
-        val d = pill.h
+        val d = minOf(pill.h, idleHeight)
         val x = minOf(pill.right + 6, screenWidth - 6 - d)
         return Box(x, pill.y, d, d, d / 2)
     }
