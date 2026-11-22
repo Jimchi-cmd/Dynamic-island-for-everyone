@@ -203,6 +203,11 @@ class IslandTest {
         assertNull(l.lineAt(6000), "an empty line clears it")
         assertEquals("Two", l.lineAt(9000))
         assertEquals("Two", l.lineAt(8000, offset = 1000))
+        // What's coming next, for the big music card (empty lines skipped).
+        assertEquals("One", l.nextAfter(0))
+        assertEquals("Two", l.nextAfter(2000))
+        assertEquals("Two", l.nextAfter(4000))
+        assertNull(l.nextAfter(9500))
         assertEquals("One", Lyrics.fromLrclib("""{"syncedLyrics":"[00:00.10]One","instrumental":false}""")!!.lineAt(200))
         assertNull(Lyrics.fromLrclib("""{"instrumental":true,"syncedLyrics":null}"""))
         assertTrue(Lyrics.lrclibUrl("A B", "C&D", 200_000).endsWith("track_name=A+B&artist_name=C%26D&duration=200"))

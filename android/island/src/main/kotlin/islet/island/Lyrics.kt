@@ -15,6 +15,12 @@ class Lyrics(val lines: List<Pair<Long, String>>) {
         return found?.takeIf { it.isNotBlank() }
     }
 
+    /** The line after the one being sung at `ms` (what's coming), or the first before it starts. */
+    fun nextAfter(ms: Long, offset: Long = 0): String? {
+        val t = ms + offset
+        return lines.firstOrNull { (at, text) -> at > t && text.isNotBlank() }?.second
+    }
+
     companion object {
         /**
          * Show each line this much early (ms), as the computer does: a line

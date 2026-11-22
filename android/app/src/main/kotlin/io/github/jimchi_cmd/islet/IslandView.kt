@@ -1066,53 +1066,79 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         }
     }
 
+    /**
+     * The music card, big as on a phone's own player: a large cover, the
+     * song, the lyrics line and the next one, the progress bar, the volume,
+     * and big buttons.
+     */
     private fun drawMusic(c: Canvas, m: Live.Music, box: RectF) {
-        val pad = 20 * dp
+        val pad = 22 * dp
         val l = box.left + pad
         val r = box.right - pad
         val t = box.top + pad
         val accent = Isle.artColor?.let { it or 0xff000000.toInt() } ?: white
-        if (!bitmap(c, Isle.art, l, t, 56f, 12f)) {
+        // The cover (tap it to open the player).
+        val cover = 84f
+        if (!bitmap(c, Isle.art, l, t, cover, 16f)) {
             fill.color = 0xff3a3a3c.toInt()
-            rect.set(l, t, l + 56 * dp, t + 56 * dp)
-            c.drawRoundRect(rect, 12 * dp, 12 * dp, fill)
-            if (!drawable(c, Isle.playerIcon, l + 28 * dp, t + 28 * dp, 36f)) icon(c, Icon.Music, l + 28 * dp, t + 28 * dp, 26f, white)
+            rect.set(l, t, l + cover * dp, t + cover * dp)
+            c.drawRoundRect(rect, 16 * dp, 16 * dp, fill)
+            val mid = cover / 2 * dp
+            if (!drawable(c, Isle.playerIcon, l + mid, t + mid, 48f)) icon(c, Icon.Music, l + mid, t + mid, 34f, white)
         }
-        hits.add(Hit(RectF(l, t, l + 56 * dp, t + 56 * dp)) { Isle.openPlayer() })
-        val tx = l + 70 * dp
-        write(c, m.title, tx, t + 22 * dp, 16f, white, bold = true, max = r - tx - 34 * dp)
-        write(c, m.artist.ifEmpty { m.app }, tx, t + 44 * dp, 14f, grey, max = r - tx - 34 * dp)
-        bars(c, r, t + 16 * dp, 18f, accent, m.playing)
+        hits.add(Hit(RectF(l, t, l + cover * dp, t + cover * dp)) { Isle.openPlayer() })
+        val tx = l + (cover + 16) * dp
+        val textMax = r - tx - 30 * dp
+        write(c, m.title, tx, t + 30 * dp, 19f, white, bold = true, max = textMax)
+        write(c, m.artist.ifEmpty { m.app }, tx, t + 54 * dp, 15f, grey, max = textMax)
+        if (m.artist.isNotEmpty()) write(c, m.app, tx, t + 76 * dp, 12f, accentOr(grey), max = textMax)
+        bars(c, r, t + 18 * dp, 20f, accent, m.playing)
         val position = seekTo?.let { (it * m.duration).toLong() } ?: Isle.mediaPositionNow()
-        var y = t + 56 * dp
-        val lyric = Isle.lyrics?.lineAt(position + Lyrics.LEAD, Isle.prefs.lyricsOffset)
+        // From the bottom up: the buttons, the volume, the progress bar.
+        val cy = box.bottom - pad - 26 * dp
+        val vy = cy - 50 * dp
+        val by = vy - 44 * dp
+        // The lyrics: the line being sung, and the next one, in the room between.
+        val top = t + cover * dp
+        val mid = (top + by - 10 * dp) / 2
+        val lyrics = Isle.lyrics
+        val now = position + Lyrics.LEAD
+        val line = lyrics?.lineAt(now, Isle.prefs.lyricsOffset)
             ?: if (Isle.prefs.lyrics && Isle.lyricsMissing) "No synced lyrics for this song" else null
-        lyric?.let {
-            write(c, it, box.centerX(), y + 20 * dp, 13f, if (Isle.lyrics != null) accent else grey, bold = Isle.lyrics != null, max = r - l, align = Paint.Align.CENTER)
-            y += 8 * dp
+        val next = lyrics?.nextAfter(now, Isle.prefs.lyricsOffset)
+        if (line != null) {
+            write(c, line, box.centerX(), mid + (if (next != null) -4 else 6) * dp, 16f, if (lyrics != null) accent else grey, bold = lyrics != null, max = r - l, align = Paint.Align.CENTER)
         }
+        if (next != null) {
+            write(c, next, box.centerX(), mid + (if (line != null) 20 else 6) * dp, 14f, grey, max = r - l, align = Paint.Align.CENTER)
+        }
+        // Progress, across the card, the times under it; drag to move in the song.
         if (m.duration > 0) {
-            val by = y + 30 * dp
-            val bl = l + 40 * dp
-            val br = r - 40 * dp
-            bar(c, bl, br, by, position.toFloat() / m.duration, white)
-            write(c, Format.elapsed(position), l, by + 4 * dp, 11f, grey)
-            write(c, "-" + Format.elapsed(m.duration - position), r, by + 4 * dp, 11f, grey, align = Paint.Align.RIGHT)
-            seeking = RectF(bl - 8 * dp, by - 14 * dp, br + 8 * dp, by + 14 * dp)
+            bar(c, l, r, by, position.toFloat() / m.duration, white, if (seekTo != null) 8f else 6f)
+            write(c, Format.elapsed(position), l, by + 20 * dp, 12f, grey)
+            write(c, "-" + Format.elapsed((m.duration - position).coerceAtLeast(0L)), r, by + 20 * dp, 12f, grey, align = Paint.Align.RIGHT)
+            seeking = RectF(l - 8 * dp, by - 16 * dp, r + 8 * dp, by + 12 * dp)
             sliders.add(Slider(seeking!!) { seekTo = it })
         }
-        val cy = box.bottom - pad - 16 * dp
+        // The volume: drag along it.
+        val vl = l + 26 * dp
+        val vr = r - 26 * dp
+        icon(c, Icon.Sound, l + 8 * dp, vy, 14f, grey)
+        icon(c, Icon.Sound, r - 8 * dp, vy, 18f, grey)
+        bar(c, vl, vr, vy, reading("volume") { Controls.volume }, white, 6f)
+        sliders.add(Slider(RectF(vl - 8 * dp, vy - 16 * dp, vr + 8 * dp, vy + 16 * dp)) { readings.remove("volume"); Controls.volume = it })
+        // Big buttons.
         val cx = box.centerX()
-        button(c, cx - 64 * dp, cy, 44f, Color.TRANSPARENT, Icon.Previous) { Isle.previous() }
-        button(c, cx, cy, 48f, Color.TRANSPARENT, if (m.playing) Icon.Pause else Icon.Play) { Isle.playPause() }
-        button(c, cx + 64 * dp, cy, 44f, Color.TRANSPARENT, Icon.Next) { Isle.next() }
+        button(c, cx - 84 * dp, cy, 54f, Color.TRANSPARENT, Icon.Previous) { Isle.previous() }
+        button(c, cx, cy, 64f, Color.TRANSPARENT, if (m.playing) Icon.Pause else Icon.Play) { Isle.playPause() }
+        button(c, cx + 84 * dp, cy, 54f, Color.TRANSPARENT, Icon.Next) { Isle.next() }
         // The sleep timer: off → 15 → 30 → 45 → 60 minutes.
         val sleep = Isle.sleepMinutesLeft()
-        button(c, l + 16 * dp, cy, 36f, if (sleep != null) 0xff2c2a5a.toInt() else Color.TRANSPARENT, Icon.Moon, if (sleep != null) 0xffbf9bff.toInt() else grey) { Isle.stepSleep() }
-        if (sleep != null) write(c, "${sleep}m", l + 38 * dp, cy + 4.5f * dp, 12f, 0xffbf9bff.toInt(), bold = true)
+        button(c, l + 18 * dp, cy, 40f, if (sleep != null) 0xff2c2a5a.toInt() else Color.TRANSPARENT, Icon.Moon, if (sleep != null) 0xffbf9bff.toInt() else grey) { Isle.stepSleep() }
+        if (sleep != null) write(c, "${sleep}m", l + 18 * dp, cy + 30 * dp, 11f, 0xffbf9bff.toInt(), bold = true, align = Paint.Align.CENTER)
         // Lyrics on and off (from LRCLIB, only once switched on).
         val on = Isle.prefs.lyrics
-        button(c, r - 16 * dp, cy, 36f, if (on) 0xff3a2a10.toInt() else Color.TRANSPARENT, Icon.Quote, if (on) accentOr(orange) else grey) { Isle.toggleLyrics() }
+        button(c, r - 18 * dp, cy, 40f, if (on) 0xff3a2a10.toInt() else Color.TRANSPARENT, Icon.Quote, if (on) accentOr(orange) else grey) { Isle.toggleLyrics() }
     }
 
     private fun accentOr(fallback: Int): Int = Isle.artColor?.let { it or 0xff000000.toInt() } ?: fallback
