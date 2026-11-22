@@ -72,13 +72,13 @@ class Geometry(
             else -> centered(idleWidth + 2 * wing + 30 * k, idleHeight + 6 * k, (idleHeight + 6 * k) / 2)
         }
         is Scene.Expanded -> centered(cardWidth, expandedHeight(scene.live) * k, 40.0 * k)
-        Scene.Controls -> centered(cardWidth, 252.0 * k, 40.0 * k)
+        Scene.Controls -> centered(cardWidth, 292.0 * k, 40.0 * k)
         Scene.Peek -> centered(idleWidth + 2 * (wing + 30 * k), idleHeight + 4 * k, (idleHeight + 4 * k) / 2)
         Scene.Calendar -> centered(cardWidth, 344.0 * k, 40.0 * k)
     }
 
     private fun expandedHeight(live: Live?): Double = when (live) {
-        is Live.Music -> 308.0
+        is Live.Music -> 346.0
         is Live.Call -> 120.0
         is Live.Navigation -> 120.0
         is Live.Stopwatch -> 140.0

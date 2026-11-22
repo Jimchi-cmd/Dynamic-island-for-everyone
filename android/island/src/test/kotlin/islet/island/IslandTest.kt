@@ -44,6 +44,30 @@ class IslandTest {
     }
 
     @Test
+    fun the_control_centre_goes_back_to_the_card_it_came_from() {
+        val i = Island()
+        i.put(music)
+        i.open("music")
+        i.showControls()
+        assertEquals(Scene.Controls, i.scene(0))
+        i.back()
+        assertEquals(Scene.Expanded(music), i.scene(0), "back to the music card")
+        i.close(0)
+        i.remove("music")
+        i.showCalendar()
+        i.showControls()
+        i.back()
+        assertEquals(Scene.Calendar, i.scene(0), "back to the calendar")
+        i.close(0)
+        i.longPress()
+        i.back()
+        assertEquals(Scene.Expanded(null), i.scene(0), "opened by a long press: back to the main card")
+        i.close(0)
+        i.back()
+        assertEquals(false, i.isOpen, "back does nothing when the control centre isn't open")
+    }
+
+    @Test
     fun tapping_opens_and_closes_and_long_press_shows_controls() {
         val i = Island()
         i.put(music)

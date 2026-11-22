@@ -167,6 +167,7 @@ class Island(var showEmpty: Boolean = true) {
     }
 
     fun longPress() {
+        backToCalendar = false
         controls = true
         expanded = false
         calendar = false
@@ -180,8 +181,26 @@ class Island(var showEmpty: Boolean = true) {
         expanded = false
     }
 
-    /** The clock card's controls button. */
-    fun showControls() = longPress()
+    /** Whether the control centre's back button returns to the calendar (else to the main card). */
+    private var backToCalendar = false
+
+    /** The clock card's controls button, or the music card's "Control Centre". */
+    fun showControls() {
+        val fromCalendar = calendar
+        longPress()
+        backToCalendar = fromCalendar
+    }
+
+    /**
+     * The control centre's back button: back to the card it was opened
+     * from (the music card, the clock card, or the calendar).
+     */
+    fun back() {
+        if (!controls) return
+        controls = false
+        if (backToCalendar) calendar = true else expanded = true
+        backToCalendar = false
+    }
 
     /** Swipe up, the back gesture or a tap outside: close it. */
     fun close(now: Long) {

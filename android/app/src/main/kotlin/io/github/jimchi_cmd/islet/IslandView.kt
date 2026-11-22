@@ -1075,7 +1075,12 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val pad = 22 * dp
         val l = box.left + pad
         val r = box.right - pad
-        val t = box.top + pad
+        // To the control centre (its back button comes back here).
+        chip(c, "‹  Control Centre", l, box.top + pad + 12 * dp, dim) {
+            Isle.island.showControls()
+            Isle.changed()
+        }
+        val t = box.top + pad + 38 * dp
         val accent = Isle.artColor?.let { it or 0xff000000.toInt() } ?: white
         // The cover (tap it to open the player).
         val cover = 84f
@@ -1311,7 +1316,14 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val pad = 16 * dp
         val l = box.left + pad
         val r = box.right - pad
-        val t = box.top + pad
+        // A back button to the card it came from, and the title.
+        val hy = box.top + pad + 14 * dp
+        chip(c, "‹  Back", l, hy, dim) {
+            Isle.island.back()
+            Isle.changed()
+        }
+        write(c, "Control Centre", r, hy + 5 * dp, 15f, white, bold = true, align = Paint.Align.RIGHT)
+        val t = box.top + pad + 40 * dp
         val tile = 48 * dp
         val gap = ((r - l) - 4 * tile) / 3
         fun tileAt(i: Int, on: Boolean, colour: Int, ic: Icon, action: () -> Unit) {

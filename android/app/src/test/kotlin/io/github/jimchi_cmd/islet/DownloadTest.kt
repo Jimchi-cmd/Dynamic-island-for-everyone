@@ -84,7 +84,7 @@ class DownloadTest {
         shot("download")
         Isle.island.remove("dl")
         // The big music card, with lyrics.
-        val tall = Bitmap.createBitmap(dm.widthPixels, (360 * dm.density).toInt(), Bitmap.Config.ARGB_8888)
+        val tall = Bitmap.createBitmap(dm.widthPixels, (380 * dm.density).toInt(), Bitmap.Config.ARGB_8888)
         Isle.island.put(Live.Music("Midnight Drive", "The Example Band", "Player", true, 215_000, 46_000, SystemClock.elapsedRealtime()))
         Isle.lyrics = islet.island.Lyrics.parse("[00:40.00]Headlights on the empty road\n[00:50.00]Every sign is glowing gold\n")
         Isle.artColor = 0xffe24070.toInt()
@@ -94,6 +94,13 @@ class DownloadTest {
         tall.eraseColor(0xff2b2b33.toInt())
         v.draw(Canvas(tall))
         File(dir, "music-card.png").outputStream().use { tall.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        // The control centre, opened from the music card.
+        Isle.island.showControls()
+        v.update()
+        v.settle()
+        tall.eraseColor(0xff2b2b33.toInt())
+        v.draw(Canvas(tall))
+        File(dir, "control-centre.png").outputStream().use { tall.compress(Bitmap.CompressFormat.PNG, 100, it) }
         Isle.island.close(0)
         Isle.island.remove("music")
         Isle.lyrics = null

@@ -9,6 +9,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - The launch reels can be cut to any song: `scripts/promo/beats.py` finds its tempo, beats and bars, and `make-reels.py --song` starts each reel two bars before a drop, puts every cut on a bar line, times the island's moments to the beat, and drives the punches, streaks and glow from the song's kicks, snares and loudness.
 - Islet Pro cover and thumbnail for the store page (`scripts/promo/make-cover.py`).
 - Phone: a bigger music card, like a phone's own player: a large cover, the song in bigger type, the lyrics line being sung and the next one, a full-width progress bar, a volume slider and big buttons.
+- Phone: a **‹ Control Centre** button on the music card, and a **‹ Back** button in the control centre that returns to the card it was opened from (the music card, the clock card or the calendar).
 
 ### Fixed
 - Phone: the island no longer twitches sideways as it grows or shrinks (opening and closing a card, or a pop-up such as Bluetooth on or off). Its window's top left corner now stays put and only its size changes: on many phones a window that moved showed up a frame apart from what was drawn in it.
