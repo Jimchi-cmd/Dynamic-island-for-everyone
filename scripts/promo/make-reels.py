@@ -2,7 +2,7 @@
 """Islet's launch reels (1080x1920, ~29 s): the island floating big on a
 deep, lit background, a 3D title, kinetic type that fades in from a blur,
 moves cut to the beat of an original 170 BPM track, an "And also…" stack,
-an Islet Pro card and a Download on GitHub ending.
+an "All free" card and a Download on GitHub ending.
 
 Frames of the island come from its own drawing code (see make-videos.py);
 the music is made from scratch by music.py.
@@ -40,8 +40,8 @@ music = _load("music", "music.py")
 FPS, W, H = 30, 1080, 1920
 BPM = 170
 BAR = 4 * 60 / BPM
-# The film, in bars: build-up and title, the story, "And also…", Pro, the link.
-INTRO, STORY, ALSO, PRO, END = 2, 11, 2, 3, 2
+# The film, in bars: build-up and title, the story, "And also…", all free, the link.
+INTRO, STORY, ALSO, FREE, END = 2, 11, 2, 3, 2
 TAIL = 1.0
 GREY = (196, 196, 206)
 
@@ -277,10 +277,8 @@ LIFE = [
          also=["Per-app volume", "Clipboard history", "File shelf", "Your phone's notifications"]),
 ]
 
-PRO_ITEMS = ["Glass & tinted looks", "Album-colour glow", "Stopwatch & world clocks", "Quick notes & to-do", "Your own shortcuts", "Clock faces"]
+FREE_ITEMS = ["Glass & tinted looks", "Album-colour glow", "Stopwatch & world clocks", "Quick notes & to-do", "Your own shortcuts", "Clock faces"]
 URL = "github.com/Jimchi-cmd/Dynamic-island-for-everyone"
-# Where Islet Pro is sold (named on the Pro card and at the end).
-PRO_STORE = "Gumroad"
 
 
 def icon_tile(kind, colour, size=64):
@@ -354,7 +352,7 @@ class Clock:
     built-in track, from its own steady grid."""
 
     def __init__(self, story_bars, song=None, analysis=None, start_bar=0):
-        bars = (INTRO, story_bars, ALSO, PRO, END)
+        bars = (INTRO, story_bars, ALSO, FREE, END)
         if analysis is None:
             self.t0 = 0.0
             self.beat = 60 / BPM
@@ -371,7 +369,7 @@ class Clock:
         edges = [0]
         for n in bars:
             edges.append(edges[-1] + n)
-        self.t_story, self.t_also, self.t_pro, self.t_end, self.t_out = (self.bars_at[e] for e in edges[1:])
+        self.t_story, self.t_also, self.t_free, self.t_end, self.t_out = (self.bars_at[e] for e in edges[1:])
         self.total = self.t_out + TAIL
         self._smooth = {}
 
@@ -433,13 +431,13 @@ def make(film, frames_dir, out_path, song=None, analysis=None):
     files = sorted(f for f in os.listdir(frames_dir) if f.endswith(".png"))
     laptop = film["frames"].startswith("laptop")
     clock = Clock(STORY + (1 if laptop else 0), song, analysis, film.get("song_bar", 0))
-    t_story, t_also, t_pro, t_end = clock.t_story, clock.t_also, clock.t_pro, clock.t_end
+    t_story, t_also, t_free, t_end = clock.t_story, clock.t_also, clock.t_free, clock.t_end
     total_s = clock.total
     total = int(total_s * FPS)
     beat = clock.beat
     wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
     if song is None:
-        sections = (INTRO + STORY, INTRO + STORY + ALSO, INTRO + STORY + ALSO + PRO)
+        sections = (INTRO + STORY, INTRO + STORY + ALSO, INTRO + STORY + ALSO + FREE)
         music.write_wav(wav, music.banger(total_s, seed=film["seed"], bars_intro=INTRO, sections=sections, bpm=BPM))
     else:
         # The song, from two bars before its drop, faded out at the end.
@@ -454,9 +452,9 @@ def make(film, frames_dir, out_path, song=None, analysis=None):
     heads = [(landed.get(t0, t_story + t0), Kinetic(h, 96), Kinetic(s, 40, "Medium", GREY, gap=0.28)) for t0, h, s in film["beats"]]
     also_title = Kinetic("And also…", 96)
     also_cards = [glass_card(a, None, tuple(int(v) for v in colorsys.hsv_to_rgb((i * 0.17 + 0.55) % 1, 0.6, 0.95 * 255)), i % 6) for i, a in enumerate(film["also"])]
-    pro_title = extruded("Islet Pro", 150, (255, 236, 200), (255, 120, 170), depth=16)
-    pro_sub = Kinetic("One-time purchase · for your computer", 38, "Medium", GREY)
-    pro_cards = [glass_card(p, None, c, i, width=496, font=31) for i, (p, c) in enumerate(zip(PRO_ITEMS, [(255, 159, 10), (255, 55, 95), (90, 200, 250), (52, 199, 89), (175, 82, 222), (10, 132, 255)]))]
+    free_title = extruded("All free", 150, (255, 236, 200), (255, 120, 170), depth=16)
+    free_sub = Kinetic("Every feature · no ads · no accounts", 38, "Medium", GREY)
+    free_cards = [glass_card(p, None, c, i, width=496, font=31) for i, (p, c) in enumerate(zip(FREE_ITEMS, [(255, 159, 10), (255, 55, 95), (90, 200, 250), (52, 199, 89), (175, 82, 222), (10, 132, 255)]))]
     end_title = Kinetic("Get Islet", 120)
     end_sub = Kinetic("Free · open source · no ads", 40, "Medium", GREY)
     button = Image.new("RGBA", (560, 120), (0, 0, 0, 0))
@@ -466,8 +464,8 @@ def make(film, frames_dir, out_path, song=None, analysis=None):
     bd.polygon([(56, 64), (70, 82), (84, 64)], fill=(10, 10, 14))
     bd.text((110, 60), "Download on GitHub", font=mv.font(40, "Bold"), fill=(10, 10, 14), anchor="lm")
     url = Kinetic(URL, 30, "SemiBold", GREY)
-    get_pro = mv.text_block(f"Get Islet Pro on {PRO_STORE}", 46)
-    pro_line = Kinetic(f"Islet Pro on {PRO_STORE}", 36, "Bold", (255, 205, 140))
+    everything = mv.text_block("Everything included", 46)
+    free_line = Kinetic("No paid version · no accounts", 36, "Bold", (255, 205, 140))
     plats = Kinetic("Android · Windows · Mac · Linux", 34, "SemiBold", (220, 220, 230))
     hero_s, hero_cy, hero_h = 1.0, 760.0, 200.0
     # Words land on the half-beats; list cards one per beat.
@@ -535,9 +533,9 @@ def make(film, frames_dir, out_path, song=None, analysis=None):
                     head.draw(frame, W / 2, text_top + 90, t - v0, out=max(out, leave), stagger=word_step, dur=min(0.42, word_step * 1.6))
                     sub.draw(frame, W / 2, text_top + 175, t - v0 - beat, out=max(out, leave), stagger=0.03)
         # ---- And also… (a card on each beat)
-        if t_also - 0.1 <= t < t_pro + 0.3:
+        if t_also - 0.1 <= t < t_free + 0.3:
             at_ = t - t_also
-            leave = smooth((t - t_pro + 0.1) / 0.3)
+            leave = smooth((t - t_free + 0.1) / 0.3)
             also_title.draw(frame, W / 2, 470, at_, out=leave, stagger=word_step)
             for j, card in enumerate(also_cards):
                 on = beat * (j + 1)
@@ -546,9 +544,9 @@ def make(film, frames_dir, out_path, song=None, analysis=None):
                     continue
                 c = tilt(card, -3 + j * 1.5)
                 mv.put_fading(frame, c, W / 2 + (j % 2) * 30 - 15, 690 + j * 175 + 140 * (1 - p), smooth((at_ - on) / 0.2) * (1 - leave))
-        # ---- Islet Pro (its extras one per beat).
-        if t_pro - 0.1 <= t < t_end + 0.3:
-            pt = t - t_pro
+        # ---- All free (the extras one per beat).
+        if t_free - 0.1 <= t < t_end + 0.3:
+            pt = t - t_free
             leave = smooth((t - t_end + 0.1) / 0.3)
             r, g, b = (int(v * 255) for v in colorsys.hsv_to_rgb((pt * 0.4) % 1, 0.6, 1))
             pill = Image.new("RGBA", (720, 260), (0, 0, 0, 0))
@@ -566,16 +564,16 @@ def make(film, frames_dir, out_path, song=None, analysis=None):
             mv.put_fading(frame, pill, W / 2, 380, smooth(pt / 0.25) * (1 - leave))
             land = back(pt / 0.45)
             k = (1.2 - 0.2 * land) * (1 + 0.02 * kick)
-            pti = pro_title.resize((max(1, int(pro_title.width * k)), max(1, int(pro_title.height * k))), Image.BICUBIC)
+            pti = free_title.resize((max(1, int(free_title.width * k)), max(1, int(free_title.height * k))), Image.BICUBIC)
             mv.put_fading(frame, pti, W / 2, 610, smooth(pt / 0.2) * (1 - leave))
-            pro_sub.draw(frame, W / 2, 740, pt - beat, out=leave, stagger=0.03)
-            # Where to get it, after the last extra, with a pop on its beat.
+            free_sub.draw(frame, W / 2, 740, pt - beat, out=leave, stagger=0.03)
+            # "Everything included", after the last extra, with a pop on its beat.
             gp = back((pt - beat * 9) / 0.4)
             if gp > 0:
                 k = (0.85 + 0.15 * gp) * (1 + 0.025 * kick)
-                gi = get_pro.resize((max(1, int(get_pro.width * k)), max(1, int(get_pro.height * k))), Image.BICUBIC)
+                gi = everything.resize((max(1, int(everything.width * k)), max(1, int(everything.height * k))), Image.BICUBIC)
                 mv.put_fading(frame, gi, W / 2, 1330, smooth((pt - beat * 9) / 0.2) * (1 - leave))
-            for j, card in enumerate(pro_cards):
+            for j, card in enumerate(free_cards):
                 col, row = j % 2, j // 2
                 on = beat * (2 + j)
                 p = back((pt - on) / 0.4)
@@ -607,9 +605,9 @@ def make(film, frames_dir, out_path, song=None, analysis=None):
                 mv.put_fading(frame, bt, W / 2, 990, smooth((et - 3 * beat) / 0.2))
             url.draw(frame, W / 2, 1110, et - 4 * beat, stagger=0.0)
             plats.draw(frame, W / 2, 1190, et - 5 * beat, stagger=0.04)
-            pro_line.draw(frame, W / 2, 1275, et - 6 * beat, stagger=word_step)
+            free_line.draw(frame, W / 2, 1275, et - 6 * beat, stagger=word_step)
         # A zoom-blur on each cut, which all fall on bar lines.
-        for cut in (t_story, t_also, t_pro, t_end):
+        for cut in (t_story, t_also, t_free, t_end):
             d = abs(t - cut)
             if d < 0.16:
                 frame = zoom_blur(frame, 1 - d / 0.16)

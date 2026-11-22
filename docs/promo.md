@@ -22,7 +22,7 @@ The videos are silent on purpose. Add a sound when you post, from TikTok's, Inst
 
 ## Launch reels (the newest style)
 
-Five 29-second vertical reels in the style of an app-launch video: the island floating big on a deep, lit background (no fake phone), a 3D title, words that fade in from a blur, a punch-in on every bar and a zoom-blur between parts, an "And also…" stack, an Islet Pro card and a Download on GitHub ending. The music is an original 170 BPM track (breakbeat, bass, chord stabs and a lead hook) made by `music.banger()`, with a snare roll into the first drop and a crash on every new part.
+Five 29-second vertical reels in the style of an app-launch video: the island floating big on a deep, lit background (no fake phone), a 3D title, words that fade in from a blur, a punch-in on every bar and a zoom-blur between parts, an "And also…" stack, an "All free" card and a Download on GitHub ending. The music is an original 170 BPM track (breakbeat, bass, chord stabs and a lead hook) made by `music.banger()`, with a snare roll into the first drop and a crash on every new part.
 
 ```bash
 python3 scripts/promo/make-reels.py --out promo-videos
