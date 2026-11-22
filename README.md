@@ -16,3 +16,5 @@ To download one, click its name above, then click the download button (the arrow
 `islet-pro-cover.png` (wide) and `islet-pro-thumbnail.png` (square) are for the Islet Pro page on Gumroad.
 
 `islet-profile.png` (1024 x 1024) is a profile picture; it still fits when an app crops it round.
+
+`islet-youtube-thumbnail.png` (1280 x 720) is the thumbnail for the YouTube tutorial.
