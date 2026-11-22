@@ -12,6 +12,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ### Added
 - Computer: a **12-hour or 24-hour clock** (Settings → General → Clock, or `islet look hours 12|24|auto`). Automatic follows the system's language.
 - Computer: the **Notch** shape (Settings → General → Shape) is free: square top corners that join the island to the top of the screen.
+- Phone: **Pop-ups → Grow downward**. Pop-ups drop down from the camera in a narrow pill instead of spreading sideways, and notifications open just under the status bar, so its clock and battery (on Samsung phones, for one) stay in view.
 
 ### Removed
 - `islet pro …` commands, the stored Pro key, and the release workflow's store variables (`ISLET_GUMROAD_PRODUCT`, `ISLET_BUY_URL` and the rest).

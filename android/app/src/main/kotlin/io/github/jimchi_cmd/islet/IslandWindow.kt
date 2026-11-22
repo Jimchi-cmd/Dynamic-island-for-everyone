@@ -309,6 +309,7 @@ class IslandWindow(private val context: Context, private val type: Int) {
                 "seconds" -> 14.0
                 else -> 0.0
             },
+            prefs.popsDown,
         )
         // Round the camera either way. (As an ordinary overlay, some phones'
         // status bars take taps on the small pill; the accessibility switch

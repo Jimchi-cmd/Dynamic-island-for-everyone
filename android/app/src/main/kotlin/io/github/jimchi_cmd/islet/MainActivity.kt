@@ -469,6 +469,7 @@ class MainActivity : AppCompatActivity() {
             Sensors.refresh()
         })
         val pops = kit.card(col, "Pop-ups")
+        pops.add(kit.toggleRow("Grow downward", "Pop-ups drop down from the camera instead of spreading sideways, and notifications open under the status bar, so its clock and battery stay in view.", prefs.popsDown) { prefs.popsDown = it; changed() })
         pops.add(kit.toggleRow("Notifications", "On the lock screen only the app's name shows.", prefs.popNotes) { prefs.popNotes = it })
         pops.add(kit.toggleRow("Charging and low battery", null, prefs.popPower) { prefs.popPower = it })
         pops.add(kit.toggleRow("Ring, vibrate and silent", "Also airplane mode and Do Not Disturb.", prefs.popModes) { prefs.popModes = it })

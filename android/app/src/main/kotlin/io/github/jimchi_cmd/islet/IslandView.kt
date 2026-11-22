@@ -934,7 +934,14 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                     battery(c, box.right - pad - 16 * dp, cy, p.battery, colour, number = true)
                 }
             }
-            is Pop.Level -> {
+            is Pop.Level -> if (geometry.popsDown) {
+                // Grown downward: under the camera, the icon, a bar and the amount in one row.
+                val ty = box.top + (geometry.idleHeight * dp).toFloat() + 12 * dp
+                val i = if (p.kind == Pop.LevelKind.Volume) Icon.Sound else Icon.Brightness
+                icon(c, i, box.left + 20 * dp, ty, 15f, white)
+                write(c, "${(p.fraction * 100).toInt().coerceIn(0, 100)}%", box.right - 14 * dp, ty + 5 * dp, 13f, white, bold = true, align = Paint.Align.RIGHT)
+                bar(c, box.left + 34 * dp, box.right - 52 * dp, ty, p.fraction, white, 5f)
+            } else {
                 // As on the computer: the icon and the amount by the camera, a bar under it.
                 val row = (geometry.idleHeight * dp).toFloat()
                 val ty = box.top + row / 2
@@ -961,7 +968,9 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                     is Pop.Payment -> Quad(Icon.Check, green, "Paid", p.amount)
                     else -> Quad(null, white, "", "")
                 }
-                if (i == null) {
+                if (geometry.popsDown) {
+                    droppedPop(c, p, box, i, colour, left, right)
+                } else if (i == null) {
                     write(c, left, box.centerX(), cy + 5 * dp, 14f, white, bold = true, max = box.width() - 24 * dp, align = Paint.Align.CENTER)
                 } else {
                     icon(c, i, lx, cy, 16f, colour)
@@ -979,6 +988,37 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     }
 
     private data class Quad(val icon: Icon?, val color: Int, val left: String, val right: String)
+
+    /**
+     * A small pop-up grown downward: the camera's pill on top, and under it
+     * the icon and what happened, then the amount (with the battery, for
+     * charging). With only one of them, one line in the middle.
+     */
+    private fun droppedPop(c: Canvas, p: Pop, box: RectF, i: Icon?, colour: Int, left: String, right: String) {
+        val top = box.top + (geometry.idleHeight * dp).toFloat()
+        val room = box.width() - 20 * dp
+        val first = left.ifEmpty { right }
+        val second = if (left.isEmpty()) "" else right
+        val y1 = if (second.isEmpty()) (top + box.bottom) / 2 else top + 13 * dp
+        // The icon and the first line, centred together.
+        val iconW = if (i != null) 22 * dp else 0f
+        val w1 = minOf(measure(first, 14f, true), room - iconW)
+        val x1 = box.centerX() - (iconW + w1) / 2
+        if (i != null) icon(c, i, x1 + 8 * dp, y1, 15f, colour)
+        write(c, first, x1 + iconW, y1 + 5 * dp, 14f, if (i == null) white else colour, bold = true, max = room - iconW)
+        if (second.isEmpty()) return
+        val y2 = top + 33 * dp
+        val battery = (p as? Pop.Charging)?.level ?: (p as? Pop.LowBattery)?.level
+        if (battery != null) {
+            val tw = measure(second, 13f, true)
+            val x2 = box.centerX() - (tw + 34 * dp) / 2
+            write(c, second, x2, y2 + 4.5f * dp, 13f, white, bold = true)
+            battery(c, x2 + tw + 20 * dp, y2, battery, colour)
+        } else {
+            val tone = if (p is Pop.Wifi) grey else colour
+            write(c, second, box.centerX(), y2 + 4.5f * dp, 13f, tone, bold = true, max = room, align = Paint.Align.CENTER)
+        }
+    }
 
     /** The sender's picture if the notification has one, else their initial on a colour, with the app's icon in the corner. */
     private fun avatar(c: Canvas, extra: NoteExtra?, name: String, cx: Float, cy: Float, locked: Boolean) {

@@ -340,6 +340,33 @@ class IslandTest {
     }
 
     @Test
+    fun pop_ups_can_grow_down_clear_of_the_status_bar() {
+        val cam = Camera(205.0, 18.0, 24.0, 24.0)
+        val side = Geometry(411.0, cam)
+        val down = Geometry(411.0, cam, popsDown = true)
+        val idle = down.box(Scene.Idle)
+        val charging = Scene.Popped(Pop.Charging(64, true))
+        // Sideways, the pill spreads over the status bar's clock and icons.
+        assertTrue(side.box(charging).w > 200)
+        // Downward, it stays about as narrow as the camera's pill and grows down.
+        val small = down.box(charging)
+        assertTrue(small.w <= 160 && small.w >= idle.w, "narrow: ${small.w}")
+        assertEquals(idle.y, small.y, "from the camera")
+        assertEquals(idle.centerX, small.centerX)
+        assertTrue(small.h > idle.h + 30, "taller, for the words under the camera")
+        val level = down.box(Scene.Popped(Pop.Level(Pop.LevelKind.Volume, 0.5f)))
+        assertTrue(level.w == small.w && level.h > idle.h && level.h < small.h)
+        // Cards (a notification) open under the status bar, not over it.
+        val note = down.box(Scene.Popped(Pop.Note("k", "Chat", "Sam", "Hi", emptyList(), 1)))
+        assertTrue(note.y >= idle.bottom, "below the camera's pill: ${note.y} vs ${idle.bottom}")
+        assertTrue(note.w > 300)
+        assertEquals(side.box(Scene.Popped(Pop.Note("k", "Chat", "Sam", "Hi", emptyList(), 1))).h, note.h)
+        // Nothing else changes.
+        assertEquals(side.box(Scene.Compact(music, null)), down.box(Scene.Compact(music, null)))
+        assertEquals(side.box(Scene.Expanded(music)), down.box(Scene.Expanded(music)))
+    }
+
+    @Test
     fun the_to_do_list_survives_being_stored() {
         val items = listOf(Todo("Buy milk", false), Todo("Essay\nmaybe", true))
         val back = Lists.decodeTodos(Lists.encodeTodos(items))

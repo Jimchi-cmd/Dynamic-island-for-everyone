@@ -63,6 +63,11 @@ class Prefs(context: Context) {
         get() = flag("notch", false)
         set(v) = set("notch", v)
 
+    /** Pop-ups grow down from the camera, clear of the status bar's clock and icons. */
+    var popsDown: Boolean
+        get() = flag("pops_down", false)
+        set(v) = set("pops_down", v)
+
     /** "black", "tinted" (a dark shade of the accent colour), or "glass": frosted, with a light rim. */
     var style: String
         get() = p.getString("style", "black") ?: "black"

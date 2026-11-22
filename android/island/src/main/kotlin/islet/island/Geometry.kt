@@ -38,6 +38,13 @@ class Geometry(
     val lyricsRow: Boolean = false,
     /** Extra room each side of the camera for a longer clock ("Wed 14:05", seconds), dp. */
     val clockExtra: Double = 0.0,
+    /**
+     * Pop-ups grow down from the camera instead of out to the sides, so the
+     * status bar's clock and icons either side of it stay in view: small
+     * ones keep a narrow pill with their content under the camera, and
+     * cards (notifications) drop below the status bar.
+     */
+    val popsDown: Boolean = false,
 ) {
     private val k get() = size.scale
 
@@ -73,7 +80,7 @@ class Geometry(
         } else {
             centered(idleWidth + 2 * wing, idleHeight, idleHeight / 2)
         }
-        is Scene.Popped -> when (scene.pop) {
+        is Scene.Popped -> if (popsDown) dropped(scene.pop) else when (scene.pop) {
             is Pop.Note -> centered(cardWidth - 8, (if (scene.pop.actions.isEmpty()) 82.0 else 112.0) * k, 36.0 * k)
             is Pop.Level -> centered(idleWidth + 2 * wing + 30 * k, idleHeight + 22 * k, idleHeight / 2)
             is Pop.Screenshot, is Pop.TimerDone, is Pop.Bluetooth ->
@@ -87,6 +94,23 @@ class Geometry(
         Scene.Peek -> centered(idleWidth + 2 * (wing + 30 * k), idleHeight + 4 * k, (idleHeight + 4 * k) / 2)
         Scene.Calendar -> centered(cardWidth, 344.0 * k, 40.0 * k)
     }
+
+    /** A pop-up that grows downward (see `popsDown`). */
+    private fun dropped(pop: Pop): Box = when (pop) {
+        is Pop.Note, is Pop.Screenshot, is Pop.TimerDone, is Pop.Bluetooth -> {
+            val h = (if (pop is Pop.Note) (if (pop.actions.isEmpty()) 82.0 else 112.0) else 78.0) * k
+            val w = if (pop is Pop.Note) cardWidth - 8 else cardWidth - 12
+            centered(w, h, if (pop is Pop.Note) 36.0 * k else 34.0 * k).copy(y = belowStatusBar)
+        }
+        is Pop.Level -> centered(dropWidth, idleHeight + DROP_LEVEL * k, idleHeight / 2)
+        else -> centered(dropWidth, idleHeight + DROP_ROWS * k, idleHeight / 2)
+    }
+
+    /** A dropped pop-up's width: the camera's pill, or a little wider for its words. */
+    val dropWidth get() = maxOf(idleWidth, DROP_WIDTH * k)
+
+    /** Just under the camera's pill, which is about where the status bar ends. */
+    val belowStatusBar get() = top + idleHeight + 4 * k
 
     private fun expandedHeight(live: Live?): Double = when (live) {
         null, is Live.Music -> 0.0
@@ -109,6 +133,11 @@ class Geometry(
 
         /** Room at the top of an open card for its "‹ Control Centre" button (dp). */
         const val CARD_HEADER = 40.0
+
+        /** A dropped pop-up: its narrowest width, and the rows under the camera (dp). */
+        const val DROP_WIDTH = 150.0
+        const val DROP_ROWS = 46.0
+        const val DROP_LEVEL = 30.0
     }
 
     /** The second activity's round bubble, right of the pill. */

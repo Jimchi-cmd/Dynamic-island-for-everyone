@@ -59,6 +59,8 @@ Notification pop-ups show the sender's picture (or their initial), how many mess
 
 Pop-ups, each with its own switch: new notifications, charging, fully charged and low battery (20, 10 and 5 %), ring / vibrate / silent, airplane mode, Do Not Disturb, Wi-Fi and Bluetooth connecting (with earbuds' and headphones' battery when they report it), volume and brightness (off until you switch it on; Android's own slider still shows too, and brightness shows only when set by hand), new screenshots, and timers ending. Every open card has a **‹ Control Centre** button at its top. Notifications don't pop up during Do Not Disturb, and **Apps that never pop up** keeps chosen apps quiet.
 
+**Grow downward** (Pop-ups, off at first): if the pop-ups spread over your status bar's clock and battery (on many Samsung phones they do), switch this on. Charging, silent mode, Wi-Fi, volume and the rest then drop down from the camera in a narrow pill, with their words under the camera, and notifications open just below the status bar instead of over it.
+
 ### Control centre
 
 Long-press the island, or tap **‹ Control Centre** on any open card. It looks like the computer's: the time and date, the weather with today's high and low, Wi-Fi and Bluetooth (blue while on, with the network's name), round buttons for to-do, the speed test and the toggles, and a second row with search, the calendar, a screenshot and lock. Opened from a card, a **Now Playing ›** button (or Timer ›, Directions › and so on) at the top goes back to it.

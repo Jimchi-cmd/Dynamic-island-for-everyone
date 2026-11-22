@@ -57,6 +57,54 @@ class LooksTest {
     }
 
     @Test
+    fun pop_ups_grown_downward_stay_by_the_camera() {
+        val v = fresh()
+        Isle.prefs.popsDown = true
+        Isle.island.pop(Pop.Charging(64, true), Isle.now())
+        v.update()
+        v.settle()
+        val box = v.drawnBox()!!
+        assertTrue("narrow, not across the status bar: ${box.w}", box.w <= 170)
+        Isle.island.dismissPop(Isle.now())
+        Isle.prefs.popsDown = false
+        Isle.onChange = null
+    }
+
+    @Test
+    fun pop_ups_both_ways() {
+        // Set ISLET_SHOTS to a folder to save each pop-up sideways and grown downward.
+        val dir = System.getenv("ISLET_SHOTS") ?: return
+        val v = fresh()
+        val dm = ctx.resources.displayMetrics
+        File(dir).mkdirs()
+        fun shot(name: String, heightDp: Int = 130) {
+            v.update()
+            v.settle()
+            val bmp = Bitmap.createBitmap(dm.widthPixels, (heightDp * dm.density).toInt(), Bitmap.Config.ARGB_8888)
+            bmp.eraseColor(0xff2b2b33.toInt())
+            v.draw(Canvas(bmp))
+            File(dir, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        val pops = listOf(
+            "charging" to Pop.Charging(64, true),
+            "silent" to Pop.Ringer(Pop.RingerMode.Silent),
+            "wifi" to Pop.Wifi("Home"),
+            "volume" to Pop.Level(Pop.LevelKind.Volume, 0.6f),
+            "note" to Pop.Note("k", "Chat", "Sam", "Are you coming tonight?"),
+        )
+        for (down in listOf(false, true)) {
+            Isle.prefs.popsDown = down
+            for ((name, pop) in pops) {
+                Isle.island.pop(pop, Isle.now())
+                shot("pop-${if (down) "down" else "side"}-$name")
+                while (Isle.island.scene(Isle.now()) is Scene.Popped) Isle.island.dismissPop(Isle.now())
+            }
+        }
+        Isle.prefs.popsDown = false
+        Isle.onChange = null
+    }
+
+    @Test
     fun pictures() {
         // Set ISLET_SHOTS to a folder to save how each looks.
         val dir = System.getenv("ISLET_SHOTS") ?: return
