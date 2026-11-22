@@ -129,6 +129,41 @@ class TouchTest {
     }
 
     @Test
+    fun as_an_overlay_the_window_corner_never_moves_as_the_island_grows_and_shrinks() {
+        Isle.init(ctx)
+        Isle.island.all.forEach { Isle.island.remove(it.id) }
+        Isle.island.close(0)
+        Isle.island.dismissPop(0)
+        Isle.island.put(Live.Music("Song", "Band", "Player", true, 200_000, 0, SystemClock.elapsedRealtime()))
+        val w = IslandWindow(ctx, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        w.attach()
+        val v = w.view
+        Isle.onChange = { v.update() }
+        val bmp = android.graphics.Bitmap.createBitmap(10, 10, android.graphics.Bitmap.Config.ARGB_8888)
+        fun frameAfter(step: () -> Unit): List<Int> {
+            step()
+            // Through the change frame by frame, as the screen draws it.
+            repeat(40) {
+                org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(16))
+                v.draw(android.graphics.Canvas(bmp))
+            }
+            return w.frame()
+        }
+        val small = frameAfter { v.update() }
+        val corner = small.take(2)
+        val open = frameAfter { Isle.island.open("music"); Isle.changed() }
+        assertTrue("the window grew for the card: $small → $open", open[2] > small[2] && open[3] > small[3])
+        assertEquals("…without moving its corner", corner, open.take(2))
+        val shut = frameAfter { Isle.island.close(Isle.now()); Isle.changed() }
+        assertEquals("…nor when it shrank back", corner, shut.take(2))
+        assertTrue("it shrank back: $open → $shut", shut[3] < open[3])
+        val popped = frameAfter { Isle.pop(islet.island.Pop.Info("Bluetooth on")) }
+        assertEquals("…nor for a pop-up", corner, popped.take(2))
+        w.detach()
+        Isle.onChange = null
+    }
+
+    @Test
     fun a_real_swipe_up_closes_and_is_not_a_tap() {
         val v = view()
         Isle.island.tap(Isle.now())

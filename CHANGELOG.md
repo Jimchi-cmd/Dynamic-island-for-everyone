@@ -8,6 +8,11 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - Islet Pro can be sold through **Gumroad** (set `ISLET_GUMROAD_PRODUCT`), as well as Polar and Lemon Squeezy. Keys are checked with Gumroad's public license API; a key works on up to five computers.
 - The launch reels can be cut to any song: `scripts/promo/beats.py` finds its tempo, beats and bars, and `make-reels.py --song` starts each reel two bars before a drop, puts every cut on a bar line, times the island's moments to the beat, and drives the punches, streaks and glow from the song's kicks, snares and loudness.
 
+### Fixed
+- Phone: the island no longer twitches sideways as it grows or shrinks (opening and closing a card, or a pop-up such as Bluetooth on or off). Its window's top left corner now stays put and only its size changes: on many phones a window that moved showed up a frame apart from what was drawn in it.
+- Phone: the island no longer jumps when the screen's insets briefly leave out the camera hole (for instance while the quick settings are open): the camera's place now comes from the screen itself, and is kept once found.
+- Islet Pro cover and thumbnail for the store page (`scripts/promo/make-cover.py`).
+
 ## [0.4.7] - 2026-11-19
 
 ### Fixed

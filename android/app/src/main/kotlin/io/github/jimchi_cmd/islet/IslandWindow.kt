@@ -153,15 +153,24 @@ class IslandWindow(private val context: Context, private val type: Int) {
         }
         val d = density
         val (x, y, w, h) = if (box == null) {
-            listOf(0, 0, 1, 1)
+            // Hidden: a dot at the same corner, so showing again doesn't move it either.
+            val (ax, ay) = anchor()
+            listOf(ax, ay, 1, 1)
         } else {
+            // The window's top left corner stays put, at the top left of the
+            // widest card: as the island grows and shrinks only the window's
+            // width and height change. Moving a window lands on screen a frame
+            // apart from what's drawn in it, and the island jumped sideways
+            // for that frame; a window that only changes size never moves
+            // what's already drawn.
             // Room round the pill for its glowing rim, and a little more
             // below it so a thumb that lands just under the small pill still
             // reaches it (the screen's edge is right above).
             val m = (10 * d).toInt()
             val below = (18 * d).toInt()
-            val l = floor(box.x * d).toInt() - m
-            val t = floor(box.y * d).toInt() - m
+            val (ax, ay) = anchor()
+            val l = minOf(ax, floor(box.x * d).toInt() - m)
+            val t = minOf(ay, floor(box.y * d).toInt() - m)
             listOf(l, t, ceil(box.right * d).toInt() + m - l, ceil(box.bottom * d).toInt() + below - t)
         }
         val touchable = box != null
@@ -182,6 +191,17 @@ class IslandWindow(private val context: Context, private val type: Int) {
             // Detached meanwhile.
         }
     }
+
+    /** The overlay window's fixed corner (px): the top left of the widest card, less the rim. */
+    private fun anchor(): Pair<Int, Int> {
+        val d = density
+        val m = (10 * d).toInt()
+        val card = geometry().box(islet.island.Scene.Controls)
+        return Pair(floor(card.x * d).toInt() - m, floor(card.y * d).toInt() - m)
+    }
+
+    /** For tests: where the single overlay window is (x, y, width, height). */
+    internal fun frame() = listOf(params.x, params.y, params.width, params.height)
 
     private fun placeSplit(box: Box?) {
         val d = density
@@ -229,6 +249,9 @@ class IslandWindow(private val context: Context, private val type: Int) {
         }
     }
 
+    /** The last camera found, and the screen width it was found at. */
+    private var lastCamera: Pair<Double, Camera>? = null
+
     val landscape get() = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     /** The screen's size and the front camera's place, in dp. */
@@ -240,16 +263,37 @@ class IslandWindow(private val context: Context, private val type: Int) {
         if (Build.VERSION.SDK_INT >= 30) {
             val m = wm.currentWindowMetrics
             width = m.bounds.width().toDouble()
-            cutout = m.windowInsets.displayCutout?.boundingRects?.firstOrNull { it.top <= 0 || it.top < it.height() }
-        } else if (Build.VERSION.SDK_INT >= 28) {
+        }
+        // The camera hole, from the screen itself: it never changes. (The
+        // insets of the moment can leave it out, for instance while the
+        // quick settings are open, and the island jumped to the middle of
+        // the screen and back.)
+        if (Build.VERSION.SDK_INT >= 29) {
+            cutout = try {
+                @Suppress("DEPRECATION")
+                wm.defaultDisplay?.cutout?.boundingRects?.firstOrNull { it.top <= 0 || it.top < it.height() }
+            } catch (e: Exception) {
+                null
+            }
+        }
+        if (cutout == null && Build.VERSION.SDK_INT >= 30) {
+            cutout = wm.currentWindowMetrics.windowInsets.displayCutout?.boundingRects?.firstOrNull { it.top <= 0 || it.top < it.height() }
+        } else if (cutout == null && Build.VERSION.SDK_INT >= 28) {
             // Older Androids only say where the cutout is relative to a window.
             cutout = view.rootWindowInsets?.displayCutout?.boundingRects?.firstOrNull()?.let {
                 Rect(it).apply { offset(params.x, params.y) }
             }
         }
         // A cutout as wide as a notch, or one at a corner, still gets a pill.
-        val camera = cutout?.takeIf { it.width() > 0 && it.height() > 0 && !landscape }?.let {
+        var camera = cutout?.takeIf { it.width() > 0 && it.height() > 0 && !landscape }?.let {
             Camera(it.exactCenterX() / d.toDouble(), it.exactCenterY() / d.toDouble(), it.width() / d.toDouble(), it.height() / d.toDouble())
+        }
+        // Once found, the camera stays where it was for this screen width: a
+        // moment without it mustn't move the island.
+        if (camera != null) {
+            lastCamera = width to camera
+        } else if (!landscape) {
+            lastCamera?.takeIf { it.first == width }?.let { camera = it.second }
         }
         fun make(extraY: Double) = Geometry(
             width / d,
