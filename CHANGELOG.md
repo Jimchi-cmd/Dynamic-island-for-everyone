@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-23
+
 ### Changed
 - **Opening and closing the island** (computer and phone): the pill stretches sideways first, then drops into a card (closing, the other way round), and the card's content unfolds row by row as the outline grows past it, a little smaller until it is open, instead of an empty black shape followed by everything popping in cut off at the edge.
 
