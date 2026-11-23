@@ -8,8 +8,6 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ### Changed
 - **Opening and closing the island** (computer and phone): the pill stretches sideways first, then drops into a card (closing, the other way round), and the card's content unfolds row by row as the outline grows past it, a little smaller until it is open, instead of an empty black shape followed by everything popping in cut off at the edge.
-
-### Changed
 - More of Islet speaks your language: the command line's messages (and so Settings' error messages), the world clocks' cities, the calendar's weekday letters and month titles, and the alarm days in Settings. The phone's calendar and its world clock cities now follow the language picked in Islet instead of the phone's. `islet --help` stays in English.
 
 ## [0.8.0] - 2026-11-23
