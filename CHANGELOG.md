@@ -2,7 +2,7 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.6.0] - 2026-11-23
 
 ### Changed
 - Phone: the **music card** is redesigned from a Figma mock-up to match the computer's: the player's name in a tag at the top right, a progress bar in the cover's colour, a big white play/pause button between previous and next, round sleep-timer and lyrics buttons, the volume under them, and the lyrics at the bottom. With lyrics off, the card is shorter instead of leaving a gap.
