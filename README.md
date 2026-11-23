@@ -127,7 +127,7 @@ Right-click the island for its menu: Islet Settings, hide it for an hour, pause 
 
 Bug reports and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md), including how to add a new activity, and the [code of conduct](CODE_OF_CONDUCT.md). Report security problems privately ([SECURITY.md](SECURITY.md)).
 
-More docs: [roadmap](docs/roadmap.md) · [design spec](docs/design-spec.md) · [architecture](docs/architecture.md) · [performance](docs/perf.md) · [navigation](docs/navigation.md) · [signing](docs/signing.md) · [publishing checklist](docs/publishing-checklist.md) · [changelog](CHANGELOG.md)
+More docs: [roadmap](docs/roadmap.md) · [design spec](docs/design-spec.md) · [architecture](docs/architecture.md) · [performance](docs/perf.md) · [navigation](docs/navigation.md) · [signing](docs/signing.md) · [code signing policy](CODE_SIGNING_POLICY.md) · [publishing checklist](docs/publishing-checklist.md) · [changelog](CHANGELOG.md)
 
 ## Legal
 

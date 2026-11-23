@@ -2,7 +2,28 @@
 
 Unsigned builds work but users see warnings: SmartScreen on Windows, and Gatekeeper on macOS, where users must click "Open Anyway". This page lists what to set up and where. **Never commit keys or certificates.** They go in the repository's GitHub **Settings → Secrets and variables → Actions**, and `.gitignore` refuses common key files.
 
+## Start here: what fixes which warning
+
+| Warning | Fix | Cost | Who does it |
+|---|---|---|---|
+| Phone: a new version won't install over the old one ("App not installed") | the phone signing key (step A) | free | you, once, about 10 minutes |
+| Computer: Settings can't update Islet in place | the update key (step A) | free | you, once, with step A |
+| Windows: "Windows protected your PC" (SmartScreen) | SignPath Foundation (step B) | free, after approval | you apply; they check the project |
+| Mac: "Apple could not verify…" | Developer ID and notarization (section 2) | $99 a year | you, with an Apple Developer account |
+| Phone: Android may warn about an unverified developer ([from 2027 in most countries](https://android-developers.googleblog.com/2026/03/android-developer-verification.html)) | Android developer verification | free for up to 20 devices; $25 to share widely | you, with a Google account |
+
+**Step A: make the keys (one command).** On your own computer, in a copy of this repository (or with just the script downloaded):
+
+- Windows: `powershell -ExecutionPolicy Bypass -File scripts\setup-signing.ps1`
+- macOS or Linux: `scripts/setup-signing.sh`
+
+It needs Java (for `keytool`) and Node.js; on Windows, `winget install Microsoft.OpenJDK.21` and `winget install OpenJS.NodeJS.LTS` install them. It makes both keys in an `islet-keys` folder in your home folder, never inside the repository. If the [GitHub command line](https://cli.github.com/) is installed and signed in (`gh auth login`), it adds them to the repository's secrets itself; otherwise it writes `paste-into-github.txt` saying what to paste where. **Back the folder up**: losing a key means phones must reinstall Islet and computers must update by hand. The next release is then signed.
+
+**Step B: apply to SignPath Foundation.** Go to [signpath.org/apply](https://signpath.org/apply.html) and give: the project name (Islet), the repository (`https://github.com/Jimchi-cmd/Dynamic-island-for-everyone`), the license (MIT), that releases are built by GitHub Actions from the public code (`.github/workflows/release.yml`), and the code signing policy ([CODE_SIGNING_POLICY.md](../CODE_SIGNING_POLICY.md)). Turn on two-factor authentication on GitHub first: they require it. Once approved, add the values in section 3 below; the release workflow already sends the installers for signing. SmartScreen can still warn for a while after the first signed release, until enough people have run it.
+
 ## 1. Update signing (free, recommended first)
+
+Step A does this for you. By hand:
 
 In-app updates are verified with an Ed25519 key. Without it, releases still build, but Settings sends users to the download page instead of updating in place.
 

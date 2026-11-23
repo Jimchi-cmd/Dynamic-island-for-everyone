@@ -4,6 +4,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+- **Release keys in one step**: `scripts/setup-signing.ps1` (Windows) or `scripts/setup-signing.sh` makes the phone app's signing key and the update key on the maintainer's own computer and adds them to the repository's secrets (or says what to paste). With them, each phone release installs over the last one and Islet on a computer can update itself in place. A [code signing policy](CODE_SIGNING_POLICY.md) and a plain checklist ([docs/signing.md](docs/signing.md)) for the free Windows signing from SignPath Foundation.
+
 ## [0.9.0] - 2026-11-23
 
 ### Changed

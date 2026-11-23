@@ -184,7 +184,7 @@ islet phone unpair
 
 ## For the maintainer: a signing key for releases
 
-Without a signing key, each build is signed with a throwaway debug key, so a new build can't be installed over an old one. To sign releases with one key:
+Without a signing key, each build is signed with a throwaway debug key, so a new build can't be installed over an old one (Android says "App not installed": uninstall Islet first, then install the new one). `scripts/setup-signing.sh` (or `setup-signing.ps1` on Windows) does the steps below in one go ([docs/signing.md](signing.md)). The first signed release still needs that one reinstall over a debug-signed one; every release after it installs over the last. To sign releases with one key by hand:
 
 1. Make a keystore once, on your own computer, and keep it and its passwords safe (losing it means users must reinstall):
 

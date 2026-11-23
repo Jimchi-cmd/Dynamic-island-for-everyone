@@ -15,6 +15,11 @@ Thumbs.db
 .env
 .env.*
 *.key
+*.key.pub
+*.jks
+*.keystore
+islet-keys/
+paste-into-github.txt
 *.pem
 *.p12
 *.pfx
