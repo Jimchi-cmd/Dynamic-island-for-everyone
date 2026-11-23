@@ -51,7 +51,7 @@ const BUBBLE_MERGE: Spring = Spring::new(0.32, 1.0);
 /// Above this pill height the bubble is fully merged.
 const BUBBLE_MAX_H: f64 = 60.0;
 /// Expanded content never shows below this pill height…
-const CONTENT_FROM_H: f64 = 55.0;
+const CONTENT_FROM_H: f64 = 62.0;
 /// …fades in over (at most) the last this-many px of the card's growth…
 const CONTENT_FADE_H: f64 = 60.0;
 /// …and cards are treated as at least this tall for the fade.
@@ -316,6 +316,8 @@ pub struct App {
     /// Height of the card when the island last opened: content fades
     /// relative to it, so short cards (a device list) fade in fully too.
     open_h: f64,
+    /// …and its width.
+    open_w: f64,
     /// The last closed presentation (Compact or Minimal): its layout is
     /// used for compact content while the island opens or closes.
     closed: Presentation,
@@ -463,6 +465,7 @@ impl App {
             locale_h24: true,
             locale: String::new(),
             open_h: MEDIA_H,
+            open_w: 372.0,
             closed: Presentation::Idle,
             notch: None,
             rotation: 0,
@@ -2562,11 +2565,38 @@ impl App {
     /// Expanded content fades and rises in as the pill grows taller, and out
     /// as it shrinks, so it never spills outside a closing island.
     pub fn expanded_opacity(&self, t: f64) -> f32 {
-        // Fade over the last stretch of the card's growth (at most 60 px),
-        // and never below 55 px so nothing shows in a compact-sized pill.
+        // Fade in early in the card's growth (never below CONTENT_FROM_H, so nothing
+        // shows in a compact-sized pill: 62 px); `unfold` shows each row only once
+        // the outline has passed it.
         let full = self.open_h.max(CONTENT_MIN_FULL_H);
-        let from = (full - CONTENT_FADE_H).max(CONTENT_FROM_H);
-        smooth((self.h.value(t) - from) / (full - from)) as f32
+        let span = CONTENT_FADE_H.min(full - CONTENT_FROM_H);
+        smooth((self.h.value(t) - CONTENT_FROM_H) / span) as f32
+    }
+
+    /// The card while the island opens or closes: laid out at its open size,
+    /// a little smaller while the outline is narrower (in a few steps, so
+    /// the text is drawn at only a few sizes), each row showing once the
+    /// outline has passed it, so nothing is cut off at the edge.
+    fn unfold(&self, els: &mut [Element], now: Rect, engine: &mut TextEngine) {
+        let k = (now.w / self.open_w.max(1.0)).clamp(0.8, 1.0);
+        let k = ((k * 50.0).round() / 50.0) as f32;
+        let from_bottom = self.placement.from_bottom();
+        let (ox, oy) = ((now.x + now.w / 2.0) as f32, if from_bottom { now.bottom() } else { now.y } as f32);
+        let edge = if from_bottom { now.y } else { now.bottom() } as f32;
+        for e in els.iter_mut() {
+            // Backgrounds (the photo, its shade, the dock's wash) fill the card as it is.
+            if let Element::Photo { .. } | Element::Tile { w: 300.0.., .. } = e {
+                continue;
+            }
+            let el = if k < 1.0 { e.clone().scaled(ox, oy, k) } else { e.clone() };
+            let past = islet_render::elements::bounds(&el, engine).map_or(1.0, |(x, y, w, h)| {
+                let room = if from_bottom { y - edge } else { edge - (y + h) };
+                // …and the sides, while the outline is still narrower.
+                let side = (x - now.x as f32).min(now.right() as f32 - (x + w));
+                (smooth(f64::from((room + 14.0) / 22.0)) * smooth(f64::from((side + 8.0) / 16.0))) as f32
+            });
+            *e = el.faded(past);
+        }
     }
 
     /// Compact content shows while the pill is wide and short.
@@ -2623,8 +2653,13 @@ impl App {
         let p = self.pill_rect(t);
         let mut out = Vec::new();
         let eo = self.expanded_opacity(t);
-        let cr = self.content_rect(p);
+        let first = out.len();
+        // While the outline moves, the card is laid out at its open size.
+        let moving = (p.w - self.open_w).abs() > 0.5 || (p.h - self.open_h).abs() > 0.5;
+        let now = p;
         if eo > 0.0 {
+            let p = if moving { self.pill_at(self.open_w, self.open_h) } else { p };
+            let cr = self.content_rect(p);
             let open = self.open_content(&live);
             // Activity cards: "‹ Control Centre" on top, the card below it.
             let card = if Self::has_header(&open) {
@@ -2805,6 +2840,9 @@ impl App {
                     }
                 }
             }
+            if moving {
+                self.unfold(&mut out[first..], now, engine);
+            }
         }
         let co = self.compact_opacity(t, &live);
         if co > 0.0 {
@@ -2963,7 +3001,18 @@ impl App {
     }
 
     fn set_targets(&mut self, (w, h, r): (f64, f64, f64), spring: Spring, t: f64) {
-        for (a, v) in [(&mut self.w, w), (&mut self.h, h), (&mut self.r, r)] {
+        // Opening, the width leads and the height follows (the pill stretches,
+        // then drops into a card); closing, the height goes first.
+        let opening = h > self.h.target() + 0.5;
+        let closing = h < self.h.target() - 0.5;
+        let quick = Spring::new(spring.response * 0.82, spring.damping);
+        let slow = Spring::new(spring.response * 1.08, spring.damping);
+        let (ws, hs) = match (opening, closing) {
+            (true, _) => (quick, slow),
+            (_, true) => (slow, quick),
+            _ => (spring, spring),
+        };
+        for (a, v, spring) in [(&mut self.w, w, ws), (&mut self.h, h, hs), (&mut self.r, r, hs)] {
             if self.reduce_motion {
                 a.snap(v);
             } else if (a.target() - v).abs() > 1e-9 {
@@ -2982,7 +3031,7 @@ impl App {
         let dims = self.target_dims(to, t);
         self.set_targets(dims, spring, t);
         if to.is_open() {
-            self.open_h = dims.1;
+            (self.open_w, self.open_h, _) = dims;
         } else {
             self.closed = to;
         }
@@ -3031,7 +3080,7 @@ impl App {
             let start = self.bounds(t);
             self.set_targets(dims, spring_for(p, p), t);
             if p.is_open() {
-                self.open_h = dims.1;
+                (self.open_w, self.open_h, _) = dims;
             }
             self.anim_region = start.union(&self.target_bounds());
             changed = true;
@@ -5557,6 +5606,61 @@ mod tests {
             }
         }
         islet_core::i18n::set_language("en");
+    }
+
+    /// The island opening and closing, frame by frame, for review:
+    /// `ISLET_ANIM_SHOTS=/path/dir cargo test -p islet anim_frames`
+    /// (one strip each: Control Centre opening, a song's card opening, Control Centre closing).
+    #[test]
+    fn anim_frames() {
+        let Some(dir) = std::env::var_os("ISLET_ANIM_SHOTS") else { return };
+        use tiny_skia::Pixmap;
+        let dir = std::path::PathBuf::from(dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut engine = TextEngine::new();
+        let times: Vec<f64> = (0..10).map(|i| f64::from(i) * 0.05).collect();
+        let shoot = |a: &App, t: f64, engine: &mut TextEngine| -> Pixmap {
+            let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
+            let mut cell = Pixmap::new(cw, ch).unwrap();
+            cell.fill(tiny_skia::Color::from_rgba8(52, 62, 110, 255));
+            let frame = a.frame(t);
+            islet_render::draw(&mut cell, &frame, 1.0);
+            let clip = islet_render::clip_mask(&frame, cw, ch, 1.0);
+            let els = a.elements(t, engine);
+            islet_render::elements::draw_elements(&mut cell, &els, engine, 1.0, clip.as_ref());
+            cell
+        };
+        let strip = |name: &str, cells: Vec<Pixmap>| {
+            let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
+            let mut out = Pixmap::new(cw * 5, ch * 2).unwrap();
+            for (i, c) in cells.iter().enumerate() {
+                let (x, y) = ((i % 5) as i32 * cw as i32, (i / 5) as i32 * ch as i32);
+                out.draw_pixmap(
+                    x,
+                    y,
+                    c.as_ref(),
+                    &tiny_skia::PixmapPaint::default(),
+                    tiny_skia::Transform::identity(),
+                    None,
+                );
+            }
+            out.save_png(dir.join(format!("{name}.png"))).unwrap();
+        };
+        // Control Centre opening from the empty island.
+        let mut a = App::new(Demo::None, false);
+        a.set_time(NOW, 0.0);
+        click(&mut a, 1.0);
+        let start = 1.05;
+        strip("open-cc", times.iter().map(|dt| shoot(&a, start + dt, &mut engine)).collect());
+        // …and closing again.
+        a.handle(Event::Key(Key::Escape), 5.0);
+        strip("close-cc", times.iter().map(|dt| shoot(&a, 5.0 + dt, &mut engine)).collect());
+        // A song's card opening from the compact pill.
+        let mut m = App::new(Demo::None, false);
+        m.set_time(NOW, 0.0);
+        m.report(Report::Media(Some(song(true))), 0.0);
+        click(&mut m, 3.0);
+        strip("open-music", times.iter().map(|dt| shoot(&m, 3.05 + dt, &mut engine)).collect());
     }
 
     /// Control Centre in each style, with a photo and a custom tint, for review:

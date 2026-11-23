@@ -143,6 +143,40 @@ pub enum Element {
 }
 
 impl Element {
+    /// The same element drawn `k` times as large about (ox, oy): positions
+    /// and sizes alike (content growing with the island as it opens).
+    pub fn scaled(self, ox: f32, oy: f32, k: f32) -> Element {
+        let sx = |x: f32| ox + (x - ox) * k;
+        let sy = |y: f32| oy + (y - oy) * k;
+        match self {
+            Element::Text(mut t) => {
+                t.x = sx(t.x);
+                t.baseline = sy(t.baseline);
+                t.style.size *= k;
+                t.window = t.window.map(|(l, r)| (sx(l), sx(r)));
+                Element::Text(t)
+            }
+            Element::Art { x, y, size, radius, image, opacity } => {
+                Element::Art { x: sx(x), y: sy(y), size: size * k, radius: radius * k, image, opacity }
+            }
+            Element::Icon { icon, x, y, size, color, opacity } => {
+                Element::Icon { icon, x: sx(x), y: sy(y), size: size * k, color, opacity }
+            }
+            Element::Ring { cx, cy, r, width, fraction, color, opacity } => {
+                Element::Ring { cx: sx(cx), cy: sy(cy), r: r * k, width: width * k, fraction, color, opacity }
+            }
+            Element::Bar { x, y, w, h, color, opacity } => {
+                Element::Bar { x: sx(x), y: sy(y), w: w * k, h: h * k, color, opacity }
+            }
+            Element::Tile { x, y, w, h, radius, color, color2, opacity } => {
+                Element::Tile { x: sx(x), y: sy(y), w: w * k, h: h * k, radius: radius * k, color, color2, opacity }
+            }
+            Element::Photo { x, y, w, h, radius, image, opacity } => {
+                Element::Photo { x: sx(x), y: sy(y), w: w * k, h: h * k, radius, image, opacity }
+            }
+        }
+    }
+
     /// The same element, `k` times as opaque (the whole island fading).
     pub fn faded(self, k: f32) -> Element {
         match self {
@@ -706,7 +740,8 @@ pub fn draw_elements(pm: &mut Pixmap, elements: &[Element], text: &mut TextEngin
 }
 
 /// The box an element covers (logical px).
-fn bounds(el: &Element, text: &mut TextEngine) -> Option<(f32, f32, f32, f32)> {
+/// Where an element is drawn: x, y, width, height (logical px).
+pub fn bounds(el: &Element, text: &mut TextEngine) -> Option<(f32, f32, f32, f32)> {
     match el {
         Element::Text(t) => {
             let w = text.measure(&t.text, &t.style);

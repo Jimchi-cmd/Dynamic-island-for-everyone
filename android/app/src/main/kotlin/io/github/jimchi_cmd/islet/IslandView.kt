@@ -41,6 +41,7 @@ import java.util.Date
 import java.util.TimeZone
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.pow
 import kotlin.math.sin
 
 /**
@@ -255,7 +256,63 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     private fun currentBox(): Box? {
         val f = from ?: return to
         val t = to ?: return f
-        return f.lerp(t, morph.value)
+        // Opening, the width leads and the height follows (the pill
+        // stretches, then drops into a card); closing, the height goes first.
+        val v = morph.value
+        val ahead = if (v < 1) 1 - (1 - v).pow(1.6) else v
+        val behind = if (v < 1) v.pow(1.3) else v
+        val (across, down) = if (t.h >= f.h) ahead to behind else behind to ahead
+        return Box(
+            f.x + (t.x - f.x) * across,
+            f.y + (t.y - f.y) * down,
+            maxOf(1.0, f.w + (t.w - f.w) * across),
+            maxOf(1.0, f.h + (t.h - f.h) * down),
+            maxOf(0.0, f.radius + (t.radius - f.radius) * down),
+        )
+    }
+
+    private val unfoldFade = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_IN)
+    }
+
+    /**
+     * A scene while the outline is still moving: a card is laid out at its
+     * own size, a little smaller while the outline is narrower, and fades
+     * out just above the outline's edge, so it unfolds row by row instead of
+     * being cut off. Anything else is drawn as it is.
+     */
+    private fun drawFitted(c: Canvas, s: Scene, area: RectF) {
+        val own = boxFor(s)?.let { RectF((it.x * dp).toFloat(), (it.y * dp).toFloat(), (it.right * dp).toFloat(), (it.bottom * dp).toFloat()) }
+        val card = s is Scene.Expanded || s == Scene.Controls || s == Scene.Toggles || s == Scene.Calendar
+        if (own == null || (abs(own.width() - area.width()) < 1f && abs(own.height() - area.height()) < 1f)) {
+            drawScene(c, s, area)
+            return
+        }
+        if (!card) {
+            // A small scene (the pill, a pop-up) stays at its own size and
+            // place while it fades, instead of stretching across a card.
+            drawScene(c, s, own)
+            return
+        }
+        val k = (area.width() / own.width()).coerceIn(0.8f, 1f)
+        // Gone while the outline is under a quarter of the card's height, full from 60%.
+        val shown = ((area.height() / own.height() - 0.25f) / 0.35f).coerceIn(0f, 1f)
+        if (shown <= 0f) return
+        val layer = c.saveLayerAlpha(area, (shown * shown * (3 - 2 * shown) * 255).toInt())
+        c.save()
+        c.translate(area.centerX(), area.top)
+        c.scale(k, k)
+        c.translate(-own.centerX(), -own.top)
+        drawScene(c, s, own)
+        c.restore()
+        // Rows the outline hasn't reached yet stay hidden: a soft edge just above it.
+        val band = 26 * dp
+        unfoldFade.shader = android.graphics.LinearGradient(0f, area.bottom - band, 0f, area.bottom, Color.BLACK, Color.TRANSPARENT, android.graphics.Shader.TileMode.CLAMP)
+        c.drawRect(area.left, area.bottom - band, area.right, area.bottom, unfoldFade)
+        c.restoreToCount(layer)
+        // Taps land on the settled card only.
+        hits.clear()
+        sliders.clear()
     }
 
     private fun announce(s: Scene) {
@@ -429,15 +486,19 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         // (The layers use `area`: drawing a scene reuses `rect` for its own shapes.)
         if (old != null && p < 1f) {
             c.saveLayerAlpha(area, ((1f - p) * 255).toInt())
-            drawScene(c, old, area)
+            drawFitted(c, old, area)
             c.restore()
             // Only the new scene's buttons take taps.
             hits.clear()
             sliders.clear()
         }
+        // A card closing into the small pill hands over as the outline shrinks,
+        // not only as time passes, so the pill's contents are there in time.
+        fun isCard(sc: Scene?) = sc is Scene.Expanded || sc == Scene.Controls || sc == Scene.Toggles || sc == Scene.Calendar
+        val pNew = if (isCard(old) && !isCard(shown)) maxOf(p, grown) else p
         // An offscreen layer only while fading: drawing straight is much cheaper.
-        if (p < 1f) c.saveLayerAlpha(area, (p * 255).toInt()) else c.save()
-        drawScene(c, shown, area)
+        if (pNew < 1f) c.saveLayerAlpha(area, (pNew * 255).toInt()) else c.save()
+        drawFitted(c, shown, area)
         c.restore()
         c.restore()
         c.restore()

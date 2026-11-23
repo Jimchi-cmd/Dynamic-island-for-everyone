@@ -82,11 +82,13 @@ Springs use the iOS parameterisation (`response` = period in seconds, `damping` 
 | Hover peek | 0.30 s | 0.80 | |
 | Press | 0.20 s | 1.00 | the whole pill scales to 0.97 while held |
 
-**Shape morph.** Width, height, radius and position are separate springs on the same curve, so the outline morphs continuously and never cross-fades. The radius is clamped to `min(w, h) / 2`, so expanded corners flow into capsule ends with no discontinuity.
+**Shape morph.** Width, height, radius and position are separate springs, so the outline morphs continuously and never cross-fades. Opening, the width's spring is quicker (0.82 × the response) and the height's slower (1.08 ×): the pill stretches sideways, then drops into a card. Closing, it is the other way round: the height goes first. The radius follows the height and is clamped to `min(w, h) / 2`, so expanded corners flow into capsule ends with no discontinuity.
 
-**Content choreography.**
-- *In:* starts 60 ms after the shape. Opacity goes 0 → 1, scale 0.92 → 1, and on High tier a blur of 6 px → 0. Spring: response 0.35, damping 1.0.
-- *Out:* finishes within 120 ms of the start of a collapse, so content never spills outside the shrinking shape. Content is also clipped to the current shape every frame.
+**Content choreography (unfolding).**
+- While the outline moves, a card is laid out at its open size, not squeezed into the moving shape, and drawn about the top centre at `w / open w` of its size (0.8 to 1, in steps of 0.02, so text is drawn at only a few sizes and the glyph cache stays small).
+- *In:* the card's opacity rises from a 62 px tall outline over 60 px, and each element shows only once the outline's edge has passed it (fading in over 22 px below it, and over 16 px at the sides while the outline is narrower). So the card unfolds row by row and nothing is ever cut off at the edge.
+- *Out:* the same in reverse: rows fade as the edge passes back over them, and the content shrinks with the outline. Backgrounds (a photo, the dock's wash) fill the card as it is.
+- On the phone the same: the card is drawn at its own size into a layer, scaled to the outline's width, with a soft 26 dp edge just above the outline's bottom; a closing card fades out below a quarter of its height, and the small pill it closes into fades in as the shape shrinks.
 
 **Metaball split (Minimal).** The secondary circle starts inside the pill's right end. Its centre moves outward on the split spring. While the gap is small, a neck joins the two shapes: two cubic curves tangent to both outlines, with their width tapering as the distance grows (`islet-render`, Phase 1). The neck snaps when the gap passes 1.2 × the circle radius. Merging is the same in reverse.
 
