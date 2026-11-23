@@ -1,0 +1,249 @@
+en	es	fr	de	pt	ru	zh	ja	ar	hi
+# Days, months, clock
+Sunday	Domingo	Dimanche	Sonntag	Domingo	Воскресенье	星期日	日曜日	الأحد	रविवार
+Monday	Lunes	Lundi	Montag	Segunda-feira	Понедельник	星期一	月曜日	الاثنين	सोमवार
+Tuesday	Martes	Mardi	Dienstag	Terça-feira	Вторник	星期二	火曜日	الثلاثاء	मंगलवार
+Wednesday	Miércoles	Mercredi	Mittwoch	Quarta-feira	Среда	星期三	水曜日	الأربعاء	बुधवार
+Thursday	Jueves	Jeudi	Donnerstag	Quinta-feira	Четверг	星期四	木曜日	الخميس	गुरुवार
+Friday	Viernes	Vendredi	Freitag	Sexta-feira	Пятница	星期五	金曜日	الجمعة	शुक्रवार
+Saturday	Sábado	Samedi	Samstag	Sábado	Суббота	星期六	土曜日	السبت	शनिवार
+Sun	Dom	Dim	So	Dom	Вс	周日	日	أحد	रवि
+Mon	Lun	Lun	Mo	Seg	Пн	周一	月	اثنين	सोम
+Tue	Mar	Mar	Di	Ter	Вт	周二	火	ثلاثاء	मंगल
+Wed	Mié	Mer	Mi	Qua	Ср	周三	水	أربعاء	बुध
+Thu	Jue	Jeu	Do	Qui	Чт	周四	木	خميس	गुरु
+Fri	Vie	Ven	Fr	Sex	Пт	周五	金	جمعة	शुक्र
+Sat	Sáb	Sam	Sa	Sáb	Сб	周六	土	سبت	शनि
+January	enero	janvier	Januar	janeiro	января	1月	1月	يناير	जनवरी
+February	febrero	février	Februar	fevereiro	февраля	2月	2月	فبراير	फ़रवरी
+March	marzo	mars	März	março	марта	3月	3月	مارس	मार्च
+April	abril	avril	April	abril	апреля	4月	4月	أبريل	अप्रैल
+May	mayo	mai	Mai	maio	мая	5月	5月	مايو	मई
+June	junio	juin	Juni	junho	июня	6月	6月	يونيو	जून
+July	julio	juillet	Juli	julho	июля	7月	7月	يوليو	जुलाई
+August	agosto	août	August	agosto	августа	8月	8月	أغسطس	अगस्त
+September	septiembre	septembre	September	setembro	сентября	9月	9月	سبتمبر	सितंबर
+October	octubre	octobre	Oktober	outubro	октября	10月	10月	أكتوبر	अक्टूबर
+November	noviembre	novembre	November	novembro	ноября	11月	11月	نوفمبر	नवंबर
+December	diciembre	décembre	Dezember	dezembro	декабря	12月	12月	ديسمبر	दिसंबर
+Jan	ene	janv.	Jan.	jan	янв	1月	1月	يناير	जन
+Feb	feb	févr.	Feb.	fev	фев	2月	2月	فبراير	फ़र
+Mar	mar	mars	März	mar	мар	3月	3月	مارس	मार्च
+Apr	abr	avr.	Apr.	abr	апр	4月	4月	أبريل	अप्रै
+May‖short month	may	mai	Mai	mai	мая	5月	5月	مايو	मई
+Jun	jun	juin	Juni	jun	июн	6月	6月	يونيو	जून
+Jul	jul	juil.	Juli	jul	июл	7月	7月	يوليو	जुल
+Aug	ago	août	Aug.	ago	авг	8月	8月	أغسطس	अग
+Sep	sept	sept.	Sept.	set	сен	9月	9月	سبتمبر	सित
+Oct	oct	oct.	Okt.	out	окт	10月	10月	أكتوبر	अक्टू
+Nov	nov	nov.	Nov.	nov	ноя	11月	11月	نوفمبر	नव
+Dec	dic	déc.	Dez.	dez	дек	12月	12月	ديسمبر	दिस
+{} {}‖month and year	{} de {}	{} {}	{} {}	{} de {}	{} {}	{1}年{0}	{1}年{0}	{} {}	{} {}
+{} {} {}‖short weekday, day, short month	{} {} {}	{} {} {}	{}, {}. {}	{}, {} {}	{}, {} {}	{2}{1}日 {0}	{2}{1}日({0})	{}، {} {}	{}, {} {}
+{}, {} {}‖weekday, day, month	{}, {} de {}	{} {} {}	{}, {}. {}	{}, {} de {}	{}, {} {}	{2}{1}日 {0}	{2}{1}日 {0}	{}، {} {}	{}, {} {}
+{} {}‖day and short month	{} {}	{} {}	{}. {}	{} {}	{} {}	{1}{0}日	{1}{0}日	{} {}	{} {}
+AM	a. m.	AM	AM	AM	AM	上午	午前	ص	AM
+PM	p. m.	PM	PM	PM	PM	下午	午後	م	PM
+Today	Hoy	Aujourd'hui	Heute	Hoje	Сегодня	今天	今日	اليوم	आज
+Tomorrow	Mañana	Demain	Morgen	Amanhã	Завтра	明天	明日	غدًا	कल
+today	hoy	aujourd'hui	heute	hoje	сегодня	今天	今日	اليوم	आज
+tomorrow	mañana	demain	morgen	amanhã	завтра	明天	明日	غدًا	कल
+now	ahora	maintenant	jetzt	agora	сейчас	现在	今	الآن	अभी
+in {} min	en {} min	dans {} min	in {} Min.	em {} min	через {} мин	{} 分钟后	{} 分後	بعد {} د	{} मिनट में
+in {} h	en {} h	dans {} h	in {} Std.	em {} h	через {} ч	{} 小时后	{} 時間後	بعد {} س	{} घंटे में
+in {} h {}	en {} h {}	dans {} h {}	in {} Std. {}	em {} h {}	через {} ч {}	{} 小时 {} 分后	{} 時間 {} 分後	بعد {} س {}	{} घंटे {} में
+in {} h {} min	en {} h {} min	dans {} h {} min	in {} Std. {} Min.	em {} h {} min	через {} ч {} мин	{} 小时 {} 分钟后	{} 時間 {} 分後	بعد {} س {} د	{} घंटे {} मिनट में
+in {} days	en {} días	dans {} jours	in {} Tagen	em {} dias	через {} дн.	{} 天后	{} 日後	بعد {} أيام	{} दिन में
+All day	Todo el día	Toute la journée	Ganztägig	Dia inteiro	Весь день	全天	終日	طوال اليوم	पूरा दिन
+(No title)	(Sin título)	(Sans titre)	(Ohne Titel)	(Sem título)	(Без названия)	（无标题）	（タイトルなし）	(بلا عنوان)	(कोई शीर्षक नहीं)
+Due {}	Vence {}	À rendre {}	Fällig {}	Prazo {}	Срок: {}	截止 {}	締切 {}	الموعد {}	देय {}
+Once	Una vez	Une fois	Einmalig	Uma vez	Один раз	一次	1回のみ	مرة واحدة	एक बार
+Every day	Cada día	Tous les jours	Täglich	Todos os dias	Каждый день	每天	毎日	كل يوم	हर दिन
+Weekdays	Entre semana	En semaine	Werktags	Dias úteis	По будням	工作日	平日	أيام العمل	कार्यदिवस
+Weekends	Fines de semana	Le week-end	Am Wochenende	Fins de semana	По выходным	周末	週末	عطلة نهاية الأسبوع	सप्ताहांत
+# Weather
+Clear	Despejado	Dégagé	Klar	Limpo	Ясно	晴	晴れ	صافٍ	साफ़
+Partly cloudy	Parcialmente nublado	Partiellement nuageux	Teils bewölkt	Parcialmente nublado	Переменная облачность	多云间晴	晴れ時々曇り	غائم جزئيًا	आंशिक बादल
+Cloudy	Nublado	Nuageux	Bewölkt	Nublado	Облачно	多云	曇り	غائم	बादल
+Fog	Niebla	Brouillard	Nebel	Nevoeiro	Туман	雾	霧	ضباب	कोहरा
+Rain	Lluvia	Pluie	Regen	Chuva	Дождь	雨	雨	مطر	बारिश
+Snow	Nieve	Neige	Schnee	Neve	Снег	雪	雪	ثلج	बर्फ़
+Thunderstorm	Tormenta	Orage	Gewitter	Trovoada	Гроза	雷雨	雷雨	عاصفة رعدية	आंधी-तूफ़ान
+# Timers, stopwatch, alarms
+Timer	Temporizador	Minuteur	Timer	Temporizador	Таймер	计时器	タイマー	المؤقت	टाइमर
+Timer‖start button, 6 letters or fewer	Iniciar	Lancer	Timer	Iniciar	Старт	计时	開始	ابدأ	शुरू
+Focus	Concentración	Concentration	Fokus	Foco	Фокус	专注	集中	تركيز	फ़ोकस
+Break	Descanso	Pause	Pause	Pausa	Перерыв	休息	休憩	استراحة	विराम
+{} · {} of {}‖focus round	{} · {} de {}	{} · {} sur {}	{} · {} von {}	{} · {} de {}	{} · {} из {}	{} · 第 {}/{} 轮	{} · {}/{}	{} · {} من {}	{} · {} में से {}
+Focus session done	Sesión de concentración terminada	Séance de concentration terminée	Fokus-Sitzung beendet	Sessão de foco concluída	Сеанс фокуса завершён	专注时段结束	集中セッション完了	انتهت جلسة التركيز	फ़ोकस सत्र पूरा
+{} done	{}: terminado	{} : terminé	{} beendet	{} concluído	{}: готово	{} 已结束	{} 終了	انتهى {}	{} पूरा
+{} min	{} min	{} min	{} Min.	{} min	{} мин	{} 分钟	{} 分	{} د	{} मिनट
+{} min left	quedan {} min	{} min restantes	noch {} Min.	faltam {} min	осталось {} мин	剩余 {} 分钟	残り {} 分	متبقٍ {} د	{} मिनट बाकी
+{}, {} left	{}, quedan {}	{}, {} restant	{}, noch {}	{}, faltam {}	{}, осталось {}	{}，剩余 {}	{}、残り {}	{}، متبقٍ {}	{}, {} बाकी
+Running	En marcha	En cours	Läuft	Em curso	Идёт	运行中	実行中	يعمل	चल रहा है
+Paused	En pausa	En pause	Pausiert	Em pausa	Пауза	已暂停	一時停止中	متوقف مؤقتًا	रुका हुआ
+paused	en pausa	en pause	pausiert	em pausa	на паузе	已暂停	一時停止中	متوقف مؤقتًا	रुका हुआ
+Pause	Pausar	Pause	Pause	Pausar	Пауза	暂停	一時停止	إيقاف مؤقت	रोकें
+Resume	Reanudar	Reprendre	Fortsetzen	Retomar	Продолжить	继续	再開	استئناف	फिर शुरू
+Stop	Detener	Arrêter	Stopp	Parar	Стоп	停止	停止	إيقاف	बंद करें
+Start	Iniciar	Démarrer	Start	Iniciar	Старт	开始	開始	ابدأ	शुरू
+Reset	Reiniciar	Réinitialiser	Zurücksetzen	Repor	Сброс	重置	リセット	إعادة ضبط	रीसेट
+Lap	Vuelta	Tour	Runde	Volta	Круг	计圈	ラップ	لفة	लैप
+Lap {} {}	Vuelta {} {}	Tour {} {}	Runde {} {}	Volta {} {}	Круг {} {}	第 {} 圈 {}	ラップ {} {}	لفة {} {}	लैप {} {}
+Ready	Listo	Prêt	Bereit	Pronto	Готов	就绪	準備完了	جاهز	तैयार
+Stopwatch	Cronómetro	Chronomètre	Stoppuhr	Cronómetro	Секундомер	秒表	ストップウォッチ	ساعة الإيقاف	स्टॉपवॉच
+Stopwatch, {}	Cronómetro, {}	Chronomètre, {}	Stoppuhr, {}	Cronómetro, {}	Секундомер, {}	秒表，{}	ストップウォッチ、{}	ساعة الإيقاف، {}	स्टॉपवॉच, {}
+Repeat	Repetir	Répéter	Wiederholen	Repetir	Повторить	重复	繰り返す	تكرار	दोहराएँ
+Snooze	Posponer	Rappel	Schlummern	Adiar	Отложить	稍后提醒	スヌーズ	غفوة	स्नूज़
+Alarm ringing: {}	Alarma sonando: {}	Alarme : {}	Wecker klingelt: {}	Alarme a tocar: {}	Будильник: {}	闹钟响铃：{}	アラーム鳴動中: {}	المنبه يرن: {}	अलार्म बज रहा है: {}
+Stop timer	Detener temporizador	Arrêter le minuteur	Timer stoppen	Parar temporizador	Остановить таймер	停止计时器	タイマーを停止	إيقاف المؤقت	टाइमर बंद करें
+Shorter timer	Temporizador más corto	Minuteur plus court	Kürzerer Timer	Temporizador mais curto	Короче	缩短计时	タイマーを短く	مؤقت أقصر	छोटा टाइमर
+Longer timer	Temporizador más largo	Minuteur plus long	Längerer Timer	Temporizador mais longo	Длиннее	延长计时	タイマーを長く	مؤقت أطول	लंबा टाइमर
+Start a {}-minute timer	Iniciar un temporizador de {} min	Lancer un minuteur de {} min	Timer für {} Min. starten	Iniciar temporizador de {} min	Таймер на {} мин	开始 {} 分钟计时	{} 分のタイマーを開始	ابدأ مؤقتًا لمدة {} د	{} मिनट का टाइमर शुरू करें
+Sleep timer	Temporizador de apagado	Minuteur de veille	Schlaf-Timer	Temporizador de sono	Таймер сна	睡眠定时	スリープタイマー	مؤقت النوم	स्लीप टाइमर
+# Island menu
+Islet Settings	Ajustes de Islet	Réglages d'Islet	Islet-Einstellungen	Definições do Islet	Настройки Islet	Islet 设置	Islet の設定	إعدادات Islet	Islet सेटिंग्स
+Show the island again	Volver a mostrar la isla	Réafficher l'île	Insel wieder zeigen	Mostrar a ilha de novo	Снова показать остров	重新显示岛	島を再表示	إظهار الجزيرة مجددًا	आइलैंड फिर दिखाएँ
+Hide for an hour	Ocultar una hora	Masquer pendant une heure	Eine Stunde ausblenden	Ocultar durante uma hora	Скрыть на час	隐藏一小时	1時間隠す	إخفاء لمدة ساعة	एक घंटे के लिए छिपाएँ
+Resume pop-ups	Reanudar avisos	Réactiver les alertes	Hinweise fortsetzen	Retomar avisos	Вернуть всплывающие	恢复弹出提示	ポップアップを再開	استئناف التنبيهات	पॉप-अप फिर चालू करें
+Pause pop-ups for an hour	Pausar avisos una hora	Suspendre les alertes une heure	Hinweise eine Stunde pausieren	Pausar avisos uma hora	Без всплывающих на час	暂停弹出提示一小时	ポップアップを1時間停止	إيقاف التنبيهات لمدة ساعة	पॉप-अप एक घंटे रोकें
+Lyrics	Letra	Paroles	Songtext	Letra	Текст песни	歌词	歌詞	كلمات الأغنية	बोल
+On time	A tiempo	Synchronisé	Pünktlich	A tempo	Вовремя	准时	ずれなし	في الوقت	समय पर
+Lyrics timing	Sincronía de la letra	Décalage des paroles	Songtext-Timing	Sincronia da letra	Синхронизация текста	歌词时间	歌詞のタイミング	توقيت الكلمات	बोल का समय
+Lyrics sooner	Letra antes	Paroles plus tôt	Songtext früher	Letra mais cedo	Текст раньше	歌词提前	歌詞を早く	الكلمات أبكر	बोल पहले
+Lyrics later	Letra después	Paroles plus tard	Songtext später	Letra mais tarde	Текст позже	歌词延后	歌詞を遅く	الكلمات لاحقًا	बोल बाद में
+Quit Islet	Salir de Islet	Quitter Islet	Islet beenden	Sair do Islet	Выйти из Islet	退出 Islet	Islet を終了	إنهاء Islet	Islet बंद करें
+On	Sí	Activé	An	Ligado	Вкл.	开	オン	تشغيل	चालू
+Off	No	Désactivé	Aus	Desligado	Выкл.	关	オフ	إيقاف	बंद
+on	activado	activé	an	ligado	вкл.	开	オン	مفعّل	चालू
+off	desactivado	désactivé	aus	desligado	выкл.	关	オフ	متوقف	बंद
+# Music, calls, status
+Now Playing	Reproduciendo	À l'écoute	Wiedergabe	A tocar	Сейчас играет	正在播放	再生中	قيد التشغيل	अभी चल रहा है
+Now playing	Reproduciendo	À l'écoute	Wird abgespielt	A tocar	Сейчас играет	正在播放	再生中	قيد التشغيل	अभी चल रहा है
+{} by {}	{} de {}	{} par {}	{} von {}	{} de {}	{} — {}	{} - {}	{} - {}	{} لـ {}	{} — {}
+{}, in {}	{}, en {}	{}, dans {}	{}, in {}	{}, em {}	{}, в {}	{}，来自 {}	{}、{} で	{}، في {}	{}, {} में
+Previous	Anterior	Précédent	Zurück	Anterior	Назад	上一首	前へ	السابق	पिछला
+Play	Reproducir	Lecture	Wiedergabe	Reproduzir	Играть	播放	再生	تشغيل	चलाएँ
+Next	Siguiente	Suivant	Weiter	Seguinte	Далее	下一首	次へ	التالي	अगला
+On a call	En una llamada	En appel	Im Anruf	Em chamada	Идёт звонок	通话中	通話中	في مكالمة	कॉल पर
+On a call, {}	En una llamada, {}	En appel, {}	Im Anruf, {}	Em chamada, {}	Звонок, {}	通话中，{}	通話中、{}	في مكالمة، {}	कॉल पर, {}
+On a call in {}, {}	En una llamada en {}, {}	En appel dans {}, {}	Im Anruf in {}, {}	Em chamada no {}, {}	Звонок в {}, {}	正在 {} 通话，{}	{} で通話中、{}	في مكالمة على {}، {}	{} पर कॉल, {}
+microphone muted	micrófono silenciado	micro coupé	Mikrofon stumm	microfone silenciado	микрофон выключен	麦克风已静音	マイクはミュート	الميكروفون مكتوم	माइक्रोफ़ोन म्यूट
+Microphone on	Micrófono activado	Micro activé	Mikrofon an	Microfone ligado	Микрофон включён	麦克风已开启	マイクはオン	الميكروفون يعمل	माइक्रोफ़ोन चालू
+Muted · tap the microphone to unmute	Silenciado · toca el micrófono para activarlo	Micro coupé · touchez le micro pour le réactiver	Stumm · zum Einschalten aufs Mikrofon tippen	Silenciado · toque no microfone para ativar	Без звука · нажмите на микрофон, чтобы включить	已静音 · 点按麦克风取消静音	ミュート中 · マイクをタップで解除	مكتوم · اضغط الميكروفون لإلغاء الكتم	म्यूट · अनम्यूट करने के लिए माइक्रोफ़ोन टैप करें
+On a call · tap the microphone to mute	En una llamada · toca el micrófono para silenciar	En appel · touchez le micro pour le couper	Im Anruf · zum Stummschalten aufs Mikrofon tippen	Em chamada · toque no microfone para silenciar	Звонок · нажмите на микрофон, чтобы выключить	通话中 · 点按麦克风静音	通話中 · マイクをタップでミュート	في مكالمة · اضغط الميكروفون للكتم	कॉल पर · म्यूट करने के लिए माइक्रोफ़ोन टैप करें
+Mute microphone	Silenciar micrófono	Couper le micro	Mikrofon stummschalten	Silenciar microfone	Выключить микрофон	麦克风静音	マイクをミュート	كتم الميكروفون	माइक्रोफ़ोन म्यूट करें
+Unmute microphone	Activar micrófono	Réactiver le micro	Mikrofon einschalten	Ativar microfone	Включить микрофон	取消麦克风静音	マイクのミュートを解除	إلغاء كتم الميكروفون	माइक्रोफ़ोन अनम्यूट करें
+Volume	Volumen	Volume	Lautstärke	Volume	Громкость	音量	音量	مستوى الصوت	वॉल्यूम
+Volume muted	Volumen silenciado	Son coupé	Ton aus	Som silenciado	Звук выключен	已静音	消音	الصوت مكتوم	आवाज़ म्यूट
+Volume {}%	Volumen {} %	Volume {} %	Lautstärke {} %	Volume {}%	Громкость {}%	音量 {}%	音量 {}%	مستوى الصوت {}٪	वॉल्यूम {}%
+Brightness	Brillo	Luminosité	Helligkeit	Brilho	Яркость	亮度	明るさ	السطوع	चमक
+Brightness {}%	Brillo {} %	Luminosité {} %	Helligkeit {} %	Brilho {}%	Яркость {}%	亮度 {}%	明るさ {}%	السطوع {}٪	चमक {}%
+{} volume	Volumen de {}	Volume de {}	{}-Lautstärke	Volume de {}	Громкость {}	{} 音量	{} の音量	صوت {}	{} वॉल्यूम
+Volume and brightness	Volumen y brillo	Volume et luminosité	Lautstärke und Helligkeit	Volume e brilho	Громкость и яркость	音量和亮度	音量と明るさ	الصوت والسطوع	वॉल्यूम और चमक
+Caps Lock	Bloq Mayús	Verr. Maj	Feststelltaste	Caps Lock	Caps Lock	大写锁定	Caps Lock	الأحرف الكبيرة	कैप्स लॉक
+Caps Lock on	Bloq Mayús activado	Verr. Maj activé	Feststelltaste an	Caps Lock ligado	Caps Lock включён	大写锁定已开	Caps Lock オン	الأحرف الكبيرة مفعّلة	कैप्स लॉक चालू
+Caps Lock off	Bloq Mayús desactivado	Verr. Maj désactivé	Feststelltaste aus	Caps Lock desligado	Caps Lock выключен	大写锁定已关	Caps Lock オフ	الأحرف الكبيرة متوقفة	कैप्स लॉक बंद
+Airplane mode	Modo avión	Mode Avion	Flugmodus	Modo de avião	Авиарежим	飞行模式	機内モード	وضع الطيران	हवाई जहाज़ मोड
+Airplane mode on	Modo avión activado	Mode Avion activé	Flugmodus an	Modo de avião ligado	Авиарежим включён	飞行模式已开	機内モード オン	وضع الطيران مفعّل	हवाई जहाज़ मोड चालू
+Airplane mode off	Modo avión desactivado	Mode Avion désactivé	Flugmodus aus	Modo de avião desligado	Авиарежим выключен	飞行模式已关	機内モード オフ	وضع الطيران متوقف	हवाई जहाज़ मोड बंद
+Do Not Disturb	No molestar	Ne pas déranger	Nicht stören	Não incomodar	Не беспокоить	勿扰	おやすみモード	عدم الإزعاج	परेशान न करें
+Do Not Disturb on	No molestar activado	Ne pas déranger activé	Nicht stören an	Não incomodar ligado	«Не беспокоить» включено	勿扰已开	おやすみモード オン	عدم الإزعاج مفعّل	परेशान न करें चालू
+Do Not Disturb off	No molestar desactivado	Ne pas déranger désactivé	Nicht stören aus	Não incomodar desligado	«Не беспокоить» выключено	勿扰已关	おやすみモード オフ	عدم الإزعاج متوقف	परेशान न करें बंद
+Connected to {}	Conectado a {}	Connecté à {}	Verbunden mit {}	Ligado a {}	Подключено к {}	已连接到 {}	{} に接続	متصل بـ {}	{} से जुड़ा
+Notification from {}: {}	Notificación de {}: {}	Notification de {} : {}	Mitteilung von {}: {}	Notificação de {}: {}	Уведомление от {}: {}	来自 {} 的通知：{}	{} からの通知: {}	إشعار من {}: {}	{} से सूचना: {}
+{}, in progress	{}, en curso	{}, en cours	{}, läuft	{}, em curso	{}, выполняется	{}，进行中	{}、進行中	{}، قيد التقدم	{}, जारी है
+Fully charged	Carga completa	Chargé	Voll geladen	Carga completa	Полностью заряжено	已充满	充電完了	مشحونة بالكامل	पूरी तरह चार्ज
+Charging	Cargando	En charge	Lädt	A carregar	Заряжается	正在充电	充電中	جارٍ الشحن	चार्ज हो रहा है
+On battery	Con batería	Sur batterie	Akkubetrieb	Com bateria	От батареи	使用电池	バッテリー駆動	على البطارية	बैटरी पर
+{} charging	{} cargando	{} en charge	{} lädt	{} a carregar	{} заряжается	{} 正在充电	{} 充電中	{} قيد الشحن	{} चार्ज हो रहा है
+{} {}%, charging	{} {} %, cargando	{} {} %, en charge	{} {} %, lädt	{} {}%, a carregar	{} {}%, заряжается	{} {}%，正在充电	{} {}%、充電中	{} {}٪، قيد الشحن	{} {}%, चार्ज हो रहा है
+Battery	Batería	Batterie	Akku	Bateria	Батарея	电池	バッテリー	البطارية	बैटरी
+Battery health	Estado de la batería	État de la batterie	Akkuzustand	Estado da bateria	Состояние батареи	电池健康	バッテリーの状態	صحة البطارية	बैटरी की सेहत
+{}% · 1 cycle	{} % · 1 ciclo	{} % · 1 cycle	{} % · 1 Zyklus	{}% · 1 ciclo	{}% · 1 цикл	{}% · 1 次循环	{}% · 1 サイクル	{}٪ · دورة واحدة	{}% · 1 साइकिल
+{}% · {} cycles	{} % · {} ciclos	{} % · {} cycles	{} % · {} Zyklen	{}% · {} ciclos	{}% · {} циклов	{}% · {} 次循环	{}% · {} サイクル	{}٪ · {} دورات	{}% · {} साइकिल
+Case‖earbuds case	Estuche	Boîtier	Case	Estojo	Кейс	充电盒	ケース	العلبة	केस
+Call	Llamada	Appel	Anruf	Chamada	Звонок	通话	通話	مكالمة	कॉल
+# Control Centre and panels
+Control Centre	Centro de control	Centre de contrôle	Kontrollzentrum	Centro de controlo	Пункт управления	控制中心	コントロールセンター	مركز التحكم	कंट्रोल सेंटर
+Back	Atrás	Retour	Zurück	Voltar	Назад	返回	戻る	رجوع	वापस
+Back to {}	Volver a {}	Retour à {}	Zurück zu {}	Voltar a {}	Назад: {}	返回{}	{} に戻る	العودة إلى {}	{} पर वापस
+Wi-Fi	Wi-Fi	Wi-Fi	WLAN	Wi-Fi	Wi-Fi	无线局域网	Wi-Fi	Wi-Fi	वाई-फ़ाई
+Bluetooth	Bluetooth	Bluetooth	Bluetooth	Bluetooth	Bluetooth	蓝牙	Bluetooth	بلوتوث	ब्लूटूथ
+Turn {} off	Desactivar {}	Désactiver {}	{} ausschalten	Desligar {}	Выключить {}	关闭{}	{} をオフ	إيقاف {}	{} बंद करें
+Turn {} on	Activar {}	Activer {}	{} einschalten	Ligar {}	Включить {}	打开{}	{} をオン	تشغيل {}	{} चालू करें
+Connected	Conectado	Connecté	Verbunden	Ligado	Подключено	已连接	接続済み	متصل	जुड़ा हुआ
+connected	conectado	connecté	verbunden	ligado	подключено	已连接	接続済み	متصل	जुड़ा हुआ
+Not connected	No conectado	Non connecté	Nicht verbunden	Não ligado	Не подключено	未连接	未接続	غير متصل	नहीं जुड़ा
+not connected	no conectado	non connecté	nicht verbunden	não ligado	не подключено	未连接	未接続	غير متصل	नहीं जुड़ा
+needs a password	necesita contraseña	mot de passe requis	Passwort nötig	precisa de palavra-passe	нужен пароль	需要密码	パスワードが必要	تحتاج كلمة مرور	पासवर्ड चाहिए
+Enter the password in Settings	Escribe la contraseña en Ajustes	Saisissez le mot de passe dans Réglages	Passwort in den Einstellungen eingeben	Escreva a palavra-passe nas Definições	Введите пароль в настройках	请在设置中输入密码	設定でパスワードを入力	أدخل كلمة المرور في الإعدادات	सेटिंग्स में पासवर्ड डालें
+Open Bluetooth settings	Abrir ajustes de Bluetooth	Ouvrir les réglages Bluetooth	Bluetooth-Einstellungen öffnen	Abrir definições de Bluetooth	Открыть настройки Bluetooth	打开蓝牙设置	Bluetooth 設定を開く	فتح إعدادات بلوتوث	ब्लूटूथ सेटिंग्स खोलें
+Looking for networks…	Buscando redes…	Recherche de réseaux…	Netzwerke werden gesucht …	A procurar redes…	Поиск сетей…	正在查找网络…	ネットワークを検索中…	جارٍ البحث عن شبكات…	नेटवर्क खोजे जा रहे हैं…
+No networks found	No se encontraron redes	Aucun réseau trouvé	Keine Netzwerke gefunden	Nenhuma rede encontrada	Сети не найдены	未找到网络	ネットワークが見つかりません	لم يتم العثور على شبكات	कोई नेटवर्क नहीं मिला
+Wi-Fi isn't available	Wi-Fi no disponible	Wi-Fi indisponible	WLAN nicht verfügbar	Wi-Fi indisponível	Wi-Fi недоступен	无线局域网不可用	Wi-Fi は使用できません	Wi-Fi غير متاح	वाई-फ़ाई उपलब्ध नहीं है
+No paired devices	No hay dispositivos vinculados	Aucun appareil associé	Keine gekoppelten Geräte	Nenhum dispositivo emparelhado	Нет сопряжённых устройств	没有已配对的设备	ペアリング済みのデバイスなし	لا توجد أجهزة مقترنة	कोई जोड़ा गया डिवाइस नहीं
+Bluetooth isn't available	Bluetooth no disponible	Bluetooth indisponible	Bluetooth nicht verfügbar	Bluetooth indisponível	Bluetooth недоступен	蓝牙不可用	Bluetooth は使用できません	بلوتوث غير متاح	ब्लूटूथ उपलब्ध नहीं है
+Calendar	Calendario	Calendrier	Kalender	Calendário	Календарь	日历	カレンダー	التقويم	कैलेंडर
+Previous month	Mes anterior	Mois précédent	Vorheriger Monat	Mês anterior	Предыдущий месяц	上个月	前の月	الشهر السابق	पिछला महीना
+Next month	Mes siguiente	Mois suivant	Nächster Monat	Mês seguinte	Следующий месяц	下个月	次の月	الشهر التالي	अगला महीना
+No events	Sin eventos	Aucun événement	Keine Termine	Sem eventos	Нет событий	没有日程	予定なし	لا أحداث	कोई कार्यक्रम नहीं
+Up next	A continuación	À venir	Als Nächstes	A seguir	Далее	接下来	次の予定	التالي	आगे
+Join	Unirse	Rejoindre	Beitreten	Entrar	Войти	加入	参加	انضمام	जुड़ें
+Join {}	Unirse a {}	Rejoindre {}	{} beitreten	Entrar em {}	Войти: {}	加入{}	{} に参加	الانضمام إلى {}	{} से जुड़ें
+Nothing else today	Nada más hoy	Plus rien aujourd'hui	Heute nichts mehr	Nada mais hoje	Сегодня больше ничего	今天没有其他安排	今日の予定はこれだけ	لا شيء آخر اليوم	आज और कुछ नहीं
+Notifications	Notificaciones	Notifications	Mitteilungen	Notificações	Уведомления	通知	通知	الإشعارات	सूचनाएँ
+Tap to open	Toca para abrir	Touchez pour ouvrir	Zum Öffnen tippen	Toque para abrir	Нажмите, чтобы открыть	点按打开	タップして開く	اضغط للفتح	खोलने के लिए टैप करें
+Navigation	Navegación	Navigation	Navigation	Navegação	Навигация	导航	ナビ	الملاحة	नेविगेशन
+Navigation to {}	Navegación a {}	Itinéraire vers {}	Navigation nach {}	Navegação para {}	Маршрут: {}	导航到 {}	{} へのナビ	الملاحة إلى {}	{} तक नेविगेशन
+Navigation to {}: {}	Navegación a {}: {}	Itinéraire vers {} : {}	Navigation nach {}: {}	Navegação para {}: {}	Маршрут: {}, {}	导航到 {}：{}	{} へのナビ: {}	الملاحة إلى {}: {}	{} तक नेविगेशन: {}
+Arrive {} · {}	Llegada {} · {}	Arrivée {} · {}	Ankunft {} · {}	Chegada {} · {}	Прибытие {} · {}	{} 到达 · {}	{} 到着 · {}	الوصول {} · {}	पहुँचें {} · {}
++{} traffic	+{} por tráfico	+{} de trafic	+{} Verkehr	+{} de trânsito	+{} пробки	拥堵 +{}	渋滞 +{}	+{} زحام	+{} ट्रैफ़िक
+Start: {}	Inicio: {}	Départ : {}	Start: {}	Início: {}	Начало: {}	起点：{}	出発: {}	البداية: {}	शुरुआत: {}
+Getting the route…	Calculando la ruta…	Calcul de l'itinéraire…	Route wird berechnet …	A calcular o percurso…	Строим маршрут…	正在获取路线…	ルートを取得中…	جارٍ جلب المسار…	रास्ता खोजा जा रहा है…
+Open in Google Maps	Abrir en Google Maps	Ouvrir dans Google Maps	In Google Maps öffnen	Abrir no Google Maps	Открыть в Google Картах	在 Google 地图中打开	Google マップで開く	فتح في خرائط Google	Google Maps में खोलें
+Open in Waze	Abrir en Waze	Ouvrir dans Waze	In Waze öffnen	Abrir no Waze	Открыть в Waze	在 Waze 中打开	Waze で開く	فتح في Waze	Waze में खोलें
+Stop navigation	Detener navegación	Arrêter l'itinéraire	Navigation beenden	Parar navegação	Остановить маршрут	停止导航	ナビを終了	إيقاف الملاحة	नेविगेशन बंद करें
+Shelf	Estante	Étagère	Ablage	Prateleira	Полка	文件架	シェルフ	الرف	शेल्फ़
+Shelf, {} items	Estante, {} elementos	Étagère, {} éléments	Ablage, {} Objekte	Prateleira, {} itens	Полка, {} шт.	文件架，{} 项	シェルフ、{} 項目	الرف، {} عناصر	शेल्फ़, {} आइटम
+1 item	1 elemento	1 élément	1 Objekt	1 item	1 элемент	1 项	1 項目	عنصر واحد	1 आइटम
+{} items	{} elementos	{} éléments	{} Objekte	{} itens	{} шт.	{} 项	{} 項目	{} عناصر	{} आइटम
+Drag files here to keep them handy	Arrastra archivos aquí para tenerlos a mano	Glissez des fichiers ici pour les garder sous la main	Dateien hierher ziehen, um sie griffbereit zu haben	Arraste ficheiros para aqui para os ter à mão	Перетащите сюда файлы, чтобы держать их под рукой	把文件拖到这里，随手可取	ファイルをここにドラッグして手元に置く	اسحب الملفات هنا لتبقى في متناولك	फ़ाइलें यहाँ खींचें ताकि वे पास रहें
+Drop to keep here	Suelta para guardar aquí	Déposez pour garder ici	Ablegen, um hier zu behalten	Largue para guardar aqui	Отпустите, чтобы оставить здесь	松开即可放在这里	ドロップしてここに置く	أفلت للاحتفاظ هنا	यहाँ रखने के लिए छोड़ें
+Shortcuts only: your files stay where they are	Solo accesos directos: tus archivos no se mueven	Raccourcis seulement : vos fichiers restent en place	Nur Verknüpfungen: Ihre Dateien bleiben, wo sie sind	Só atalhos: os seus ficheiros ficam onde estão	Только ярлыки: файлы остаются на месте	仅为快捷方式：文件保留在原处	ショートカットのみ: ファイルは移動しません	اختصارات فقط: تبقى ملفاتك مكانها	केवल शॉर्टकट: आपकी फ़ाइलें जहाँ हैं वहीं रहती हैं
+Shortcuts	Atajos	Raccourcis	Kurzbefehle	Atalhos	Ярлыки	快捷方式	ショートカット	الاختصارات	शॉर्टकट
+No shortcuts yet	Aún no hay atajos	Aucun raccourci	Noch keine Kurzbefehle	Ainda sem atalhos	Ярлыков пока нет	还没有快捷方式	ショートカットはまだありません	لا اختصارات بعد	अभी कोई शॉर्टकट नहीं
+Edit shortcuts in Settings	Edita los atajos en Ajustes	Modifiez les raccourcis dans Réglages	Kurzbefehle in den Einstellungen bearbeiten	Edite os atalhos nas Definições	Измените ярлыки в настройках	在设置中编辑快捷方式	設定でショートカットを編集	حرّر الاختصارات في الإعدادات	सेटिंग्स में शॉर्टकट बदलें
+Web	Web	Web	Web	Web	Сайт	网页	Web	ويب	वेब
+Open	Abrir	Ouvrir	Öffnen	Abrir	Открыть	打开	開く	فتح	खोलें
+Open {}	Abrir {}	Ouvrir {}	{} öffnen	Abrir {}	Открыть {}	打开{}	{} を開く	فتح {}	{} खोलें
+To-do	Tareas	À faire	To-do	Tarefas	Задачи	待办	やること	المهام	करने योग्य
+To-do, {} left	Tareas, quedan {}	À faire, {} restantes	To-do, noch {}	Tarefas, faltam {}	Задачи, осталось {}	待办，剩余 {}	やること、残り {}	المهام، متبقٍ {}	करने योग्य, {} बाकी
+{} to do	{} pendientes	{} à faire	noch {}	{} por fazer	осталось {}	{} 项待办	残り {}	{} متبقية	{} बाकी
+All done	Todo hecho	Tout est fait	Alles erledigt	Tudo feito	Всё готово	全部完成	すべて完了	تم كل شيء	सब हो गया
+Nothing to do. Nice!	Nada pendiente. ¡Bien!	Rien à faire. Bravo !	Nichts zu tun. Super!	Nada por fazer. Boa!	Дел нет. Отлично!	没有待办，真棒！	やることなし。いいね！	لا شيء لفعله. رائع!	कुछ बाकी नहीं। बढ़िया!
+Add a note in Settings	Añade una nota en Ajustes	Ajoutez une note dans Réglages	Notiz in den Einstellungen hinzufügen	Adicione uma nota nas Definições	Добавьте заметку в настройках	在设置中添加便签	設定でメモを追加	أضف ملاحظة في الإعدادات	सेटिंग्स में नोट जोड़ें
+done	hecho	fait	erledigt	feito	готово	已完成	完了	تم	हो गया
+to do	pendiente	à faire	offen	por fazer	не сделано	待办	未完了	متبقية	बाकी
+Clipboard	Portapapeles	Presse-papiers	Zwischenablage	Área de transferência	Буфер обмена	剪贴板	クリップボード	الحافظة	क्लिपबोर्ड
+Clipboard history, {} items	Historial del portapapeles, {} elementos	Historique du presse-papiers, {} éléments	Zwischenablage-Verlauf, {} Objekte	Histórico da área de transferência, {} itens	История буфера, {} шт.	剪贴板历史，{} 项	クリップボード履歴、{} 項目	سجل الحافظة، {} عناصر	क्लिपबोर्ड इतिहास, {} आइटम
+Copy some text or a picture	Copia un texto o una imagen	Copiez du texte ou une image	Text oder Bild kopieren	Copie um texto ou uma imagem	Скопируйте текст или картинку	复制一些文字或图片	テキストか画像をコピー	انسخ نصًا أو صورة	कोई टेक्स्ट या तस्वीर कॉपी करें
+Clear history	Borrar historial	Effacer l'historique	Verlauf löschen	Limpar histórico	Очистить историю	清除历史	履歴を消去	مسح السجل	इतिहास साफ़ करें
+Copy {}	Copiar {}	Copier {}	{} kopieren	Copiar {}	Копировать {}	复制{}	{} をコピー	نسخ {}	{} कॉपी करें
+System	Sistema	Système	System	Sistema	Система	系统	システム	النظام	सिस्टम
+System monitor	Monitor del sistema	Moniteur système	Systemmonitor	Monitor do sistema	Монитор системы	系统监视器	システムモニター	مراقب النظام	सिस्टम मॉनिटर
+Memory	Memoria	Mémoire	Arbeitsspeicher	Memória	Память	内存	メモリ	الذاكرة	मेमोरी
+Disk	Disco	Disque	Festplatte	Disco	Диск	磁盘	ディスク	القرص	डिस्क
+Network	Red	Réseau	Netzwerk	Rede	Сеть	网络	ネットワーク	الشبكة	नेटवर्क
+{} down · {} up	{} bajada · {} subida	{} desc. · {} mont.	{} ↓ · {} ↑	{} descarga · {} envio	{} ↓ · {} ↑	下载 {} · 上传 {}	下り {} · 上り {}	{} تنزيل · {} رفع	{} डाउन · {} अप
+{} of {} GB	{} de {} GB	{} sur {} Go	{} von {} GB	{} de {} GB	{} из {} ГБ	{} / {} GB	{} / {} GB	{} من {} غ.ب	{} / {} GB
+is using {}% of the processor	usa el {} % del procesador	utilise {} % du processeur	nutzt {} % des Prozessors	está a usar {}% do processador	занимает {}% процессора	占用了 {}% 的处理器	がプロセッサの {}% を使用中	يستخدم {}٪ من المعالج	प्रोसेसर का {}% इस्तेमाल कर रहा है
+is using {} of memory	usa {} de memoria	utilise {} de mémoire	nutzt {} Arbeitsspeicher	está a usar {} de memória	занимает {} памяти	占用了 {} 内存	がメモリを {} 使用中	يستخدم {} من الذاكرة	{} मेमोरी इस्तेमाल कर रहा है
+Ignore	Ignorar	Ignorer	Ignorieren	Ignorar	Пропустить	忽略	無視	تجاهل	अनदेखा करें
+Close it	Cerrarlo	Le fermer	Beenden	Fechar	Закрыть	关闭它	終了する	أغلقه	बंद करें
+Close {}	Cerrar {}	Fermer {}	{} beenden	Fechar {}	Закрыть {}	关闭{}	{} を終了	إغلاق {}	{} बंद करें
+Controls	Controles	Commandes	Steuerung	Controlos	Управление	控制	コントロール	عناصر التحكم	कंट्रोल
+No volume or brightness to set here	Aquí no hay volumen ni brillo que ajustar	Pas de volume ni de luminosité à régler ici	Hier gibt es keine Lautstärke oder Helligkeit	Não há volume nem brilho para ajustar aqui	Здесь нечего настроить: нет громкости и яркости	这里没有可调的音量或亮度	ここで調整できる音量や明るさはありません	لا يوجد صوت أو سطوع لضبطه هنا	यहाँ वॉल्यूम या चमक बदलने को कुछ नहीं
+Switch dark / light mode	Cambiar modo oscuro / claro	Basculer mode sombre / clair	Dunkel-/Hellmodus wechseln	Alternar modo escuro / claro	Тёмная / светлая тема	切换深色 / 浅色模式	ダーク / ライトを切り替え	تبديل الوضع الداكن / الفاتح	डार्क / लाइट मोड बदलें
+Take a screenshot	Hacer una captura	Faire une capture d'écran	Bildschirmfoto aufnehmen	Fazer captura de ecrã	Сделать снимок экрана	截屏	スクリーンショットを撮る	التقاط لقطة شاشة	स्क्रीनशॉट लें
+Lock the computer	Bloquear el ordenador	Verrouiller l'ordinateur	Computer sperren	Bloquear o computador	Заблокировать компьютер	锁定电脑	コンピュータをロック	قفل الكمبيوتر	कंप्यूटर लॉक करें

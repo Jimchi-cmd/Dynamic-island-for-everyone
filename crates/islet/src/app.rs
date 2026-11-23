@@ -11,6 +11,7 @@ use islet_core::alarm::{Alarm, AlarmClock, AlarmEvent};
 use islet_core::clock::{secs_to_next_minute, LocalTime};
 use islet_core::connectivity::{BtState, ConnCommand, ConnUpdate, Radio, WifiState};
 use islet_core::geometry::Rect;
+use islet_core::i18n::{t as tr, tf};
 use islet_core::island::{
     spring_for, target_size, Island, Presentation, Signal, AUTO_COLLAPSE_SECS, LONG_PRESS_SECS, MINIMAL_CIRCLE,
     MINIMAL_GAP,
@@ -304,6 +305,9 @@ pub struct App {
     h24: bool,
     /// What the system's language prefers (Settings → Look → Clock can override it).
     locale_h24: bool,
+    /// The system's language, for the "auto" language setting ("" until
+    /// told, which keeps tests in English).
+    locale: String,
     /// Height of the card when the island last opened: content fades
     /// relative to it, so short cards (a device list) fade in fully too.
     open_h: f64,
@@ -450,6 +454,7 @@ impl App {
             clock: None,
             h24: true,
             locale_h24: true,
+            locale: String::new(),
             open_h: MEDIA_H,
             closed: Presentation::Idle,
             notch: None,
@@ -503,6 +508,16 @@ impl App {
 
     pub fn wants_quit(&self) -> bool {
         self.quit
+    }
+
+    /// The system's language ("es-MX"), for the "auto" language setting.
+    pub fn set_locale(&mut self, locale: &str) {
+        self.locale = locale.to_string();
+        self.apply_language();
+    }
+
+    fn apply_language(&self) {
+        islet_core::i18n::set_language(islet_core::i18n::resolve(&self.prefs.language, &self.locale));
     }
 
     pub fn set_clock_style(&mut self, h24: bool) {
@@ -762,7 +777,7 @@ impl App {
         self.timer = None;
         self.activities.report(Report::Timer(None), t);
         let (hour, minute) = self.clock.map_or((0, 0), |c| (c.hour, c.minute));
-        let title = if focus { "Focus session done".to_string() } else { format!("{label} done") };
+        let title = if focus { tr("Focus session done").to_string() } else { tf("{} done", &[&label]) };
         let ring = Alarm { id: TIMER_ALARM_ID, hour, minute, label: title, days: 0, enabled: true };
         self.timer_ringing = true;
         self.alarm_out.push(AlarmOut::Sound(true));
@@ -1070,37 +1085,42 @@ impl App {
     fn menu_items(&self, t: f64) -> Vec<content::MenuItem> {
         use content::{MenuAction, MenuItem};
         use islet_render::elements::Icon;
-        let left = |until: f64| format!("{} min left", ((until - t) / 60.0).ceil().max(1.0) as i64);
+        let left = |until: f64| tf("{} min left", &[&(((until - t) / 60.0).ceil().max(1.0) as i64)]);
         let item =
-            |action, icon, label: &str| MenuItem { action, icon, label: label.into(), detail: None, switch: None };
-        let mut v = vec![item(MenuAction::Settings, Icon::Controls, "Islet Settings")];
+            |action, icon, label: &str| MenuItem { action, icon, label: label.to_string(), detail: None, switch: None };
+        let mut v = vec![item(MenuAction::Settings, Icon::Controls, tr("Islet Settings"))];
         v.push(match self.hidden_until {
             Some(h) => {
-                MenuItem { detail: Some(left(h)), ..item(MenuAction::Hide, Icon::Moon, "Show the island again") }
+                MenuItem { detail: Some(left(h)), ..item(MenuAction::Hide, Icon::Moon, tr("Show the island again")) }
             }
-            None => item(MenuAction::Hide, Icon::Moon, "Hide for an hour"),
+            None => item(MenuAction::Hide, Icon::Moon, tr("Hide for an hour")),
         });
         v.push(match self.quiet_until.filter(|q| t < *q) {
-            Some(q) => MenuItem { detail: Some(left(q)), ..item(MenuAction::Quiet, Icon::Bell(0), "Resume pop-ups") },
-            None => item(MenuAction::Quiet, Icon::Bell(0), "Pause pop-ups for an hour"),
+            Some(q) => {
+                MenuItem { detail: Some(left(q)), ..item(MenuAction::Quiet, Icon::Bell(0), tr("Resume pop-ups")) }
+            }
+            None => item(MenuAction::Quiet, Icon::Bell(0), tr("Pause pop-ups for an hour")),
         });
-        v.push(MenuItem { switch: Some(self.prefs.lyrics), ..item(MenuAction::Lyrics, Icon::Music, "Lyrics") });
+        v.push(MenuItem { switch: Some(self.prefs.lyrics), ..item(MenuAction::Lyrics, Icon::Music, tr("Lyrics")) });
         if self.song_lyrics().is_some() {
             let d = self.song_key().and_then(|k| self.lyrics_delay.get(&k).copied()).unwrap_or(0.0);
-            let detail = if d == 0.0 { "On time".to_string() } else { format!("{d:+.1} s") };
-            v.push(MenuItem { detail: Some(detail), ..item(MenuAction::LyricsTiming, Icon::Music, "Lyrics timing") });
+            let detail = if d == 0.0 { tr("On time").to_string() } else { format!("{d:+.1} s") };
+            v.push(MenuItem {
+                detail: Some(detail),
+                ..item(MenuAction::LyricsTiming, Icon::Music, tr("Lyrics timing"))
+            });
         }
         // The sleep timer: offered while something plays (or one is set).
         if self.sleep_at.is_some() || self.activities.media().is_some_and(|m| m.playing) {
-            let detail = self.sleep_at.map_or("Off".to_string(), left);
-            v.push(MenuItem { detail: Some(detail), ..item(MenuAction::Sleep, Icon::Moon, "Sleep timer") });
+            let detail = self.sleep_at.map_or(tr("Off").to_string(), left);
+            v.push(MenuItem { detail: Some(detail), ..item(MenuAction::Sleep, Icon::Moon, tr("Sleep timer")) });
         }
         // Your first shortcuts, in the rows that are left.
         let room = content::MENU_MAX_ROWS.saturating_sub(v.len() + 1).min(2);
         for (i, sc) in self.prefs.shortcuts.iter().enumerate().take(room) {
             v.push(item(MenuAction::Shortcut(i as u8), Icon::Bolt, &sc.name));
         }
-        v.push(item(MenuAction::Quit, Icon::Close, "Quit Islet"));
+        v.push(item(MenuAction::Quit, Icon::Close, tr("Quit Islet")));
         v
     }
 
@@ -1573,60 +1593,79 @@ impl App {
                 }
                 _ => "Islet".to_string(),
             },
-            Some(Live::Alarm(a)) => format!("Alarm ringing: {}", a.title()),
-            Some(Live::Call(c)) => format!(
-                "On a call{}, {}{}",
-                if c.app.is_empty() { String::new() } else { format!(" in {}", c.app) },
-                content::format_duration(t - c.since),
-                if c.muted == Some(true) { ", microphone muted" } else { "" }
-            ),
-            Some(Live::Hud(Hud::Volume { muted: true, .. })) => "Volume muted".to_string(),
-            Some(Live::Hud(Hud::Volume { level, .. })) => format!("Volume {}%", pct(*level)),
-            Some(Live::Hud(Hud::Brightness(b))) => format!("Brightness {}%", pct(*b)),
-            Some(Live::Hud(Hud::CapsLock(on))) => format!("Caps Lock {}", if *on { "on" } else { "off" }),
-            Some(Live::Hud(Hud::WifiJoined(name))) => format!("Connected to {name}"),
-            Some(Live::Hud(Hud::Airplane(on))) => format!("Airplane mode {}", if *on { "on" } else { "off" }),
-            Some(Live::Hud(Hud::DoNotDisturb(on))) => {
-                format!("Do Not Disturb {}", if *on { "on" } else { "off" })
+            Some(Live::Alarm(a)) => tf("Alarm ringing: {}", &[&a.title()]),
+            Some(Live::Call(c)) => {
+                let mut s = if c.app.is_empty() {
+                    tf("On a call, {}", &[&content::format_duration(t - c.since)])
+                } else {
+                    tf("On a call in {}, {}", &[&c.app, &content::format_duration(t - c.since)])
+                };
+                if c.muted == Some(true) {
+                    s = format!("{s}, {}", tr("microphone muted"));
+                }
+                s
             }
-            Some(Live::Note(n)) => format!("Notification from {}: {}", n.app, n.summary),
+            Some(Live::Hud(Hud::Volume { muted: true, .. })) => tr("Volume muted").to_string(),
+            Some(Live::Hud(Hud::Volume { level, .. })) => tf("Volume {}%", &[&pct(*level)]),
+            Some(Live::Hud(Hud::Brightness(b))) => tf("Brightness {}%", &[&pct(*b)]),
+            Some(Live::Hud(Hud::CapsLock(on))) => tr(if *on { "Caps Lock on" } else { "Caps Lock off" }).to_string(),
+            Some(Live::Hud(Hud::WifiJoined(name))) => tf("Connected to {}", &[name]),
+            Some(Live::Hud(Hud::Airplane(on))) => {
+                tr(if *on { "Airplane mode on" } else { "Airplane mode off" }).to_string()
+            }
+            Some(Live::Hud(Hud::DoNotDisturb(on))) => {
+                tr(if *on { "Do Not Disturb on" } else { "Do Not Disturb off" }).to_string()
+            }
+            Some(Live::Note(n)) => tf("Notification from {}: {}", &[&n.app, &n.summary]),
             Some(Live::Battery {
                 device: d,
                 reason:
                     reason @ (islet_core::activity::PeekReason::ChargerChanged | islet_core::activity::PeekReason::Full),
             }) => format!("{}, {}%", content::charging_label(d, *reason), d.percent),
             Some(Live::Battery { device: d, .. }) => {
-                format!("{} {}%{}", d.name, d.percent, if d.charging { ", charging" } else { "" })
+                if d.charging {
+                    tf("{} {}%, charging", &[&d.name, &d.percent])
+                } else {
+                    format!("{} {}%", d.name, d.percent)
+                }
             }
             Some(Live::Custom(c)) => match c.progress {
                 Some(p) => format!("{}, {}%", c.title, (p * 100.0).round() as i32),
-                None => format!("{}, in progress", c.title),
+                None => tf("{}, in progress", &[&c.title]),
             },
-            Some(Live::Stopwatch(sw)) => format!(
-                "Stopwatch, {}{}",
-                islet_core::stopwatch::format(sw.elapsed(t), false),
-                if sw.running() { "" } else { ", paused" }
-            ),
-            Some(Live::Timer(tm)) => format!(
-                "{}, {} left{}",
-                tm.title(),
-                islet_core::timer::format_countdown(tm.remaining(t)),
-                if tm.running() { "" } else { ", paused" }
-            ),
+            Some(Live::Stopwatch(sw)) => {
+                let s = tf("Stopwatch, {}", &[&islet_core::stopwatch::format(sw.elapsed(t), false)]);
+                if sw.running() {
+                    s
+                } else {
+                    format!("{s}, {}", tr("paused"))
+                }
+            }
+            Some(Live::Timer(tm)) => {
+                let s = tf("{}, {} left", &[&tm.title(), &islet_core::timer::format_countdown(tm.remaining(t))]);
+                if tm.running() {
+                    s
+                } else {
+                    format!("{s}, {}", tr("paused"))
+                }
+            }
             Some(Live::Event { event, starts_at }) => {
                 format!("{} {}", event.summary, islet_core::calendar::relative(starts_at.ceil() as i64, t as i64))
             }
             Some(Live::Navigation(n)) => match &n.route {
-                Some(r) => format!("Navigation to {}: {}", n.trip.title(), islet_core::nav::format_minutes(r.duration)),
-                None => format!("Navigation to {}", n.trip.title()),
+                Some(r) => tf("Navigation to {}: {}", &[&n.trip.title(), &islet_core::nav::format_minutes(r.duration)]),
+                None => tf("Navigation to {}", &[&n.trip.title()]),
             },
-            Some(Live::Media(m)) => format!(
-                "{}: {}{}{}",
-                if m.playing { "Now playing" } else { "Paused" },
-                m.title,
-                if m.artist.is_empty() { String::new() } else { format!(" by {}", m.artist) },
-                if m.app_name.is_empty() { String::new() } else { format!(", in {}", m.app_name) }
-            ),
+            Some(Live::Media(m)) => {
+                let mut s = format!("{}: {}", tr(if m.playing { "Now playing" } else { "Paused" }), m.title);
+                if !m.artist.is_empty() {
+                    s = tf("{} by {}", &[&s, &m.artist]);
+                }
+                if !m.app_name.is_empty() {
+                    s = tf("{}, in {}", &[&s, &m.app_name]);
+                }
+                s
+            }
         };
         // What the small icons on the empty island say.
         let label = match self.mode_icons().as_slice() {
@@ -1634,7 +1673,7 @@ impl App {
             icons if live.is_empty() => {
                 let names: Vec<&str> = icons
                     .iter()
-                    .map(|i| if *i == Icon::Airplane { "Airplane mode on" } else { "Do Not Disturb on" })
+                    .map(|i| tr(if *i == Icon::Airplane { "Airplane mode on" } else { "Do Not Disturb on" }))
                     .collect();
                 format!("{label}. {}", names.join(", "))
             }
@@ -1652,14 +1691,14 @@ impl App {
             let c = self.activities.connectivity();
             let shown = self.open_content(&live);
             if Self::has_header(&shown) {
-                buttons.push(("Control Centre".to_string(), content::home_button(outer)));
+                buttons.push((tr("Control Centre").to_string(), content::home_button(outer)));
             }
             if self.home && matches!(shown, OpenContent::Clock) {
-                buttons.push((format!("Back to {}", self.activity_label(&live)), content::return_button(outer)));
+                buttons.push((tf("Back to {}", &[&self.activity_label(&live)]), content::return_button(outer)));
             }
             match shown {
                 OpenContent::Call(c) => {
-                    let name = if c.muted == Some(true) { "Unmute microphone" } else { "Mute microphone" };
+                    let name = tr(if c.muted == Some(true) { "Unmute microphone" } else { "Mute microphone" });
                     buttons.push((name.into(), content::call_mute_button(cr)));
                 }
                 OpenContent::Menu => {
@@ -1667,12 +1706,12 @@ impl App {
                     for (item, r) in items.iter().zip(content::menu_rows(cr, items.len())) {
                         if item.action == content::MenuAction::LyricsTiming {
                             let (minus, plus) = content::menu_stepper(r);
-                            buttons.push(("Lyrics sooner".into(), minus));
-                            buttons.push(("Lyrics later".into(), plus));
+                            buttons.push((tr("Lyrics sooner").into(), minus));
+                            buttons.push((tr("Lyrics later").into(), plus));
                             continue;
                         }
                         let state = match item.switch {
-                            Some(on) => format!(", {}", if on { "on" } else { "off" }),
+                            Some(on) => format!(", {}", tr(if on { "on" } else { "off" })),
                             None => String::new(),
                         };
                         buttons.push((format!("{}{state}", item.label), r));
@@ -1681,10 +1720,10 @@ impl App {
                 OpenContent::Media(m) => {
                     for (r, ctl) in content::media_controls(cr, self.volume.is_some()) {
                         let name = match ctl {
-                            Control::Previous => "Previous",
-                            Control::PlayPause if m.playing => "Pause",
-                            Control::PlayPause => "Play",
-                            Control::Next => "Next",
+                            Control::Previous => tr("Previous"),
+                            Control::PlayPause if m.playing => tr("Pause"),
+                            Control::PlayPause => tr("Play"),
+                            Control::Next => tr("Next"),
                             Control::Scrub | Control::Volume => continue,
                         };
                         buttons.push((name.to_string(), r));
@@ -1692,14 +1731,14 @@ impl App {
                 }
                 OpenContent::Alarm(a) => {
                     let [(snooze, _), (stop, _)] = content::alarm_controls(cr);
-                    buttons.push((if a.id == TIMER_ALARM_ID { "Repeat" } else { "Snooze" }.into(), snooze));
-                    buttons.push(("Stop".into(), stop));
+                    buttons.push((tr(if a.id == TIMER_ALARM_ID { "Repeat" } else { "Snooze" }).into(), snooze));
+                    buttons.push((tr("Stop").into(), stop));
                 }
                 OpenContent::Custom(c) if c.id == content::HOG_ID => {
                     for (r, b) in content::hog_buttons(cr) {
                         let name = match b {
-                            content::HogButton::Ignore => "Ignore".to_string(),
-                            content::HogButton::Close => format!("Close {}", c.title),
+                            content::HogButton::Ignore => tr("Ignore").to_string(),
+                            content::HogButton::Close => tf("Close {}", &[&c.title]),
                         };
                         buttons.push((name, r));
                     }
@@ -1707,21 +1746,21 @@ impl App {
                 OpenContent::Agenda => {
                     for (i, e) in self.agenda_events().enumerate() {
                         if self.join_link(e).is_some() {
-                            buttons.push((format!("Join {}", e.summary), content::agenda_join_button(cr, i)));
+                            buttons.push((tf("Join {}", &[&e.summary]), content::agenda_join_button(cr, i)));
                         }
                     }
                 }
                 OpenContent::Timer(tm) => {
                     let [(pause, _), (stop, _)] = content::timer_controls(cr);
-                    buttons.push((if tm.running() { "Pause" } else { "Resume" }.into(), pause));
-                    buttons.push(("Stop timer".into(), stop));
+                    buttons.push((tr(if tm.running() { "Pause" } else { "Resume" }).into(), pause));
+                    buttons.push((tr("Stop timer").into(), stop));
                 }
                 OpenContent::Nav(_) => {
                     for (r, ctl) in content::nav_controls(cr) {
                         let name = match ctl {
-                            NavControl::GoogleMaps => "Open in Google Maps",
-                            NavControl::Waze => "Open in Waze",
-                            NavControl::Stop => "Stop navigation",
+                            NavControl::GoogleMaps => tr("Open in Google Maps"),
+                            NavControl::Waze => tr("Open in Waze"),
+                            NavControl::Stop => tr("Stop navigation"),
                         };
                         buttons.push((name.into(), r));
                     }
@@ -1731,46 +1770,46 @@ impl App {
                         let name = match p {
                             Panel::Wifi => {
                                 let state = match c.wifi_network() {
-                                    _ if !c.wifi_on() => ", off".to_string(),
+                                    _ if !c.wifi_on() => format!(", {}", tr("off")),
                                     Some(n) => format!(", {n}"),
-                                    None => ", on".to_string(),
+                                    None => format!(", {}", tr("on")),
                                 };
-                                format!("Wi-Fi{state}")
+                                format!("{}{state}", tr("Wi-Fi"))
                             }
                             Panel::Bluetooth => {
                                 let state = match c.connected_device() {
-                                    _ if !c.bt_on() => ", off".to_string(),
+                                    _ if !c.bt_on() => format!(", {}", tr("off")),
                                     Some(d) => format!(", {}", d.name),
-                                    None => ", on".to_string(),
+                                    None => format!(", {}", tr("on")),
                                 };
-                                format!("Bluetooth{state}")
+                                format!("{}{state}", tr("Bluetooth"))
                             }
-                            Panel::Shelf => format!("Shelf, {} items", self.shelf.len()),
-                            Panel::System => "System monitor".into(),
-                            Panel::Controls => "Volume and brightness".into(),
-                            Panel::Stopwatch => "Stopwatch".into(),
-                            Panel::Todo => format!("To-do, {} left", self.todo.left()),
-                            Panel::Calendar => "Calendar".into(),
-                            Panel::Shortcuts => "Shortcuts".into(),
-                            Panel::Clipboard => format!("Clipboard history, {} items", self.clip.len()),
+                            Panel::Shelf => tf("Shelf, {} items", &[&self.shelf.len()]),
+                            Panel::System => tr("System monitor").into(),
+                            Panel::Controls => tr("Volume and brightness").into(),
+                            Panel::Stopwatch => tr("Stopwatch").into(),
+                            Panel::Todo => tf("To-do, {} left", &[&self.todo.left()]),
+                            Panel::Calendar => tr("Calendar").into(),
+                            Panel::Shortcuts => tr("Shortcuts").into(),
+                            Panel::Clipboard => tf("Clipboard history, {} items", &[&self.clip.len()]),
                         };
                         buttons.push((name, r));
                     }
                     let minutes = content::QUICK_MINUTES[self.quick];
                     for (r, q) in content::quick_row(cr, self.clock_row()) {
                         let name = match q {
-                            content::Quick::Step(d) if d < 0 => "Shorter timer".to_string(),
-                            content::Quick::Step(_) => "Longer timer".to_string(),
-                            content::Quick::Start => format!("Start a {minutes}-minute timer"),
-                            content::Quick::Calendar => "Calendar".to_string(),
-                            content::Quick::Screenshot => "Take a screenshot".to_string(),
-                            content::Quick::Lock => "Lock the computer".to_string(),
+                            content::Quick::Step(d) if d < 0 => tr("Shorter timer").to_string(),
+                            content::Quick::Step(_) => tr("Longer timer").to_string(),
+                            content::Quick::Start => tf("Start a {}-minute timer", &[&minutes]),
+                            content::Quick::Calendar => tr("Calendar").to_string(),
+                            content::Quick::Screenshot => tr("Take a screenshot").to_string(),
+                            content::Quick::Lock => tr("Lock the computer").to_string(),
                         };
                         buttons.push((name, r));
                     }
                 }
                 OpenContent::Panel(p) => {
-                    buttons.push(("Back".into(), content::list_header(cr)));
+                    buttons.push((tr("Back").into(), content::list_header(cr)));
                     if p == Panel::Controls {
                         let sliders = content::tune_sliders(
                             cr,
@@ -1780,31 +1819,33 @@ impl App {
                         );
                         for (r, tune) in sliders {
                             let (name, level) = match tune {
-                                content::Tune::Volume => ("Volume".to_string(), self.volume.map_or(0.0, |v| v.0)),
-                                content::Tune::Brightness => ("Brightness".to_string(), self.brightness.unwrap_or(0.0)),
+                                content::Tune::Volume => (tr("Volume").to_string(), self.volume.map_or(0.0, |v| v.0)),
+                                content::Tune::Brightness => {
+                                    (tr("Brightness").to_string(), self.brightness.unwrap_or(0.0))
+                                }
                                 content::Tune::App(i) => {
                                     let a = &self.mixer[i];
-                                    (format!("{} volume", a.name), a.level)
+                                    (tf("{} volume", &[&a.name]), a.level)
                                 }
                             };
                             buttons.push((format!("{name}, {}%", (level * 100.0).round() as i32), r));
                         }
                         let dark = content::dark_mode_button(cr, self.tune_count());
-                        buttons.push(("Switch dark / light mode".into(), dark));
+                        buttons.push((tr("Switch dark / light mode").into(), dark));
                     }
                     if p == Panel::Calendar {
                         for (r, dir) in content::calendar_arrows(cr) {
-                            buttons.push((if dir < 0 { "Previous month" } else { "Next month" }.into(), r));
+                            buttons.push((tr(if dir < 0 { "Previous month" } else { "Next month" }).into(), r));
                         }
                     }
                     let radio = match p {
-                        Panel::Wifi if c.wifi.available => Some(("Wi-Fi", c.wifi.enabled)),
-                        Panel::Bluetooth if c.bt.available => Some(("Bluetooth", c.bt.powered)),
+                        Panel::Wifi if c.wifi.available => Some((tr("Wi-Fi"), c.wifi.enabled)),
+                        Panel::Bluetooth if c.bt.available => Some((tr("Bluetooth"), c.bt.powered)),
                         _ => None,
                     };
                     if let Some((name, on)) = radio {
-                        let what = if on { "off" } else { "on" };
-                        buttons.push((format!("Turn {name} {what}"), content::power_switch(cr)));
+                        let words = if on { tf("Turn {} off", &[&name]) } else { tf("Turn {} on", &[&name]) };
+                        buttons.push((words, content::power_switch(cr)));
                     }
                     let names: Vec<String> = match p {
                         Panel::Wifi => c
@@ -1816,11 +1857,11 @@ impl App {
                                     "{}{}",
                                     n.ssid,
                                     if n.active {
-                                        ", connected"
+                                        format!(", {}", tr("connected"))
                                     } else if n.secure && !n.known {
-                                        ", needs a password"
+                                        format!(", {}", tr("needs a password"))
                                     } else {
-                                        ""
+                                        String::new()
                                     }
                                 )
                             })
@@ -1829,18 +1870,20 @@ impl App {
                             .bt
                             .devices
                             .iter()
-                            .map(|d| format!("{}, {}", d.name, if d.connected { "connected" } else { "not connected" }))
+                            .map(|d| {
+                                format!("{}, {}", d.name, tr(if d.connected { "connected" } else { "not connected" }))
+                            })
                             .collect(),
-                        Panel::Shelf => self.shelf.iter().map(|i| format!("Open {}", i.name())).collect(),
+                        Panel::Shelf => self.shelf.iter().map(|i| tf("Open {}", &[&i.name()])).collect(),
                         Panel::System | Panel::Stopwatch | Panel::Calendar | Panel::Controls => Vec::new(),
-                        Panel::Shortcuts => self.prefs.shortcuts.iter().map(|s| format!("Open {}", s.name)).collect(),
+                        Panel::Shortcuts => self.prefs.shortcuts.iter().map(|s| tf("Open {}", &[&s.name])).collect(),
                         Panel::Todo => self
                             .todo
                             .ordered()
                             .iter()
-                            .map(|i| format!("{}{}", i.text, if i.done { ", done" } else { ", to do" }))
+                            .map(|i| format!("{}, {}", i.text, tr(if i.done { "done" } else { "to do" })))
                             .collect(),
-                        Panel::Clipboard => self.clip.items().map(|c| format!("Copy {}", c.label())).collect(),
+                        Panel::Clipboard => self.clip.items().map(|c| tf("Copy {}", &[&c.label()])).collect(),
                     };
                     let (total, footer) = self.panel_list(p);
                     let scroll = self.scroll_of(p);
@@ -1914,7 +1957,7 @@ impl App {
             .map(|e| {
                 let local = (e.start + self.utc_offset).rem_euclid(86_400);
                 let time = if e.all_day {
-                    "All day".to_string()
+                    tr("All day").to_string()
                 } else {
                     islet_core::alarm::format_hm((local / 3600) as u8, (local / 60 % 60) as u8, self.h24)
                 };
@@ -1978,6 +2021,9 @@ impl App {
         content::set_accent(prefs.accent_rgb());
         self.prefs = prefs;
         self.h24 = self.prefs.h24(self.locale_h24);
+        if !self.locale.is_empty() {
+            self.apply_language();
+        }
         self.apply_limits();
         if !self.prefs.lyrics {
             self.lyrics = None;
@@ -2028,15 +2074,15 @@ impl App {
     /// The name on Control Centre's button back to the activity.
     fn activity_label(&self, live: &[Live]) -> String {
         match self.open_content_as(live, false) {
-            OpenContent::Media(_) => "Now Playing".into(),
+            OpenContent::Media(_) => tr("Now Playing").into(),
             OpenContent::Timer(tm) => tm.title().to_string(),
-            OpenContent::Nav(_) => "Navigation".into(),
-            OpenContent::Notes => "Notifications".into(),
-            OpenContent::Agenda => "Calendar".into(),
-            OpenContent::Battery => "Battery".into(),
+            OpenContent::Nav(_) => tr("Navigation").into(),
+            OpenContent::Notes => tr("Notifications").into(),
+            OpenContent::Agenda => tr("Calendar").into(),
+            OpenContent::Battery => tr("Battery").into(),
             OpenContent::Custom(c) => c.title.clone(),
-            OpenContent::Call(_) => "Call".into(),
-            _ => "Back".into(),
+            OpenContent::Call(_) => tr("Call").into(),
+            _ => tr("Back").into(),
         }
     }
 
@@ -2372,19 +2418,16 @@ impl App {
         let others = ahead().filter(|e| !deadlines.iter().any(|d| std::ptr::eq(*d, *e)));
         let row = |e: &CalEvent, deadline: bool| {
             if deadline {
-                let when = format!("Due {}", countdown(e, now, self.utc_offset));
+                let when = tf("Due {}", &[&countdown(e, now, self.utc_offset)]);
                 return content::Upcoming { when, name: e.summary.clone(), deadline };
             }
             let local = e.start + if e.all_day { 0 } else { self.utc_offset };
             let day = local.div_euclid(86_400);
             let (_, month, d) = islet_core::calendar::civil_from_days(day);
             let date = match day - today {
-                i64::MIN..=0 => "Today".to_string(),
-                1 => "Tomorrow".to_string(),
-                _ => {
-                    let name = islet_core::clock::month_name(month);
-                    format!("{d} {}", &name[..name.len().min(3)])
-                }
+                i64::MIN..=0 => tr("Today").to_string(),
+                1 => tr("Tomorrow").to_string(),
+                _ => tf("{} {}‖day and short month", &[&d, &islet_core::clock::month_short(month)]),
             };
             let when = if e.all_day {
                 date
@@ -2635,7 +2678,7 @@ impl App {
                         out.extend(content::expanded_clock(cr, &now, self.h24, note, weather, eo, engine));
                     }
                     let minutes = content::QUICK_MINUTES[self.quick];
-                    out.extend(content::quick_row_elements(cr, self.clock_row(), minutes, eo));
+                    out.extend(content::quick_row_elements(cr, self.clock_row(), minutes, eo, engine));
                     let world = self.world_clocks();
                     if !world.is_empty() {
                         out.extend(content::world_clocks(cr, &world, self.h24, eo, engine));
@@ -5356,6 +5399,50 @@ mod tests {
             sheet.draw_pixmap(x, y, cell.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
         }
         sheet.save_png(out).unwrap();
+    }
+
+    /// Control Centre and a timer in each language, for visual review:
+    /// `ISLET_LANG_SHOTS=/path/dir cargo test -p islet lang_shots -- --test-threads=1`
+    /// (It switches the language for the whole test run, so run it alone.)
+    #[test]
+    fn lang_shots() {
+        let Some(dir) = std::env::var_os("ISLET_LANG_SHOTS") else { return };
+        use tiny_skia::Pixmap;
+        let dir = std::path::PathBuf::from(dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut engine = TextEngine::new();
+        engine.add_system_fonts();
+        for (code, _) in islet_core::i18n::LANGUAGES.iter().skip(1) {
+            islet_core::i18n::set_language(code);
+            let mut cc = App::new(Demo::None, false);
+            cc.set_time(NOW, 0.0);
+            use islet_core::weather::{Sky, Weather};
+            let w = Weather {
+                place: "Kampala".into(),
+                temp_c: 24.3,
+                high_c: Some(27.0),
+                low_c: Some(17.0),
+                sky: Sky::PartlyCloudy,
+                is_day: true,
+            };
+            cc.report(Report::Weather(Some(w)), 0.0);
+            click(&mut cc, 0.5);
+            let mut timer = App::new(Demo::None, false);
+            timer.set_time(NOW, 0.0);
+            timer.timer_command(TimerCommand::Start { secs: 300.0, label: String::new() }, 0.0);
+            click(&mut timer, 0.5);
+            for (name, a) in [("cc", &cc), ("timer", &timer)] {
+                let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
+                let mut cell = Pixmap::new(cw * 2, ch * 2).unwrap();
+                let frame = a.frame(30.0);
+                islet_render::draw(&mut cell, &frame, 2.0);
+                let clip = islet_render::clip_mask(&frame, cw * 2, ch * 2, 2.0);
+                let els = a.elements(30.0, &mut engine);
+                islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 2.0, clip.as_ref());
+                cell.save_png(dir.join(format!("{code}-{name}.png"))).unwrap();
+            }
+        }
+        islet_core::i18n::set_language("en");
     }
 
     /// The Controls panel, for visual review:

@@ -81,6 +81,13 @@ pub struct TextEngine {
     /// Shaped text by (text, size, weight, tabular): the island draws the
     /// same few strings every animation frame, and shaping is the costly part.
     shaped: HashMap<(String, u32, u16, bool), Arc<Shaped>>,
+    /// The system's fonts are loaded too (see `add_system_fonts`).
+    system_fonts: bool,
+}
+
+/// The system's language, as "en-US" ("en-US" when it can't be read).
+pub fn system_locale() -> String {
+    sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string())
 }
 
 /// One shaped string: its width and each line's glyphs.
@@ -114,7 +121,7 @@ impl TextEngine {
         db.load_font_source(fontdb::Source::Binary(Arc::new(INTER_REGULAR)));
         db.load_font_source(fontdb::Source::Binary(Arc::new(INTER_SEMIBOLD)));
         let family = system_font.then(|| system_ui_family(&mut db)).flatten().unwrap_or_else(|| INTER.to_string());
-        let locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
+        let locale = system_locale();
         let fonts = FontSystem::new_with_locale_and_db(locale, db);
         Self {
             fonts,
@@ -123,6 +130,7 @@ impl TextEngine {
             family,
             buffer: None,
             shaped: HashMap::new(),
+            system_fonts: false,
         }
     }
 
@@ -151,6 +159,19 @@ impl TextEngine {
             self.cache = SwashCache::new();
         }
         ok
+    }
+
+    /// Let text in scripts Inter lacks (Chinese, Japanese, Arabic, Hindi)
+    /// borrow the system's fonts. Done once, when such a language is picked,
+    /// so the island otherwise never reads the font folders.
+    pub fn add_system_fonts(&mut self) {
+        if self.system_fonts {
+            return;
+        }
+        self.system_fonts = true;
+        self.fonts.db_mut().load_system_fonts();
+        self.shaped.clear();
+        self.cache = SwashCache::new();
     }
 
     /// The family used for island text ("Inter", or the macOS system font).

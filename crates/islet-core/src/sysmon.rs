@@ -174,8 +174,8 @@ impl BatteryHealth {
     /// "87%", "87% · 312 cycles"
     pub fn describe(&self) -> String {
         match self.cycles {
-            Some(1) => format!("{}% · 1 cycle", self.percent),
-            Some(c) => format!("{}% · {c} cycles", self.percent),
+            Some(1) => crate::i18n::tf("{}% · 1 cycle", &[&self.percent]),
+            Some(c) => crate::i18n::tf("{}% · {} cycles", &[&self.percent, &c]),
             None => format!("{}%", self.percent),
         }
     }
@@ -199,11 +199,8 @@ pub fn parse_ioreg_battery(s: &str) -> Option<BatteryHealth> {
 pub fn format_bytes_of(used: u64, total: u64) -> String {
     const GB: f64 = 1024.0 * 1024.0 * 1024.0;
     let (u, t) = (used as f64 / GB, total as f64 / GB);
-    if t >= 100.0 {
-        format!("{u:.0} of {t:.0} GB")
-    } else {
-        format!("{u:.1} of {t:.0} GB")
-    }
+    let used = if t >= 100.0 { format!("{u:.0}") } else { format!("{u:.1}") };
+    crate::i18n::tf("{} of {} GB", &[&used, &format!("{t:.0}")])
 }
 
 #[cfg(test)]

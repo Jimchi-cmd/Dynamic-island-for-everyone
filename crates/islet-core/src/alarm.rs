@@ -19,6 +19,8 @@ pub const CATCH_UP_MINUTES: i64 = 10;
 pub const DAILY: u8 = 0b111_1111;
 pub const WEEKDAYS: u8 = 0b011_1110;
 pub const WEEKENDS: u8 = 0b100_0001;
+use crate::i18n::t;
+
 const DAY_NAMES: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -123,11 +125,11 @@ pub fn parse_days(s: &str) -> Option<u8> {
 /// "Once", "Every day", "Weekdays", "Weekends" or "Mon, Wed, Fri".
 pub fn describe_days(days: u8) -> String {
     match days & DAILY {
-        0 => "Once".into(),
-        DAILY => "Every day".into(),
-        WEEKDAYS => "Weekdays".into(),
-        WEEKENDS => "Weekends".into(),
-        d => (0..7).filter(|i| d & (1 << i) != 0).map(|i| DAY_NAMES[i]).collect::<Vec<_>>().join(", "),
+        0 => t("Once").into(),
+        DAILY => t("Every day").into(),
+        WEEKDAYS => t("Weekdays").into(),
+        WEEKENDS => t("Weekends").into(),
+        d => (0..7).filter(|i| d & (1 << i) != 0).map(|i| t(DAY_NAMES[i])).collect::<Vec<_>>().join(", "),
     }
 }
 
@@ -137,7 +139,7 @@ pub fn format_hm(hour: u8, minute: u8, h24: bool) -> String {
         format!("{hour:02}:{minute:02}")
     } else {
         let h = if hour % 12 == 0 { 12 } else { hour % 12 };
-        format!("{h}:{minute:02} {}", if hour < 12 { "AM" } else { "PM" })
+        format!("{h}:{minute:02} {}", t(if hour < 12 { "AM" } else { "PM" }))
     }
 }
 

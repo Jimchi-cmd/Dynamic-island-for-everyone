@@ -40,7 +40,7 @@ pub fn sky(code: u32) -> Sky {
 }
 
 pub fn describe(s: Sky) -> &'static str {
-    match s {
+    crate::i18n::t(match s {
         Sky::Clear => "Clear",
         Sky::PartlyCloudy => "Partly cloudy",
         Sky::Cloudy => "Cloudy",
@@ -48,7 +48,7 @@ pub fn describe(s: Sky) -> &'static str {
         Sky::Rain => "Rain",
         Sky::Snow => "Snow",
         Sky::Storm => "Thunderstorm",
-    }
+    })
 }
 
 pub fn forecast_url(p: &Place) -> String {

@@ -383,7 +383,8 @@ pub fn parse_ics(ics: &str, from: i64, to: i64, local_offset: i64) -> Vec<CalEve
             .filter(|(n, _, _)| n == "EXDATE")
             .flat_map(|(_, _, v)| v.split(',').filter_map(parse_datetime).map(|(n, _, _)| n).collect::<Vec<_>>())
             .collect();
-        let summary = ev.get("SUMMARY").map(|(_, v)| unescape(v)).unwrap_or_else(|| "(No title)".into());
+        let summary =
+            ev.get("SUMMARY").map(|(_, v)| unescape(v)).unwrap_or_else(|| crate::i18n::t("(No title)").into());
         let location = ev.get("LOCATION").map(|(_, v)| unescape(v)).filter(|l| !l.trim().is_empty());
         let link = ["X-GOOGLE-CONFERENCE", "URL", "LOCATION", "DESCRIPTION"]
             .iter()
@@ -484,12 +485,13 @@ pub fn next_change(events: &[CalEvent], now: i64) -> Option<i64> {
 /// "in 8 min", "now", "in 1 h 05".
 pub fn relative(start: i64, now: i64) -> String {
     let mins = (start - now + 59).div_euclid(60);
+    use crate::i18n::{t, tf};
     if mins <= 0 {
-        "now".into()
+        t("now").into()
     } else if mins < 60 {
-        format!("in {mins} min")
+        tf("in {} min", &[&mins])
     } else {
-        format!("in {} h {:02}", mins / 60, mins % 60)
+        tf("in {} h {}", &[&(mins / 60), &format!("{:02}", mins % 60)])
     }
 }
 
@@ -526,19 +528,20 @@ pub fn countdown(e: &CalEvent, now: i64, utc_offset: i64) -> String {
     // All-day events are already dates on the local calendar.
     let day = if e.all_day { e.start.div_euclid(86_400) } else { (e.start + utc_offset).div_euclid(86_400) };
     let left = e.start - now;
+    use crate::i18n::{t, tf};
     if !e.all_day && left <= 0 {
-        return "now".into();
+        return t("now").into();
     }
     if !e.all_day && left < 3600 {
-        return format!("in {} min", (left + 59) / 60);
+        return tf("in {} min", &[&((left + 59) / 60)]);
     }
     if !e.all_day && left < 24 * 3600 && day - today <= 1 {
-        return format!("in {} h", (left + 1800) / 3600);
+        return tf("in {} h", &[&((left + 1800) / 3600)]);
     }
     match day - today {
-        i64::MIN..=0 => "today".into(),
-        1 => "tomorrow".into(),
-        n => format!("in {n} days"),
+        i64::MIN..=0 => t("today").into(),
+        1 => t("tomorrow").into(),
+        n => tf("in {} days", &[&n]),
     }
 }
 

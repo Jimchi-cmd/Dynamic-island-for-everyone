@@ -1,6 +1,8 @@
 //! Wall-clock formatting for the clock activity. The OS supplies the local
 //! time (crates/islet/src/clock.rs); everything here is pure and tested.
-//! Strings are English for now and move to the i18n catalogue in phase 2.
+//! Day and month names come from the translation table (`crate::i18n`).
+
+use crate::i18n::{t, tf};
 
 /// Broken-down local time, as reported by the OS.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,6 +20,9 @@ pub struct LocalTime {
 }
 
 const WEEKDAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const WEEKDAYS_SHORT: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS_SHORT: [&str; 12] =
+    ["Jan", "Feb", "Mar", "Apr", "May‖short month", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MONTHS: [&str; 12] = [
     "January",
     "February",
@@ -43,27 +48,40 @@ pub fn format_time(t: &LocalTime, h24: bool) -> (String, Option<&'static str>) {
             0 => 12,
             h => h,
         };
-        (format!("{}:{:02}", h, t.minute), Some(if t.hour < 12 { "AM" } else { "PM" }))
+        (format!("{}:{:02}", h, t.minute), Some(self::t(if t.hour < 12 { "AM" } else { "PM" })))
     }
 }
 
 /// "November" for 11 ("" out of range).
 pub fn month_name(month: u8) -> &'static str {
-    month.checked_sub(1).and_then(|i| MONTHS.get(i as usize)).copied().unwrap_or("")
+    month.checked_sub(1).and_then(|i| MONTHS.get(i as usize)).map_or("", |m| t(m))
+}
+
+/// "Nov": a month's short name ("" out of range).
+pub fn month_short(month: u8) -> &'static str {
+    month.checked_sub(1).and_then(|i| MONTHS_SHORT.get(i as usize)).map_or("", |m| t(m))
+}
+
+/// "Wed": a day's short name (0 = Sunday).
+pub fn weekday_short(weekday: u8) -> &'static str {
+    WEEKDAYS_SHORT.get(weekday as usize).map_or("", |d| t(d))
+}
+
+/// "November 2026", in the language's own order.
+pub fn month_year(month: u8, year: i32) -> String {
+    tf("{} {}‖month and year", &[&month_name(month), &year])
 }
 
 /// "Wed 4 Nov": the date when the line has to share its space.
 pub fn format_date_short(t: &LocalTime) -> String {
-    let wd = WEEKDAYS.get(t.weekday as usize).map_or("", |w| &w[..3]);
-    let mo = month_name(t.month);
-    format!("{wd} {} {}", t.day, &mo[..mo.len().min(3)])
+    let mo = t.month.checked_sub(1).and_then(|i| MONTHS_SHORT.get(i as usize)).map_or("", |m| self::t(m));
+    tf("{} {} {}‖short weekday, day, short month", &[&weekday_short(t.weekday), &t.day, &mo])
 }
 
 /// "Wednesday, 4 November"
 pub fn format_date(t: &LocalTime) -> String {
-    let wd = WEEKDAYS.get(t.weekday as usize).copied().unwrap_or("");
-    let mo = t.month.checked_sub(1).and_then(|i| MONTHS.get(i as usize)).copied().unwrap_or("");
-    format!("{wd}, {} {mo}", t.day)
+    let wd = WEEKDAYS.get(t.weekday as usize).map_or("", |w| self::t(w));
+    tf("{}, {} {}‖weekday, day, month", &[&wd, &t.day, &month_name(t.month)])
 }
 
 /// Default clock style for a BCP 47 locale such as "en-US": 12-hour where

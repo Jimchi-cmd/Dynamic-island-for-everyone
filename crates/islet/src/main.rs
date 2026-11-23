@@ -106,6 +106,7 @@ fn run() -> platform::Result<()> {
     };
     let mut app = App::new(demo, env_on("ISLET_REDUCE_MOTION"));
     app.set_clock_style(clock::prefers_24h());
+    app.set_locale(&islet_render::text::system_locale());
     // "auto" performance keeps the light limits on a low-end computer.
     app.set_low_end(islet_core::limits::is_low_end(
         providers::sysmon::memory_total(),
@@ -553,6 +554,10 @@ fn run() -> platform::Result<()> {
             islet_render::draw(&mut pixmap, &frame, scale);
             if app.has_content(t) {
                 let engine = text.get_or_insert_with(TextEngine::new);
+                // Chinese, Japanese, Arabic or Hindi: the letters come from the system's fonts.
+                if islet_core::i18n::NEEDS_SYSTEM_FONTS.contains(&islet_core::i18n::language()) {
+                    engine.add_system_fonts();
+                }
                 let font = &app.prefs().font;
                 if text_font.as_ref() != Some(font) {
                     let files: Vec<std::path::PathBuf> =

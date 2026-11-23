@@ -143,10 +143,19 @@ impl Timer {
 
     /// "Focus · 2 of 4", "Break", or the timer's name.
     pub fn title(&self) -> String {
+        use crate::i18n::{t, tf};
+        // The default names are shown in the language in use.
+        let label = match self.label.as_str() {
+            "Timer" => t("Timer").to_string(),
+            "Focus" => t("Focus").to_string(),
+            l => l.to_string(),
+        };
         match (self.focus, self.phase) {
-            (true, Phase::Break) => "Break".into(),
-            (true, Phase::Work) if self.rounds > 1 => format!("{} · {} of {}", self.label, self.round, self.rounds),
-            _ => self.label.clone(),
+            (true, Phase::Break) => t("Break").into(),
+            (true, Phase::Work) if self.rounds > 1 => {
+                tf("{} · {} of {}‖focus round", &[&label, &self.round, &self.rounds])
+            }
+            _ => label,
         }
     }
 }

@@ -63,6 +63,8 @@ Usage:
                                            (60 fps, long histories), light (for 4 GB laptops),
                                            saver (light and still, for battery), or auto (full,
                                            light on a low-end computer)
+  islet language [auto|en|es|fr|de|pt|ru|zh|ja|ar|hi]
+                                           the language Islet speaks; auto follows the system
   islet alarm add <time> [--label <name>] [--days <days>]
                                            set an alarm: 7:30, 19:30 or 7:30pm; days:
                                            once (default), daily, weekdays, weekends, mon,wed,…
@@ -227,6 +229,8 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["pro", ..] => Err("Islet Pro is gone: everything it had is now free for everyone.".into()),
         ["performance"] => Ok(config::load_prefs().performance),
         ["performance", mode] => set_performance(mode),
+        ["language"] => Ok(config::load_prefs().language),
+        ["language", code] => set_language(code),
         ["key", "routes", "--clear"] => secrets::clear_routes_key().map(|()| "Removed.".into()),
         ["autostart", "on"] => autostart::set(true).map(|()| "Islet will start when you log in.".into()),
         ["autostart", "off"] => autostart::set(false).map(|()| "Islet will no longer start at login.".into()),
@@ -1086,6 +1090,18 @@ fn set_performance(mode: &str) -> Result<String, String> {
             _ => "Performance: automatic.",
         }
         .into())
+    })
+}
+
+fn set_language(code: &str) -> Result<String, String> {
+    let langs = islet_core::i18n::LANGUAGES;
+    let (code, name) = langs
+        .iter()
+        .find(|(c, _)| c.eq_ignore_ascii_case(code))
+        .ok_or_else(|| format!("language is one of: {}", langs.map(|(c, _)| c).join(", ")))?;
+    set_look(|p| {
+        p.language = (*code).into();
+        Ok(format!("Language: {name}."))
     })
 }
 

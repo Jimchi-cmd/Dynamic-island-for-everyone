@@ -8,6 +8,7 @@ use islet_core::alarm::{self, Alarm};
 use islet_core::clock::{format_date, format_time, LocalTime};
 use islet_core::connectivity::{self, BtState, Connectivity, WifiState};
 use islet_core::geometry::Rect;
+use islet_core::i18n::{t as tr, tf};
 use islet_core::lyrics::{self, Lyrics};
 use islet_core::nav;
 use islet_core::stopwatch::{self, Stopwatch};
@@ -158,7 +159,7 @@ pub fn quick_h(row: ClockRow) -> f64 {
     }
 }
 
-pub fn quick_row_elements(pill: Rect, row: ClockRow, minutes: u32, o: f32) -> Vec<Element> {
+pub fn quick_row_elements(pill: Rect, row: ClockRow, minutes: u32, o: f32, engine: &mut TextEngine) -> Vec<Element> {
     let mut v = Vec::new();
     let buttons = quick_row(pill, row);
     // The stepper: one capsule holding −, the length and +.
@@ -166,7 +167,7 @@ pub fn quick_row_elements(pill: Rect, row: ClockRow, minutes: u32, o: f32) -> Ve
     if let (Some(minus), Some(plus)) = (find(Quick::Step(-1)), find(Quick::Step(1))) {
         v.extend(quick_stepper(minus, plus, minutes, o));
     }
-    v.extend(quick_buttons(&buttons, o));
+    v.extend(quick_buttons(&buttons, o, engine));
     v
 }
 
@@ -186,12 +187,12 @@ fn quick_stepper(minus: Rect, plus: Rect, minutes: u32, o: f32) -> Vec<Element> 
     });
     let label =
         TextStyle { size: 13.0, weight: 600, opacity: o, align: Align::Center, tabular: true, ..TextStyle::default() };
-    v.push(text(format!("{minutes} min"), label, sx + sw / 2.0, sy + sh / 2.0 + 4.5));
+    v.push(text(tf("{} min", &[&minutes]), label, sx + sw / 2.0, sy + sh / 2.0 + 4.5));
     v
 }
 
 /// Start, and the round calendar, screenshot and lock buttons.
-fn quick_buttons(buttons: &[(Rect, Quick)], o: f32) -> Vec<Element> {
+fn quick_buttons(buttons: &[(Rect, Quick)], o: f32, engine: &mut TextEngine) -> Vec<Element> {
     let mut v = Vec::new();
     let label =
         TextStyle { size: 13.0, weight: 600, opacity: o, align: Align::Center, tabular: true, ..TextStyle::default() };
@@ -209,8 +210,15 @@ fn quick_buttons(buttons: &[(Rect, Quick)], o: f32) -> Vec<Element> {
                     color: [0, 0, 0],
                     opacity: o,
                 });
-                let style = TextStyle { color: [0, 0, 0], align: Align::Left, ..label };
-                v.push(text("Timer", style, x + 27.0, y + h / 2.0 + 4.5));
+                // A longer word for "Timer" gets smaller until it fits.
+                let word = tr("Timer‖start button, 6 letters or fewer");
+                let room = w - 27.0 - 8.0;
+                let mut style = TextStyle { color: [0, 0, 0], align: Align::Left, ..label };
+                while style.size > 10.5 && engine.measure(word, &style) > room {
+                    style.size -= 0.5;
+                }
+                let word = engine.ellipsize(word, &style, room);
+                v.push(text(word, style, x + 27.0, y + h / 2.0 + 4.5));
                 continue;
             }
             Quick::Calendar => Icon::Calendar,
@@ -265,7 +273,7 @@ pub fn expanded_calendar(
     engine: &mut TextEngine,
 ) -> Vec<Element> {
     use islet_core::calendar::{days_in_month, weekday_of};
-    let title = format!("{} {year}", islet_core::clock::month_name(month));
+    let title = islet_core::clock::month_year(month, year);
     let mut v = list_header_elements(pill, Icon::Calendar, &title, None, o, engine);
     for (r, dir) in calendar_arrows(pill) {
         let (x, y, s) = (r.x as f32, r.y as f32, r.w as f32);
@@ -308,7 +316,7 @@ pub fn expanded_calendar(
     let when = TextStyle { size: 11.0, weight: 600, opacity: o * 0.55, ..TextStyle::default() };
     let what = TextStyle { size: 12.5, weight: 600, opacity: o, ..TextStyle::default() };
     if upcoming.is_empty() {
-        v.push(text("No events", when, ex, top + 26.0));
+        v.push(text(tr("No events"), when, ex, top + 26.0));
     }
     for (i, u) in upcoming.iter().take(4).enumerate() {
         let y = top + 12.0 + i as f32 * 36.0;
@@ -401,7 +409,7 @@ fn hud_trailing(h: &Hud, right: f32, cy: f32, bar_w: f32, o: f32) -> Vec<Element
                 align: Align::Right,
                 ..TextStyle::default()
             };
-            vec![text(if on { "On" } else { "Off" }, style, right, cy + 5.0)]
+            vec![text(tr(if on { "On" } else { "Off" }), style, right, cy + 5.0)]
         }
         Hud::WifiJoined(_) => {
             let style = TextStyle {
@@ -412,7 +420,7 @@ fn hud_trailing(h: &Hud, right: f32, cy: f32, bar_w: f32, o: f32) -> Vec<Element
                 align: Align::Right,
                 ..TextStyle::default()
             };
-            vec![text("Connected", style, right, cy + 5.0)]
+            vec![text(tr("Connected"), style, right, cy + 5.0)]
         }
     }
 }
@@ -440,7 +448,7 @@ pub fn expanded_notes<'a>(
     let head = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
     let mut v = vec![
         Element::Icon { icon: Icon::Message, x: x + pad, y: y + 18.0, size: 20.0, color: GREEN, opacity: o },
-        text("Notifications", head, x + pad + 28.0, y + 33.0),
+        text(tr("Notifications"), head, x + pad + 28.0, y + 33.0),
     ];
     let app = TextStyle { size: 12.0, opacity: o * 0.6, ..TextStyle::default() };
     let title = TextStyle { size: 14.5, weight: 600, opacity: o, ..TextStyle::default() };
@@ -486,7 +494,7 @@ pub fn expanded_agenda(pill: Rect, rows: &[AgendaRow], o: f32, engine: &mut Text
     let title_style = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
     let mut v = vec![
         Element::Icon { icon: Icon::Calendar, x: x + pad, y: y + 18.0, size: 20.0, color: RED, opacity: o },
-        text("Up next", title_style, x + pad + 28.0, y + 33.0),
+        text(tr("Up next"), title_style, x + pad + 28.0, y + 33.0),
     ];
     let time_style = TextStyle { size: 14.0, weight: 600, opacity: o, tabular: true, ..TextStyle::default() };
     let name_style = TextStyle { size: 14.5, weight: 600, opacity: o, ..TextStyle::default() };
@@ -506,14 +514,14 @@ pub fn expanded_agenda(pill: Rect, rows: &[AgendaRow], o: f32, engine: &mut Text
             let b = agenda_join_button(pill, i);
             let (bx, by, bw, bh) = (b.x as f32, b.y as f32, b.w as f32, b.h as f32);
             let label = TextStyle { size: 13.0, weight: 700, opacity: o, ..TextStyle::default() };
-            let tw = engine.measure("Join", &label);
+            let tw = engine.measure(tr("Join"), &label);
             v.push(Element::Bar { x: bx, y: by, w: bw, h: bh, color: GREEN, opacity: o });
-            v.push(text("Join", label, bx + (bw - tw) / 2.0, by + bh / 2.0 + 4.5));
+            v.push(text(tr("Join"), label, bx + (bw - tw) / 2.0, by + bh / 2.0 + 4.5));
         }
     }
     if rows.is_empty() {
         let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
-        v.push(text("Nothing else today", style, x + pad, y + 70.0));
+        v.push(text(tr("Nothing else today"), style, x + pad, y + 70.0));
     }
     v
 }
@@ -561,7 +569,7 @@ pub fn expanded_custom(pill: Rect, c: &Custom, t: f64, o: f32, engine: &mut Text
             Element::Art { x: x + pad, y: y + 22.0, size: 64.0, radius: 10.0, image: Some(img.clone()), opacity: o },
             text(engine.ellipsize(&c.title, &title, room), title, tx, y + 44.0),
             text(engine.ellipsize(&c.subtitle, &small, room), small, tx, y + 63.0),
-            text("Tap to open", TextStyle { color: accent_text(), ..small }, tx, y + 82.0),
+            text(tr("Tap to open"), TextStyle { color: accent_text(), ..small }, tx, y + 82.0),
         ];
     }
     let color = custom_color(c);
@@ -624,8 +632,8 @@ pub fn expanded_hog(pill: Rect, c: &Custom, o: f32, engine: &mut TextEngine) -> 
     for (r, b) in hog_buttons(pill) {
         let (bx, by, bw, bh) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
         let (fill, alpha, word, color) = match b {
-            HogButton::Ignore => (WHITE, 0.16, "Ignore", WHITE),
-            HogButton::Close => (ORANGE, 1.0, "Close it", [0, 0, 0]),
+            HogButton::Ignore => (WHITE, 0.16, tr("Ignore"), WHITE),
+            HogButton::Close => (ORANGE, 1.0, tr("Close it"), [0, 0, 0]),
         };
         v.push(Element::Bar { x: bx, y: by, w: bw, h: bh, color: fill, opacity: o * alpha });
         v.push(text(word, TextStyle { color, ..label }, bx + bw / 2.0, by + 22.0));
@@ -740,10 +748,10 @@ pub fn compact_width(live: &Live) -> f64 {
 pub fn charging_label(d: &BatteryDevice, reason: PeekReason) -> String {
     let laptop = d.kind == DeviceKind::Laptop;
     match (reason, d.charging, laptop) {
-        (PeekReason::Full, _, _) => "Fully charged".into(),
-        (_, true, true) => "Charging".into(),
-        (_, false, true) => "On battery".into(),
-        (_, true, false) => format!("{} charging", d.name),
+        (PeekReason::Full, _, _) => tr("Fully charged").into(),
+        (_, true, true) => tr("Charging").into(),
+        (_, false, true) => tr("On battery").into(),
+        (_, true, false) => tf("{} charging", &[&d.name]),
         (_, false, false) => d.name.clone(),
     }
 }
@@ -938,9 +946,9 @@ pub fn compact(pill: Rect, live: &Live, t: f64, o: f32, engine: &mut TextEngine)
             }];
             let style = TextStyle { size: 14.0, weight: 600, opacity: o, ..TextStyle::default() };
             match h {
-                Hud::CapsLock(_) => v.push(text("Caps Lock", style, x + 38.0, cy + 5.0)),
-                Hud::Airplane(_) => v.push(text("Airplane mode", style, x + 38.0, cy + 5.0)),
-                Hud::DoNotDisturb(_) => v.push(text("Do Not Disturb", style, x + 38.0, cy + 5.0)),
+                Hud::CapsLock(_) => v.push(text(tr("Caps Lock"), style, x + 38.0, cy + 5.0)),
+                Hud::Airplane(_) => v.push(text(tr("Airplane mode"), style, x + 38.0, cy + 5.0)),
+                Hud::DoNotDisturb(_) => v.push(text(tr("Do Not Disturb"), style, x + 38.0, cy + 5.0)),
                 // The network's name, up to "Connected" on the right.
                 Hud::WifiJoined(name) => {
                     let room = (right - 16.0 - 82.0) - (x + 38.0);
@@ -1465,7 +1473,7 @@ pub fn expanded_timer(
     let title_style = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
     v.push(text(engine.ellipsize(&tm.title(), &title_style, w * 0.45), title_style, x + pad + 38.0, y + 34.0));
     let small = TextStyle { size: 13.0, opacity: o * 0.6, ..TextStyle::default() };
-    let state = if tm.running() { "Running" } else { "Paused" };
+    let state = tr(if tm.running() { "Running" } else { "Paused" });
     // A focus session shows its streak ("3 days in a row") where it fits
     // beside the countdown.
     let sub = match streak.filter(|_| tm.focus) {
@@ -1478,8 +1486,8 @@ pub fn expanded_timer(
     for (r, c) in timer_controls(pill) {
         let (bx, by, bw, bh) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
         let (fill, alpha, word, color) = match c {
-            TimerControl::PauseResume => (WHITE, 0.16, if tm.running() { "Pause" } else { "Resume" }, WHITE),
-            TimerControl::Stop => (timer_color(tm), 1.0, "Stop", [0, 0, 0]),
+            TimerControl::PauseResume => (WHITE, 0.16, tr(if tm.running() { "Pause" } else { "Resume" }), WHITE),
+            TimerControl::Stop => (timer_color(tm), 1.0, tr("Stop"), [0, 0, 0]),
         };
         v.push(Element::Bar { x: bx, y: by, w: bw, h: bh, color: fill, opacity: o * alpha });
         v.push(text(word, TextStyle { color, ..label }, bx + bw / 2.0, by + 22.0));
@@ -1540,14 +1548,15 @@ pub fn expanded_stopwatch(pill: Rect, sw: Option<&Stopwatch>, t: f64, o: f32, en
         opacity: o,
     }];
     let title_style = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
-    v.push(text("Stopwatch", title_style, x + pad + 38.0, y + 34.0));
+    v.push(text(tr("Stopwatch"), title_style, x + pad + 38.0, y + 34.0));
     let small = TextStyle { size: 13.0, opacity: o * 0.6, tabular: true, ..TextStyle::default() };
     let sub = match sw {
-        None => "Ready".to_string(),
-        Some(sw) if sw.lap_count() == 0 => if running { "Running" } else { "Paused" }.to_string(),
+        None => tr("Ready").to_string(),
+        Some(sw) if sw.lap_count() == 0 => tr(if running { "Running" } else { "Paused" }).to_string(),
         Some(sw) => {
-            let mut parts = vec![format!("Lap {} {}", sw.lap_count() + 1, stopwatch::format(sw.current_lap(t), true))];
-            parts.extend(sw.laps().take(1).map(|(n, d)| format!("Lap {n} {}", stopwatch::format(d, true))));
+            let mut parts =
+                vec![tf("Lap {} {}", &[&(sw.lap_count() + 1), &stopwatch::format(sw.current_lap(t), true)])];
+            parts.extend(sw.laps().take(1).map(|(n, d)| tf("Lap {} {}", &[&n, &stopwatch::format(d, true)])));
             parts.join("  ·  ")
         }
     };
@@ -1567,14 +1576,14 @@ pub fn expanded_stopwatch(pill: Rect, sw: Option<&Stopwatch>, t: f64, o: f32, en
         let (bx, by, bw, bh) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
         let (fill, alpha, word, color) = match c {
             StopwatchControl::LapReset => {
-                let word = if running { "Lap" } else { "Reset" };
+                let word = tr(if running { "Lap" } else { "Reset" });
                 (WHITE, if sw.is_some() { 0.16 } else { 0.08 }, word, WHITE)
             }
             StopwatchControl::StartPause => {
                 let word = match sw {
-                    None => "Start",
-                    Some(_) if running => "Pause",
-                    Some(_) => "Resume",
+                    None => tr("Start"),
+                    Some(_) if running => tr("Pause"),
+                    Some(_) => tr("Resume"),
                 };
                 (if running { ORANGE } else { GREEN }, 1.0, word, [0, 0, 0])
             }
@@ -1612,16 +1621,16 @@ pub fn expanded_alarm(pill: Rect, a: &Alarm, h24: bool, t: f64, o: f32, engine: 
     let title = engine.ellipsize(a.title(), &title_style, w - 2.0 * pad - 40.0 - time_w - 12.0);
     v.push(text(title, title_style, x + pad + 38.0, y + 34.0));
     let small = TextStyle { size: 13.0, opacity: o * 0.6, ..TextStyle::default() };
-    let sub = if a.id == TIMER_ALARM_ID { "Timer".to_string() } else { alarm::describe_days(a.days) };
+    let sub = if a.id == TIMER_ALARM_ID { tr("Timer").to_string() } else { alarm::describe_days(a.days) };
     v.push(text(sub, small, x + pad + 38.0, y + 53.0));
     v.push(text(time, time_style, x + w - pad, y + 46.0));
     let label = TextStyle { size: 14.0, weight: 600, opacity: o, align: Align::Center, ..TextStyle::default() };
     for (r, c) in alarm_controls(pill) {
         let (bx, by, bw, bh) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
         let (fill, alpha, word, color) = match c {
-            AlarmControl::Snooze if a.id == TIMER_ALARM_ID => (WHITE, 0.16, "Repeat", WHITE),
-            AlarmControl::Snooze => (WHITE, 0.16, "Snooze", WHITE),
-            AlarmControl::Stop => (ORANGE, 1.0, "Stop", [0, 0, 0]),
+            AlarmControl::Snooze if a.id == TIMER_ALARM_ID => (WHITE, 0.16, tr("Repeat"), WHITE),
+            AlarmControl::Snooze => (WHITE, 0.16, tr("Snooze"), WHITE),
+            AlarmControl::Stop => (ORANGE, 1.0, tr("Stop"), [0, 0, 0]),
         };
         v.push(Element::Bar { x: bx, y: by, w: bw, h: bh, color: fill, opacity: o * alpha });
         v.push(text(word, TextStyle { color, ..label }, bx + bw / 2.0, by + 22.0));
@@ -1672,12 +1681,12 @@ pub fn expanded_nav(pill: Rect, n: &NavInfo, now: Option<&LocalTime>, o: f32, en
         (Some(r), _) => {
             let mut line = nav::format_distance(r.distance_m);
             if let Some(now) = now {
-                line = format!("Arrive {} · {line}", nav::arrival(now.hour, now.minute, r.duration));
+                line = tf("Arrive {} · {}", &[&nav::arrival(now.hour, now.minute, r.duration), &line]);
             }
             v.push(text(line, small, x + pad + 34.0, y + 62.0));
             if r.delay() >= 60.0 {
                 let style = TextStyle { color: AMBER, opacity: o, align: Align::Right, ..small };
-                v.push(text(format!("+{} traffic", nav::format_minutes(r.delay())), style, x + w - pad, y + 62.0));
+                v.push(text(tf("+{} traffic", &[&nav::format_minutes(r.delay())]), style, x + w - pad, y + 62.0));
             }
             // Routes data shown without a Google map must credit Google Maps.
             let credit = TextStyle { size: 11.0, opacity: o * 0.5, align: Align::Right, ..small };
@@ -1697,7 +1706,7 @@ pub fn expanded_nav(pill: Rect, n: &NavInfo, now: Option<&LocalTime>, o: f32, en
                         opacity: o,
                     });
                 }
-                let words = if arrow.is_some() { step.clone() } else { format!("Start: {step}") };
+                let words = if arrow.is_some() { step.clone() } else { tf("Start: {}", &[&step]) };
                 let line = engine.ellipsize(&words, &style, w - 2.0 * pad - 84.0 - lead);
                 v.push(text(line, style, x + pad + lead, y + 92.0));
             }
@@ -1706,7 +1715,7 @@ pub fn expanded_nav(pill: Rect, n: &NavInfo, now: Option<&LocalTime>, o: f32, en
             let style = TextStyle { color: AMBER, opacity: o, ..small };
             v.push(text(engine.ellipsize(err, &style, w - 2.0 * pad - 34.0), style, x + pad + 34.0, y + 62.0));
         }
-        (None, None) => v.push(text("Getting the route…", small, x + pad + 34.0, y + 62.0)),
+        (None, None) => v.push(text(tr("Getting the route…"), small, x + pad + 34.0, y + 62.0)),
     }
     let label = TextStyle { size: 13.0, weight: 600, opacity: o, align: Align::Center, ..TextStyle::default() };
     for (r, c) in nav_controls(pill) {
@@ -1789,7 +1798,7 @@ fn parts_label(parts: &[(Part, u8)]) -> String {
             let name = match p {
                 Part::Left => "L",
                 Part::Right => "R",
-                Part::Case => "Case",
+                Part::Case => tr("Case‖earbuds case"),
             };
             format!("{name} {pct}%")
         })
@@ -1847,11 +1856,11 @@ pub fn expanded_clock(
 /// "in 8 h 15 min", "in 12 min", "in 2 days".
 pub fn until_label(minutes: i64) -> String {
     match minutes {
-        m if m < 60 => format!("in {m} min"),
-        m if m < 24 * 60 && m % 60 == 0 => format!("in {} h", m / 60),
-        m if m < 24 * 60 => format!("in {} h {} min", m / 60, m % 60),
-        m if m < 48 * 60 => "tomorrow".into(),
-        m => format!("in {} days", m / (24 * 60)),
+        m if m < 60 => tf("in {} min", &[&m]),
+        m if m < 24 * 60 && m % 60 == 0 => tf("in {} h", &[&(m / 60)]),
+        m if m < 24 * 60 => tf("in {} h {} min", &[&(m / 60), &(m % 60)]),
+        m if m < 48 * 60 => tr("tomorrow").into(),
+        m => tf("in {} days", &[&(m / (24 * 60))]),
     }
 }
 
@@ -2022,12 +2031,12 @@ pub fn clock_chip_elements(
             Panel::Wifi => (
                 Icon::Wifi(c.wifi.networks.iter().find(|n| n.active).map_or(3, |n| connectivity::bars(n.strength))),
                 // Blue while Wi-Fi is on (connected or not), grey when off.
-                c.wifi_network().unwrap_or("Wi-Fi").to_string(),
+                c.wifi_network().unwrap_or(tr("Wi-Fi")).to_string(),
                 c.wifi_on(),
             ),
             Panel::Bluetooth => (
                 Icon::Bluetooth,
-                c.connected_device().map_or_else(|| "Bluetooth".into(), |d| d.name.clone()),
+                c.connected_device().map_or_else(|| tr("Bluetooth").into(), |d| d.name.clone()),
                 c.bt_on(),
             ),
             Panel::Shelf
@@ -2224,7 +2233,7 @@ pub fn wifi_footer(c: &Connectivity) -> Option<(String, bool)> {
     match (&c.failure, &c.wifi.note) {
         // Short enough to fit the button whatever the network is called;
         // Settings opens with that network chosen.
-        (Some((_, Some(_))), _) => Some(("Enter the password in Settings".into(), true)),
+        (Some((_, Some(_))), _) => Some((tr("Enter the password in Settings").into(), true)),
         (Some((msg, None)), _) => Some((msg.clone(), false)),
         (None, Some(note)) => Some((note.clone(), false)),
         _ => None,
@@ -2234,7 +2243,7 @@ pub fn wifi_footer(c: &Connectivity) -> Option<(String, bool)> {
 pub fn bt_footer(c: &Connectivity) -> Option<(String, bool)> {
     match (&c.failure, &c.bt.note) {
         (Some((msg, _)), _) => Some((msg.clone(), false)),
-        (None, Some(note)) if !c.bt.can_connect && c.bt.available => Some(("Open Bluetooth settings".into(), true)),
+        (None, Some(note)) if !c.bt.can_connect && c.bt.available => Some((tr("Open Bluetooth settings").into(), true)),
         (None, Some(note)) => Some((note.clone(), false)),
         _ => None,
     }
@@ -2242,7 +2251,7 @@ pub fn bt_footer(c: &Connectivity) -> Option<(String, bool)> {
 
 pub fn expanded_wifi(pill: Rect, c: &Connectivity, scroll: usize, o: f32, engine: &mut TextEngine) -> Vec<Element> {
     let w: &WifiState = &c.wifi;
-    let mut v = list_header_elements(pill, Icon::Wifi(3), "Wi-Fi", None, o, engine);
+    let mut v = list_header_elements(pill, Icon::Wifi(3), tr("Wi-Fi"), None, o, engine);
     v.extend(radio_header(pill, w.available.then_some(w.enabled), c.busy.as_deref(), o, engine));
     let footer = wifi_footer(c);
     let shown = shown_rows(w.networks.len(), scroll, footer.is_some());
@@ -2289,11 +2298,11 @@ pub fn expanded_wifi(pill: Rect, c: &Connectivity, scroll: usize, o: f32, engine
     if w.networks.is_empty() {
         let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
         let msg = if c.busy.is_some() {
-            "Looking for networks…"
+            tr("Looking for networks…")
         } else if w.available {
-            "No networks found"
+            tr("No networks found")
         } else {
-            "Wi-Fi isn't available"
+            tr("Wi-Fi isn't available")
         };
         v.push(text(msg, style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
     }
@@ -2312,9 +2321,14 @@ pub fn expanded_shelf(
     o: f32,
     engine: &mut TextEngine,
 ) -> Vec<Element> {
-    let status =
-        (!items.is_empty()).then(|| format!("{} item{}", items.len(), if items.len() == 1 { "" } else { "s" }));
-    let mut v = list_header_elements(pill, Icon::Folder, "Shelf", status.as_deref(), o, engine);
+    let status = (!items.is_empty()).then(|| {
+        if items.len() == 1 {
+            tr("1 item").to_string()
+        } else {
+            tf("{} items", &[&items.len()])
+        }
+    });
+    let mut v = list_header_elements(pill, Icon::Folder, tr("Shelf"), status.as_deref(), o, engine);
     let footer = shelf_footer(items.len(), dragging);
     let shown = shown_rows(items.len(), scroll, footer.is_some());
     let rows = list_rows(pill, shown);
@@ -2337,7 +2351,7 @@ pub fn expanded_shelf(
     if items.is_empty() && !dragging {
         let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
         v.push(text(
-            "Drag files here to keep them handy",
+            tr("Drag files here to keep them handy"),
             style,
             pill.x as f32 + 50.0,
             (pill.y + LIST_TOP) as f32 + 23.0,
@@ -2360,7 +2374,7 @@ pub fn expanded_shortcuts(
     o: f32,
     engine: &mut TextEngine,
 ) -> Vec<Element> {
-    let mut v = list_header_elements(pill, Icon::Bolt, "Shortcuts", None, o, engine);
+    let mut v = list_header_elements(pill, Icon::Bolt, tr("Shortcuts"), None, o, engine);
     let shown = shown_rows(items.len(), scroll, true);
     let rows = list_rows(pill, shown);
     v.extend(scroll_bar(pill, items.len(), scroll, true, o));
@@ -2370,16 +2384,16 @@ pub fn expanded_shortcuts(
         let (x, cy, rw) = (r.x as f32, (r.y + r.h / 2.0) as f32, r.w as f32);
         let icon = if item.is_link() { Icon::Navigation } else { Icon::Folder };
         v.push(Element::Icon { icon, x: x + 10.0, y: cy - 10.0, size: 20.0, color: accent_text(), opacity: o });
-        let kind = if item.is_link() { "Web" } else { "Open" };
+        let kind = tr(if item.is_link() { "Web" } else { "Open" });
         let room = rw - 40.0 - 10.0 - engine.measure(kind, &small) - 12.0;
         v.push(text(engine.ellipsize(&item.name, &name_style, room), name_style, x + 40.0, cy + 5.0));
         v.push(text(kind, small, x + rw - 10.0, cy + 4.5));
     }
     if items.is_empty() {
         let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
-        v.push(text("No shortcuts yet", style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
+        v.push(text(tr("No shortcuts yet"), style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
     }
-    v.extend(list_footer_elements(pill, shown, SHORTCUTS_EDIT, true, o, engine));
+    v.extend(list_footer_elements(pill, shown, tr(SHORTCUTS_EDIT), true, o, engine));
     v
 }
 
@@ -2397,8 +2411,9 @@ pub fn expanded_todo(
 ) -> Vec<Element> {
     let items = todo.ordered();
     let left = todo.left();
-    let status = (!items.is_empty()).then(|| if left == 0 { "All done".to_string() } else { format!("{left} to do") });
-    let mut v = list_header_elements(pill, Icon::Checklist, "To-do", status.as_deref(), o, engine);
+    let status =
+        (!items.is_empty()).then(|| if left == 0 { tr("All done").to_string() } else { tf("{} to do", &[&left]) });
+    let mut v = list_header_elements(pill, Icon::Checklist, tr("To-do"), status.as_deref(), o, engine);
     let shown = shown_rows(items.len(), scroll, true);
     let rows = list_rows(pill, shown);
     v.extend(scroll_bar(pill, items.len(), scroll, true, o));
@@ -2432,9 +2447,9 @@ pub fn expanded_todo(
     }
     if items.is_empty() {
         let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
-        v.push(text("Nothing to do. Nice!", style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
+        v.push(text(tr("Nothing to do. Nice!"), style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
     }
-    v.extend(list_footer_elements(pill, shown, TODO_ADD, true, o, engine));
+    v.extend(list_footer_elements(pill, shown, tr(TODO_ADD), true, o, engine));
     v
 }
 
@@ -2447,8 +2462,8 @@ pub fn expanded_clipboard(
     engine: &mut TextEngine,
 ) -> Vec<Element> {
     let n = history.len();
-    let status = (n > 0).then(|| format!("{n} item{}", if n == 1 { "" } else { "s" }));
-    let mut v = list_header_elements(pill, Icon::Clipboard, "Clipboard", status.as_deref(), o, engine);
+    let status = (n > 0).then(|| if n == 1 { tr("1 item").to_string() } else { tf("{} items", &[&n]) });
+    let mut v = list_header_elements(pill, Icon::Clipboard, tr("Clipboard"), status.as_deref(), o, engine);
     let shown = shown_rows(n, scroll, n > 0);
     let rows = list_rows(pill, shown);
     v.extend(scroll_bar(pill, n, scroll, n > 0, o));
@@ -2475,9 +2490,9 @@ pub fn expanded_clipboard(
     }
     if n == 0 {
         let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
-        v.push(text("Copy some text or a picture", style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
+        v.push(text(tr("Copy some text or a picture"), style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
     } else {
-        v.extend(list_footer_elements(pill, shown, CLIPBOARD_CLEAR, true, o, engine));
+        v.extend(list_footer_elements(pill, shown, tr(CLIPBOARD_CLEAR), true, o, engine));
     }
     v
 }
@@ -2502,10 +2517,10 @@ pub fn system_lines(
     use islet_core::sysmon::format_rate;
     let mut v = Vec::new();
     if let Some((down, up)) = stats.and_then(|s| s.net) {
-        v.push(("Network", format!("{} down · {} up", format_rate(down), format_rate(up))));
+        v.push((tr("Network"), tf("{} down · {} up", &[&format_rate(down), &format_rate(up)])));
     }
     if let Some(h) = health {
-        v.push(("Battery health", h.describe()));
+        v.push((tr("Battery health"), h.describe()));
     }
     v
 }
@@ -2520,16 +2535,16 @@ pub fn expanded_system(
     engine: &mut TextEngine,
 ) -> Vec<Element> {
     use islet_core::sysmon::format_bytes_of;
-    let mut v = list_header_elements(pill, Icon::Gauge, "System", None, o, engine);
+    let mut v = list_header_elements(pill, Icon::Gauge, tr("System"), None, o, engine);
     let label = TextStyle { size: 14.0, weight: 600, opacity: o, ..TextStyle::default() };
     let value = TextStyle { size: 14.0, opacity: o * 0.7, ..TextStyle::default() };
     let rows: [(&str, Option<(f32, String)>); 3] = match stats {
         Some(s) => [
             ("CPU", Some((s.cpu, format!("{}%", (s.cpu * 100.0).round() as i32)))),
-            ("Memory", (s.mem_total > 0).then(|| (s.mem_fraction(), format_bytes_of(s.mem_used, s.mem_total)))),
-            ("Disk", (s.disk_total > 0).then(|| (s.disk_fraction(), format_bytes_of(s.disk_used, s.disk_total)))),
+            (tr("Memory"), (s.mem_total > 0).then(|| (s.mem_fraction(), format_bytes_of(s.mem_used, s.mem_total)))),
+            (tr("Disk"), (s.disk_total > 0).then(|| (s.disk_fraction(), format_bytes_of(s.disk_used, s.disk_total)))),
         ],
-        None => [("CPU", None), ("Memory", None), ("Disk", None)],
+        None => [("CPU", None), (tr("Memory"), None), (tr("Disk"), None)],
     };
     let (x, w) = ((pill.x + PAD) as f32, (pill.w - 2.0 * PAD) as f32);
     for (i, (name, reading)) in rows.into_iter().enumerate() {
@@ -2562,9 +2577,9 @@ pub fn expanded_system(
 
 pub fn shelf_footer(items: usize, dragging: bool) -> Option<(String, bool)> {
     if dragging {
-        Some(("Drop to keep here".into(), true))
+        Some((tr("Drop to keep here").into(), true))
     } else if items > 0 {
-        Some(("Shortcuts only: your files stay where they are".into(), false))
+        Some((tr("Shortcuts only: your files stay where they are").into(), false))
     } else {
         None
     }
@@ -2583,7 +2598,7 @@ pub fn expanded_bluetooth(
     engine: &mut TextEngine,
 ) -> Vec<Element> {
     let b: &BtState = &c.bt;
-    let mut v = list_header_elements(pill, Icon::Bluetooth, "Bluetooth", None, o, engine);
+    let mut v = list_header_elements(pill, Icon::Bluetooth, tr("Bluetooth"), None, o, engine);
     v.extend(radio_header(pill, b.available.then_some(b.powered), c.busy.as_deref(), o, engine));
     let footer = bt_footer(c);
     let shown = shown_rows(b.devices.len(), scroll, footer.is_some());
@@ -2602,7 +2617,7 @@ pub fn expanded_bluetooth(
             opacity: o,
         });
         let (label, color, alpha) =
-            if d.connected { ("Connected", accent_text(), 1.0) } else { ("Not connected", WHITE, 0.6) };
+            if d.connected { (tr("Connected"), accent_text(), 1.0) } else { (tr("Not connected"), WHITE, 0.6) };
         // A long name stops clear of its status.
         let room = rw - 40.0 - 10.0 - engine.measure(label, &state_style) - 12.0;
         let name = engine.ellipsize(&d.name, &name_style, room);
@@ -2611,7 +2626,7 @@ pub fn expanded_bluetooth(
     }
     if b.devices.is_empty() {
         let style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
-        let msg = if b.available { "No paired devices" } else { "Bluetooth isn't available" };
+        let msg = tr(if b.available { "No paired devices" } else { "Bluetooth isn't available" });
         v.push(text(msg, style, pill.x as f32 + 50.0, (pill.y + LIST_TOP) as f32 + 23.0));
     }
     if let Some((line, button)) = footer {
@@ -2738,7 +2753,7 @@ pub const CALL_H: f64 = 100.0;
 /// What a call is called on the island.
 pub fn call_title(c: &Call) -> &str {
     if c.app.is_empty() {
-        "Microphone on"
+        tr("Microphone on")
     } else {
         &c.app
     }
@@ -2780,9 +2795,9 @@ pub fn expanded_call(pill: Rect, c: &Call, t: f64, o: f32, engine: &mut TextEngi
     let title = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
     v.push(text(engine.ellipsize(call_title(c), &title, right - x - tw - 12.0), title, x, by + 26.0));
     let status = match c.muted {
-        Some(true) => "Muted · tap the microphone to unmute",
-        Some(false) => "On a call · tap the microphone to mute",
-        None => "On a call",
+        Some(true) => tr("Muted · tap the microphone to unmute"),
+        Some(false) => tr("On a call · tap the microphone to mute"),
+        None => tr("On a call"),
     };
     let small = TextStyle { size: 13.0, opacity: o * 0.65, ..TextStyle::default() };
     v.push(text(engine.ellipsize(status, &small, right - x), small, x, by + 48.0));
@@ -2947,7 +2962,7 @@ pub fn expanded_controls(
     o: f32,
     engine: &mut TextEngine,
 ) -> Vec<Element> {
-    let mut v = list_header_elements(pill, Icon::Controls, "Controls", None, o, engine);
+    let mut v = list_header_elements(pill, Icon::Controls, tr("Controls"), None, o, engine);
     let value = TextStyle {
         size: 13.0,
         weight: 600,
@@ -3003,7 +3018,7 @@ pub fn expanded_controls(
     if sliders.is_empty() {
         let note = TextStyle { size: 13.0, opacity: o * 0.6, ..TextStyle::default() };
         v.push(text(
-            "No volume or brightness to set here",
+            tr("No volume or brightness to set here"),
             note,
             (pill.x + PAD) as f32,
             (pill.y + LIST_TOP) as f32 + 24.0,
@@ -3012,7 +3027,7 @@ pub fn expanded_controls(
     let b = dark_mode_button(pill, sliders.len());
     let (bx, by, bw, bh) = (b.x as f32, b.y as f32, b.w as f32, b.h as f32);
     let label = TextStyle { size: 13.5, weight: 600, opacity: o, ..TextStyle::default() };
-    let words = "Switch dark / light mode";
+    let words = tr("Switch dark / light mode");
     let tw = engine.measure(words, &label);
     let start = bx + (bw - tw - 24.0) / 2.0;
     v.push(Element::Bar { x: bx, y: by, w: bw, h: bh, color: WHITE, opacity: o * 0.14 });
@@ -3101,7 +3116,7 @@ pub const CARD_HEADER_H: f64 = 26.0;
 
 /// The "‹ Control Centre" button at the top of an activity card.
 pub fn home_button(pill: Rect) -> Rect {
-    Rect::new(pill.x + 28.0, pill.y + 9.0, 132.0, 24.0)
+    Rect::new(pill.x + 28.0, pill.y + 9.0, 190.0, 24.0)
 }
 
 /// A capsule button with a chevron and a label, as wide as its label.
@@ -3120,7 +3135,7 @@ fn capsule(r: Rect, label: &str, icon: Icon, icon_first: bool, o: f32, engine: &
 }
 
 pub fn home_button_elements(pill: Rect, o: f32, engine: &mut TextEngine) -> Vec<Element> {
-    capsule(home_button(pill), "Control Centre", Icon::Back, true, o, engine)
+    capsule(home_button(pill), tr("Control Centre"), Icon::Back, true, o, engine)
 }
 
 /// On Control Centre opened from an activity: the button back to it

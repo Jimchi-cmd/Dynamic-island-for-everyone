@@ -81,6 +81,9 @@ pub struct IslandPrefs {
     /// 12- or 24-hour times: "auto" (as the system's language has it),
     /// "12" or "24" (see `CLOCK_HOURS`).
     pub clock_hours: String,
+    /// The language Islet speaks: "auto" (the system's, when Islet has it)
+    /// or a code from `i18n::LANGUAGES`.
+    pub language: String,
     /// The island's text in a font installed on this computer ("" = the
     /// built-in one), and that font's files (read, never copied).
     pub font: String,
@@ -277,6 +280,7 @@ impl Default for IslandPrefs {
             shape: "pill".into(),
             clock_face: "time".into(),
             clock_hours: "auto".into(),
+            language: "auto".into(),
             font: String::new(),
             font_files: Vec::new(),
             hotkey: String::new(),

@@ -2,6 +2,11 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Ten languages**: English, Spanish, French, German, Portuguese, Russian, Chinese (Simplified), Japanese, Arabic and Hindi. Automatic follows the computer's language; `islet language <code>` picks one. The island's text, dates, menus and screen-reader labels are translated; for Chinese, Japanese, Arabic and Hindi the island uses the computer's own fonts for those letters. All translations live in one table, `locales/strings.tsv`, shared with the Settings app and the phone app.
+
 ## [0.6.0] - 2026-11-23
 
 ### Changed

@@ -45,8 +45,8 @@ impl Hog {
     /// "is using 62% of the processor", "is using 5.2 GB of memory".
     pub fn describe(&self) -> String {
         match self.kind {
-            Kind::Cpu(share) => format!("is using {}% of the processor", (share * 100.0).round() as u32),
-            Kind::Memory(bytes, _) => format!("is using {} of memory", gigabytes(bytes)),
+            Kind::Cpu(share) => crate::i18n::tf("is using {}% of the processor", &[&((share * 100.0).round() as u32)]),
+            Kind::Memory(bytes, _) => crate::i18n::tf("is using {} of memory", &[&gigabytes(bytes)]),
         }
     }
 

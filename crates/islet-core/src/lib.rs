@@ -12,6 +12,7 @@ pub mod downloads;
 pub mod geometry;
 pub mod hog;
 pub mod hotkey;
+pub mod i18n;
 pub mod island;
 pub mod limits;
 pub mod lyrics;

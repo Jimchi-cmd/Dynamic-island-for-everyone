@@ -28,6 +28,7 @@ pub fn allowed(args: &[String]) -> bool {
         | ["update", "check", "--json"]
         | ["update", "check", "--early", "--json"] => true,
         ["performance", mode] => islet_core::limits::MODES.contains(mode),
+        ["language", code] => islet_core::i18n::LANGUAGES.iter().any(|(c, _)| c == code),
         ["stopwatch", "start" | "pause" | "resume" | "lap" | "reset"] => true,
         ["world", "--json"] | ["world", "cities", "--json"] => true,
         ["note"] | ["note", "--where"] => true,
@@ -415,6 +416,7 @@ mod tests {
         assert!(!allowed(&args(&["wifi", "connect", "--evil"])));
         assert!(!allowed(&args(&[])), "running the island itself goes through start_island");
         assert!(allowed(&args(&["performance", "saver"])) && !allowed(&args(&["performance", "turbo"])));
+        assert!(allowed(&args(&["language", "fr"])) && !allowed(&args(&["language", "xx"])));
         assert!(allowed(&args(&["look", "hours", "12"])) && !allowed(&args(&["look", "hours", "13"])));
         assert!(!allowed(&args(&["pro", "activate"])), "Islet Pro is gone");
     }
