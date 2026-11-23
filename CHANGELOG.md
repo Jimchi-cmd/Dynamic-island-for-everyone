@@ -4,6 +4,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Fixed
+- Windows (MSIX package): turning on **Start at login** in Settings could fail with "The parameter is incorrect". Settings now has its own startup task in the package, Islet finds whichever one Windows lets it see, and if none is found it says to use Task Manager → Startup apps.
+
 ## [0.7.0] - 2026-11-23
 
 ### Added

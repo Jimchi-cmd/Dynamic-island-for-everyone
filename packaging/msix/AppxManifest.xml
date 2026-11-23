@@ -43,6 +43,13 @@
       <uap:VisualElements DisplayName="Islet Settings" Description="Set up Islet"
         BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <!-- The same, for when Settings turns it on: Windows may look a
+             startup task up under the app asking. It starts the island. -->
+        <desktop:Extension Category="windows.startupTask" Executable="islet.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="IsletStartupFromSettings" Enabled="false" DisplayName="Islet" />
+        </desktop:Extension>
+      </Extensions>
     </Application>
   </Applications>
 
