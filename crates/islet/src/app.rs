@@ -69,7 +69,7 @@ const PRIVACY_DOT: f32 = 6.0;
 const SWITCH_COOLDOWN: f64 = 0.35;
 /// Height of the expanded clock and media cards.
 const CLOCK_H: f64 = 168.0 + content::QUICK_H;
-const MEDIA_H: f64 = 160.0;
+const MEDIA_H: f64 = 180.0;
 /// How quickly the empty island fades in and out when it hides until
 /// hovered (Settings → Look).
 const SHOW_SPRING: Spring = Spring::new(0.22, 1.0);
@@ -4098,7 +4098,7 @@ mod tests {
             (&compact, 3.0, 46),
             (&compact, 5.1, 46), // sliding onto the next line
             (&compact, 7.5, 46),
-            (&card, 6.0, 240),
+            (&card, 6.0, 260),
             (&home, 9.0, 180),
             (&list, 12.0, 200),
         ];

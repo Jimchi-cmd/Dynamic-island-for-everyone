@@ -2,6 +2,11 @@
 
 All notable changes are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- Computer: the **Now Playing card** is redesigned from a Figma mock-up: a bigger cover with rounder corners, a larger song title, a thicker progress bar, bigger play, previous and next buttons, and more room between the rows.
+
 ## [0.5.1] - 2026-11-22
 
 ### Fixed

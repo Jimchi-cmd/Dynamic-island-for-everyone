@@ -1267,6 +1267,17 @@ fn leading(live: &Live, x: f32, cy: f32, o: f32, h24: bool) -> Vec<Element> {
 
 const PAD: f64 = 20.0;
 
+// The Now Playing card, as designed in Figma ("Island / Expanded / Music"),
+// fitted to the card's height. Distances are from the top of the card's
+// content, below the Control Centre button.
+const ART_TOP: f64 = 18.0;
+const ART_SIZE: f64 = 64.0;
+/// Centre line of the progress bar, and of the transport buttons.
+const TRACK_Y: f64 = 96.0;
+const TRANSPORT_Y: f64 = 146.0;
+/// Distance between the centres of neighbouring transport buttons.
+const TRANSPORT_GAP: f64 = 72.0;
+
 /// Centre of the transport buttons: the card's middle, or left of it when
 /// the volume slider shares the row.
 fn transport_x(pill: Rect, volume: bool) -> f64 {
@@ -1285,13 +1296,13 @@ fn volume_track(pill: Rect) -> (f64, f64) {
 /// Hit areas of the expanded media card, relative to the pill.
 pub fn media_controls(pill: Rect, volume: bool) -> Vec<(Rect, Control)> {
     let cx = transport_x(pill, volume);
-    let cy = pill.y + 136.0;
+    let cy = pill.y + TRANSPORT_Y;
     let button = |dx: f64| Rect::new(cx + dx - 22.0, cy - 22.0, 44.0, 44.0);
     let mut v = vec![
-        (button(-64.0), Control::Previous),
+        (button(-TRANSPORT_GAP), Control::Previous),
         (button(0.0), Control::PlayPause),
-        (button(64.0), Control::Next),
-        (Rect::new(pill.x + PAD, pill.y + 82.0, pill.w - 2.0 * PAD, 22.0), Control::Scrub),
+        (button(TRANSPORT_GAP), Control::Next),
+        (Rect::new(pill.x + PAD, pill.y + TRACK_Y - 11.0, pill.w - 2.0 * PAD, 22.0), Control::Scrub),
     ];
     if volume {
         let (left, right) = volume_track(pill);
@@ -1326,23 +1337,27 @@ pub fn expanded_media(
     let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
     let pad = PAD as f32;
     let tint = m.art.as_ref().map_or(WHITE, |a| brighten(a.dominant));
+    let (art_top, art) = (y + ART_TOP as f32, ART_SIZE as f32);
     let mut v =
-        vec![Element::Art { x: x + pad, y: y + pad, size: 56.0, radius: 12.0, image: m.art.clone(), opacity: o }];
+        vec![Element::Art { x: x + pad, y: art_top, size: art, radius: 14.0, image: m.art.clone(), opacity: o }];
 
-    let text_x = x + 88.0;
-    let text_w = w - 88.0 - 52.0;
-    let title_style = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
-    let artist_style = TextStyle { size: 14.0, opacity: o * 0.6, ..TextStyle::default() };
+    // Title and artist beside the cover; the live bars at the right.
+    let bars = 5;
+    let bars_w = (bars - 1) as f32 * 5.5 + 3.0;
+    let text_x = x + pad + art + 14.0;
+    let text_w = x + w - pad - bars_w - 12.0 - text_x;
+    let title_style = TextStyle { size: 18.0, weight: 600, opacity: o, ..TextStyle::default() };
+    let artist_style = TextStyle { size: 14.0, weight: 500, opacity: o * 0.6, ..TextStyle::default() };
     let title = if m.title.is_empty() { m.app_name.clone() } else { m.title.clone() };
-    v.push(text(engine.ellipsize(&title, &title_style, text_w), title_style, text_x, y + 44.0));
+    v.push(text(engine.ellipsize(&title, &title_style, text_w), title_style, text_x, art_top + 27.0));
     let artist = if m.artist.is_empty() { m.app_name.clone() } else { m.artist.clone() };
-    v.push(text(engine.ellipsize(&artist, &artist_style, text_w), artist_style, text_x, y + 64.0));
-    v.extend(waveform(x + w - pad - 19.5, y + 38.0, 4, t, m.playing, tint, o));
+    v.push(text(engine.ellipsize(&artist, &artist_style, text_w), artist_style, text_x, art_top + 48.0));
+    v.extend(waveform(x + w - pad - bars_w, art_top + art / 2.0, bars, t, m.playing, tint, o));
 
     // Progress bar with elapsed / remaining time.
     let track_w = w - 2.0 * pad;
-    let (by, bh) = (y + 92.0, if scrub.is_some() { 7.0 } else { 4.0 });
-    v.push(Element::Bar { x: x + pad, y: by - bh / 2.0 + 2.0, w: track_w, h: bh, color: WHITE, opacity: o * 0.2 });
+    let (track_y, bh) = (y + TRACK_Y as f32, if scrub.is_some() { 8.0 } else { 5.0 });
+    v.push(Element::Bar { x: x + pad, y: track_y - bh / 2.0, w: track_w, h: bh, color: WHITE, opacity: o * 0.2 });
     if let (Some(pos), Some(dur)) = (m.position_now(t), m.duration.filter(|d| *d > 0.0)) {
         let frac = scrub.unwrap_or(pos / dur).clamp(0.0, 1.0);
         let shown = frac * dur;
@@ -1350,26 +1365,28 @@ pub fn expanded_media(
             // The bar itself moves with the music. Bars up to
             // the playhead take the album's colour; the rest wait in grey.
             v.pop();
-            v.extend(visualizer_track(x + pad, by + 2.0, track_w, frac as f32, t, m.playing, tint, o));
+            v.extend(visualizer_track(x + pad, track_y, track_w, frac as f32, t, m.playing, tint, o));
         } else {
             v.push(Element::Bar {
                 x: x + pad,
-                y: by - bh / 2.0 + 2.0,
+                y: track_y - bh / 2.0,
                 w: (track_w * frac as f32).max(bh),
                 h: bh,
                 color: tint,
                 opacity: o,
             });
         }
-        let time_style = TextStyle { size: 11.0, opacity: o * 0.6, tabular: true, ..TextStyle::default() };
-        v.push(text(format_duration(shown), time_style, x + pad, y + 112.0));
+        let time_style = TextStyle { size: 12.0, weight: 500, opacity: o * 0.6, tabular: true, ..TextStyle::default() };
+        let time_y = track_y + 21.0;
+        v.push(text(format_duration(shown), time_style, x + pad, time_y));
         let remaining = TextStyle { align: Align::Right, ..time_style };
-        v.push(text(format!("-{}", format_duration(dur - shown)), remaining, x + w - pad, y + 112.0));
+        v.push(text(format!("-{}", format_duration(dur - shown)), remaining, x + w - pad, time_y));
     }
 
     // Transport controls, with the volume slider beside them when known.
     let cx = transport_x(pill, volume.is_some()) as f32;
-    let cy = y + 136.0;
+    let cy = y + TRANSPORT_Y as f32;
+    let gap = TRANSPORT_GAP as f32;
     if let Some((level, muted)) = volume {
         let (left, right) = volume_track(pill);
         let (left, right) = (left as f32, right as f32);
@@ -1399,25 +1416,25 @@ pub fn expanded_media(
     let play_icon = if m.playing { Icon::Pause } else { Icon::Play };
     v.push(Element::Icon {
         icon: Icon::Previous,
-        x: cx - 64.0 - 13.0,
-        y: cy - 13.0,
-        size: 26.0,
+        x: cx - gap - 15.0,
+        y: cy - 15.0,
+        size: 30.0,
         color: WHITE,
         opacity: dim(m.caps.previous),
     });
     v.push(Element::Icon {
         icon: play_icon,
-        x: cx - 15.0,
-        y: cy - 15.0,
-        size: 30.0,
+        x: cx - 18.0,
+        y: cy - 18.0,
+        size: 36.0,
         color: WHITE,
         opacity: dim(m.caps.play_pause),
     });
     v.push(Element::Icon {
         icon: Icon::Next,
-        x: cx + 64.0 - 13.0,
-        y: cy - 13.0,
-        size: 26.0,
+        x: cx + gap - 15.0,
+        y: cy - 15.0,
+        size: 30.0,
         color: WHITE,
         opacity: dim(m.caps.next),
     });
@@ -3126,7 +3143,7 @@ pub fn below_header(pill: Rect) -> Rect {
 /// The compact pill while lyrics show: wide enough for a line or so.
 pub const COMPACT_LYRICS_W: f64 = 340.0;
 /// Where the Now Playing card's controls end.
-const MEDIA_CONTENT_H: f64 = 152.0;
+const MEDIA_CONTENT_H: f64 = 170.0;
 /// Extra height of the Now Playing card for two lines of lyrics.
 pub const CARD_LYRICS_H: f64 = 46.0;
 /// Lines that aren't being sung stay readable, just dimmer.
@@ -3293,7 +3310,7 @@ mod tests {
     #[test]
     fn expanded_media_shows_title_times_and_controls() {
         let mut engine = TextEngine::new();
-        let pill = Rect::new(24.0, 0.0, 372.0, 160.0);
+        let pill = Rect::new(24.0, 0.0, 372.0, 180.0);
         let v = expanded_media(pill, &song(), 0.0, 1.0, None, None, false, &mut engine);
         let t = texts(&v);
         assert!(t[0].ends_with('…'), "long title is ellipsised: {}", t[0]);
@@ -3310,8 +3327,33 @@ mod tests {
     }
 
     #[test]
+    fn now_playing_follows_the_figma_card() {
+        let mut engine = TextEngine::new();
+        let pill = Rect::new(24.0, 0.0, 372.0, 180.0);
+        let v = expanded_media(pill, &song(), 0.0, 1.0, None, Some((0.5, false)), false, &mut engine);
+        let art =
+            v.iter()
+                .find_map(|e| if let Element::Art { size, radius, .. } = e { Some((*size, *radius)) } else { None });
+        assert_eq!(art, Some((64.0, 14.0)), "the cover is 64 px with 14 px corners");
+        let title = v.iter().find_map(|e| if let Element::Text(t) = e { Some(t.style.size) } else { None });
+        assert_eq!(title, Some(18.0));
+        // Every button and the lyrics' first row stay clear of each other.
+        for e in &v {
+            if let Element::Icon { y, size, .. } = e {
+                assert!(y + size <= MEDIA_CONTENT_H as f32, "a button runs into the lyrics");
+            }
+            if let Element::Text(t) = e {
+                assert!(t.baseline < (TRANSPORT_Y - 18.0) as f32, "{} runs into the buttons", t.text);
+            }
+        }
+        for (r, _) in media_controls(pill, true) {
+            assert!(r.x >= pill.x && r.right() <= pill.right(), "{r:?}");
+        }
+    }
+
+    #[test]
     fn controls_sit_inside_the_card_and_scrub_maps_x() {
-        let pill = Rect::new(24.0, 0.0, 372.0, 160.0);
+        let pill = Rect::new(24.0, 0.0, 372.0, 180.0);
         for (r, _) in media_controls(pill, true) {
             assert!(r.x >= pill.x && r.right() <= pill.right() && r.bottom() <= pill.bottom() + 1.0, "{r:?}");
         }
