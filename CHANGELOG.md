@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-23
+
 ### Added
 - **Control Centre layouts** (Settings → General → Look): Classic (as before), **Modules** (a block of round buttons with the timer beside it), **Sliders** (volume and brightness as tall sliders beside the buttons) and **Dock** (a big clock with every button in one labelled row). `islet look control-centre <layout>`.
 - **Your own button order** for Control Centre, used by every layout (`islet card order …`), and a **background photo** behind it, darkened so the buttons stay readable (`islet look photo <file>|none`). The photo stays on the computer.
