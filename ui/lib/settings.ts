@@ -1,3 +1,4 @@
+import { N } from './i18n';
 // Pure helpers for the Settings window (unit-tested; no Tauri calls here).
 
 export type Os = 'macos' | 'windows' | 'linux' | string;
@@ -31,11 +32,11 @@ export interface Status {
 }
 
 export const MODES: { id: TravelMode; label: string }[] = [
-  { id: 'drive', label: 'Driving' },
-  { id: 'two-wheeler', label: 'Motorbike / boda' },
-  { id: 'walk', label: 'Walking' },
-  { id: 'bicycle', label: 'Cycling' },
-  { id: 'transit', label: 'Public transport' },
+  { id: 'drive', label: N('Driving') },
+  { id: 'two-wheeler', label: N('Motorbike / boda') },
+  { id: 'walk', label: N('Walking') },
+  { id: 'bicycle', label: N('Cycling') },
+  { id: 'transit', label: N('Public transport') },
 ];
 
 export function parseStatus(json: string): Status {
@@ -83,34 +84,34 @@ export function permissionsFor(os: Os): Permission[] {
     case 'macos':
       return [
         {
-          title: 'Bluetooth',
-          body: 'macOS asks once, so the island can show the battery level of headphones, mice and keyboards.',
+          title: N('Bluetooth'),
+          body: N('macOS asks once, so the island can show the battery level of headphones, mice and keyboards.'),
         },
         {
-          title: 'Automation (only if needed)',
-          body: 'If Now Playing can’t be read directly, Islet falls back to asking Spotify or Music. macOS then asks whether Islet may control them.',
+          title: N('Automation (only if needed)'),
+          body: N('If Now Playing can’t be read directly, Islet falls back to asking Spotify or Music. macOS then asks whether Islet may control them.'),
         },
         {
-          title: 'Opening an app from the internet',
-          body: 'Islet is not notarized yet. If macOS blocks it, open System Settings → Privacy & Security and click “Open Anyway”.',
+          title: N('Opening an app from the internet'),
+          body: N('Islet is not notarized yet. If macOS blocks it, open System Settings → Privacy & Security and click “Open Anyway”.'),
         },
       ];
     case 'windows':
       return [
         {
-          title: 'No permissions needed',
-          body: 'Music and battery levels come from Windows itself. If SmartScreen warns about an unrecognized app, choose “More info” → “Run anyway”.',
+          title: N('No permissions needed'),
+          body: N('Music and battery levels come from Windows itself. If SmartScreen warns about an unrecognized app, choose “More info” → “Run anyway”.'),
         },
       ];
     default:
       return [
         {
-          title: 'Keyring',
-          body: 'API keys are stored in your keyring (GNOME Keyring or KWallet) with secret-tool. Install libsecret-tools if it is missing.',
+          title: N('Keyring'),
+          body: N('API keys are stored in your keyring (GNOME Keyring or KWallet) with secret-tool. Install libsecret-tools if it is missing.'),
         },
         {
-          title: 'Wayland',
-          body: 'On GNOME with Wayland, Islet runs through XWayland. Nothing to set up.',
+          title: N('Wayland'),
+          body: N('On GNOME with Wayland, Islet runs through XWayland. Nothing to set up.'),
         },
       ];
   }
@@ -269,6 +270,8 @@ export interface IslandPrefs {
   clockFace: string;
   /** "auto", "12" or "24". */
   clockHours: string;
+  /** "auto" or a language code (see `LANGUAGES` in i18n.ts). */
+  language?: string;
   hotkey: string;
   launcherHotkey: string;
   noteHotkey: string;
@@ -304,14 +307,14 @@ export const ACCENTS: Record<string, string> = {
 
 /** The clock card's optional buttons, as in `islet_core::prefs::CARD_BUTTONS`. */
 export const CARD_BUTTONS: { id: string; label: string; optIn: boolean }[] = [
-  { id: 'timer', label: 'Quick timer', optIn: false },
-  { id: 'calendar', label: 'Calendar', optIn: false },
-  { id: 'screenshot', label: 'Screenshot', optIn: false },
-  { id: 'lock', label: 'Lock', optIn: false },
-  { id: 'system', label: 'System monitor', optIn: false },
-  { id: 'controls', label: 'Volume and brightness', optIn: false },
-  { id: 'todo', label: 'To-do list', optIn: true },
-  { id: 'stopwatch', label: 'Stopwatch', optIn: true },
+  { id: 'timer', label: N('Quick timer'), optIn: false },
+  { id: 'calendar', label: N('Calendar'), optIn: false },
+  { id: 'screenshot', label: N('Screenshot'), optIn: false },
+  { id: 'lock', label: N('Lock'), optIn: false },
+  { id: 'system', label: N('System monitor'), optIn: false },
+  { id: 'controls', label: N('Volume and brightness'), optIn: false },
+  { id: 'todo', label: N('To-do list'), optIn: true },
+  { id: 'stopwatch', label: N('Stopwatch'), optIn: true },
 ];
 
 /** Does the clock card show this button? Opt-in ones show once switched on. */
@@ -321,18 +324,18 @@ export function cardShows(b: { id: string; optIn: boolean }, p: { cardHidden?: s
 
 /** What the island is made of, as in `islet_core::prefs::STYLES`. */
 export const STYLES: { id: string; label: string }[] = [
-  { id: 'black', label: 'Black' },
-  { id: 'tinted', label: 'Tinted' },
-  { id: 'glass', label: 'Glass' },
-  { id: 'tinted-glass', label: 'Tinted glass' },
+  { id: 'black', label: N('Black') },
+  { id: 'tinted', label: N('Tinted') },
+  { id: 'glass', label: N('Glass') },
+  { id: 'tinted-glass', label: N('Tinted glass') },
 ];
 
 /** The Performance choices, as in `islet_core::limits::MODES`. */
 export const PERFORMANCE: { id: string; label: string; hint: string }[] = [
-  { id: 'auto', label: 'Automatic', hint: 'full, or light on a 4 GB laptop' },
-  { id: 'full', label: 'Full', hint: '60 fps, sharp art, long histories' },
-  { id: 'light', label: 'Light', hint: 'for 4 GB laptops' },
-  { id: 'saver', label: 'Power saver', hint: 'light, and nothing moves by itself' },
+  { id: 'auto', label: N('Automatic'), hint: N('full, or light on a 4 GB laptop') },
+  { id: 'full', label: N('Full'), hint: N('60 fps, sharp art, long histories') },
+  { id: 'light', label: N('Light'), hint: N('for 4 GB laptops') },
+  { id: 'saver', label: N('Power saver'), hint: N('light, and nothing moves by itself') },
 ];
 
 /** Each switch's name for `islet set <name> on|off`. */

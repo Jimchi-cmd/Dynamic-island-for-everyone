@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { setLanguage, tf, tr } from './lib/lang.svelte';
+  import { LANGUAGES, N, resolve } from './lib/i18n';
   import Picker from './lib/Picker.svelte';
   import {
     asLink,
@@ -56,7 +58,7 @@
   const PAGES: { id: Page; label: string; tint: string; icon: string; dots?: [number, number, number][] }[] = [
     {
       id: 'general',
-      label: 'General',
+      label: N('General'),
       tint: 'linear-gradient(160deg, #a2a2a9, #77777e)',
       icon: 'M4 8h8M18 8h2M4 16h2M12 16h8',
       dots: [
@@ -66,50 +68,50 @@
     },
     {
       id: 'connections',
-      label: 'Wi-Fi, Bluetooth & phone',
+      label: N('Wi-Fi, Bluetooth & phone'),
       tint: 'linear-gradient(160deg, #46a4ff, #0a6fe8)',
       icon: 'M4.5 10.5a10.6 10.6 0 0 1 15 0M7.8 14a6 6 0 0 1 8.4 0',
       dots: [[12, 17.6, 1.5]],
     },
     {
       id: 'alarms',
-      label: 'Alarms',
+      label: N('Alarms'),
       tint: 'linear-gradient(160deg, #ffb340, #ff8a00)',
       icon: 'M6.5 16.5v-5.2a5.5 5.5 0 0 1 11 0v5.2l1.5 1.8h-14zM10.4 20.4a1.7 1.7 0 0 0 3.2 0',
     },
     {
       id: 'timer',
-      label: 'Timer & focus',
+      label: N('Timer & focus'),
       tint: 'linear-gradient(160deg, #8a86ff, #5a55e0)',
       icon: 'M12 6.5a7 7 0 1 0 0 14a7 7 0 0 0 0-14zM12 13.5V9.8M10 3.2h4',
     },
     {
       id: 'navigation',
-      label: 'Navigation',
+      label: N('Navigation'),
       tint: 'linear-gradient(160deg, #4cd97b, #1fa64d)',
       icon: 'M5.5 19.5L12 4.5l6.5 15l-6.5-4z',
     },
     {
       id: 'launcher',
-      label: 'Launcher',
+      label: N('Launcher'),
       tint: 'linear-gradient(160deg, #ff7a8a, #e0355a)',
       icon: 'M10.5 4.5a6 6 0 1 0 0 12a6 6 0 0 0 0-12zM15 15l4.5 4.5',
     },
     {
       id: 'extras',
-      label: 'Extras',
+      label: N('Extras'),
       tint: 'linear-gradient(135deg, #ff9f0a, #ff375f)',
       icon: 'M12 3.5l2 6.5l6.5 2l-6.5 2l-2 6.5l-2-6.5l-6.5-2l6.5-2z',
     },
     {
       id: 'updates',
-      label: 'Updates',
+      label: N('Updates'),
       tint: 'linear-gradient(160deg, #54d3e6, #1a9fbd)',
       icon: 'M5 11.5a7 7 0 0 1 12.3-4.2L19.5 9.5M19.5 4.5v5h-5M19 12.5a7 7 0 0 1-12.3 4.2L4.5 14.5M4.5 19.5v-5h5',
     },
     {
       id: 'about',
-      label: 'About',
+      label: N('About'),
       tint: 'linear-gradient(160deg, #8f97a8, #5d6475)',
       icon: 'M12 4a8 8 0 1 0 0 16a8 8 0 0 0 0-16zM12 11v5.5',
       dots: [[12, 7.9, 1.2]],
@@ -192,7 +194,7 @@
       wifiPassword = '';
       return;
     }
-    connNote = `Connecting to ${ssid}…`;
+    connNote = tf('Connecting to {}…', ssid);
     try {
       connNote = needsPassword
         ? await api.islet(['wifi', 'connect', ssid, '--password-stdin'], wifiPassword)
@@ -256,7 +258,7 @@
       return [
         {
           kind: 'answer',
-          title: text ? `Save the note “${text}”` : 'Type your note after “note:”',
+          title: text ? tf('Save the note “{}”', text) : tr('Type your note after “note:”'),
           detail: 'Islet notes.txt',
           run: text
             ? async () => {
@@ -271,7 +273,7 @@
     const converted = convert(q);
     if (converted) rows.push({ kind: 'answer', title: converted.split(' = ')[1] ?? converted, detail: converted });
     for (const w of matchWindows(openWindows, q)) {
-      const detail = w.title === w.app ? 'Switch to this app' : `Switch to · ${w.app}`;
+      const detail = w.title === w.app ? tr('Switch to this app') : tf('Switch to · {}', w.app);
       rows.push({ kind: 'window', title: w.title, detail, run: () => api.islet(['windows', 'focus', w.id]).then(() => {}) });
     }
     for (const a of matchApps(apps, q)) {
@@ -279,7 +281,7 @@
     }
     const link = asLink(q);
     if (link) rows.push({ kind: 'link', title: link, detail: 'Open in your browser', run: () => api.openLink(link) });
-    rows.push({ kind: 'web', title: `Search the web for “${q}”`, detail: 'DuckDuckGo', run: () => api.openLink(webSearchUrl(q)) });
+    rows.push({ kind: 'web', title: tf('Search the web for “{}”', q), detail: 'DuckDuckGo', run: () => api.openLink(webSearchUrl(q)) });
     return rows;
   });
 
@@ -368,6 +370,7 @@
   async function loadIslandPrefs() {
     try {
       islandPrefs = JSON.parse(await api.islet(['prefs', '--json']));
+      setLanguage(resolve(islandPrefs?.language ?? 'auto', navigator.language));
       displays = JSON.parse(await api.islet(['displays', '--json']));
       void loadPlugins();
       if (!fonts.length) void loadFonts();
@@ -528,7 +531,7 @@
   let spotifyNote = $state('');
 
   async function spotifyLogin() {
-    spotifyNote = 'Finish signing in in your browser…';
+    spotifyNote = tr('Finish signing in in your browser…');
     try {
       spotifyNote = await api.islet(['spotify', 'login', spotifyClient.trim()]);
       spotifyClient = '';
@@ -555,10 +558,10 @@
   let weatherNote = $state('');
 
   async function searchCity() {
-    weatherNote = 'Searching…';
+    weatherNote = tr('Searching…');
     try {
       cityResults = JSON.parse(await api.islet(['weather', 'search', cityQuery.trim(), '--json']));
-      weatherNote = cityResults.length ? '' : 'No places found.';
+      weatherNote = cityResults.length ? '' : tr('No places found.');
     } catch (e) {
       weatherNote = api.message(e);
     }
@@ -807,7 +810,7 @@
       const out = await api.islet(args);
       if (args[1] === 'pair') {
         pairing = parsePairing(out);
-        if (!pairing) phoneNote = 'The pairing code could not be drawn.';
+        if (!pairing) phoneNote = tr('The pairing code could not be drawn.');
       } else {
         pairing = null;
         phoneNote = out;
@@ -890,6 +893,15 @@
     void loadShortcuts();
   }
 
+  async function setLanguagePref(code: string) {
+    try {
+      await api.islet(['language', code]);
+      await loadIslandPrefs();
+    } catch (e) {
+      problem = api.message(e);
+    }
+  }
+
   async function setPerformance(mode: string) {
     try {
       await api.islet(['performance', mode]);
@@ -904,7 +916,7 @@
     try {
       await api.islet(['key', 'routes'], key.trim());
       key = '';
-      keyNote = 'Saved to your keychain.';
+      keyNote = tr('Saved to your keychain.');
       await refresh();
     } catch (e) {
       keyNote = api.message(e);
@@ -915,7 +927,7 @@
     keyNote = '';
     try {
       await api.islet(['key', 'routes', '--clear']);
-      keyNote = 'Removed.';
+      keyNote = tr('Removed.');
       await refresh();
     } catch (e) {
       keyNote = api.message(e);
@@ -939,7 +951,7 @@
   async function stopTrip() {
     try {
       await api.islet(['nav', 'stop']);
-      tripNote = 'Stopped.';
+      tripNote = tr('Stopped.');
       await refresh();
     } catch (e) {
       tripNote = api.message(e);
@@ -947,10 +959,10 @@
   }
 
   async function checkUpdate() {
-    updateNote = 'Checking…';
+    updateNote = tr('Checking…');
     try {
       update = await api.checkUpdate();
-      updateNote = update.newer ? '' : `Islet ${update.current} is up to date.`;
+      updateNote = update.newer ? '' : tf('Islet {} is up to date.', update.current);
       void updatePill();
     } catch (e) {
       update = null;
@@ -962,12 +974,12 @@
   let early = $state<{ current: string; latest: string; newer: boolean; url: string } | null>(null);
   let earlyNote = $state('');
   async function checkEarly() {
-    earlyNote = 'Looking…';
+    earlyNote = tr('Looking…');
     try {
       const v = JSON.parse(await api.islet(['update', 'check', '--early', '--json']));
       const url = typeof v.url === 'string' && v.url.startsWith('https://') ? v.url : '';
       early = { current: String(v.current), latest: String(v.latest), newer: v.newer === true && url !== '', url };
-      earlyNote = early.newer ? `Islet ${early.latest} is out as an early build.` : 'No early build newer than yours.';
+      earlyNote = early.newer ? tf('Islet {} is out as an early build.', early.latest) : tr('No early build newer than yours.');
     } catch (e) {
       early = null;
       earlyNote = api.message(e);
@@ -982,8 +994,8 @@
       if (update?.newer && link.startsWith('https://')) {
         await api.islet([
           'activity', 'start', 'islet-update',
-          '--title', `Islet ${update.latest} is available`,
-          '--subtitle', 'Tap to open the download page',
+          '--title', tf('Islet {} is available', update.latest),
+          '--subtitle', tr('Tap to open the download page'),
           // A full ring: an activity without a value would spin (and cost power).
           '--progress', '100',
           '--open', link,
@@ -997,7 +1009,7 @@
   }
 
   async function installUpdate() {
-    updateNote = 'Downloading and installing…';
+    updateNote = tr('Downloading and installing…');
     try {
       await api.installUpdate();
     } catch (e) {
@@ -1021,6 +1033,8 @@
   }
 
   onMount(async () => {
+    // The system's language until the island's setting is read.
+    setLanguage(resolve('auto', navigator.language));
     try {
       [info, prefs] = await Promise.all([api.info(), api.getPrefs()]);
     } catch (e) {
@@ -1048,14 +1062,14 @@
 
 <!-- Celsius or Fahrenheit, on the Look and Weather pages. -->
 {#snippet units()}
-  <div class="segmented" role="radiogroup" aria-label="Temperature unit">
-    {#each [{ f: false, short: '°C', long: 'Celsius' }, { f: true, short: '°F', long: 'Fahrenheit' }] as u (u.short)}
+  <div class="segmented" role="radiogroup" aria-label={tr("Temperature unit")}>
+    {#each [{ f: false, short: '°C', long: N('Celsius') }, { f: true, short: '°F', long: N('Fahrenheit') }] as u (u.short)}
       {@const on = (islandPrefs?.fahrenheit ?? false) === u.f}
       <button
         role="radio"
         aria-checked={on}
-        aria-label={u.long}
-        title={u.long}
+        aria-label={tr(u.long)}
+        title={tr(u.long)}
         class:chosen={on}
         disabled={!islandPrefs}
         onclick={() => setSwitch('fahrenheit', u.f)}>{u.short}</button
@@ -1067,37 +1081,35 @@
 {#if info && !prefs.welcomed}
   <main class="welcome" aria-live="polite">
     {#if welcomeStep === 0}
-      <h1>Welcome to Islet</h1>
+      <h1>{tr("Welcome to Islet")}</h1>
       <p>
-        Islet adds a Dynamic Island-style pill to the top of your screen. It shows what’s playing, the battery of
-        headphones and mice when they connect, and your ETA when you’re heading somewhere.
+        {tr("Islet adds a Dynamic Island-style pill to the top of your screen. It shows what’s playing, the battery of headphones and mice when they connect, and your ETA when you’re heading somewhere.")}
       </p>
       <div class="card">
-        <h2>Private by default</h2>
+        <h2>{tr("Private by default")}</h2>
         <p class="muted">
-          No accounts, no analytics, no telemetry. Islet uses the network only for features you turn on: navigation
-          ETA (with your own Google key), weather, lyrics and update checks.
+          {tr("No accounts, no analytics, no telemetry. Islet uses the network only for features you turn on: navigation ETA (with your own Google key), weather, lyrics and update checks.")}
         </p>
       </div>
-      <div class="actions"><button class="primary" onclick={() => (welcomeStep = 1)}>Continue</button></div>
+      <div class="actions"><button class="primary" onclick={() => (welcomeStep = 1)}>{tr("Continue")}</button></div>
     {:else if welcomeStep === 1}
-      <h1>What Islet may ask for</h1>
+      <h1>{tr("What Islet may ask for")}</h1>
       {#each permissionsFor(info.os) as p (p.title)}
         <div class="card">
-          <h2>{p.title}</h2>
-          <p class="muted">{p.body}</p>
+          <h2>{tr(p.title)}</h2>
+          <p class="muted">{tr(p.body)}</p>
         </div>
       {/each}
       <div class="actions">
-        <button onclick={() => (welcomeStep = 0)}>Back</button>
-        <button class="primary" onclick={() => (welcomeStep = 2)}>Continue</button>
+        <button onclick={() => (welcomeStep = 0)}>{tr("Back")}</button>
+        <button class="primary" onclick={() => (welcomeStep = 2)}>{tr("Continue")}</button>
       </div>
     {:else}
-      <h1>Start Islet</h1>
-      <p>Islet uses a few megabytes of memory and no CPU while nothing is happening, so it can run all the time.</p>
+      <h1>{tr("Start Islet")}</h1>
+      <p>{tr("Islet uses a few megabytes of memory and no CPU while nothing is happening, so it can run all the time.")}</p>
       <div class="actions">
-        <button disabled={busy} onclick={() => finishWelcome(false)}>Start, just this once</button>
-        <button class="primary" disabled={busy} onclick={() => finishWelcome(true)}>Start now and at login</button>
+        <button disabled={busy} onclick={() => finishWelcome(false)}>{tr("Start, just this once")}</button>
+        <button class="primary" disabled={busy} onclick={() => finishWelcome(true)}>{tr("Start now and at login")}</button>
       </div>
       {#if problem}<p class="error" role="alert">{problem}</p>{/if}
     {/if}
@@ -1107,7 +1119,7 @@
   </main>
 {:else}
   <div class="layout">
-    <nav aria-label="Settings sections">
+    <nav aria-label={tr("Settings sections")}>
       <div class="brand">
         <span class="logo" aria-hidden="true"></span>
         <span>Islet</span>
@@ -1120,54 +1132,67 @@
               {#each p.dots ?? [] as [cx, cy, r] (`${cx},${cy}`)}<circle {cx} {cy} {r} fill="currentColor" stroke="none" />{/each}
             </svg>
           </span>
-          {p.label}
+          {tr(p.label)}
         </button>
       {/each}
       <div class="grow"></div>
-      {#if info}<div class="version muted">Version {info.version}</div>{/if}
+      {#if info}<div class="version muted">{tr("Version")} {info.version}</div>{/if}
     </nav>
     <main>
       {#if problem}<p class="error" role="alert">{problem}</p>{/if}
 
       {#if page === 'general'}
-        <h1>General</h1>
+        <h1>{tr("General")}</h1>
         <div class="card row">
           <div>
-            <h2>Island</h2>
-            {#if status?.running}<p class="ok">Running</p>{:else}<p class="muted">Not running</p>{/if}
+            <h2>{tr("Language")}</h2>
+            <p class="muted">{tr("Islet, the island and these settings, in your language.")}</p>
+          </div>
+          <Picker
+            label={tr("Language")}
+            value={islandPrefs?.language ?? 'auto'}
+            disabled={!islandPrefs}
+            options={LANGUAGES.map((l) => ({ value: l.code, label: l.code === 'auto' ? tr(l.name) : l.name }))}
+            onchange={(v) => setLanguagePref(v)}
+          />
+        </div>
+        <div class="card row">
+          <div>
+            <h2>{tr("Island")}</h2>
+            {#if status?.running}<p class="ok">{tr("Running")}</p>{:else}<p class="muted">{tr("Not running")}</p>{/if}
           </div>
           {#if status?.running}
             <button disabled={busy} onclick={() => run(async () => { await api.islet(['quit']); await refresh(); })}>
-              Quit Islet
+              {tr("Quit Islet")}
             </button>
           {:else}
-            <button class="primary" disabled={busy} onclick={startIsland}>Start Islet</button>
+            <button class="primary" disabled={busy} onclick={startIsland}>{tr("Start Islet")}</button>
           {/if}
         </div>
         <div class="card row">
           <div>
-            <h2>Start at login</h2>
-            <p class="muted">Islet opens by itself when you log in.</p>
+            <h2>{tr("Start at login")}</h2>
+            <p class="muted">{tr("Islet opens by itself when you log in.")}</p>
           </div>
           <input
             type="checkbox"
             class="switch"
-            aria-label="Start at login"
+            aria-label={tr("Start at login")}
             checked={status?.autostart ?? false}
             disabled={busy || !status}
             onchange={(e) => setAutostart(e.currentTarget.checked)}
           />
         </div>
         <div class="card">
-          <h2>Pop-ups</h2>
-          <p class="muted small">The island shows a moment's notice when these change.</p>
-          {#each [['volumeHud', 'Volume'], ['brightnessHud', 'Screen brightness'], ['capsLockHud', 'Caps Lock'], ['wifiPopup', 'Joining a Wi-Fi network'], ['modeIndicators', 'Airplane mode and Do Not Disturb']] as [key, label] (key)}
+          <h2>{tr("Pop-ups")}</h2>
+          <p class="muted small">{tr("The island shows a moment's notice when these change.")}</p>
+          {#each [['volumeHud', N('Volume')], ['brightnessHud', N('Screen brightness')], ['capsLockHud', N('Caps Lock')], ['wifiPopup', N('Joining a Wi-Fi network')], ['modeIndicators', N('Airplane mode and Do Not Disturb')]] as [key, label] (key)}
             <div class="net">
-              <span class="name">{label}</span>
+              <span class="name">{tr(label)}</span>
               <input
                 type="checkbox"
                 class="switch"
-                aria-label="{label} pop-up"
+                aria-label="{tr(label)} pop-up"
                 checked={islandPrefs ? Boolean(islandPrefs[key as keyof IslandPrefs]) : true}
                 disabled={!islandPrefs}
                 onchange={(e) => setSwitch(key as keyof IslandPrefs, e.currentTarget.checked)}
@@ -1175,87 +1200,80 @@
             </div>
           {/each}
           {#if info?.os === 'macos'}
-            <p class="muted small">macOS doesn't let apps see brightness changes, so there's no brightness pop-up on a Mac.</p>
+            <p class="muted small">{tr("macOS doesn't let apps see brightness changes, so there's no brightness pop-up on a Mac.")}</p>
           {:else if info?.os === 'windows'}
             <p class="muted small">
-              On Windows the Caps Lock pop-up uses a keyboard hook that checks only the Caps Lock key. It's removed when
-              you turn this off.
+              {tr("On Windows the Caps Lock pop-up uses a keyboard hook that checks only the Caps Lock key. It's removed when you turn this off.")}
             </p>
           {/if}
           <p class="muted small">
-            Airplane mode and Do Not Disturb also show as small icons on the empty island while they're on.
-            {#if info?.os === 'macos'}Macs have no airplane mode, and macOS shares Focus only with App Store apps, so
-              neither shows on a Mac.{:else if info?.os === 'windows'}Do Not Disturb follows Windows 11's Focus
-              sessions.{/if}
+            {tr("Airplane mode and Do Not Disturb also show as small icons on the empty island while they're on.")}
+            {#if info?.os === 'macos'}{tr("Macs have no airplane mode, and macOS shares Focus only with App Store apps, so neither shows on a Mac.")}{:else if info?.os === 'windows'}{tr("Do Not Disturb follows Windows 11's Focus sessions.")}{/if}
           </p>
         </div>
         <div class="card">
-          <h2>Now Playing</h2>
+          <h2>{tr("Now Playing")}</h2>
           <div class="net">
-            <span class="name">Show synced lyrics</span>
+            <span class="name">{tr("Show synced lyrics")}</span>
             <input
               type="checkbox"
               class="switch"
-              aria-label="Show synced lyrics"
+              aria-label={tr("Show synced lyrics")}
               checked={islandPrefs?.lyrics ?? false}
               disabled={!islandPrefs}
               onchange={(e) => setSwitch('lyrics', e.currentTarget.checked)}
             />
           </div>
           <p class="muted small">
-            The line being sung lights up in the island as the song plays. Lyrics come from LRCLIB (lrclib.net), a free,
-            open lyrics database: when this is on, Islet sends it the title, artist, album and length of the song that's
-            playing, and nothing else. Songs without timed lyrics show none.
+            {tr("The line being sung lights up in the island as the song plays. Lyrics come from LRCLIB (lrclib.net), a free, open lyrics database: when this is on, Islet sends it the title, artist, album and length of the song that's playing, and nothing else. Songs without timed lyrics show none.")}
           </p>
           {#if info?.os === 'linux'}
             <div class="net">
-              <span class="name">Download web artwork (e.g. Spotify covers)</span>
+              <span class="name">{tr("Download web artwork (e.g. Spotify covers)")}</span>
               <input
                 type="checkbox"
                 class="switch"
-                aria-label="Download web artwork"
+                aria-label={tr("Download web artwork")}
                 checked={islandPrefs?.webArtwork ?? false}
                 disabled={!islandPrefs}
                 onchange={(e) => setSwitch('webArtwork', e.currentTarget.checked)}
               />
             </div>
           {/if}
-          <p class="muted small">Hide music and videos from these apps:</p>
+          <p class="muted small">{tr("Hide music and videos from these apps:")}</p>
           {#each islandPrefs?.mediaExclude ?? [] as app (app)}
             <div class="net">
               <span class="name">{app}</span>
-              <button onclick={() => mediaVisibility(false, app)}>Show again</button>
+              <button onclick={() => mediaVisibility(false, app)}>{tr("Show again")}</button>
             </div>
           {/each}
           <form class="join" onsubmit={(e) => { e.preventDefault(); void mediaVisibility(true, hideApp); }}>
-            <input placeholder="App name, e.g. Firefox" bind:value={hideApp} aria-label="App to hide" />
-            <button type="submit" disabled={!hideApp.trim()}>Hide</button>
+            <input placeholder={tr("App name, e.g. Firefox")} bind:value={hideApp} aria-label={tr("App to hide")} />
+            <button type="submit" disabled={!hideApp.trim()}>{tr("Hide")}</button>
           </form>
         </div>
         <div class="card">
-          <h2>Look</h2>
+          <h2>{tr("Look")}</h2>
           <div class="net">
-            <span class="name">Show the island only when I point at it</span>
+            <span class="name">{tr("Show the island only when I point at it")}</span>
             <input
               type="checkbox"
               class="switch"
-              aria-label="Show the island only when I point at it"
+              aria-label={tr("Show the island only when I point at it")}
               checked={islandPrefs?.autoHide ?? false}
               disabled={!islandPrefs}
               onchange={(e) => setSwitch('autoHide', e.currentTarget.checked)}
             />
           </div>
           <p class="muted small">
-            The empty island stays hidden until you move the pointer to the top of the screen. Music, timers, calls for
-            attention and other live activities always show.
+            {tr("The empty island stays hidden until you move the pointer to the top of the screen. Music, timers, calls for attention and other live activities always show.")}
           </p>
           <p class="muted small">
-            Step aside while one of these apps is in front, as over fullscreen videos (point at the island to bring it
-            back):
+            {tr("Step aside while one of these apps is in front, as over fullscreen videos (point at the island to bring it back):")}
           </p>
           <div class="actions left">
             {#each islandPrefs?.hideWith ?? [] as app (app)}
-              <button onclick={() => hideWith('remove', app)} aria-label={`Show the island over ${app} again`}>{app} ✕</button>
+              <button onclick={() => hideWith('remove', app)} aria-label={tf('Show the island over {} again', app)}>{app} ✕</button>
             {/each}
           </div>
           <form
@@ -1265,48 +1283,47 @@
               void hideWith('add', hideDraft);
             }}
           >
-            <input placeholder="An app's name, e.g. Steam" maxlength="60" bind:value={hideDraft} aria-label="App to step aside for" />
-            <button type="submit" disabled={!hideDraft.trim()}>Add</button>
+            <input placeholder={tr("An app's name, e.g. Steam")} maxlength="60" bind:value={hideDraft} aria-label={tr("App to step aside for")} />
+            <button type="submit" disabled={!hideDraft.trim()}>{tr("Add")}</button>
           </form>
           <div class="net">
-            <span class="name">Show the time when nothing is playing</span>
+            <span class="name">{tr("Show the time when nothing is playing")}</span>
             <input
               type="checkbox"
               class="switch"
-              aria-label="Show the time when nothing is playing"
+              aria-label={tr("Show the time when nothing is playing")}
               checked={islandPrefs?.idleClock ?? true}
               disabled={!islandPrefs}
               onchange={(e) => setSwitch('idleClock', e.currentTarget.checked)}
             />
           </div>
           <div class="net">
-            <span class="name">Tell me when a program slows the computer down</span>
+            <span class="name">{tr("Tell me when a program slows the computer down")}</span>
             <input
               type="checkbox"
               class="switch"
-              aria-label="Tell me when a program slows the computer down"
+              aria-label={tr("Tell me when a program slows the computer down")}
               checked={islandPrefs?.performanceAlert ?? false}
               disabled={!islandPrefs}
               onchange={(e) => setSwitch('performanceAlert', e.currentTarget.checked)}
             />
           </div>
           <p class="muted small">
-            When one program has had more than half the processor for a minute, or 40% of the memory, the island says
-            so and offers to close it. Islet looks at the running programs every 20 seconds while this is on.
+            {tr("When one program has had more than half the processor for a minute, or 40% of the memory, the island says so and offers to close it. Islet looks at the running programs every 20 seconds while this is on.")}
           </p>
           <div class="net">
-            <span class="name">Show weather, battery and processor when you point at it</span>
+            <span class="name">{tr("Show weather, battery and processor when you point at it")}</span>
             <input
               type="checkbox"
               class="switch"
-              aria-label="Show weather, battery and processor when you point at the island"
+              aria-label={tr("Show weather, battery and processor when you point at the island")}
               checked={islandPrefs?.hoverStatus ?? true}
               disabled={!islandPrefs}
               onchange={(e) => setSwitch('hoverStatus', e.currentTarget.checked)}
             />
           </div>
-          <p class="muted small">Accent colour for buttons and switches on the island.</p>
-          <div class="swatches" role="radiogroup" aria-label="Accent colour">
+          <p class="muted small">{tr("Accent colour for buttons and switches on the island.")}</p>
+          <div class="swatches" role="radiogroup" aria-label={tr("Accent colour")}>
             {#each Object.entries(ACCENTS) as [name, hex] (name)}
               <button
                 class="swatch"
@@ -1321,22 +1338,22 @@
               ></button>
             {/each}
           </div>
-          <p class="muted small">Buttons on the card that opens when you click the island. Wi-Fi and Bluetooth always show.</p>
+          <p class="muted small">{tr("Buttons on the card that opens when you click the island. Wi-Fi and Bluetooth always show.")}</p>
           {#each CARD_BUTTONS as b (b.id)}
             <div class="net">
-              <span class="name">{b.label}</span>
+              <span class="name">{tr(b.label)}</span>
               <input
                 type="checkbox"
                 class="switch"
-                aria-label="Show {b.label} on the island's card"
+                aria-label="Show {tr(b.label)} on the island's card"
                 checked={cardShows(b, islandPrefs)}
                 disabled={!islandPrefs}
                 onchange={(e) => setCardButton(b.id, e.currentTarget.checked)}
               />
             </div>
           {/each}
-          <p class="muted small">What the island is made of.</p>
-          <div class="styles" role="radiogroup" aria-label="Island style">
+          <p class="muted small">{tr("What the island is made of.")}</p>
+          <div class="styles" role="radiogroup" aria-label={tr("Island style")}>
             {#each STYLES as s (s.id)}
               {@const chosen = (islandPrefs?.style ?? 'black') === s.id}
               {@const accent = ACCENTS[islandPrefs?.accent ?? 'blue'] ?? ACCENTS.blue}
@@ -1345,91 +1362,91 @@
                 class:chosen
                 role="radio"
                 aria-checked={chosen}
-                aria-label={s.label}
+                aria-label={tr(s.label)}
                 disabled={!islandPrefs}
                 onclick={() => setLook('style', s.id)}
               >
                 <span class="preview" style:--tint={accent}>
                   <span class="mini {s.id}"></span>
                 </span>
-                <span class="style-name">{s.label}</span>
+                <span class="style-name">{tr(s.label)}</span>
               </button>
             {/each}
           </div>
           <div class="net">
-            <span class="name">Shape</span>
+            <span class="name">{tr("Shape")}</span>
             <Picker
-              label="Island shape"
+              label={tr("Island shape")}
               value={islandPrefs?.shape ?? 'pill'}
               disabled={!islandPrefs}
               options={[
-                { value: 'pill', label: 'Pill' },
-                { value: 'notch', label: 'Notch', hint: 'joins the top of the screen' },
+                { value: 'pill', label: tr(N('Pill')) },
+                { value: 'notch', label: tr(N('Notch')), hint: tr(N('joins the top of the screen')) },
               ]}
               onchange={(v) => setLook('shape', v)}
             />
           </div>
           <div class="net">
-            <span class="name">Empty island shows</span>
+            <span class="name">{tr("Empty island shows")}</span>
             <Picker
-              label="What the empty island shows"
+              label={tr("What the empty island shows")}
               value={islandPrefs?.clockFace ?? 'time'}
               disabled={!islandPrefs}
               options={[
-                { value: 'time', label: 'The time' },
-                { value: 'date', label: 'The day and the time' },
-                { value: 'seconds', label: 'The time with seconds' },
+                { value: 'time', label: tr(N('The time')) },
+                { value: 'date', label: tr(N('The day and the time')) },
+                { value: 'seconds', label: tr(N('The time with seconds')) },
               ]}
               onchange={(v) => setLook('clock', v)}
             />
           </div>
           <div class="net">
-            <span class="name">Clock</span>
-            <div class="segmented" role="radiogroup" aria-label="12- or 24-hour clock">
-              {#each [{ v: 'auto', l: 'Automatic' }, { v: '12', l: '12-hour' }, { v: '24', l: '24-hour' }] as o (o.v)}
+            <span class="name">{tr("Clock")}</span>
+            <div class="segmented" role="radiogroup" aria-label={tr("12- or 24-hour clock")}>
+              {#each [{ v: 'auto', l: N('Automatic') }, { v: '12', l: N('12-hour') }, { v: '24', l: N('24-hour') }] as o (o.v)}
                 {@const on = (islandPrefs?.clockHours ?? 'auto') === o.v}
                 <button role="radio" aria-checked={on} class:chosen={on} disabled={!islandPrefs} onclick={() => setLook('hours', o.v)}
-                  >{o.l}</button
+                  >{tr(o.l)}</button
                 >
               {/each}
             </div>
           </div>
           <div class="net">
-            <span class="name">Font</span>
+            <span class="name">{tr("Font")}</span>
             <Picker
-              label="The island's font"
+              label={tr("The island's font")}
               value={islandPrefs?.font ?? ''}
               disabled={!islandPrefs}
               searchable
               options={[
-                { value: '', label: 'Built-in', hint: 'Inter' },
+                { value: '', label: tr(N('Built-in')), hint: 'Inter' },
                 ...fonts.map((f) => ({ value: f, label: f, font: f })),
               ]}
               onchange={(v) => setLook('font', v || 'default')}
             />
           </div>
           <div class="net">
-            <span class="name">Temperature</span>
+            <span class="name">{tr("Temperature")}</span>
             {@render units()}
           </div>
           <div class="net">
-            <span class="name">Border in the album’s colour while music plays</span>
+            <span class="name">{tr("Border in the album’s colour while music plays")}</span>
             <input
               type="checkbox"
               class="switch"
-              aria-label="Border in the album's colour while music plays"
+              aria-label={tr("Border in the album's colour while music plays")}
               checked={islandPrefs?.albumBorder ?? true}
               disabled={!islandPrefs}
               onchange={(e) => setSwitch('albumBorder', e.currentTarget.checked)}
             />
           </div>
-          {#each [['albumGlow', 'Glow in the album’s colour while music plays'], ['visualizer', 'Moving bars as the song’s progress bar'], ['screenshotPreview', 'Show each new screenshot on the island']] as [key, label] (key)}
+          {#each [['albumGlow', N('Glow in the album’s colour while music plays')], ['visualizer', N('Moving bars as the song’s progress bar')], ['screenshotPreview', N('Show each new screenshot on the island')]] as [key, label] (key)}
               <div class="net">
-                <span class="name">{label}</span>
+                <span class="name">{tr(label)}</span>
                 <input
                   type="checkbox"
                   class="switch"
-                  aria-label={label}
+                  aria-label={tr(label)}
                   checked={islandPrefs ? Boolean(islandPrefs[key as keyof IslandPrefs]) : true}
                   disabled={!islandPrefs}
                   onchange={(e) => setSwitch(key as keyof IslandPrefs, e.currentTarget.checked)}
@@ -1437,26 +1454,26 @@
               </div>
             {/each}
           <div class="net">
-            <span class="name">Size</span>
-            <div class="segmented" role="radiogroup" aria-label="Island size">
-              {#each [{ v: 'small', l: 'Small' }, { v: 'medium', l: 'Medium' }, { v: 'large', l: 'Large' }] as o (o.v)}
+            <span class="name">{tr("Size")}</span>
+            <div class="segmented" role="radiogroup" aria-label={tr("Island size")}>
+              {#each [{ v: 'small', l: N('Small') }, { v: 'medium', l: N('Medium') }, { v: 'large', l: N('Large') }] as o (o.v)}
                 {@const on = (islandPrefs?.size ?? 'medium') === o.v}
                 <button role="radio" aria-checked={on} class:chosen={on} disabled={!islandPrefs} onclick={() => setLook('size', o.v)}
-                  >{o.l}</button
+                  >{tr(o.l)}</button
                 >
               {/each}
             </div>
           </div>
           {#if displays.length > 1}
             <div class="net">
-              <span class="name">Display</span>
+              <span class="name">{tr("Display")}</span>
               <Picker
-                label="Display for the island"
+                label={tr("Display for the island")}
                 value={islandPrefs?.display || 'primary'}
                 disabled={!islandPrefs}
                 options={[
-                  { value: 'primary', label: 'Primary display' },
-                  { value: 'all', label: 'All displays' },
+                  { value: 'primary', label: tr(N('Primary display')) },
+                  { value: 'all', label: tr(N('All displays')) },
                   ...displays.map((d) => ({ value: d, label: d })),
                 ]}
                 onchange={(v) => setLook('display', v)}
@@ -1464,33 +1481,33 @@
             </div>
           {/if}
           <div class="net">
-            <span class="name">Position</span>
+            <span class="name">{tr("Position")}</span>
             <Picker
-              label="Where the island sits"
+              label={tr("Where the island sits")}
               value={islandPrefs?.position ?? 'top'}
               disabled={!islandPrefs}
               options={[
-                { value: 'top', label: 'Top centre' },
-                { value: 'top-left', label: 'Top left' },
-                { value: 'top-right', label: 'Top right' },
-                { value: 'bottom', label: 'Bottom centre' },
+                { value: 'top', label: tr(N('Top centre')) },
+                { value: 'top-left', label: tr(N('Top left')) },
+                { value: 'top-right', label: tr(N('Top right')) },
+                { value: 'bottom', label: tr(N('Bottom centre')) },
               ]}
               onchange={(v) => setLook('position', v)}
             />
           </div>
           {#if displays.length > 1 && islandPrefs?.display === 'all'}
-            <p class="muted small">A size for each display:</p>
+            <p class="muted small">{tr("A size for each display:")}</p>
             {#each displays as d (d)}
               <div class="net">
                 <span class="name">{d}</span>
                 <Picker
-                  label={`Island size on ${d}`}
+                  label={tf('Island size on {}', d)}
                   value={islandPrefs?.displaySizes?.[d] ?? 'default'}
                   options={[
-                    { value: 'default', label: 'Same as above' },
-                    { value: 'small', label: 'Small' },
-                    { value: 'medium', label: 'Medium' },
-                    { value: 'large', label: 'Large' },
+                    { value: 'default', label: tr(N('Same as above')) },
+                    { value: 'small', label: tr(N('Small')) },
+                    { value: 'medium', label: tr(N('Medium')) },
+                    { value: 'large', label: tr(N('Large')) },
                   ]}
                   onchange={(v) => displaySize(d, v)}
                 />
@@ -1498,42 +1515,42 @@
             {/each}
           {/if}
           <div class="net">
-            <span class="name">Gap above the island</span>
+            <span class="name">{tr("Gap above the island")}</span>
             <input
               type="range"
               min="0"
               max="40"
               step="2"
-              aria-label="Gap above the island, in pixels"
+              aria-label={tr("Gap above the island, in pixels")}
               value={islandPrefs?.offset ?? 0}
               disabled={!islandPrefs}
               onchange={(e) => setLook('offset', e.currentTarget.value)}
             />
-            <span class="muted small">{islandPrefs?.offset ?? 0} px</span>
+            <span class="muted small">{islandPrefs?.offset ?? 0} {tr("px")}</span>
           </div>
-          <p class="muted small">Islet restarts itself to apply a new size, position, gap or display. Notched Macs always hang the island from the notch.</p>
+          <p class="muted small">{tr("Islet restarts itself to apply a new size, position, gap or display. Notched Macs always hang the island from the notch.")}</p>
         </div>
         <div class="card">
-          <h2>Shortcut</h2>
+          <h2>{tr("Shortcut")}</h2>
           <p class="muted small">
-            A key combination that opens the island, or closes it. Current:
+            {tr("A key combination that opens the island, or closes it. Current:")}
             <strong>{islandPrefs?.hotkey || 'none'}</strong>
           </p>
           <form class="join" onsubmit={(e) => { e.preventDefault(); void saveHotkey(hotkeyDraft); }}>
             <input
-              placeholder="Click here, then press e.g. Ctrl+Alt+I"
+              placeholder={tr("Click here, then press e.g. Ctrl+Alt+I")}
               value={hotkeyDraft}
               onkeydown={captureHotkey}
               readonly
-              aria-label="Press the shortcut keys"
+              aria-label={tr("Press the shortcut keys")}
             />
-            <button type="submit" disabled={!hotkeyDraft}>Save</button>
+            <button type="submit" disabled={!hotkeyDraft}>{tr("Save")}</button>
             {#if islandPrefs?.hotkey}
-              <button type="button" onclick={() => saveHotkey('')}>Remove</button>
+              <button type="button" onclick={() => saveHotkey('')}>{tr("Remove")}</button>
             {/if}
           </form>
-          {#each [['launcher', 'Open the launcher', islandPrefs?.launcherHotkey], ['note', 'Write a quick note', islandPrefs?.noteHotkey]] as [which, label, current] (which)}
-            <p class="muted small">{label}. Current: <strong>{current || 'none'}</strong></p>
+          {#each [['launcher', N('Open the launcher'), islandPrefs?.launcherHotkey], ['note', N('Write a quick note'), islandPrefs?.noteHotkey]] as [which, label, current] (which)}
+            <p class="muted small">{tr(label)}{tr(". Current:")} <strong>{current || tr('none')}</strong></p>
             <form
               class="join"
               onsubmit={(e) => {
@@ -1542,80 +1559,76 @@
               }}
             >
               <input
-                placeholder="Click here, then press e.g. Ctrl+Alt+Space"
+                placeholder={tr("Click here, then press e.g. Ctrl+Alt+Space")}
                 value={extraDraft[which as 'launcher' | 'note']}
                 onkeydown={(e) => {
                   const combo = comboOf(e);
                   if (combo) extraDraft[which as 'launcher' | 'note'] = combo;
                 }}
                 readonly
-                aria-label={`Press the keys to ${String(label).toLowerCase()}`}
+                aria-label={tf('Press the keys to: {}', tr(label))}
               />
-              <button type="submit" disabled={!extraDraft[which as 'launcher' | 'note']}>Save</button>
+              <button type="submit" disabled={!extraDraft[which as 'launcher' | 'note']}>{tr("Save")}</button>
               {#if current}
-                <button type="button" onclick={() => saveExtraHotkey(which as 'launcher' | 'note', '')}>Remove</button>
+                <button type="button" onclick={() => saveExtraHotkey(which as 'launcher' | 'note', '')}>{tr("Remove")}</button>
               {/if}
             </form>
           {/each}
           {#if info?.os === 'linux'}
             <p class="muted small">
-              On native Wayland (KDE Plasma, sway, Hyprland) only the desktop can watch keys: add a shortcut in its
-              keyboard settings that runs <code>islet toggle</code>, <code>islet launcher</code> or
+              {tr("On native Wayland (KDE Plasma, sway, Hyprland) only the desktop can watch keys: add a shortcut in its keyboard settings that runs")} <code>islet toggle</code>, <code>islet launcher</code> {tr("or")}
               <code>islet note</code>.
             </p>
           {/if}
         </div>
         <div class="card">
-          <h2>Privacy</h2>
+          <h2>{tr("Privacy")}</h2>
           <div class="net">
-            <span class="name">Camera and microphone dots</span>
+            <span class="name">{tr("Camera and microphone dots")}</span>
             <input
               type="checkbox"
               class="switch"
-              aria-label="Show camera and microphone dots"
+              aria-label={tr("Show camera and microphone dots")}
               checked={islandPrefs?.privacyDots ?? true}
               disabled={!islandPrefs}
               onchange={(e) => setSwitch('privacyDots', e.currentTarget.checked)}
             />
           </div>
-          <p class="muted small">A green dot while an app uses the camera, an orange one for the microphone.</p>
+          <p class="muted small">{tr("A green dot while an app uses the camera, an orange one for the microphone.")}</p>
           <div class="net">
-            <span class="name">Calls (when an app uses the microphone)</span>
+            <span class="name">{tr("Calls (when an app uses the microphone)")}</span>
             <input
               type="checkbox"
               class="switch"
-              aria-label="Show calls when an app uses the microphone"
+              aria-label={tr("Show calls when an app uses the microphone")}
               checked={islandPrefs?.calls ?? true}
               disabled={!islandPrefs}
               onchange={(e) => setSwitch('calls', e.currentTarget.checked)}
             />
           </div>
           <p class="muted small">
-            While Zoom, Teams, a browser call or any app has the microphone, the island shows how long the call has
-            been going and a button that mutes your microphone.
+            {tr("While Zoom, Teams, a browser call or any app has the microphone, the island shows how long the call has been going and a button that mutes your microphone.")}
           </p>
           <div class="net">
-            <span class="name">Downloads in progress</span>
+            <span class="name">{tr("Downloads in progress")}</span>
             <input
               type="checkbox"
               class="switch"
-              aria-label="Show downloads in progress"
+              aria-label={tr("Show downloads in progress")}
               checked={islandPrefs?.downloads ?? false}
               disabled={!islandPrefs}
               onchange={(e) => setSwitch('downloads', e.currentTarget.checked)}
             />
           </div>
           <p class="muted small">
-            Shows what your browser is downloading (from your Downloads folder), then "Downloaded": tap it to open the
-            file. Only file names and sizes are read, on this computer.{#if info?.os === 'macos'} macOS asks once
-            whether Islet may see your Downloads folder.{/if}
+            {tr("Shows what your browser is downloading (from your Downloads folder), then \"Downloaded\": tap it to open the file. Only file names and sizes are read, on this computer.")}{#if info?.os === 'macos'} {tr("macOS asks once whether Islet may see your Downloads folder.")}{/if}
           </p>
           <div class="net">
-            <span class="name">Plugin widgets</span>
+            <span class="name">{tr("Plugin widgets")}</span>
             <input
               type="checkbox"
               class="switch"
-              aria-label="Run plugin widgets"
+              aria-label={tr("Run plugin widgets")}
               checked={islandPrefs?.plugins ?? false}
               disabled={!islandPrefs}
               onchange={async (e) => {
@@ -1625,38 +1638,34 @@
             />
           </div>
           <p class="muted small">
-            Your own scripts, shown as live activities: each plugin is a folder with a <code>plugin.json</code> in
-            {#if plugins?.folder}<code>{plugins.folder}</code>{:else}the plugins folder{/if}. Islet runs them on their
-            schedule while this is on, on this computer only.
-            <button class="link" onclick={reloadPlugins}>Reread the folder</button>
+            {tr("Your own scripts, shown as live activities: each plugin is a folder with a")} <code>plugin.json</code> {tr("in")}
+            {#if plugins?.folder}<code>{plugins.folder}</code>{:else}{tr("the plugins folder")}{/if}{tr(". Islet runs them on their schedule while this is on, on this computer only.")}
+            <button class="link" onclick={reloadPlugins}>{tr("Reread the folder")}</button>
           </p>
           {#each plugins?.plugins ?? [] as p (p.folder)}
             <p class="small">
               <b>{p.name ?? p.folder}</b>
-              {#if p.error}<span class="muted">— can’t run: {p.error}</span>{:else}<span class="muted">every {p.every} s</span>{/if}
+              {#if p.error}<span class="muted">{tr("— can’t run:")} {p.error}</span>{:else}<span class="muted">{tr("every")} {p.every} s</span>{/if}
             </p>
           {/each}
           <div class="net">
-            <span class="name">Clipboard history</span>
+            <span class="name">{tr("Clipboard history")}</span>
             <input
               type="checkbox"
               class="switch"
-              aria-label="Keep clipboard history"
+              aria-label={tr("Keep clipboard history")}
               checked={islandPrefs?.clipboard ?? false}
               disabled={!islandPrefs}
               onchange={(e) => setSwitch('clipboard', e.currentTarget.checked)}
             />
           </div>
           <p class="muted small">
-            Keeps the last 20 texts and pictures you copy, in memory only: nothing is saved to disk, and the list is
-            gone when Islet quits. Copies that password managers mark as secret are skipped, and so is everything
-            copied from the apps below.{#if info?.os === 'macos'} macOS has no
-            clipboard notifications, so while this is on Islet checks the clipboard twice a second.{/if}
+            {tr("Keeps the last 20 texts and pictures you copy, in memory only: nothing is saved to disk, and the list is gone when Islet quits. Copies that password managers mark as secret are skipped, and so is everything copied from the apps below.")}{#if info?.os === 'macos'} {tr("macOS has no clipboard notifications, so while this is on Islet checks the clipboard twice a second.")}{/if}
           </p>
-          <p class="muted small">Never keep copies from:</p>
+          <p class="muted small">{tr("Never keep copies from:")}</p>
           <div class="actions left">
             {#each islandPrefs?.clipboardExclude ?? [] as app (app)}
-              <button onclick={() => clipExclude('remove', app)} aria-label={`Keep copies from ${app} again`}>{app} ✕</button>
+              <button onclick={() => clipExclude('remove', app)} aria-label={tf('Keep copies from {} again', app)}>{app} ✕</button>
             {/each}
           </div>
           <form
@@ -1666,139 +1675,133 @@
               void clipExclude('add', excludeDraft);
             }}
           >
-            <input placeholder="An app's name, e.g. Slack" maxlength="60" bind:value={excludeDraft} aria-label="App to leave out" />
-            <button type="submit" disabled={!excludeDraft.trim()}>Add</button>
+            <input placeholder={tr("An app's name, e.g. Slack")} maxlength="60" bind:value={excludeDraft} aria-label={tr("App to leave out")} />
+            <button type="submit" disabled={!excludeDraft.trim()}>{tr("Add")}</button>
           </form>
         </div>
         <div class="card">
-          <h2>Spotify on your other devices</h2>
+          <h2>{tr("Spotify on your other devices")}</h2>
           <p class="muted small">
-            Optional. Shows what's playing on your phone or a speaker through Spotify Connect, with controls (controls need
-            Premium). It uses your own Spotify app and checks every 10 seconds while something plays, every minute
-            otherwise.
+            {tr("Optional. Shows what's playing on your phone or a speaker through Spotify Connect, with controls (controls need Premium). It uses your own Spotify app and checks every 10 seconds while something plays, every minute otherwise.")}
           </p>
           {#if status?.spotifyLinked}
             <div class="net">
-              <span class="name ok">Linked</span>
+              <span class="name ok">{tr("Linked")}</span>
               <input
                 type="checkbox"
                 class="switch"
-                aria-label="Show Spotify playback from other devices"
+                aria-label={tr("Show Spotify playback from other devices")}
                 checked={islandPrefs?.spotify ?? false}
                 onchange={(e) => spotifyCmd(e.currentTarget.checked ? 'on' : 'off')}
               />
             </div>
-            <div class="actions left"><button class="link" onclick={() => spotifyCmd('logout')}>Unlink</button></div>
+            <div class="actions left"><button class="link" onclick={() => spotifyCmd('logout')}>{tr("Unlink")}</button></div>
           {:else}
             <details class="small muted">
-              <summary>How to set it up</summary>
-              <p>1. Open <button class="link" onclick={() => api.openLink('https://developer.spotify.com/dashboard')}>developer.spotify.com/dashboard</button> and create an app (any name), choosing "Web API".</p>
-              <p>2. Add this redirect URI exactly: <code>http://127.0.0.1:43821/callback</code></p>
-              <p>3. Copy the app's Client ID here and sign in.</p>
+              <summary>{tr("How to set it up")}</summary>
+              <p>{tr("1. Open")} <button class="link" onclick={() => api.openLink('https://developer.spotify.com/dashboard')}>developer.spotify.com/dashboard</button> {tr("and create an app (any name), choosing \"Web API\".")}</p>
+              <p>{tr("2. Add this redirect URI exactly:")} <code>http://127.0.0.1:43821/callback</code></p>
+              <p>{tr("3. Copy the app's Client ID here and sign in.")}</p>
             </details>
             <form class="join" onsubmit={(e) => { e.preventDefault(); if (/^[A-Za-z0-9]{1,64}$/.test(spotifyClient.trim())) void spotifyLogin(); }}>
-              <input placeholder="Client ID" bind:value={spotifyClient} aria-label="Spotify client ID" autocomplete="off" />
-              <button class="primary" type="submit" disabled={!/^[A-Za-z0-9]{1,64}$/.test(spotifyClient.trim())}>Sign in</button>
+              <input placeholder={tr("Client ID")} bind:value={spotifyClient} aria-label={tr("Spotify client ID")} autocomplete="off" />
+              <button class="primary" type="submit" disabled={!/^[A-Za-z0-9]{1,64}$/.test(spotifyClient.trim())}>{tr("Sign in")}</button>
             </form>
           {/if}
           {#if spotifyNote}<p class="small" role="status">{spotifyNote}</p>{/if}
         </div>
         <div class="card">
-          <h2>Notifications</h2>
+          <h2>{tr("Notifications")}</h2>
           {#if info?.os === 'linux' || info?.os === 'windows'}
             <div class="net">
-              <span class="name">Show notifications on the island</span>
+              <span class="name">{tr("Show notifications on the island")}</span>
               <input
                 type="checkbox"
                 class="switch"
-                aria-label="Show notifications on the island"
+                aria-label={tr("Show notifications on the island")}
                 checked={islandPrefs?.notifications ?? false}
                 disabled={!islandPrefs}
                 onchange={(e) => setSwitch('notifications', e.currentTarget.checked)}
               />
             </div>
             <p class="muted small">
-              New notifications appear on the island for a few seconds. Click it to see the latest ones. They stay on this
-              computer and are never logged.
+              {tr("New notifications appear on the island for a few seconds. Click it to see the latest ones. They stay on this computer and are never logged.")}
             </p>
             {#if info?.os === 'windows'}
               <p class="muted small">
-                Windows lets only packaged apps read other apps' notifications, so this needs the MSIX version of Islet.
-                Windows then asks once; you can change it later in Settings → Privacy &amp; security → Notifications.
+                {tr("Windows lets only packaged apps read other apps' notifications, so this needs the MSIX version of Islet. Windows then asks once; you can change it later in Settings → Privacy & security → Notifications.")}
               </p>
             {/if}
           {:else}
-            <p class="muted small">macOS doesn't let apps read other apps' notifications, so this isn't available on a Mac.</p>
+            <p class="muted small">{tr("macOS doesn't let apps read other apps' notifications, so this isn't available on a Mac.")}</p>
           {/if}
         </div>
         <div class="card">
-          <h2>Weather</h2>
+          <h2>{tr("Weather")}</h2>
           <p class="muted small">
-            Shows on the clock card. Off until you choose a place. Then Islet asks Open-Meteo once an hour (no account or
-            key; it sees only the place's coordinates).
+            {tr("Shows on the clock card. Off until you choose a place. Then Islet asks Open-Meteo once an hour (no account or key; it sees only the place's coordinates).")}
           </p>
           {#if islandPrefs?.weather}
             <div class="net">
               <span class="name ok">{islandPrefs.weather.name}</span>
-              <button onclick={weatherOff}>Turn off</button>
+              <button onclick={weatherOff}>{tr("Turn off")}</button>
             </div>
             <div class="net">
-              <span class="name">Temperature</span>
+              <span class="name">{tr("Temperature")}</span>
               {@render units()}
             </div>
           {/if}
           <form class="join" onsubmit={(e) => { e.preventDefault(); if (cityQuery.trim() && !cityQuery.trim().startsWith('-')) void searchCity(); }}>
-            <input placeholder="City, e.g. Kampala" bind:value={cityQuery} aria-label="City" />
-            <button type="submit" disabled={!cityQuery.trim()}>Search</button>
+            <input placeholder={tr("City, e.g. Kampala")} bind:value={cityQuery} aria-label={tr("City")} />
+            <button type="submit" disabled={!cityQuery.trim()}>{tr("Search")}</button>
           </form>
           {#each cityResults as p (p.name + p.lat)}
             <div class="net">
               <span class="name">{p.name}</span>
-              <button class="primary" onclick={() => chooseCity(p)}>Use</button>
+              <button class="primary" onclick={() => chooseCity(p)}>{tr("Use")}</button>
             </div>
           {/each}
           {#if weatherNote}<p class="small" role="status">{weatherNote}</p>{/if}
-          <p class="muted small">Weather data by <button class="link" onclick={() => api.openLink('https://open-meteo.com/')}>Open-Meteo.com</button> (CC BY 4.0).</p>
+          <p class="muted small">{tr("Weather data by")} <button class="link" onclick={() => api.openLink('https://open-meteo.com/')}>Open-Meteo.com</button> {tr("(CC BY 4.0).")}</p>
         </div>
         <div class="card">
-          <h2>Calendar</h2>
+          <h2>{tr("Calendar")}</h2>
           <p class="muted small">
-            Ten minutes before an event, the island shows what's next. Islet reads your calendar's private iCal link
-            every 15 minutes while this is on. The link is kept in your keychain.
+            {tr("Ten minutes before an event, the island shows what's next. Islet reads your calendar's private iCal link every 15 minutes while this is on. The link is kept in your keychain.")}
           </p>
           {#if islandPrefs}
             <div class="net">
-              <span class="name">Show upcoming events</span>
+              <span class="name">{tr("Show upcoming events")}</span>
               <input
                 type="checkbox"
                 class="switch"
-                aria-label="Show upcoming events"
+                aria-label={tr("Show upcoming events")}
                 checked={islandPrefs.calendar}
                 onchange={(e) => calendarCmd(e.currentTarget.checked ? 'on' : 'off')}
               />
             </div>
           {/if}
           <form class="join" onsubmit={(e) => { e.preventDefault(); if (calLink.trim()) void saveCalendar(); }}>
-            <input type="password" autocomplete="off" placeholder="https://… or webcal://… (.ics)" bind:value={calLink} aria-label="Calendar link" />
-            <button class="primary" type="submit" disabled={!calLink.trim()}>Save link</button>
+            <input type="password" autocomplete="off" placeholder="https://… or webcal://… (.ics)" bind:value={calLink} aria-label={tr("Calendar link")} />
+            <button class="primary" type="submit" disabled={!calLink.trim()}>{tr("Save link")}</button>
           </form>
           <details class="small muted">
-            <summary>Where do I find the link?</summary>
-            <p><strong>Google Calendar:</strong> Settings → your calendar → Integrate calendar → "Secret address in iCal format".</p>
-            <p><strong>Outlook:</strong> Settings → Calendar → Shared calendars → Publish a calendar → copy the ICS link.</p>
-            <p><strong>iCloud:</strong> Calendar → share icon next to a calendar → Public Calendar → copy the link.</p>
-            <p>Anyone with the link can read the calendar, so keep it private.</p>
+            <summary>{tr("Where do I find the link?")}</summary>
+            <p><strong>{tr("Google Calendar:")}</strong> {tr("Settings → your calendar → Integrate calendar → \"Secret address in iCal format\".")}</p>
+            <p><strong>{tr("Outlook:")}</strong> {tr("Settings → Calendar → Shared calendars → Publish a calendar → copy the ICS link.")}</p>
+            <p><strong>{tr("iCloud:")}</strong> {tr("Calendar → share icon next to a calendar → Public Calendar → copy the link.")}</p>
+            <p>{tr("Anyone with the link can read the calendar, so keep it private.")}</p>
           </details>
-          <div class="actions left"><button class="link" onclick={() => calendarCmd('clear')}>Remove saved link</button></div>
+          <div class="actions left"><button class="link" onclick={() => calendarCmd('clear')}>{tr("Remove saved link")}</button></div>
           {#if calNote}<p class="small" role="status">{calNote}</p>{/if}
         </div>
-        <p class="muted small">Right-click the island to close it. Click it to open, and press and hold for more.</p>
+        <p class="muted small">{tr("Right-click the island to close it. Click it to open, and press and hold for more.")}</p>
       {:else if page === 'connections'}
-        <h1>Wi-Fi &amp; Bluetooth</h1>
-        <p class="muted">The same lists open from the island: click it, then tap Wi-Fi or Bluetooth on the clock card.</p>
+        <h1>{tr("Wi-Fi & Bluetooth")}</h1>
+        <p class="muted">{tr("The same lists open from the island: click it, then tap Wi-Fi or Bluetooth on the clock card.")}</p>
         <div class="card">
           <div class="row">
-            <h2>Wi-Fi</h2>
+            <h2>{tr("Wi-Fi")}</h2>
             <button disabled={scanning} onclick={() => loadConnections(true)}>{scanning ? 'Searching…' : 'Refresh'}</button>
           </div>
           {#if wifi?.note}<p class="muted small">{wifi.note}</p>{/if}
@@ -1807,7 +1810,7 @@
               <span class="bars" aria-hidden="true">{signalBars(n.strength)}</span>
               <span class="name" class:ok={n.active}>{n.ssid}</span>
               {#if n.active}
-                <span class="ok small">Connected</span>
+                <span class="ok small">{tr("Connected")}</span>
               {:else}
                 <button onclick={() => joinWifi(n.ssid, n.secure && !n.known)}>
                   {n.secure && !n.known ? 'Join…' : 'Join'}
@@ -1817,7 +1820,7 @@
             {#if joining === n.ssid && !n.active}
               <form class="join" onsubmit={(e) => { e.preventDefault(); void joinWifi(n.ssid, true); }}>
                 <input type="password" autocomplete="off" placeholder="Password for {n.ssid}" bind:value={wifiPassword} />
-                <button class="primary" type="submit" disabled={!wifiPassword}>Join</button>
+                <button class="primary" type="submit" disabled={!wifiPassword}>{tr("Join")}</button>
               </form>
             {/if}
           {:else}
@@ -1825,7 +1828,7 @@
           {/each}
         </div>
         <div class="card">
-          <h2>Bluetooth</h2>
+          <h2>{tr("Bluetooth")}</h2>
           {#if bt?.note}<p class="muted small">{bt.note}</p>{/if}
           {#each bt?.devices ?? [] as d (d.id)}
             <div class="net">
@@ -1835,50 +1838,47 @@
               </button>
             </div>
           {:else}
-            <p class="muted">No paired devices. Pair new ones in your system's Bluetooth settings.</p>
+            <p class="muted">{tr("No paired devices. Pair new ones in your system's Bluetooth settings.")}</p>
           {/each}
         </div>
         <div class="card">
           <div class="row">
-            <h2>Speed test</h2>
+            <h2>{tr("Speed test")}</h2>
             <button disabled={speedRunning} onclick={runSpeedTest}>{speedRunning ? 'Testing…' : 'Test speed'}</button>
           </div>
           {#if speed}
             <div class="speed" role="status">
-              <span><b>{formatMbps(speed.downMbps)}</b> Mbps down</span>
-              <span><b>{formatMbps(speed.upMbps)}</b> Mbps up</span>
-              <span><b>{Math.round(speed.latencyMs)}</b> ms</span>
+              <span><b>{formatMbps(speed.downMbps)}</b> {tr("Mbps down")}</span>
+              <span><b>{formatMbps(speed.upMbps)}</b> {tr("Mbps up")}</span>
+              <span><b>{Math.round(speed.latencyMs)}</b> {tr("ms")}</span>
             </div>
           {/if}
           {#if speedNote}<p class="small" role="status">{speedNote}</p>{/if}
           <p class="muted small">
-            Runs only when you press the button: it downloads about 25 MB and uploads 10 MB with Cloudflare’s public
-            speed-test servers (speed.cloudflare.com), so mind a metered connection.
+            {tr("Runs only when you press the button: it downloads about 25 MB and uploads 10 MB with Cloudflare’s public speed-test servers (speed.cloudflare.com), so mind a metered connection.")}
           </p>
         </div>
         <div class="card">
-          <h2>Your Android phone</h2>
+          <h2>{tr("Your Android phone")}</h2>
           <p class="muted">
-            With the Islet app on your phone, its notifications, music and battery show on the island, and the
-            island’s music buttons control the phone. The two talk directly over your Wi-Fi, encrypted with a key
-            only they hold. Nothing goes through the internet.
+            {tr("With the Islet app on your phone, its notifications, music and battery show on the island, and the island’s music buttons control the phone. The two talk directly over your Wi-Fi, encrypted with a key only they hold. Nothing goes through the internet.")}
           </p>
           {#if pairing}
             <div class="pairing">
-              <svg class="qr" viewBox="-2 -2 {pairing.rows.length + 4} {pairing.rows.length + 4}" role="img" aria-label="Pairing code">
+              <svg class="qr" viewBox="-2 -2 {pairing.rows.length + 4} {pairing.rows.length + 4}" role="img" aria-label={tr("Pairing code")}>
                 <rect x="-2" y="-2" width={pairing.rows.length + 4} height={pairing.rows.length + 4} fill="#fff" />
                 <path d={qrPath(pairing.rows)} fill="#000" />
               </svg>
               <ol>
-                <li>Install the Islet app on your phone (the APK is on Islet’s download page).</li>
-                <li>Join the same Wi-Fi as this computer.</li>
-                <li>In the app, tap <b>Scan the code</b> and point the camera here.</li>
-                <li>Allow notification access when the app asks.</li>
+                <li>{tr("Install the Islet app on your phone (the APK is on Islet’s download page).")}</li>
+                <li>{tr("Join the same Wi-Fi as this computer.")}</li>
+                <li>{tr("In the app, tap")} <b>{tr("Scan the code")}</b> {tr("and point the camera here.")}</li>
+                <li>{tr("Allow notification access when the app asks.")}</li>
               </ol>
             </div>
             <p class="small muted">
-              Keep this code to yourself: it holds the pairing key. This computer listens on
-              {pairing.hosts.join(', ')} port {pairing.port}; if your firewall asks, allow Islet on private networks.
+              {tr("Keep this code to yourself: it holds the pairing key. This computer listens on")}
+              {pairing.hosts.join(', ')} {tr("port")} {pairing.port}{tr("; if your firewall asks, allow Islet on private networks.")}
             </p>
           {/if}
           <div class="actions left">
@@ -1886,19 +1886,19 @@
               {pairing ? 'Show the code again' : phoneState?.paired ? 'Show the pairing code' : 'Pair a phone'}
             </button>
             {#if phoneState?.paired}
-              <button onclick={() => phoneRun(['phone', 'pair', '--new', '--json'])}>New code</button>
-              <button onclick={() => phoneRun(['phone', 'unpair'])}>Unpair</button>
+              <button onclick={() => phoneRun(['phone', 'pair', '--new', '--json'])}>{tr("New code")}</button>
+              <button onclick={() => phoneRun(['phone', 'unpair'])}>{tr("Unpair")}</button>
             {/if}
-            <button onclick={() => api.openLink(`${info?.repo}/releases`)}>Get the app</button>
+            <button onclick={() => api.openLink(`${info?.repo}/releases`)}>{tr("Get the app")}</button>
           </div>
           {#if phoneNote}<p class="small" role="status">{phoneNote}</p>{/if}
         </div>
         {#if connNote}<p class="small" role="status">{connNote}</p>{/if}
       {:else if page === 'timer'}
-        <h1>Timer &amp; focus</h1>
-        <p class="muted">Timers count down on the island. When one ends, the island opens and chimes until you stop it.</p>
+        <h1>{tr("Timer & focus")}</h1>
+        <p class="muted">{tr("Timers count down on the island. When one ends, the island opens and chimes until you stop it.")}</p>
         <div class="card">
-          <h2>Timer</h2>
+          <h2>{tr("Timer")}</h2>
           <div class="actions left">
             {#each [1, 5, 10, 15, 25, 60] as m (m)}
               <button onclick={() => startTimer(m)}>{m < 60 ? `${m} min` : '1 hour'}</button>
@@ -1906,32 +1906,32 @@
           </div>
           <div class="two">
             <div>
-              <label for="tmin">Minutes</label>
+              <label for="tmin">{tr("Minutes")}</label>
               <input id="tmin" type="number" min="1" max="1440" bind:value={timerMinutes} />
             </div>
             <div>
-              <label for="tlabel">Name (optional)</label>
-              <input id="tlabel" bind:value={timerLabel} placeholder="Tea" />
+              <label for="tlabel">{tr("Name (optional)")}</label>
+              <input id="tlabel" bind:value={timerLabel} placeholder={tr("Tea")} />
             </div>
           </div>
           <div class="actions">
-            <button class="primary" disabled={!(timerMinutes > 0)} onclick={() => startTimer(timerMinutes)}>Start</button>
+            <button class="primary" disabled={!(timerMinutes > 0)} onclick={() => startTimer(timerMinutes)}>{tr("Start")}</button>
           </div>
         </div>
         <div class="card">
-          <h2>Focus session</h2>
-          <p class="muted small">Work and break in turns. A chime and a quick look at the island mark each change.</p>
+          <h2>{tr("Focus session")}</h2>
+          <p class="muted small">{tr("Work and break in turns. A chime and a quick look at the island mark each change.")}</p>
           <div class="three">
             <div>
-              <label for="fwork">Work (min)</label>
+              <label for="fwork">{tr("Work (min)")}</label>
               <input id="fwork" type="number" min="1" max="240" bind:value={focusWork} />
             </div>
             <div>
-              <label for="fbreak">Break (min)</label>
+              <label for="fbreak">{tr("Break (min)")}</label>
               <input id="fbreak" type="number" min="1" max="60" bind:value={focusBreak} />
             </div>
             <div>
-              <label for="frounds">Rounds</label>
+              <label for="frounds">{tr("Rounds")}</label>
               <input id="frounds" type="number" min="1" max="12" bind:value={focusRounds} />
             </div>
           </div>
@@ -1940,50 +1940,48 @@
               class="primary"
               onclick={() =>
                 timerCmd(['focus', '--work', `${focusWork}m`, '--break', `${focusBreak}m`, '--rounds', String(focusRounds)])}
-              >Start focus</button
+              >{tr("Start focus")}</button
             >
           </div>
           <div class="net">
-            <span class="name">Do not disturb while working</span>
+            <span class="name">{tr("Do not disturb while working")}</span>
             <input
               type="checkbox"
               class="switch"
-              aria-label="Do not disturb while working"
+              aria-label={tr("Do not disturb while working")}
               checked={islandPrefs?.focusQuiet ?? false}
               disabled={!islandPrefs}
               onchange={(e) => setSwitch('focusQuiet', e.currentTarget.checked)}
             />
           </div>
           <p class="muted small">
-            Keeps notifications, volume and battery pop-ups and calendar reminders off the island during a work round.
-            Breaks let them through, and alarms still ring.
+            {tr("Keeps notifications, volume and battery pop-ups and calendar reminders off the island during a work round. Breaks let them through, and alarms still ring.")}
           </p>
           {#if streak && streak.rounds > 0}
             <p class="small muted" role="status">{streakLine(streak)}</p>
           {/if}
         </div>
         <div class="actions left">
-          <button onclick={() => timerCmd(['timer', 'pause'])}>Pause</button>
-          <button onclick={() => timerCmd(['timer', 'resume'])}>Resume</button>
-          <button onclick={() => timerCmd(['timer', 'stop'])}>Stop</button>
+          <button onclick={() => timerCmd(['timer', 'pause'])}>{tr("Pause")}</button>
+          <button onclick={() => timerCmd(['timer', 'resume'])}>{tr("Resume")}</button>
+          <button onclick={() => timerCmd(['timer', 'stop'])}>{tr("Stop")}</button>
         </div>
         {#if timerNote}<p class="small" role="status">{timerNote}</p>{/if}
         <div class="card">
-          <h2>Class timetable</h2>
+          <h2>{tr("Class timetable")}</h2>
           <p class="muted small">
-            Enter your week once. The island shows a lesson ten minutes before it starts, and the clock card counts down
-            to the next one and shows your free gaps. Kept on this computer only.
+            {tr("Enter your week once. The island shows a lesson ten minutes before it starts, and the clock card counts down to the next one and shows your free gaps. Kept on this computer only.")}
           </p>
           {#each WEEK_DAYS as dayName, d (d)}
             {#if lessons.some((l) => l.day === d)}
-              <h3 class="day">{dayName}</h3>
+              <h3 class="day">{tr(dayName)}</h3>
               {#each lessons as l, i (i)}
                 {#if l.day === d}
                   <div class="net">
                     <span class="when">{formatMinutes(l.start, h24)} – {formatMinutes(l.end, h24)}</span>
                     <span class="name">{l.name}</span>
                     <span class="muted small">{l.room}</span>
-                    <button class="link" aria-label={`Delete ${l.name} on ${dayName}`} onclick={() => removeLesson(i)}>✕</button>
+                    <button class="link" aria-label={tf('Delete {} on {}', l.name, tr(dayName))} onclick={() => removeLesson(i)}>✕</button>
                   </div>
                 {/if}
               {/each}
@@ -1991,57 +1989,56 @@
           {/each}
           <div class="three">
             <div>
-              <span class="label">Day</span>
+              <span class="label">{tr("Day")}</span>
               <Picker
-                label="Day"
+                label={tr("Day")}
                 value={String(lessonDay)}
-                options={WEEK_DAYS.map((dayName, d) => ({ value: String(d), label: dayName }))}
+                options={WEEK_DAYS.map((dayName, d) => ({ value: String(d), label: tr(dayName) }))}
                 onchange={(v) => (lessonDay = Number(v))}
               />
             </div>
             <div>
-              <label for="lstart">Starts</label>
+              <label for="lstart">{tr("Starts")}</label>
               <input id="lstart" type="time" bind:value={lessonStart} />
             </div>
             <div>
-              <label for="lend">Ends</label>
+              <label for="lend">{tr("Ends")}</label>
               <input id="lend" type="time" bind:value={lessonEnd} />
             </div>
           </div>
           <div class="two">
             <div>
-              <label for="lname">Lesson</label>
-              <input id="lname" type="text" maxlength="40" placeholder="Maths" bind:value={lessonName} />
+              <label for="lname">{tr("Lesson")}</label>
+              <input id="lname" type="text" maxlength="40" placeholder={tr("Maths")} bind:value={lessonName} />
             </div>
             <div>
-              <label for="lroom">Room (optional)</label>
-              <input id="lroom" type="text" maxlength="40" placeholder="Room 4" bind:value={lessonRoom} />
+              <label for="lroom">{tr("Room (optional)")}</label>
+              <input id="lroom" type="text" maxlength="40" placeholder={tr("Room 4")} bind:value={lessonRoom} />
             </div>
           </div>
           <div class="actions">
-            <button class="primary" disabled={!lessonName.trim()} onclick={addLesson}>Add lesson</button>
+            <button class="primary" disabled={!lessonName.trim()} onclick={addLesson}>{tr("Add lesson")}</button>
           </div>
           {#if lessonNote}<p class="small" role="status">{lessonNote}</p>{/if}
         </div>
       {:else if page === 'alarms'}
-        <h1>Alarms</h1>
+        <h1>{tr("Alarms")}</h1>
         <p class="muted">
-          When an alarm goes off, the island opens with a bell and plays a chime until you snooze or stop it. Alarms
-          ring while Islet is running and your computer is awake.
+          {tr("When an alarm goes off, the island opens with a bell and plays a chime until you snooze or stop it. Alarms ring while Islet is running and your computer is awake.")}
         </p>
         <div class="card">
-          <h2>New alarm</h2>
+          <h2>{tr("New alarm")}</h2>
           <div class="two">
             <div>
-              <label for="atime">Time</label>
+              <label for="atime">{tr("Time")}</label>
               <input id="atime" type="time" bind:value={alarmTime} />
             </div>
             <div>
-              <label for="alabel">Name (optional)</label>
-              <input id="alabel" bind:value={alarmLabel} placeholder="Wake up" />
+              <label for="alabel">{tr("Name (optional)")}</label>
+              <input id="alabel" bind:value={alarmLabel} placeholder={tr("Wake up")} />
             </div>
           </div>
-          <span class="label" id="days-label">Repeat</span>
+          <span class="label" id="days-label">{tr("Repeat")}</span>
           <div class="days" role="group" aria-labelledby="days-label">
             {#each DAY_LETTERS as d, i (i)}
               <button
@@ -2054,7 +2051,7 @@
             {/each}
             <span class="muted small">{describeDays(alarmDays)}</span>
           </div>
-          <div class="actions"><button class="primary" onclick={addAlarm}>Add alarm</button></div>
+          <div class="actions"><button class="primary" onclick={addAlarm}>{tr("Add alarm")}</button></div>
           {#if alarmNote}<p class="small" role="status">{alarmNote}</p>{/if}
         </div>
         {#each status?.alarms ?? [] as a (a.id)}
@@ -2064,7 +2061,7 @@
               <p class="muted">{a.label || 'Alarm'} · {describeDays(a.days)}</p>
             </div>
             <div class="row">
-              <button class="link" onclick={() => alarmCmd('remove', a.id)}>Delete</button>
+              <button class="link" onclick={() => alarmCmd('remove', a.id)}>{tr("Delete")}</button>
               <input
                 type="checkbox"
                 class="switch"
@@ -2075,91 +2072,89 @@
             </div>
           </div>
         {:else}
-          <p class="muted">No alarms yet.</p>
+          <p class="muted">{tr("No alarms yet.")}</p>
         {/each}
       {:else if page === 'navigation'}
-        <h1>Navigation</h1>
+        <h1>{tr("Navigation")}</h1>
         <p class="muted">
-          See your travel time with live traffic, then hand off to Google Maps or Waze. Uses the Google Routes API with
-          <strong>your own</strong> key: Google bills your project, usually within its free monthly allowance.
-          <button class="link" onclick={() => api.openLink(docs('docs/navigation.md'))}>How to get a key</button>
+          {tr("See your travel time with live traffic, then hand off to Google Maps or Waze. Uses the Google Routes API with")}
+          <strong>{tr("your own")}</strong> {tr("key: Google bills your project, usually within its free monthly allowance.")}
+          <button class="link" onclick={() => api.openLink(docs('docs/navigation.md'))}>{tr("How to get a key")}</button>
         </p>
         <div class="card">
-          <h2>Google Routes API key</h2>
+          <h2>{tr("Google Routes API key")}</h2>
           <p class={status?.routesKey ? 'ok' : 'muted'}>{status?.routesKey ? 'Saved in your keychain' : 'Not set'}</p>
           <label for="key">{status?.routesKey ? 'Replace key' : 'Key'}</label>
-          <input id="key" type="password" autocomplete="off" spellcheck="false" bind:value={key} placeholder="AIza…" />
-          {#if key && !keyLooksValid(key)}<p class="warn small">This doesn’t look like a Google API key.</p>{/if}
+          <input id="key" type="password" autocomplete="off" spellcheck="false" bind:value={key} placeholder={tr("AIza…")} />
+          {#if key && !keyLooksValid(key)}<p class="warn small">{tr("This doesn’t look like a Google API key.")}</p>{/if}
           <div class="actions">
-            {#if status?.routesKey}<button onclick={clearKey}>Remove key</button>{/if}
-            <button class="primary" disabled={!key.trim()} onclick={saveKey}>Save key</button>
+            {#if status?.routesKey}<button onclick={clearKey}>{tr("Remove key")}</button>{/if}
+            <button class="primary" disabled={!key.trim()} onclick={saveKey}>{tr("Save key")}</button>
           </div>
           {#if keyNote}<p class="small" role="status">{keyNote}</p>{/if}
         </div>
         <div class="card">
-          <h2>Trip</h2>
+          <h2>{tr("Trip")}</h2>
           {#if status?.trip}
-            <p class="ok">Showing the trip to {status.trip.label || status.trip.destination}</p>
+            <p class="ok">{tr("Showing the trip to")} {status.trip.label || status.trip.destination}</p>
           {/if}
-          <label for="dest">Destination</label>
+          <label for="dest">{tr("Destination")}</label>
           <input
             id="dest"
             bind:value={trip.destination}
             oninput={destinationTyped}
-            placeholder="Plot 5, Kampala Road"
+            placeholder={tr("Plot 5, Kampala Road")}
             autocomplete="off"
             aria-autocomplete="list"
           />
           {#if places.length}
-            <div class="places" role="listbox" aria-label="Suggestions">
+            <div class="places" role="listbox" aria-label={tr("Suggestions")}>
               {#each places as p (p.placeId)}
                 <button role="option" aria-selected="false" onclick={() => pickPlace(p)}>
                   <strong>{p.main}</strong>
                   {#if p.secondary}<span class="muted small">{p.secondary}</span>{/if}
                 </button>
               {/each}
-              <p class="muted small attribution">Powered by Google</p>
+              <p class="muted small attribution">{tr("Powered by Google")}</p>
             </div>
           {/if}
-          <label for="from">From</label>
-          <input id="from" bind:value={trip.origin} placeholder="An address or “lat,lng”" />
+          <label for="from">{tr("From")}</label>
+          <input id="from" bind:value={trip.origin} placeholder={tr("An address or “lat,lng”")} />
           <div class="two">
             <div>
-              <label for="label">Name on the island (optional)</label>
-              <input id="label" bind:value={trip.label} placeholder="Work" />
+              <label for="label">{tr("Name on the island (optional)")}</label>
+              <input id="label" bind:value={trip.label} placeholder={tr("Work")} />
             </div>
             <div>
-              <span class="label">Travel by</span>
+              <span class="label">{tr("Travel by")}</span>
               <Picker
-                label="Travel by"
+                label={tr("Travel by")}
                 value={trip.mode}
-                options={MODES.map((m) => ({ value: m.id, label: m.label }))}
+                options={MODES.map((m) => ({ value: m.id, label: tr(m.label) }))}
                 onchange={(v) => (trip.mode = v as typeof trip.mode)}
               />
             </div>
           </div>
           <div class="actions">
-            {#if status?.trip}<button onclick={stopTrip}>Stop trip</button>{/if}
+            {#if status?.trip}<button onclick={stopTrip}>{tr("Stop trip")}</button>{/if}
             <button class="primary" onclick={startTrip}>{status?.trip ? 'Update trip' : 'Start trip'}</button>
           </div>
           {#if tripNote}<p class="small" role="status">{tripNote}</p>{/if}
         </div>
         <p class="muted small">
-          Islet refreshes the ETA every minute while the card is open and every 2–5 minutes otherwise, and makes no
-          requests without a trip. Trips go straight to Google; route results are never stored.
+          {tr("Islet refreshes the ETA every minute while the card is open and every 2–5 minutes otherwise, and makes no requests without a trip. Trips go straight to Google; route results are never stored.")}
         </p>
       {:else if page === 'launcher'}
-        <h1>Launcher</h1>
+        <h1>{tr("Launcher")}</h1>
         <p class="muted">
-          Type an app’s or an open window’s name, a sum (12 * 7.5), a conversion (5 km in miles) or anything to search the web for. Enter
-          opens the first result. Start with <code>note:</code> to save a quick note.
+          {tr("Type an app’s or an open window’s name, a sum (12 * 7.5), a conversion (5 km in miles) or anything to search the web for. Enter opens the first result. Start with")} <code>note:</code> {tr("to save a quick note.")}
         </p>
         <div class="card">
           <input
             type="text"
             class="launcher-input"
-            aria-label="Search apps, the web, or type a sum"
-            placeholder="Search…"
+            aria-label={tr("Search apps, the web, or type a sum")}
+            placeholder={tr("Search…")}
             autocomplete="off"
             spellcheck="false"
             bind:this={launcherInput}
@@ -2185,60 +2180,55 @@
           {#if launcherNote}<p class="small" role="status">{launcherNote}</p>{/if}
         </div>
         <p class="muted small">
-          Give the launcher and quick notes their own keys in General → Shortcut. Web searches go to DuckDuckGo, and
-          only when you choose that row.
+          {tr("Give the launcher and quick notes their own keys in General → Shortcut. Web searches go to DuckDuckGo, and only when you choose that row.")}
         </p>
       {:else if page === 'extras'}
-        <h1>Extras</h1>
+        <h1>{tr("Extras")}</h1>
         <div class="card">
-          <h2>Performance</h2>
+          <h2>{tr("Performance")}</h2>
           <p class="muted">
             {#if islandPrefs?.performance === 'saver'}
-              Power saver is on. Islet keeps short histories and small album art, and the waveform stands still, so
-              playing music costs no extra battery.
+              {tr("Power saver is on. Islet keeps short histories and small album art, and the waveform stands still, so playing music costs no extra battery.")}
             {:else if islandPrefs?.performance === 'light'}
-              Light: short histories, small album art and a waveform at 30 frames a second. Made for laptops with 4 GB
-              of memory.
+              {tr("Light: short histories, small album art and a waveform at 30 frames a second. Made for laptops with 4 GB of memory.")}
             {:else if islandPrefs?.performance === 'full'}
-              Full: animation at 60 frames a second, sharper album art, a clipboard history of 500 copies and room for
-              100 files on the shelf. Islet uses more memory and a little more power for it.
+              {tr("Full: animation at 60 frames a second, sharper album art, a clipboard history of 500 copies and room for 100 files on the shelf. Islet uses more memory and a little more power for it.")}
             {:else}
-              Automatic: full on this computer, unless it has 4 GB of memory or less, or two processor cores, when Islet
-              keeps to the light limits.
+              {tr("Automatic: full on this computer, unless it has 4 GB of memory or less, or two processor cores, when Islet keeps to the light limits.")}
             {/if}
           </p>
           <div class="net">
-            <span class="name">Mode</span>
+            <span class="name">{tr("Mode")}</span>
             <Picker
-              label="Performance"
+              label={tr("Performance")}
               value={islandPrefs?.performance ?? 'auto'}
               disabled={!islandPrefs}
-              options={PERFORMANCE.map((m) => ({ value: m.id, label: m.label, hint: m.hint }))}
+              options={PERFORMANCE.map((m) => ({ value: m.id, label: tr(m.label), hint: tr(m.hint) }))}
               onchange={(v) => setPerformance(v)}
             />
           </div>
           <p class="muted small">
-            Nothing you saved is removed when you switch: your shelf, notes and shortcuts stay as they are.
+            {tr("Nothing you saved is removed when you switch: your shelf, notes and shortcuts stay as they are.")}
           </p>
         </div>
         <div class="card">
-          <h2>World clocks</h2>
-          <p class="muted">Up to three cities on the clock card, with daylight saving taken care of.</p>
+          <h2>{tr("World clocks")}</h2>
+          <p class="muted">{tr("Up to three cities on the clock card, with daylight saving taken care of.")}</p>
           {#if worldClocks.length}
             <div class="actions left">
               {#each worldClocks as c (c)}
-                <button onclick={() => worldChange(false, c)} aria-label={`Remove ${c}`}>{c} ✕</button>
+                <button onclick={() => worldChange(false, c)} aria-label={tf('Remove {}', c)}>{c} ✕</button>
               {/each}
             </div>
           {/if}
           {#if worldClocks.length < 3}
-            <span class="label">Add a city</span>
+            <span class="label">{tr("Add a city")}</span>
             <Picker
-              label="Add a city"
+              label={tr("Add a city")}
               value=""
               searchable
               options={[
-                { value: '', label: 'Choose…' },
+                { value: '', label: tr(N('Choose…')) },
                 ...cities.filter((c) => !worldClocks.includes(c)).map((c) => ({ value: c, label: c })),
               ]}
               onchange={(v) => v && worldChange(true, v)}
@@ -2246,9 +2236,9 @@
           {/if}
         </div>
         <div class="card">
-          <h2>Quick notes</h2>
+          <h2>{tr("Quick notes")}</h2>
           <p class="muted">
-            One line at a time, added with the date to a plain text file you can open anywhere:
+            {tr("One line at a time, added with the date to a plain text file you can open anywhere:")}
             <span class="path">{notesPath || '“Islet notes.txt” in Documents'}</span>
           </p>
           <form
@@ -2261,23 +2251,22 @@
             <input
               type="text"
               maxlength="500"
-              aria-label="Quick note"
-              placeholder="Ask about the essay deadline…"
+              aria-label={tr("Quick note")}
+              placeholder={tr("Ask about the essay deadline…")}
               bind:value={quickNote}
             />
-            <button class="primary" type="submit" disabled={!quickNote.trim()}>Save</button>
+            <button class="primary" type="submit" disabled={!quickNote.trim()}>{tr("Save")}</button>
           </form>
           {#if quickNoteSaid}<p class="small" role="status">{quickNoteSaid}</p>{/if}
           <p class="muted small">
-            For a hotkey, bind a key to <code>islet note</code> in your system’s keyboard settings, or run
-            <code>islet note "your text"</code> from a launcher.
+            {tr("For a hotkey, bind a key to")} <code>islet note</code> {tr("in your system’s keyboard settings, or run")}
+            <code>islet note "your text"</code> {tr("from a launcher.")}
           </p>
         </div>
         <div class="card">
-          <h2>Notes &amp; to-do</h2>
+          <h2>{tr("Notes & to-do")}</h2>
           <p class="muted">
-            Type here; tick things off on the island (Control Centre → the checklist button, once it is switched on in
-            General → Clock card buttons). Kept on this computer only.
+            {tr("Type here; tick things off on the island (Control Centre → the checklist button, once it is switched on in General → Clock card buttons). Kept on this computer only.")}
           </p>
           <form
             class="actions left"
@@ -2289,11 +2278,11 @@
             <input
               type="text"
               maxlength="200"
-              aria-label="New note or to-do"
-              placeholder="Buy milk…"
+              aria-label={tr("New note or to-do")}
+              placeholder={tr("Buy milk…")}
               bind:value={todoText}
             />
-            <button class="primary" type="submit" disabled={!todoText.trim()}>Add</button>
+            <button class="primary" type="submit" disabled={!todoText.trim()}>{tr("Add")}</button>
           </form>
           {#if todos.length}
             <ul class="todos">
@@ -2303,28 +2292,27 @@
                     <input type="checkbox" checked={t.done} onchange={() => todoRun(['todo', 'done', String(t.id)])} />
                     {t.text}
                   </label>
-                  <button class="link" aria-label={`Delete ${t.text}`} onclick={() => todoRun(['todo', 'remove', String(t.id)])}>
+                  <button class="link" aria-label={tf('Delete {}', t.text)} onclick={() => todoRun(['todo', 'remove', String(t.id)])}>
                     ✕
                   </button>
                 </li>
               {/each}
             </ul>
             {#if todos.some((t) => t.done)}
-              <div class="actions left"><button onclick={() => todoRun(['todo', 'clear-done'])}>Clear finished</button></div>
+              <div class="actions left"><button onclick={() => todoRun(['todo', 'clear-done'])}>{tr("Clear finished")}</button></div>
             {/if}
           {/if}
         </div>
         <div class="card">
-          <h2>Shortcuts</h2>
+          <h2>{tr("Shortcuts")}</h2>
           <p class="muted">
-            Buttons of your own on the island (Control Centre → the bolt button). Each opens a folder, a file, a script
-            or a web page. Up to 50.
+            {tr("Buttons of your own on the island (Control Centre → the bolt button). Each opens a folder, a file, a script or a web page. Up to 50.")}
           </p>
           {#each shortcuts as s, i (i)}
             <div class="net">
               <span class="name">{s.name}</span>
               <span class="muted small target">{s.target}</span>
-              <button class="link" aria-label={`Delete ${s.name}`} onclick={() => shortcutRun(['shortcut', 'remove', String(i + 1)])}>
+              <button class="link" aria-label={tf('Delete {}', s.name)} onclick={() => shortcutRun(['shortcut', 'remove', String(i + 1)])}>
                 ✕
               </button>
             </div>
@@ -2332,11 +2320,11 @@
           {#if shortcuts.length < 50}
             <div class="two">
               <div>
-                <label for="sc-name">Name</label>
-                <input id="sc-name" type="text" maxlength="40" placeholder="Homework" bind:value={shortcutName} />
+                <label for="sc-name">{tr("Name")}</label>
+                <input id="sc-name" type="text" maxlength="40" placeholder={tr("Homework")} bind:value={shortcutName} />
               </div>
               <div>
-                <label for="sc-target">Opens</label>
+                <label for="sc-target">{tr("Opens")}</label>
                 <input
                   id="sc-target"
                   type="text"
@@ -2352,75 +2340,71 @@
                 disabled={!shortcutName.trim() || !shortcutTarget.trim()}
                 onclick={() => shortcutRun(['shortcut', 'add', '--name', shortcutName.trim(), '--target', shortcutTarget.trim()])}
               >
-                Add shortcut
+                {tr("Add shortcut")}
               </button>
             </div>
           {/if}
         </div>
         <div class="card">
-          <h2>Stopwatch</h2>
+          <h2>{tr("Stopwatch")}</h2>
           <p class="muted">
-            Switch on its button in General → Clock card buttons, then open the island and tap it. Laps and pause work
-            from the island.
+            {tr("Switch on its button in General → Clock card buttons, then open the island and tap it. Laps and pause work from the island.")}
           </p>
         </div>
         {#if extrasNote}<p class="small" role="status">{extrasNote}</p>{/if}
       {:else if page === 'updates'}
-        <h1>Updates</h1>
+        <h1>{tr("Updates")}</h1>
         <div class="card row">
           <div>
-            <h2>Check when Settings opens</h2>
-            <p class="muted">Off by default: Islet makes no network requests you didn’t ask for.</p>
+            <h2>{tr("Check when Settings opens")}</h2>
+            <p class="muted">{tr("Off by default: Islet makes no network requests you didn’t ask for.")}</p>
           </div>
           <input
             type="checkbox"
             class="switch"
-            aria-label="Check for updates when Settings opens"
+            aria-label={tr("Check for updates when Settings opens")}
             bind:checked={prefs.checkUpdates}
             onchange={savePrefs}
           />
         </div>
-        <div class="actions left"><button onclick={checkUpdate}>Check for updates now</button></div>
+        <div class="actions left"><button onclick={checkUpdate}>{tr("Check for updates now")}</button></div>
         {#if update?.newer}
           <div class="card">
-            <h2>Islet {update.latest} is available</h2>
+            <h2>Islet {update.latest} {tr("is available")}</h2>
             {#if update.notes}<p class="muted notes">{update.notes}</p>{/if}
             {#if info?.selfUpdate}
-              <button class="primary" onclick={installUpdate}>Install and restart</button>
+              <button class="primary" onclick={installUpdate}>{tr("Install and restart")}</button>
             {:else}
               <button class="primary" onclick={() => api.openLink(update?.url || `${info?.repo}/releases/latest`)}>
-                Open the download page
+                {tr("Open the download page")}
               </button>
             {/if}
           </div>
         {/if}
         {#if updateNote}<p class="small" role="status">{updateNote}</p>{/if}
         <div class="card">
-          <h2>Early builds</h2>
+          <h2>{tr("Early builds")}</h2>
           <p class="muted">
-            New features before they are released to everyone. They can have rough edges; you install them by hand from
-            the download page.
+            {tr("New features before they are released to everyone. They can have rough edges; you install them by hand from the download page.")}
           </p>
           <div class="actions left">
-            <button onclick={checkEarly}>Look for an early build</button>
+            <button onclick={checkEarly}>{tr("Look for an early build")}</button>
             {#if early?.newer}
-              <button class="primary" onclick={() => early && api.openLink(early.url)}>Open the download page</button>
+              <button class="primary" onclick={() => early && api.openLink(early.url)}>{tr("Open the download page")}</button>
             {/if}
           </div>
           {#if earlyNote}<p class="small" role="status">{earlyNote}</p>{/if}
         </div>
       {:else}
-        <h1>About Islet</h1>
-        <p>Version {info?.version}</p>
+        <h1>{tr("About Islet")}</h1>
+        <p>{tr("Version")} {info?.version}</p>
         <p class="muted">
-          Free and open source under the MIT License. Islet is not affiliated with, endorsed by or sponsored by Apple
-          Inc. “Dynamic Island” is a trademark of Apple Inc. Google Maps is a trademark of Google LLC; Waze is a
-          trademark of Waze Mobile Ltd.
+          {tr("Free and open source under the MIT License. Islet is not affiliated with, endorsed by or sponsored by Apple Inc. “Dynamic Island” is a trademark of Apple Inc. Google Maps is a trademark of Google LLC; Waze is a trademark of Waze Mobile Ltd.")}
         </p>
         <div class="actions left">
-          <button onclick={() => api.openLink(info?.repo ?? '')}>Source code</button>
-          <button onclick={() => api.openLink(docs('THIRD_PARTY_LICENSES.md'))}>Third-party licenses</button>
-          <button onclick={() => api.openLink(`${info?.repo}/issues/new/choose`)}>Report a problem</button>
+          <button onclick={() => api.openLink(info?.repo ?? '')}>{tr("Source code")}</button>
+          <button onclick={() => api.openLink(docs('THIRD_PARTY_LICENSES.md'))}>{tr("Third-party licenses")}</button>
+          <button onclick={() => api.openLink(`${info?.repo}/issues/new/choose`)}>{tr("Report a problem")}</button>
         </div>
       {/if}
     </main>
