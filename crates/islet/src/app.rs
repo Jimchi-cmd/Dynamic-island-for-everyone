@@ -5136,7 +5136,7 @@ mod tests {
             none.pill_rect(9.0).h
         };
         let shown = texts(&app, 9.0, &mut engine);
-        assert!(shown.contains(&"Tokyo ".to_string()) && shown.contains(&"23:05".to_string()), "{shown:?}");
+        assert!(shown.contains(&"Tokyo".to_string()) && shown.contains(&"23:05".to_string()), "{shown:?}");
         assert!(shown.contains(&"09:05".to_string()), "New York is on EST in November: {shown:?}");
         assert!(app.pill_rect(9.0).h > free_h, "the card grows a line");
     }
