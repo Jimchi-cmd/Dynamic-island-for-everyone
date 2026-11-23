@@ -372,6 +372,19 @@ class IslandTest {
     }
 
     @Test
+    fun the_music_card_makes_room_for_lyrics_only_when_they_are_on() {
+        val cam = Camera(200.0, 20.0, 24.0, 24.0)
+        val plain = Geometry(400.0, cam).box(Scene.Expanded(music))
+        val withLyrics = Geometry(400.0, cam, musicLyrics = true).box(Scene.Expanded(music))
+        assertEquals(Geometry.MUSIC_CARD, plain.h, 0.001)
+        assertEquals(Geometry.MUSIC_LYRICS, withLyrics.h - plain.h, 0.001, "two lines of lyrics")
+        assertEquals(plain.w, withLyrics.w)
+        assertEquals(plain.y, withLyrics.y, "it grows down from the same top")
+        // Other cards don't change with it.
+        assertEquals(Geometry(400.0, cam).box(Scene.Expanded(call)), Geometry(400.0, cam, musicLyrics = true).box(Scene.Expanded(call)))
+    }
+
+    @Test
     fun the_to_do_list_survives_being_stored() {
         val items = listOf(Todo("Buy milk", false), Todo("Essay\nmaybe", true))
         val back = Lists.decodeTodos(Lists.encodeTodos(items))

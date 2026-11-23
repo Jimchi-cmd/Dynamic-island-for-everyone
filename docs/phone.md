@@ -84,7 +84,7 @@ Black, **Tinted** (a dark shade of the accent colour) or frosted **Glass**; an *
 - **Deadlines:** calendar events in the next two weeks called exam, test, quiz, essay, assignment, homework, coursework, project, report, presentation, submission, due or hand in show on the calendar card with a countdown ("in 3 days"). They need calendar access.
 - **Alarms:** set one from the Alarms page (or the bell on the calendar card), at a time or in 20 minutes or an hour. It goes into the phone's own Clock app, so it rings even if Islet is closed.
 - **Focus streak:** each day you finish at least one focus round adds to the streak; it shows on the island's timer ("4 days in a row") and in Timer & focus.
-- **The music card:** tap the island while something plays. It shows a big cover (tap it to open the player), the song, the lyrics line being sung and the next one, a progress bar to drag, a volume slider, and big previous, play/pause and next buttons. **‹ Control Centre** at its top opens the control centre, whose **‹ Back** button brings you back.
+- **The music card:** tap the island while something plays. It shows a big cover (tap it, or the player's name at the top right, to open the player), the song, a progress bar in the cover's colour to drag, previous and next either side of a big white play/pause button, the sleep timer (moon) and lyrics buttons at the ends, and a volume slider. With lyrics on, the line being sung and the next one sit at the bottom; with them off, the card is shorter. **‹ Control Centre** at its top opens the control centre, whose **‹ Back** button brings you back.
 - **Sleep timer:** the moon on the music card (or the Music page) pauses the music after 15, 30, 45 or 60 minutes.
 
 ### Also in the app

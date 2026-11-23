@@ -45,6 +45,8 @@ class Geometry(
      * cards (notifications) drop below the status bar.
      */
     val popsDown: Boolean = false,
+    /** Lyrics are switched on: the music card has room under its controls for two lines. */
+    val musicLyrics: Boolean = false,
 ) {
     private val k get() = size.scale
 
@@ -116,7 +118,7 @@ class Geometry(
         null, is Live.Music -> 0.0
         else -> CARD_HEADER
     } + when (live) {
-        is Live.Music -> 346.0
+        is Live.Music -> MUSIC_CARD + if (musicLyrics) MUSIC_LYRICS else 0.0
         is Live.Call -> 120.0
         is Live.Navigation -> 120.0
         is Live.Stopwatch -> 140.0
@@ -127,6 +129,10 @@ class Geometry(
     companion object {
         /** The clock card's (and the control centre's) height, as on the computer (dp). */
         const val CLOCK_CARD = 210.0
+
+        /** The music card (designed in Figma), and the room its two lines of lyrics add (dp). */
+        const val MUSIC_CARD = 324.0
+        const val MUSIC_LYRICS = 60.0
 
         /** The lyrics row under the small music pill (dp). */
         const val LYRICS_ROW = 24.0

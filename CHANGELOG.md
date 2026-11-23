@@ -5,6 +5,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ## [Unreleased]
 
 ### Changed
+- Phone: the **music card** is redesigned from a Figma mock-up to match the computer's: the player's name in a tag at the top right, a progress bar in the cover's colour, a big white play/pause button between previous and next, round sleep-timer and lyrics buttons, the volume under them, and the lyrics at the bottom. With lyrics off, the card is shorter instead of leaving a gap.
 - Computer: the **Now Playing card** is redesigned from a Figma mock-up: a bigger cover with rounder corners, a larger song title, a thicker progress bar, bigger play, previous and next buttons, and more room between the rows.
 
 ## [0.5.1] - 2026-11-22
