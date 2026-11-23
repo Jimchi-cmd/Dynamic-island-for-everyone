@@ -211,6 +211,7 @@ fn run() -> platform::Result<()> {
             app.set_alarms(config::load_alarms());
         }
         app.set_prefs(load_prefs());
+        app.set_cc_photo(load_cc_photo(app.prefs()));
         app.set_shelf(config::load_shelf());
         app.set_todo(config::load_json("todo.json").unwrap_or_default());
         app.set_streak(config::load_json("focus.json").unwrap_or_default());
@@ -367,6 +368,7 @@ fn run() -> platform::Result<()> {
                 Control::Stopwatch(cmd) => needs_frame |= app.stopwatch_command(cmd, t),
                 Control::PrefsChanged if !scripted => {
                     app.set_prefs(load_prefs());
+                    app.set_cc_photo(load_cc_photo(app.prefs()));
                     // `islet todo …` and Settings edit todo.json too.
                     app.set_todo(config::load_json("todo.json").unwrap_or_default());
                     // …and `islet class …` edits timetable.json.
@@ -739,6 +741,15 @@ fn unscale(e: Event, k: f64) -> Event {
         Event::DragOver { x, y } => Event::DragOver { x: x / k, y: y / k },
         e => e,
     }
+}
+
+/// The photo behind Control Centre, when one is set (Settings → Look).
+fn load_cc_photo(prefs: &islet_core::prefs::IslandPrefs) -> Option<islet_core::activity::ArtImage> {
+    if !prefs.cc_photo {
+        return None;
+    }
+    let bytes = std::fs::read(config::dir()?.join(islet_core::prefs::CC_PHOTO)).ok()?;
+    providers::art::photo(&bytes)
 }
 
 #[cfg(test)]

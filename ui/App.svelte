@@ -19,6 +19,10 @@
   import {
     ACCENTS,
     CARD_BUTTONS,
+    CC_BUTTONS,
+    CC_STYLES,
+    ccOrder,
+    moveButton,
     STYLES,
     type PlaceSuggestion,
     alarmAddArgs,
@@ -463,7 +467,19 @@
   }
 
   async function setLook(
-    what: 'accent' | 'style' | 'shape' | 'clock' | 'hours' | 'size' | 'position' | 'offset' | 'display' | 'font',
+    what:
+      | 'accent'
+      | 'style'
+      | 'shape'
+      | 'clock'
+      | 'hours'
+      | 'size'
+      | 'position'
+      | 'offset'
+      | 'display'
+      | 'font'
+      | 'tint'
+      | 'control-centre',
     value: string,
   ) {
     try {
@@ -471,6 +487,57 @@
       await loadIslandPrefs();
     } catch (e) {
       problem = api.message(e);
+    }
+  }
+
+  // Control Centre: a photo behind it (sent on stdin, never as a path) and its buttons' order.
+  let photoPreview = $state('');
+  async function choosePhoto(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) {
+      problem = tr('That photo is too big (25 MB at most).');
+      return;
+    }
+    try {
+      const url = await new Promise<string>((ok, fail) => {
+        const r = new FileReader();
+        r.onload = () => ok(String(r.result));
+        r.onerror = () => fail(r.error);
+        r.readAsDataURL(file);
+      });
+      await api.islet(['look', 'photo', '-'], url);
+      photoPreview = url;
+      await loadIslandPrefs();
+    } catch (err) {
+      problem = api.message(err);
+    }
+  }
+  async function removePhoto() {
+    try {
+      await api.islet(['look', 'photo', 'none']);
+      photoPreview = '';
+      await loadIslandPrefs();
+    } catch (err) {
+      problem = api.message(err);
+    }
+  }
+  async function moveCc(id: string, by: -1 | 1) {
+    try {
+      await api.islet(['card', 'order', moveButton(ccOrder(islandPrefs?.ccOrder), id, by).join(',')]);
+      await loadIslandPrefs();
+    } catch (err) {
+      problem = api.message(err);
+    }
+  }
+  async function resetCcOrder() {
+    try {
+      await api.islet(['card', 'order', 'default']);
+      await loadIslandPrefs();
+    } catch (err) {
+      problem = api.message(err);
     }
   }
 
@@ -1352,11 +1419,42 @@
               />
             </div>
           {/each}
+          <p class="muted small">
+            {tr("The order of Control Centre's buttons. Every layout places them in this order; when a layout has no room for them all, the ones at the end are left out.")}
+          </p>
+          <ol class="cc-order" aria-label={tr("Control Centre's buttons, in order")}>
+            {#each ccOrder(islandPrefs?.ccOrder) as id, i (id)}
+              {@const b = CC_BUTTONS.find((x) => x.id === id)}
+              {@const card = CARD_BUTTONS.find((x) => x.id === id)}
+              {@const off = card ? !cardShows(card, islandPrefs) : false}
+              <li class:off>
+                <span class="pos">{i + 1}</span>
+                <span class="name">{tr(b?.label)}{#if off}<span class="muted">&nbsp;· {tr("hidden")}</span>{/if}</span>
+                <button
+                  class="icon-btn"
+                  aria-label={tf('Move {} up', tr(b?.label))}
+                  disabled={!islandPrefs || i === 0}
+                  onclick={() => moveCc(id, -1)}>↑</button
+                >
+                <button
+                  class="icon-btn"
+                  aria-label={tf('Move {} down', tr(b?.label))}
+                  disabled={!islandPrefs || i === CC_BUTTONS.length - 1}
+                  onclick={() => moveCc(id, 1)}>↓</button
+                >
+              </li>
+            {/each}
+          </ol>
+          <div class="row-end">
+            <button disabled={!islandPrefs || !(islandPrefs?.ccOrder ?? []).length} onclick={resetCcOrder}
+              >{tr("Usual order")}</button
+            >
+          </div>
           <p class="muted small">{tr("What the island is made of.")}</p>
           <div class="styles" role="radiogroup" aria-label={tr("Island style")}>
             {#each STYLES as s (s.id)}
               {@const chosen = (islandPrefs?.style ?? 'black') === s.id}
-              {@const accent = ACCENTS[islandPrefs?.accent ?? 'blue'] ?? ACCENTS.blue}
+              {@const accent = islandPrefs?.tint || (ACCENTS[islandPrefs?.accent ?? 'blue'] ?? ACCENTS.blue)}
               <button
                 class="style-tile"
                 class:chosen
@@ -1373,6 +1471,84 @@
               </button>
             {/each}
           </div>
+          {#if (islandPrefs?.style ?? 'black').startsWith('tinted')}
+            {@const accentHex = ACCENTS[islandPrefs?.accent ?? 'blue'] ?? ACCENTS.blue}
+            <div class="net">
+              <span class="name">{tr("Tint colour")}</span>
+              <span class="tint-pick">
+                <input
+                  type="color"
+                  aria-label={tr("Tint colour")}
+                  value={islandPrefs?.tint || accentHex}
+                  disabled={!islandPrefs}
+                  onchange={(e) => setLook('tint', e.currentTarget.value)}
+                />
+                <button disabled={!islandPrefs || !islandPrefs?.tint} onclick={() => setLook('tint', 'accent')}
+                  >{tr("Same as accent")}</button
+                >
+              </span>
+            </div>
+          {/if}
+          <p class="muted small">{tr("Control Centre's layout (the card that opens when you click the island).")}</p>
+          <div class="styles" role="radiogroup" aria-label={tr("Control Centre layout")}>
+            {#each CC_STYLES as c (c.id)}
+              {@const chosen = (islandPrefs?.ccStyle ?? 'classic') === c.id}
+              <button
+                class="style-tile"
+                class:chosen
+                role="radio"
+                aria-checked={chosen}
+                aria-label={tr(c.label)}
+                title={tr(c.hint)}
+                disabled={!islandPrefs}
+                onclick={() => setLook('control-centre', c.id)}
+              >
+                <span class="preview cc-preview">
+                  <svg viewBox="0 0 60 34" aria-hidden="true">
+                    <rect x="1" y="1" width="58" height="32" rx="9" fill={c.id === 'dock' ? '#1d2550' : '#000'} />
+                    {#if c.id === 'classic'}
+                      <rect x="7" y="6" width="20" height="6" rx="2" fill="#fff" />
+                      <rect x="7" y="17" width="13" height="5" rx="2.5" fill="#0a84ff" />
+                      <rect x="22" y="17" width="13" height="5" rx="2.5" fill="#0a84ff" />
+                      <circle cx="41" cy="19.5" r="2.5" fill="#555" /><circle cx="48" cy="19.5" r="2.5" fill="#555" />
+                      <rect x="7" y="25" width="18" height="4" rx="2" fill="#444" /><rect x="27" y="25" width="10" height="4" rx="2" fill="#ff9f0a" />
+                    {:else if c.id === 'modules'}
+                      <rect x="7" y="5" width="16" height="5" rx="2" fill="#fff" />
+                      <rect x="7" y="13" width="16" height="16" rx="4" fill="#2a2a2e" />
+                      <circle cx="11.5" cy="17.5" r="2.6" fill="#0a84ff" /><circle cx="18.5" cy="17.5" r="2.6" fill="#0a84ff" />
+                      <circle cx="11.5" cy="24.5" r="2.6" fill="#555" /><circle cx="18.5" cy="24.5" r="2.6" fill="#555" />
+                      <rect x="26" y="13" width="27" height="7" rx="3" fill="#2a2a2e" /><circle cx="49" cy="16.5" r="2.2" fill="#ff9f0a" />
+                      <rect x="26" y="22" width="8" height="7" rx="2" fill="#2a2a2e" /><rect x="35.5" y="22" width="8" height="7" rx="2" fill="#2a2a2e" /><rect x="45" y="22" width="8" height="7" rx="2" fill="#2a2a2e" />
+                    {:else if c.id === 'sliders'}
+                      <rect x="7" y="5" width="16" height="5" rx="2" fill="#fff" />
+                      <rect x="7" y="13" width="6" height="16" rx="3" fill="#333" /><rect x="7" y="20" width="6" height="9" rx="3" fill="#eee" />
+                      <rect x="15" y="13" width="6" height="16" rx="3" fill="#333" /><rect x="15" y="16" width="6" height="13" rx="3" fill="#eee" />
+                      <rect x="24" y="13" width="14" height="4.5" rx="2" fill="#2a2a2e" /><rect x="39.5" y="13" width="14" height="4.5" rx="2" fill="#2a2a2e" />
+                      <rect x="24" y="19" width="22" height="4.5" rx="2" fill="#2a2a2e" /><rect x="47.5" y="19" width="6" height="4.5" rx="2" fill="#2a2a2e" />
+                      <rect x="24" y="25" width="29.5" height="4.5" rx="2" fill="#2a2a2e" />
+                    {:else}
+                      <rect x="21" y="6" width="18" height="7" rx="2" fill="#fff" />
+                      <rect x="5" y="20" width="50" height="10" rx="5" fill="#ffffff22" />
+                      {#each [10, 17, 24, 31, 38, 45, 52] as cx, k (cx)}<circle {cx} cy="25" r="2.6" fill={k < 2 ? '#0a84ff' : k === 2 ? '#ff9f0a' : '#666'} />{/each}
+                    {/if}
+                  </svg>
+                </span>
+                <span class="style-name">{tr(c.label)}</span>
+              </button>
+            {/each}
+          </div>
+          <div class="net">
+            <span class="name">{tr("Background photo")}</span>
+            <span class="tint-pick">
+              {#if photoPreview && islandPrefs?.ccPhoto}<img class="photo-thumb" src={photoPreview} alt="" />{/if}
+              <label class="button-like" class:disabled={!islandPrefs}>
+                {islandPrefs?.ccPhoto ? tr("Change…") : tr("Choose…")}
+                <input type="file" accept="image/png,image/jpeg" hidden disabled={!islandPrefs} onchange={choosePhoto} />
+              </label>
+              {#if islandPrefs?.ccPhoto}<button onclick={removePhoto}>{tr("Remove")}</button>{/if}
+            </span>
+          </div>
+          <p class="muted small">{tr("A photo (PNG or JPEG) behind Control Centre, darkened so its buttons stay easy to read. It stays on this computer.")}</p>
           <div class="net">
             <span class="name">{tr("Shape")}</span>
             <Picker
@@ -2523,6 +2699,82 @@
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 60%),
       color-mix(in srgb, color-mix(in srgb, var(--tint) 24%, #060606) 66%, transparent);
+  }
+  .cc-preview {
+    place-items: center;
+    padding-top: 0;
+  }
+  .cc-preview svg {
+    height: 38px;
+    width: auto;
+  }
+  .tint-pick {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .tint-pick input[type='color'] {
+    width: 34px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    cursor: pointer;
+  }
+  .photo-thumb {
+    width: 46px;
+    height: 28px;
+    object-fit: cover;
+    border-radius: 6px;
+  }
+  .button-like {
+    display: inline-block;
+    padding: 6px 13px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+    cursor: pointer;
+  }
+  .button-like.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .cc-order {
+    list-style: none;
+    margin: 4px 0 6px;
+    padding: 0;
+    display: grid;
+    gap: 4px;
+  }
+  .cc-order li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px 4px 10px;
+    border-radius: 9px;
+    background: var(--field);
+  }
+  .cc-order li.off {
+    opacity: 0.6;
+  }
+  .cc-order .pos {
+    width: 18px;
+    color: var(--muted, #888);
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+  }
+  .cc-order .name {
+    flex: 1;
+  }
+  .icon-btn {
+    width: 28px;
+    height: 26px;
+    padding: 0;
+  }
+  .row-end {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 10px;
   }
   .style-name {
     display: flex;

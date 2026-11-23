@@ -100,7 +100,7 @@ describe('switches', () => {
   });
 });
 
-import { ACCENTS, CARD_BUTTONS, cardShows, PERFORMANCE, STYLES } from './settings';
+import { ACCENTS, CARD_BUTTONS, CC_BUTTONS, CC_STYLES, ccOrder, cardShows, moveButton, PERFORMANCE, STYLES } from './settings';
 
 describe('looks', () => {
   const rust = readFileSync(new URL('../../crates/islet-core/src/prefs.rs', import.meta.url), 'utf8');
@@ -117,6 +117,21 @@ describe('looks', () => {
   it('offer the styles the island knows', () => {
     const list = rust.match(/pub const STYLES: \[&str; \d+\] = \[([^\]]*)\]/)?.[1] ?? '';
     expect(STYLES.map((s) => s.id)).toEqual([...list.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]));
+  });
+
+  it('offer the Control Centre layouts and buttons the island knows', () => {
+    const styles = rust.match(/pub const CC_STYLES: \[&str; \d+\] = \[([^\]]*)\]/)?.[1] ?? '';
+    expect(CC_STYLES.map((s) => s.id)).toEqual([...styles.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]));
+    const buttons = rust.match(/pub const CC_BUTTONS: \[&str; \d+\] = \[([^\]]*)\]/)?.[1] ?? '';
+    expect(CC_BUTTONS.map((b) => b.id)).toEqual([...buttons.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]));
+  });
+
+  it("keep every button in the order, with the user's first", () => {
+    const o = ccOrder(['lock', 'nonsense', 'lock', 'wifi']);
+    expect(o.slice(0, 3)).toEqual(['lock', 'wifi', 'bluetooth']);
+    expect([...o].sort()).toEqual(CC_BUTTONS.map((b) => b.id).sort());
+    expect(moveButton(['a', 'b', 'c'], 'b', -1)).toEqual(['b', 'a', 'c']);
+    expect(moveButton(['a', 'b', 'c'], 'c', 1)).toEqual(['a', 'b', 'c']);
   });
 
   it('offer the clock-card buttons the island knows', () => {

@@ -114,6 +114,14 @@ Usage:
                                            tinted-glass
   islet look shape pill|notch              the outline; notch is square at the top and joins the
                                            top of the screen
+  islet look tint <#rrggbb>|accent         the colour of the tinted styles (accent: the accent colour)
+  islet look control-centre <layout>       classic, modules, sliders or dock
+  islet look photo <file>|none             a photo (PNG or JPEG) behind Control Centre, or none;
+                                           - reads it from stdin, base64-encoded
+  islet card order <button,…>|default      Control Centre's buttons in this order: wifi,
+                                           bluetooth, timer, system, controls, calendar,
+                                           screenshot, lock, shelf, todo, stopwatch,
+                                           clipboard, shortcuts (any left out follow)
   islet fonts [--json]                     the fonts installed on this computer
   islet look font <name>|default           the island's text in one of them, or the built-in font
   islet look clock time|date|seconds       what the empty island shows
@@ -341,6 +349,42 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         }),
         ["look", "style", name] => set_style(name),
         ["look", "shape", name] => set_choice(name, &islet_core::prefs::SHAPES, "shape", |p, v| p.shape = v),
+        ["look", "control-centre", name] => {
+            set_choice(name, &islet_core::prefs::CC_STYLES, "Control Centre", |p, v| p.cc_style = v)
+        }
+        ["look", "tint", "accent"] => set_look(|p| {
+            p.tint.clear();
+            Ok("Tint: the accent colour.".into())
+        }),
+        ["look", "tint", hex] => set_look(|p| {
+            let [r, g, b] = islet_core::prefs::parse_hex(hex).ok_or("tint is a colour like #3a7bd5, or accent")?;
+            p.tint = format!("#{r:02x}{g:02x}{b:02x}");
+            Ok(format!("Tint: {}.", p.tint))
+        }),
+        ["look", "photo", "none"] => set_look(|p| {
+            p.cc_photo = false;
+            if let Some(d) = config::dir() {
+                let _ = std::fs::remove_file(d.join(islet_core::prefs::CC_PHOTO));
+            }
+            Ok("No photo behind Control Centre.".into())
+        }),
+        ["look", "photo", "-"] => read_line("Paste the photo, base64-encoded, and press Enter:").and_then(|text| {
+            let bytes = base64_decode(&text).ok_or("that isn't base64")?;
+            set_photo(&bytes)
+        }),
+        ["look", "photo", file] => std::fs::read(file).map_err(|e| format!("{file}: {e}")).and_then(|b| set_photo(&b)),
+        ["card", "order", "default"] => set_look(|p| {
+            p.cc_order.clear();
+            Ok("Control Centre's buttons are in the usual order.".into())
+        }),
+        ["card", "order", list] => set_look(|p| {
+            let ids: Vec<&str> = list.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
+            if let Some(bad) = ids.iter().find(|id| !islet_core::prefs::CC_BUTTONS.contains(id)) {
+                return Err(format!("no such button: {bad} (one of: {})", islet_core::prefs::CC_BUTTONS.join(", ")));
+            }
+            p.cc_order = ids.iter().map(|s| s.to_string()).collect();
+            Ok(format!("Order: {}.", p.cc_order().join(", ")))
+        }),
         ["fonts"] => Ok(fonts_text()),
         ["fonts", "--json"] => serde_json::to_string(
             &islet_render::text::installed_fonts().into_iter().map(|f| f.family).collect::<Vec<_>>(),
@@ -1492,6 +1536,52 @@ fn world(add: bool, city: &str) -> Result<String, String> {
 }
 
 /// One line from stdin (with a prompt when typed at a terminal).
+/// The largest photo accepted (before it is shrunk).
+const PHOTO_MAX: usize = 25 * 1024 * 1024;
+
+/// Save a photo for behind Control Centre: shrunk, as a PNG in the config folder.
+fn set_photo(bytes: &[u8]) -> Result<String, String> {
+    if bytes.len() > PHOTO_MAX {
+        return Err("that photo is too big (25 MB at most)".into());
+    }
+    let pm = providers::art::photo_pixmap(bytes).ok_or("that isn't a PNG or JPEG picture")?;
+    let png = pm.encode_png().map_err(|e| e.to_string())?;
+    let dir = config::dir().ok_or("no config folder")?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join(islet_core::prefs::CC_PHOTO), png).map_err(|e| e.to_string())?;
+    set_look(|p| {
+        p.cc_photo = true;
+        Ok("The photo is behind Control Centre.".into())
+    })
+}
+
+/// Standard base64 (padding and whitespace allowed; a data: URL's prefix too).
+fn base64_decode(text: &str) -> Option<Vec<u8>> {
+    let text = text.trim();
+    let text = text.split_once(";base64,").map_or(text, |(_, b)| b);
+    let mut out = Vec::with_capacity(text.len() * 3 / 4);
+    let (mut acc, mut bits) = (0u32, 0u32);
+    for c in text.bytes() {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
+            b'=' | b' ' | b'\n' | b'\r' | b'\t' => continue,
+            _ => return None,
+        };
+        acc = (acc << 6) | u32::from(v);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
+}
+
 fn read_line(prompt: &str) -> Result<String, String> {
     use std::io::IsTerminal;
     if std::io::stdin().is_terminal() {
@@ -1510,6 +1600,19 @@ fn store_key() -> Result<String, String> {
     }
     secrets::set_routes_key(key)?;
     Ok("Saved to the OS keychain.".into())
+}
+
+#[cfg(test)]
+mod photo_tests {
+    use super::base64_decode;
+
+    #[test]
+    fn base64_decodes() {
+        assert_eq!(base64_decode("aGVsbG8=").as_deref(), Some(&b"hello"[..]));
+        assert_eq!(base64_decode("data:image/png;base64,aGk=").as_deref(), Some(&b"hi"[..]));
+        assert_eq!(base64_decode(" aGVs\nbG8 ").as_deref(), Some(&b"hello"[..]));
+        assert!(base64_decode("not*base64").is_none());
+    }
 }
 
 #[cfg(test)]

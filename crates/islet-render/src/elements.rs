@@ -5,8 +5,8 @@
 use crate::text::{TextEngine, TextItem};
 use islet_core::activity::ArtImage;
 use tiny_skia::{
-    Color, FillRule, FilterQuality, LineCap, LineJoin, Mask, Paint, Path, PathBuilder, Pattern, Pixmap, PixmapRef,
-    Rect, SpreadMode, Stroke, Transform,
+    Color, FillRule, FilterQuality, GradientStop, LineCap, LineJoin, LinearGradient, Mask, Paint, Path, PathBuilder,
+    Pattern, Pixmap, PixmapRef, Point, Rect, SpreadMode, Stroke, Transform,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,6 +118,28 @@ pub enum Element {
         color: [u8; 3],
         opacity: f32,
     },
+    /// A rounded rectangle, filled with `color`, or washed from `color`
+    /// (top left) to `color2` (bottom right) when they differ.
+    Tile {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        radius: f32,
+        color: [u8; 3],
+        color2: [u8; 3],
+        opacity: f32,
+    },
+    /// A picture filling a rounded rectangle, cropped to fit (a background photo).
+    Photo {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        radius: f32,
+        image: ArtImage,
+        opacity: f32,
+    },
 }
 
 impl Element {
@@ -138,6 +160,12 @@ impl Element {
                 Element::Ring { cx, cy, r, width, fraction, color, opacity: opacity * k }
             }
             Element::Bar { x, y, w, h, color, opacity } => Element::Bar { x, y, w, h, color, opacity: opacity * k },
+            Element::Tile { x, y, w, h, radius, color, color2, opacity } => {
+                Element::Tile { x, y, w, h, radius, color, color2, opacity: opacity * k }
+            }
+            Element::Photo { x, y, w, h, radius, image, opacity } => {
+                Element::Photo { x, y, w, h, radius, image, opacity: opacity * k }
+            }
         }
     }
 }
@@ -695,7 +723,9 @@ fn bounds(el: &Element, text: &mut TextEngine) -> Option<(f32, f32, f32, f32)> {
             }
             Some((l, t.baseline - s * 1.1, (r - l).max(0.0), s * 1.5))
         }
-        Element::Bar { x, y, w, h, .. } => Some((*x, *y, *w, *h)),
+        Element::Bar { x, y, w, h, .. } | Element::Tile { x, y, w, h, .. } | Element::Photo { x, y, w, h, .. } => {
+            Some((*x, *y, *w, *h))
+        }
         Element::Icon { x, y, size, .. } | Element::Art { x, y, size, .. } => Some((*x, *y, *size, *size)),
         Element::Ring { cx, cy, r, width, .. } => {
             let e = r + width / 2.0;
@@ -734,6 +764,50 @@ pub fn draw_elements_in(
                 if let Some(p) = rounded_rect(*x, *y, *w, *h, w.min(*h) / 2.0) {
                     pm.fill_path(&p, &paint(*color, *opacity), FillRule::Winding, base, clip);
                 }
+            }
+            Element::Tile { x, y, w, h, radius, color, color2, opacity } => {
+                let Some(shape) = rounded_rect(*x, *y, *w, *h, radius.min(w.min(*h) / 2.0)) else { continue };
+                let fill = if color == color2 {
+                    paint(*color, *opacity)
+                } else {
+                    let stop = |c: [u8; 3]| {
+                        Color::from_rgba8(c[0], c[1], c[2], (opacity.clamp(0.0, 1.0) * 255.0).round() as u8)
+                    };
+                    match LinearGradient::new(
+                        Point::from_xy(*x, *y),
+                        Point::from_xy(x + w, y + h),
+                        vec![GradientStop::new(0.0, stop(*color)), GradientStop::new(1.0, stop(*color2))],
+                        SpreadMode::Pad,
+                        Transform::identity(),
+                    ) {
+                        Some(shader) => Paint { shader, anti_alias: true, ..Paint::default() },
+                        None => paint(*color, *opacity),
+                    }
+                };
+                pm.fill_path(&shape, &fill, FillRule::Winding, base, clip);
+            }
+            Element::Photo { x, y, w, h, radius, image, opacity } => {
+                let Some(shape) = rounded_rect(*x, *y, *w, *h, radius.min(w.min(*h) / 2.0)) else { continue };
+                let Some(src) = PixmapRef::from_bytes(image.rgba.as_slice(), image.width, image.height) else {
+                    continue;
+                };
+                // Cover: scaled until it fills the rectangle, centred.
+                let k = (w / image.width as f32).max(h / image.height as f32);
+                let (dx, dy) = (x + (w - image.width as f32 * k) / 2.0, y + (h - image.height as f32 * k) / 2.0);
+                let shader = Pattern::new(
+                    src,
+                    SpreadMode::Pad,
+                    FilterQuality::Bicubic,
+                    opacity.clamp(0.0, 1.0),
+                    Transform::from_translate(dx, dy).pre_scale(k, k),
+                );
+                pm.fill_path(
+                    &shape,
+                    &Paint { shader, anti_alias: true, ..Paint::default() },
+                    FillRule::Winding,
+                    base,
+                    clip,
+                );
             }
             Element::Ring { cx, cy, r, width, fraction, color, opacity } => {
                 let s = Stroke { width: *width, line_cap: LineCap::Round, ..Stroke::default() };

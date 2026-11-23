@@ -69,6 +69,7 @@ const PRIVACY_DOT: f32 = 6.0;
 /// At most one activity switch per this many seconds of scrolling.
 const SWITCH_COOLDOWN: f64 = 0.35;
 /// Height of the expanded clock and media cards.
+#[cfg(test)]
 const CLOCK_H: f64 = 168.0 + content::QUICK_H;
 const MEDIA_H: f64 = 180.0;
 /// How quickly the empty island fades in and out when it hides until
@@ -263,6 +264,10 @@ pub struct App {
     sleep_at: Option<f64>,
     /// The quick timer's length (an index into `content::QUICK_MINUTES`).
     quick: usize,
+    /// Where the pointer last was (scrolling over the timer changes its length).
+    pointer: (f64, f64),
+    /// The photo behind Control Centre, when one is set.
+    cc_photo: Option<islet_core::activity::ArtImage>,
     /// The month the calendar card shows (None: this month).
     cal_view: Option<(i32, u8)>,
     /// Clipboard history (in memory only; empty while the feature is off).
@@ -428,6 +433,8 @@ impl App {
             soon: Vec::new(),
             sleep_at: None,
             quick: content::QUICK_DEFAULT,
+            pointer: (f64::NAN, f64::NAN),
+            cc_photo: None,
             cal_view: None,
             clip: Default::default(),
             clip_out: Vec::new(),
@@ -1329,22 +1336,34 @@ impl App {
 
     /// The Controls slider under (x, y), while that panel is open.
     fn tune_at(&self, x: f64, y: f64, t: f64) -> Option<content::Tune> {
-        if !self.island.presentation().is_open()
-            || !matches!(self.open_content(&self.live(t)), OpenContent::Panel(Panel::Controls))
-        {
+        if !self.island.presentation().is_open() {
             return None;
         }
         let cr = self.content_rect(self.settled_pill());
-        content::tune_sliders(cr, self.volume.is_some(), self.brightness.is_some(), self.mixer.len())
-            .into_iter()
-            .find(|(r, _)| r.contains(x, y))
-            .map(|(_, tune)| tune)
+        let sliders = match self.open_content(&self.live(t)) {
+            OpenContent::Panel(Panel::Controls) => {
+                content::tune_sliders(cr, self.volume.is_some(), self.brightness.is_some(), self.mixer.len())
+            }
+            // Control Centre's tall sliders (the Sliders style).
+            OpenContent::Clock => content::cc_sliders(cr, self.clock_row()),
+            _ => return None,
+        };
+        sliders.into_iter().find(|(r, _)| r.contains(x, y)).map(|(_, tune)| tune)
+    }
+
+    /// A slider's level for the pointer at (x, y): along it, or up a tall one.
+    fn tune_level(&self, tune: content::Tune, x: f64, y: f64) -> f32 {
+        let cr = self.content_rect(self.settled_pill());
+        match content::cc_sliders(cr, self.clock_row()).into_iter().find(|(_, t)| *t == tune) {
+            Some((r, _)) if self.panel.is_none() => content::cc_slider_level(r, y),
+            _ => content::tune_fraction(cr, x),
+        }
     }
 
     /// A Controls slider dragged to x. Volume follows the pointer; the
     /// screen's brightness is set once, when the slider is let go.
-    fn tune_to(&mut self, tune: content::Tune, x: f64, t: f64) -> bool {
-        let level = content::tune_fraction(self.content_rect(self.settled_pill()), x);
+    fn tune_to(&mut self, tune: content::Tune, x: f64, y: f64, t: f64) -> bool {
+        let level = self.tune_level(tune, x, y);
         match tune {
             content::Tune::Volume => {
                 self.volume = Some((level, false));
@@ -2297,6 +2316,58 @@ impl App {
 
     /// Scroll or two-finger swipe over the island: step to the next live
     /// activity once enough has accumulated (one step per gesture).
+    /// Is the pointer on Control Centre's timer button (the new styles,
+    /// where scrolling over it changes its length)?
+    fn over_timer_start(&self, t: f64) -> bool {
+        let row = self.clock_row();
+        if row.style == content::CcStyle::Classic
+            || !self.island.presentation().is_open()
+            || !matches!(self.open_content(&self.live(t)), OpenContent::Clock)
+        {
+            return false;
+        }
+        let (x, y) = self.pointer;
+        content::quick_row(self.content_rect(self.settled_pill()), row)
+            .iter()
+            .any(|(r, q)| *q == content::Quick::Start && r.contains(x, y))
+    }
+
+    /// A minute step per notch: down for shorter, up for longer.
+    fn scroll_timer(&mut self, dy: f64) -> bool {
+        self.scroll_acc += dy;
+        if self.scroll_acc.abs() < 1.0 {
+            return false;
+        }
+        let longer = self.scroll_acc < 0.0;
+        self.scroll_acc = 0.0;
+        let max = content::QUICK_MINUTES.len() - 1;
+        let before = self.quick;
+        self.quick = if longer { (self.quick + 1).min(max) } else { self.quick.saturating_sub(1) };
+        self.quick != before
+    }
+
+    /// The line beside the date: where the school day stands, or else the next alarm.
+    fn clock_note<'a>(class: &'a Option<String>, alarm: &'a Option<String>) -> Option<content::ClockNote<'a>> {
+        match (class, alarm) {
+            (Some(c), _) => Some(content::ClockNote {
+                icon: islet_render::elements::Icon::Calendar,
+                color: content::GREEN,
+                text: c,
+            }),
+            (None, Some(a)) => Some(content::ClockNote {
+                icon: islet_render::elements::Icon::Bell(0),
+                color: content::ORANGE,
+                text: a,
+            }),
+            (None, None) => None,
+        }
+    }
+
+    /// The photo behind Control Centre (None: no photo).
+    pub fn set_cc_photo(&mut self, photo: Option<islet_core::activity::ArtImage>) {
+        self.cc_photo = photo;
+    }
+
     fn scroll(&mut self, dx: f64, dy: f64, t: f64) -> bool {
         if self.activities.live(t).len() < 2 {
             return false;
@@ -2375,6 +2446,11 @@ impl App {
             no_lock: self.prefs.hides("lock"),
             no_system: self.prefs.hides("system"),
             no_controls: self.prefs.hides("controls"),
+            style: content::CcStyle::parse(&self.prefs.cc_style),
+            order: content::CcOrder::from_ids(&self.prefs.cc_order),
+            home: self.home,
+            volume: self.volume.is_some(),
+            brightness: self.brightness.is_some(),
         }
     }
 
@@ -2658,41 +2734,69 @@ impl App {
                     engine,
                 )),
                 OpenContent::Clock => {
-                    if let Some(now) = self.clock {
+                    let row = self.clock_row();
+                    let photo = self.cc_photo.as_ref().filter(|_| self.prefs.cc_photo);
+                    if let Some(img) = photo {
+                        // The photo, darkened so the buttons stay readable.
+                        let (x, y, w, h) = (p.x as f32, p.y as f32, p.w as f32, p.h as f32);
+                        let radius = 40.0;
+                        out.push(Element::Photo { x, y, w, h, radius, image: img.clone(), opacity: eo });
+                        out.push(Element::Tile {
+                            x,
+                            y,
+                            w,
+                            h,
+                            radius,
+                            color: [0; 3],
+                            color2: [0; 3],
+                            opacity: eo * 0.42,
+                        });
+                    }
+                    if row.style != content::CcStyle::Classic {
+                        let (class, alarm) = (self.class_line(), self.next_alarm_label());
+                        let note = Self::clock_note(&class, &alarm);
+                        let world = self.world_clocks();
+                        let view = content::CcView {
+                            now: self.clock.as_ref(),
+                            h24: self.h24,
+                            note,
+                            weather: self.activities.weather(),
+                            fahrenheit: self.prefs.fahrenheit,
+                            conn: self.activities.connectivity(),
+                            shelf: self.shelf.len(),
+                            todo_left: self.todo.left(),
+                            minutes: content::QUICK_MINUTES[self.quick],
+                            volume: self.volume,
+                            brightness: self.brightness,
+                            world: &world,
+                            photo: photo.is_some(),
+                        };
+                        out.extend(content::cc_elements(cr, row, &view, eo, engine));
+                    } else if let Some(now) = self.clock {
                         // Where the school day stands, or else the next alarm.
                         let (class, alarm) = (self.class_line(), self.next_alarm_label());
-                        let note = match (&class, &alarm) {
-                            (Some(c), _) => Some(content::ClockNote {
-                                icon: islet_render::elements::Icon::Calendar,
-                                color: content::GREEN,
-                                text: c,
-                            }),
-                            (None, Some(a)) => Some(content::ClockNote {
-                                icon: islet_render::elements::Icon::Bell(0),
-                                color: content::ORANGE,
-                                text: a,
-                            }),
-                            (None, None) => None,
-                        };
+                        let note = Self::clock_note(&class, &alarm);
                         let weather = self.activities.weather().is_some();
                         out.extend(content::expanded_clock(cr, &now, self.h24, note, weather, eo, engine));
                     }
-                    let minutes = content::QUICK_MINUTES[self.quick];
-                    out.extend(content::quick_row_elements(cr, self.clock_row(), minutes, eo, engine));
-                    let world = self.world_clocks();
-                    if !world.is_empty() {
-                        out.extend(content::world_clocks(cr, &world, self.h24, eo, engine));
-                    }
-                    out.extend(content::clock_chip_elements(
-                        cr,
-                        self.activities.connectivity(),
-                        self.shelf.len(),
-                        self.clock_row(),
-                        eo,
-                        engine,
-                    ));
-                    if let Some(w) = self.activities.weather() {
-                        out.extend(content::clock_weather(cr, w, self.prefs.fahrenheit, eo));
+                    if row.style == content::CcStyle::Classic {
+                        let minutes = content::QUICK_MINUTES[self.quick];
+                        out.extend(content::quick_row_elements(cr, row, minutes, eo, engine));
+                        let world = self.world_clocks();
+                        if !world.is_empty() {
+                            out.extend(content::world_clocks(cr, &world, self.h24, eo, engine));
+                        }
+                        out.extend(content::clock_chip_elements(
+                            cr,
+                            self.activities.connectivity(),
+                            self.shelf.len(),
+                            row,
+                            eo,
+                            engine,
+                        ));
+                        if let Some(w) = self.activities.weather() {
+                            out.extend(content::clock_weather(cr, w, self.prefs.fahrenheit, eo));
+                        }
                     }
                     if self.home {
                         let label = self.activity_label(&live);
@@ -2839,13 +2943,8 @@ impl App {
                         }
                         OpenContent::Media(_) if self.song_lyrics().is_some() => MEDIA_H + content::CARD_LYRICS_H,
                         OpenContent::Media(_) | OpenContent::Nav(_) => MEDIA_H,
-                        OpenContent::Clock => {
-                            let row = self.clock_row();
-                            // Shorter when every quick button is switched off.
-                            CLOCK_H - content::QUICK_H
-                                + content::quick_h(row)
-                                + if row.world { content::WORLD_H } else { 0.0 }
-                        }
+                        // Classic is shorter when every quick button is switched off.
+                        OpenContent::Clock => content::cc_height(self.clock_row()),
                         OpenContent::Battery => {
                             let rows =
                                 self.activities.devices().len() + usize::from(self.activities.laptop().is_some());
@@ -2982,16 +3081,19 @@ impl App {
     pub fn handle(&mut self, e: Event, t: f64) -> bool {
         match e {
             Event::PointerMove { x, .. } if self.control == Some(Control::Volume) => self.volume_from(x, t),
-            Event::PointerMove { x, .. } if self.tune.is_some() => {
+            Event::PointerMove { x, y } if self.tune.is_some() => {
                 let tune = self.tune.unwrap_or(content::Tune::Volume);
-                self.tune_to(tune, x, t)
+                self.tune_to(tune, x, y, t)
             }
             Event::PointerMove { x, .. } if self.control == Some(Control::Scrub) => {
                 self.scrub = Some(content::scrub_fraction(self.card_rect(t), x));
                 true
             }
             Event::PointerMove { x, y } if self.drags_shelf_row(x, y) => true,
-            Event::PointerMove { x, y } => self.pointer_at(x, y, t),
+            Event::PointerMove { x, y } => {
+                self.pointer = (x, y);
+                self.pointer_at(x, y, t)
+            }
             Event::PointerLeave => self.pointer_at(f64::NAN, f64::NAN, t),
             Event::PointerDown { x, y, button: Button::Primary } if self.hit(x, y, t) => {
                 if let Some(c) = self.timer_control_at(x, y, t) {
@@ -3012,7 +3114,7 @@ impl App {
                 }
                 if let Some(tune) = self.tune_at(x, y, t) {
                     self.tune = Some(tune);
-                    return self.tune_to(tune, x, t);
+                    return self.tune_to(tune, x, y, t);
                 }
                 if let Some(b) = self.hog_button_at(x, y, t) {
                     self.hog_press = Some(b);
@@ -3100,7 +3202,7 @@ impl App {
                     return if self.hog_button_at(x, y, t) == Some(b) { self.hog_act(b, t) } else { true };
                 }
                 if let Some(tune) = self.tune.take() {
-                    self.tune_to(tune, x, t);
+                    self.tune_to(tune, x, y, t);
                     match tune {
                         content::Tune::Brightness => {
                             self.brightness_out = self.brightness;
@@ -3209,6 +3311,7 @@ impl App {
                 let p = self.panel.unwrap_or(Panel::Wifi);
                 self.scroll_list(p, dy)
             }
+            Event::Scroll { dy, .. } if self.hovered && self.over_timer_start(t) => self.scroll_timer(dy),
             Event::Scroll { dx, dy } if self.hovered => self.scroll(dx, dy, t),
             Event::Redraw | Event::ScaleChanged(_) => true,
             _ => false,
@@ -3526,7 +3629,7 @@ impl App {
             .filter(|m| self.prefs.album_border && m.playing)
             .and_then(|m| m.art.as_ref())
             .map(|a| content::brighten(a.dominant));
-        let (color, alpha, glass) = islet_core::prefs::style_body(&self.prefs.style, self.prefs.accent_rgb());
+        let (color, alpha, glass) = islet_core::prefs::style_body(&self.prefs.style, self.prefs.tint_rgb());
         // While music plays, a glow in its cover's colour.
         let glow = self
             .activities
@@ -5443,6 +5546,96 @@ mod tests {
             }
         }
         islet_core::i18n::set_language("en");
+    }
+
+    /// Control Centre in each style, with a photo and a custom tint, for review:
+    /// `ISLET_CC_SHOTS=/path/dir cargo test -p islet cc_shots`
+    #[test]
+    fn cc_shots() {
+        let Some(dir) = std::env::var_os("ISLET_CC_SHOTS") else { return };
+        use islet_core::connectivity::{BtState, ConnUpdate};
+        use islet_core::weather::{Sky, Weather};
+        use tiny_skia::{
+            Color, GradientStop, LinearGradient, Paint, PathBuilder, Pixmap, Point, SpreadMode, Transform,
+        };
+        let dir = std::path::PathBuf::from(dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut engine = TextEngine::new();
+        // A made-up photo: a dusk sky over hills.
+        let mut pm = Pixmap::new(900, 600).unwrap();
+        let sky = LinearGradient::new(
+            Point::from_xy(0.0, 0.0),
+            Point::from_xy(0.0, 600.0),
+            vec![
+                GradientStop::new(0.0, Color::from_rgba8(40, 60, 140, 255)),
+                GradientStop::new(0.6, Color::from_rgba8(230, 120, 90, 255)),
+                GradientStop::new(1.0, Color::from_rgba8(250, 200, 120, 255)),
+            ],
+            SpreadMode::Pad,
+            Transform::identity(),
+        )
+        .unwrap();
+        pm.fill_rect(
+            tiny_skia::Rect::from_xywh(0.0, 0.0, 900.0, 600.0).unwrap(),
+            &Paint { shader: sky, ..Paint::default() },
+            Transform::identity(),
+            None,
+        );
+        let mut hill = Paint::default();
+        hill.set_color_rgba8(30, 25, 50, 255);
+        let mut pb = PathBuilder::new();
+        pb.move_to(0.0, 600.0);
+        pb.line_to(0.0, 430.0);
+        pb.quad_to(260.0, 330.0, 520.0, 450.0);
+        pb.quad_to(720.0, 380.0, 900.0, 420.0);
+        pb.line_to(900.0, 600.0);
+        pb.close();
+        pm.fill_path(&pb.finish().unwrap(), &hill, tiny_skia::FillRule::Winding, Transform::identity(), None);
+        let photo = crate::providers::art::photo(&pm.encode_png().unwrap()).unwrap();
+        let shots: [(&str, &str, bool, &str, &str); 7] = [
+            ("classic", "classic", false, "black", ""),
+            ("modules", "modules", false, "black", ""),
+            ("sliders", "sliders", false, "black", ""),
+            ("dock", "dock", false, "black", ""),
+            ("dock-photo", "dock", true, "black", ""),
+            ("modules-tint", "modules", false, "tinted", "#d6336c"),
+            ("sliders-photo", "sliders", true, "black", ""),
+        ];
+        for (name, style, with_photo, look, tint) in shots {
+            let mut a = App::new(Demo::None, false);
+            a.set_prefs(IslandPrefs {
+                cc_style: style.into(),
+                cc_photo: with_photo,
+                style: look.into(),
+                tint: tint.into(),
+                ..IslandPrefs::default()
+            });
+            a.set_cc_photo(Some(photo.clone()));
+            a.set_time(NOW, 0.0);
+            let w = Weather {
+                place: "Kampala".into(),
+                temp_c: 24.3,
+                high_c: Some(27.0),
+                low_c: Some(17.0),
+                sky: Sky::PartlyCloudy,
+                is_day: true,
+            };
+            a.report(Report::Weather(Some(w)), 0.0);
+            a.report(Report::Connectivity(ConnUpdate::Wifi(wifi(Some("Home")))), 0.0);
+            let bt = BtState { available: true, powered: true, ..BtState::default() };
+            a.report(Report::Connectivity(ConnUpdate::Bluetooth(bt)), 0.0);
+            a.report(Report::Volume(0.55, false), 0.0);
+            a.report(Report::Brightness(0.8), 0.0);
+            click(&mut a, 0.5);
+            let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
+            let mut cell = Pixmap::new(cw * 2, ch * 2).unwrap();
+            let frame = a.frame(30.0);
+            islet_render::draw(&mut cell, &frame, 2.0);
+            let clip = islet_render::clip_mask(&frame, cw * 2, ch * 2, 2.0);
+            let els = a.elements(30.0, &mut engine);
+            islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 2.0, clip.as_ref());
+            cell.save_png(dir.join(format!("{name}.png"))).unwrap();
+        }
     }
 
     /// The Controls panel, for visual review:

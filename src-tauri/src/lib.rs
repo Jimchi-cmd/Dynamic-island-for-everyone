@@ -80,6 +80,13 @@ pub fn allowed(args: &[String]) -> bool {
         ["look", "accent", name] => islet_core::prefs::ACCENTS.iter().any(|(n, _)| n == name),
         ["look", "style", name] => islet_core::prefs::STYLES.contains(name),
         ["look", "shape", name] => islet_core::prefs::SHAPES.contains(name),
+        ["look", "control-centre", name] => islet_core::prefs::CC_STYLES.contains(name),
+        ["look", "tint", v] => *v == "accent" || islet_core::prefs::parse_hex(v).is_some(),
+        // Settings sends the photo itself on stdin, never a path.
+        ["look", "photo", "-" | "none"] => true,
+        ["card", "order", list] => {
+            *list == "default" || list.split(',').all(|id| islet_core::prefs::CC_BUTTONS.contains(&id.trim()))
+        }
         ["look", "clock", name] => islet_core::prefs::CLOCK_FACES.contains(name),
         ["look", "hours", name] => islet_core::prefs::CLOCK_HOURS.contains(name),
         ["card", "show" | "hide", button] => islet_core::prefs::CARD_BUTTONS.iter().any(|(id, _)| id == button),
@@ -417,6 +424,12 @@ mod tests {
         assert!(!allowed(&args(&[])), "running the island itself goes through start_island");
         assert!(allowed(&args(&["performance", "saver"])) && !allowed(&args(&["performance", "turbo"])));
         assert!(allowed(&args(&["language", "fr"])) && !allowed(&args(&["language", "xx"])));
+        assert!(
+            allowed(&args(&["look", "control-centre", "dock"])) && !allowed(&args(&["look", "control-centre", "x"]))
+        );
+        assert!(allowed(&args(&["look", "tint", "#3a7bd5"])) && !allowed(&args(&["look", "tint", "red;rm"])));
+        assert!(allowed(&args(&["look", "photo", "-"])) && !allowed(&args(&["look", "photo", "/etc/passwd"])));
+        assert!(allowed(&args(&["card", "order", "lock,wifi"])) && !allowed(&args(&["card", "order", "lock,--x"])));
         assert!(allowed(&args(&["look", "hours", "12"])) && !allowed(&args(&["look", "hours", "13"])));
         assert!(!allowed(&args(&["pro", "activate"])), "Islet Pro is gone");
     }

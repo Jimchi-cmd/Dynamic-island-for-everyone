@@ -17,6 +17,10 @@ use islet_render::elements::{Element, Icon};
 use islet_render::text::{Align, TextEngine, TextItem, TextStyle};
 use islet_render::Circle;
 
+#[path = "content_cc.rs"]
+mod cc;
+pub use cc::*;
+
 pub const WHITE: [u8; 3] = [255, 255, 255];
 pub const AMBER: [u8; 3] = [255, 176, 32];
 pub const RED: [u8; 3] = [255, 69, 58];
@@ -128,6 +132,15 @@ pub const QUICK_H: f64 = 42.0;
 /// The buttons the user switched off in Settings are left out; the round
 /// ones keep to the right.
 pub fn quick_row(pill: Rect, row: ClockRow) -> Vec<(Rect, Quick)> {
+    if row.style != CcStyle::Classic {
+        return cc_layout(pill, row)
+            .into_iter()
+            .filter_map(|s| match s.hit {
+                Some(ConnHit::Quick(q)) => Some((s.r, q)),
+                _ => None,
+            })
+            .collect();
+    }
     let (x, w) = (pill.x + PAD, pill.w - 2.0 * PAD);
     let y = pill.y + 164.0 + if row.world { WORLD_H } else { 0.0 };
     let (h, right) = (32.0, x + w);
@@ -143,6 +156,11 @@ pub fn quick_row(pill: Rect, row: ClockRow) -> Vec<(Rect, Quick)> {
             .filter(|(hidden, _)| !hidden)
             .map(|(_, q)| q)
             .collect();
+    let round = in_order(round, row, |q| match q {
+        Quick::Calendar => CcButton::Calendar,
+        Quick::Screenshot => CcButton::Screenshot,
+        _ => CcButton::Lock,
+    });
     for (i, q) in round.iter().enumerate() {
         let from_right = (round.len() - i) as f64;
         v.push((Rect::new(right - from_right * 32.0 - (from_right - 1.0) * 10.0, y, 32.0, h), *q));
@@ -1873,11 +1891,26 @@ pub fn world_clocks(
     engine: &mut TextEngine,
 ) -> Vec<Element> {
     let (left, top) = (pill.x as f32 + 28.0, pill.y as f32 + (1.0 - o) * 8.0);
+    let max = (pill.right() - PAD) as f32 - left;
+    world_pieces(clocks, h24, max, o, engine)
+        .into_iter()
+        .map(|(s, style, dx)| text(s, style, left + dx, top + 126.0))
+        .collect()
+}
+
+/// The world clocks' words, their styles and how far along each starts;
+/// as many cities as fit in `max`.
+fn world_pieces(
+    clocks: &[(String, LocalTime, i32)],
+    h24: bool,
+    max: f32,
+    o: f32,
+    engine: &mut TextEngine,
+) -> Vec<(String, TextStyle, f32)> {
     let name = TextStyle { size: 13.0, opacity: o * 0.6, ..TextStyle::default() };
     let time = TextStyle { size: 13.0, weight: 600, opacity: o, tabular: true, ..TextStyle::default() };
     let mut v = Vec::new();
-    let mut x = left;
-    let max = (pill.right() - PAD) as f32;
+    let mut x = 0.0;
     for (i, (city, now, days)) in clocks.iter().enumerate() {
         let (hm, suffix) = format_time(now, h24);
         let when = match (suffix, days) {
@@ -1887,14 +1920,13 @@ pub fn world_clocks(
             (None, d) => format!("{hm} {d:+}"),
         };
         let lead = if i == 0 { format!("{city} ") } else { format!("  ·  {city} ") };
-        let need = engine.measure(&lead, &name) + engine.measure(&when, &time);
-        if x + need > max {
+        let (lw, ww) = (engine.measure(&lead, &name), engine.measure(&when, &time));
+        if x + lw + ww > max {
             break;
         }
-        v.push(text(lead.clone(), name, x, top + 126.0));
-        x += engine.measure(&lead, &name);
-        v.push(text(when.clone(), time, x, top + 126.0));
-        x += engine.measure(&when, &time);
+        v.push((lead, name, x));
+        v.push((when, time, x + lw));
+        x += lw + ww;
     }
     v
 }
@@ -1961,12 +1993,29 @@ pub struct ClockRow {
     pub no_lock: bool,
     pub no_system: bool,
     pub no_controls: bool,
+    /// The layout (Settings → Look → Control Centre) and the buttons' order.
+    pub style: CcStyle,
+    pub order: CcOrder,
+    /// Opened from an activity ("Now Playing ›" above the time).
+    pub home: bool,
+    /// The computer reports its volume / brightness (Sliders' tall sliders).
+    pub volume: bool,
+    pub brightness: bool,
 }
 
 /// Height of the world-clock line.
 pub const WORLD_H: f64 = 22.0;
 
 pub fn clock_chips(pill: Rect, row: ClockRow) -> Vec<(Rect, Panel)> {
+    if row.style != CcStyle::Classic {
+        return cc_layout(pill, row)
+            .into_iter()
+            .filter_map(|s| match s.hit {
+                Some(ConnHit::Open(p)) => Some((s.r, p)),
+                _ => None,
+            })
+            .collect();
+    }
     let (x, w) = (pill.x + PAD, pill.w - 2.0 * PAD);
     let y = pill.y + 122.0 + if row.world { WORLD_H } else { 0.0 };
     let panels: &[Panel] = &[Panel::Wifi, Panel::Bluetooth];
@@ -1998,6 +2047,15 @@ pub fn clock_chips(pill: Rect, row: ClockRow) -> Vec<(Rect, Panel)> {
         let kept: Vec<Panel> = KEEP.iter().copied().filter(|p| icons.contains(p)).take(MAX_TOOLS).collect();
         icons.retain(|p| kept.contains(p));
     }
+    let icons = in_order(icons, row, |p| match p {
+        Panel::Shelf => CcButton::Shelf,
+        Panel::Shortcuts => CcButton::Shortcuts,
+        Panel::Todo => CcButton::Todo,
+        Panel::Stopwatch => CcButton::Stopwatch,
+        Panel::Clipboard => CcButton::Clipboard,
+        Panel::System => CcButton::System,
+        _ => CcButton::Controls,
+    });
     let n = panels.len() as f64;
     let icons_w = icons.len() as f64 * (SYSTEM_CHIP + 10.0);
     let cw = (w - icons_w - 10.0 * (n - 1.0)) / n;
@@ -2008,6 +2066,13 @@ pub fn clock_chips(pill: Rect, row: ClockRow) -> Vec<(Rect, Panel)> {
         v.push((Rect::new(x + w - from_right * SYSTEM_CHIP - (from_right - 1.0) * 10.0, y, SYSTEM_CHIP, 32.0), *p));
     }
     v
+}
+
+/// Classic's buttons within a row, in the user's order.
+fn in_order<T: Copy>(items: Vec<T>, row: ClockRow, button: impl Fn(T) -> CcButton) -> Vec<T> {
+    let mut items = items;
+    items.sort_by_key(|i| row.order.0.iter().position(|b| *b == button(*i)).unwrap_or(usize::MAX));
+    items
 }
 
 /// The most tool buttons the clock card's row has room for.

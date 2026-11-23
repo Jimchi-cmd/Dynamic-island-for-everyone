@@ -136,6 +136,52 @@ pub struct IslandPrefs {
     pub card_hidden: Vec<String>,
     /// Buttons from `CARD_OPT_IN` the user switched on.
     pub card_shown: Vec<String>,
+    /// How Control Centre is laid out (see `CC_STYLES`).
+    pub cc_style: String,
+    /// Control Centre's buttons in the user's order (ids from
+    /// `CC_BUTTONS`; any left out follow in the usual order).
+    pub cc_order: Vec<String>,
+    /// A photo behind Control Centre (saved as `CC_PHOTO` in the config folder).
+    pub cc_photo: bool,
+    /// The colour of the tinted styles, "#rrggbb" ("" = the accent colour).
+    pub tint: String,
+}
+
+/// Control Centre's layouts:
+/// - "classic": the time, Wi-Fi and Bluetooth with their names, the tools in a row
+/// - "modules": a block of round buttons, the timer beside it
+/// - "sliders": volume and brightness as tall sliders beside a grid of buttons
+/// - "dock": a big clock over a colour wash, every button in one labelled row
+pub const CC_STYLES: [&str; 4] = ["classic", "modules", "sliders", "dock"];
+
+/// Every Control Centre button, in the usual order.
+pub const CC_BUTTONS: [&str; 13] = [
+    "wifi",
+    "bluetooth",
+    "timer",
+    "system",
+    "controls",
+    "calendar",
+    "screenshot",
+    "lock",
+    "shelf",
+    "todo",
+    "stopwatch",
+    "clipboard",
+    "shortcuts",
+];
+
+/// The background photo's file in the config folder.
+pub const CC_PHOTO: &str = "control-centre.png";
+
+/// The colour in "#rrggbb" (or "rrggbb").
+pub fn parse_hex(s: &str) -> Option<[u8; 3]> {
+    let h = s.trim().trim_start_matches('#');
+    if h.len() != 6 || !h.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let byte = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok();
+    Some([byte(0)?, byte(2)?, byte(4)?])
 }
 
 /// The clock card's optional buttons: id and name. Wi-Fi and Bluetooth
@@ -213,8 +259,14 @@ pub const STYLES: [&str; 4] = ["black", "tinted", "glass", "tinted-glass"];
 /// A style's body: colour, how solid it is (0..=1) and whether it has the
 /// glass sheen. Text stays white, so every body is dark enough to read on.
 pub fn style_body(style: &str, accent: [u8; 3]) -> ([u8; 3], f32, bool) {
-    // A deep shade: `share` of the accent over near-black.
-    let shade = |share: f32| accent.map(|c| (f32::from(c) * share + 6.0).round().min(255.0) as u8);
+    // A deep shade: `share` of the colour over near-black, never so light
+    // that white text stops reading on it (a custom tint can be white).
+    let shade = |share: f32| {
+        let c = accent.map(|c| f32::from(c) * share + 6.0);
+        let lum = (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255.0;
+        let k = if lum > 0.23 { 0.23 / lum } else { 1.0 };
+        c.map(|v| (v * k).round().min(255.0) as u8)
+    };
     match style {
         "tinted" => (shade(0.26), 1.0, false),
         "glass" => ([22, 22, 26], 0.62, true),
@@ -297,6 +349,10 @@ impl Default for IslandPrefs {
             shortcuts: Vec::new(),
             card_hidden: Vec::new(),
             card_shown: Vec::new(),
+            cc_style: "classic".into(),
+            cc_order: Vec::new(),
+            cc_photo: false,
+            tint: String::new(),
         }
     }
 }
@@ -428,6 +484,27 @@ impl IslandPrefs {
         Ok(())
     }
 
+    /// The colour of the tinted styles: the user's own, else the accent.
+    pub fn tint_rgb(&self) -> [u8; 3] {
+        parse_hex(&self.tint).unwrap_or_else(|| self.accent_rgb())
+    }
+
+    /// Control Centre's buttons in the user's order; ones they left out
+    /// follow in the usual order.
+    pub fn cc_order(&self) -> Vec<&'static str> {
+        let mut out: Vec<&'static str> = Vec::new();
+        for id in &self.cc_order {
+            if let Some(b) = CC_BUTTONS.iter().find(|b| **b == id.as_str()) {
+                if !out.contains(b) {
+                    out.push(b);
+                }
+            }
+        }
+        let rest: Vec<&'static str> = CC_BUTTONS.iter().copied().filter(|b| !out.contains(b)).collect();
+        out.extend(rest);
+        out
+    }
+
     pub fn accent_rgb(&self) -> [u8; 3] {
         ACCENTS.iter().find(|(n, _)| n.eq_ignore_ascii_case(&self.accent)).map_or(ACCENTS[0].1, |(_, c)| *c)
     }
@@ -521,6 +598,36 @@ mod tests {
         assert_eq!(style_body("black", [255, 0, 0]), ([0, 0, 0], 1.0, false));
         assert_eq!(style_body("nonsense", [255, 0, 0]).0, [0, 0, 0], "unknown styles are black");
         assert_eq!(serde_json::from_str::<IslandPrefs>("{}").unwrap().style, "black");
+    }
+
+    #[test]
+    fn a_tint_of_its_own_stays_dark_enough_and_falls_back_to_the_accent() {
+        let mut p = IslandPrefs { accent: "green".into(), ..IslandPrefs::default() };
+        assert_eq!(p.tint_rgb(), [40, 200, 100]);
+        p.tint = "#FF00aa".into();
+        assert_eq!(p.tint_rgb(), [255, 0, 170]);
+        p.tint = "nonsense".into();
+        assert_eq!(p.tint_rgb(), [40, 200, 100], "an unreadable tint uses the accent");
+        for tint in [[255, 255, 255], [255, 255, 0], [0, 255, 0]] {
+            let (c, _, _) = style_body("tinted", tint);
+            let lum = (0.2126 * f32::from(c[0]) + 0.7152 * f32::from(c[1]) + 0.0722 * f32::from(c[2])) / 255.0;
+            assert!(lum < 0.25, "{tint:?} gives {c:?}");
+        }
+        assert_eq!(parse_hex("3a7bd5"), Some([0x3a, 0x7b, 0xd5]));
+        assert_eq!(parse_hex("#3a7bd"), None);
+    }
+
+    #[test]
+    fn control_centre_keeps_every_button_in_the_users_order() {
+        let p = IslandPrefs {
+            cc_order: vec!["lock".into(), "x".into(), "lock".into(), "wifi".into()],
+            ..IslandPrefs::default()
+        };
+        let o = p.cc_order();
+        assert_eq!(&o[..3], &["lock", "wifi", "bluetooth"]);
+        assert_eq!(o.len(), CC_BUTTONS.len());
+        assert_eq!(IslandPrefs::default().cc_order(), CC_BUTTONS.to_vec());
+        assert_eq!(IslandPrefs::default().cc_style, "classic");
     }
 
     #[test]

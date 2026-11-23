@@ -47,6 +47,37 @@ fn decode_jpeg(bytes: &[u8]) -> Option<Pixmap> {
     Some(pm)
 }
 
+/// The longest side a background photo is kept at (about twice the widest card).
+pub const PHOTO_PX: u32 = 900;
+
+/// A picture (PNG or JPEG), shrunk to fit within `PHOTO_PX`, its shape kept.
+pub fn photo_pixmap(bytes: &[u8]) -> Option<Pixmap> {
+    let src = if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        Pixmap::decode_png(bytes).ok()?
+    } else if bytes.starts_with(&[0xFF, 0xD8]) {
+        decode_jpeg(bytes)?
+    } else {
+        return None;
+    };
+    let long = src.width().max(src.height()) as f32;
+    if long <= PHOTO_PX as f32 {
+        return Some(src);
+    }
+    let k = PHOTO_PX as f32 / long;
+    let (w, h) = (((src.width() as f32 * k).round() as u32).max(1), ((src.height() as f32 * k).round() as u32).max(1));
+    let mut out = Pixmap::new(w, h)?;
+    let paint = PixmapPaint { quality: FilterQuality::Bicubic, ..PixmapPaint::default() };
+    out.draw_pixmap(0, 0, src.as_ref(), &paint, Transform::from_scale(k, k), None);
+    Some(out)
+}
+
+/// A background photo, ready to draw.
+pub fn photo(bytes: &[u8]) -> Option<ArtImage> {
+    let pm = photo_pixmap(bytes)?;
+    let dominant = dominant_colour(pm.data());
+    Some(ArtImage { width: pm.width(), height: pm.height(), rgba: Arc::new(pm.take()), dominant })
+}
+
 /// Centre-crop to a square, scale to `size()`, and pick the dominant colour.
 pub fn from_pixmap(src: &Pixmap) -> ArtImage {
     from_pixmap_at(src, size())
@@ -99,6 +130,18 @@ pub fn dominant_colour(rgba: &[u8]) -> [u8; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn photos_shrink_and_keep_their_shape() {
+        let mut big = Pixmap::new(1800, 1200).unwrap();
+        big.fill(tiny_skia::Color::from_rgba8(30, 90, 200, 255));
+        let png = big.encode_png().unwrap();
+        let p = photo(&png).unwrap();
+        assert_eq!((p.width, p.height), (900, 600));
+        let small = Pixmap::new(300, 100).unwrap().encode_png().unwrap();
+        assert_eq!(photo(&small).map(|p| (p.width, p.height)), Some((300, 100)), "small ones stay as they are");
+        assert!(photo(b"not a picture").is_none());
+    }
 
     #[test]
     fn crops_scales_and_finds_the_colour() {

@@ -277,6 +277,12 @@ export interface IslandPrefs {
   noteHotkey: string;
   accent: string;
   style: string;
+  /** The tinted styles' colour, "#rrggbb" ("" = the accent). */
+  tint?: string;
+  /** Control Centre's layout (see `CC_STYLES`), its buttons' order, and whether a photo is behind it. */
+  ccStyle?: string;
+  ccOrder?: string[];
+  ccPhoto?: boolean;
   cardHidden: string[];
   /** Opt-in buttons (to-do, stopwatch) switched on. */
   cardShown: string[];
@@ -316,6 +322,51 @@ export const CARD_BUTTONS: { id: string; label: string; optIn: boolean }[] = [
   { id: 'todo', label: N('To-do list'), optIn: true },
   { id: 'stopwatch', label: N('Stopwatch'), optIn: true },
 ];
+
+/** Control Centre's layouts, as in `islet_core::prefs::CC_STYLES`. */
+export const CC_STYLES: { id: string; label: string; hint: string }[] = [
+  { id: 'classic', label: N('Classic'), hint: N('The time, Wi-Fi and Bluetooth with their names, the tools in a row') },
+  { id: 'modules', label: N('Modules'), hint: N('A block of round buttons, with the timer beside it') },
+  { id: 'sliders', label: N('Sliders'), hint: N('Volume and brightness as tall sliders beside the buttons') },
+  { id: 'dock', label: N('Dock'), hint: N('A big clock, with every button in one labelled row') },
+];
+
+/** Every Control Centre button, in the usual order (`islet_core::prefs::CC_BUTTONS`). */
+export const CC_BUTTONS: { id: string; label: string }[] = [
+  { id: 'wifi', label: N('Wi-Fi') },
+  { id: 'bluetooth', label: N('Bluetooth') },
+  { id: 'timer', label: N('Quick timer') },
+  { id: 'system', label: N('System monitor') },
+  { id: 'controls', label: N('Volume and brightness') },
+  { id: 'calendar', label: N('Calendar') },
+  { id: 'screenshot', label: N('Screenshot') },
+  { id: 'lock', label: N('Lock') },
+  { id: 'shelf', label: N('Shelf') },
+  { id: 'todo', label: N('To-do list') },
+  { id: 'stopwatch', label: N('Stopwatch') },
+  { id: 'clipboard', label: N('Clipboard history') },
+  { id: 'shortcuts', label: N('Shortcuts') },
+];
+
+/** The buttons in the user's order; ones left out follow in the usual order (as the island does). */
+export function ccOrder(order: string[] | undefined): string[] {
+  const ids = CC_BUTTONS.map((b) => b.id);
+  const out: string[] = [];
+  for (const id of order ?? []) if (ids.includes(id) && !out.includes(id)) out.push(id);
+  return out.concat(ids.filter((id) => !out.includes(id)));
+}
+
+/** The order with one button moved one place up (-1) or down (+1). */
+export function moveButton(order: string[], id: string, by: -1 | 1): string[] {
+  const out = [...order];
+  const i = out.indexOf(id);
+  const j = i + by;
+  if (i < 0 || j < 0 || j >= out.length) return out;
+  const [a, b] = [out[i] as string, out[j] as string];
+  out[i] = b;
+  out[j] = a;
+  return out;
+}
 
 /** Does the clock card show this button? Opt-in ones show once switched on. */
 export function cardShows(b: { id: string; optIn: boolean }, p: { cardHidden?: string[]; cardShown?: string[] } | null): boolean {
