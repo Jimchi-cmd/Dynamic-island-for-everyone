@@ -48,6 +48,8 @@ android {
     }
 
     sourceSets["main"].java.srcDirs("src/main/kotlin")
+    // The translations, shared with the computer's island and Settings.
+    sourceSets["main"].assets.srcDirs("../../locales")
     sourceSets["test"].java.srcDirs("src/test/kotlin")
 
     testOptions {

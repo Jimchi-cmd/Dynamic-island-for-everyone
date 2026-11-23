@@ -245,14 +245,14 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     private fun announce(s: Scene) {
         val words = when (s) {
             is Scene.Popped -> when (val p = s.pop) {
-                is Pop.Note -> "Notification from ${p.app}"
-                is Pop.Charging -> if (p.charging) "Charging, ${p.level} percent" else "Not charging"
-                is Pop.LowBattery -> "Low battery, ${p.level} percent"
+                is Pop.Note -> T.f("Notification from {}", p.app)
+                is Pop.Charging -> if (p.charging) T.f("Charging, {} percent", p.level) else T.t("Not charging")
+                is Pop.LowBattery -> T.f("Low battery, {} percent", p.level)
                 is Pop.TimerDone -> p.label
                 is Pop.Info -> p.text
                 else -> null
             }
-            is Scene.Compact -> if (s.live is Live.Call) "Call: ${(s.live as Live.Call).name}" else null
+            is Scene.Compact -> if (s.live is Live.Call) T.f("Call: {}", (s.live as Live.Call).name) else null
             else -> null
         } ?: return
         contentDescription = words
@@ -676,7 +676,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
 
     /** The empty island's clock, in the chosen face. */
     private fun idleTime(ms: Long): String = when (Isle.prefs.clockFace) {
-        "day" -> DateFormat.format("EEE", ms).toString() + " " + shortTime(ms)
+        "day" -> T.date("EEE", ms) + " " + shortTime(ms)
         "seconds" -> shortTime(ms) + DateFormat.format(":ss", ms)
         else -> shortTime(ms)
     }
@@ -882,7 +882,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 // On the lock screen, only which app: the message waits for an unlock.
                 val locked = context.getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true
                 val title = if (locked) p.app else p.title.ifEmpty { p.app }
-                val body = if (locked) "New notification" else p.text.ifEmpty { p.app }
+                val body = if (locked) T.t("New notification") else p.text.ifEmpty { p.app }
                 val extra = Isle.extras[p.key]
                 // With buttons, the text sits higher to leave room for them.
                 val ty = if (p.actions.isEmpty() || locked) cy else box.top + 40 * dp
@@ -914,12 +914,12 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 val thumb = thumbnail(p.uri)
                 if (!bitmap(c, thumb, box.left + pad, cy - 25 * dp, 50f, 8f)) icon(c, Icon.Screenshot, box.left + pad + 25 * dp, cy, 26f, white)
                 val x = box.left + pad + 64 * dp
-                write(c, "Screenshot saved", x, cy - 3 * dp, 15f, white, bold = true)
-                write(c, "Tap to open it", x, cy + 16 * dp, 13f, grey)
+                write(c, T.t("Screenshot saved"), x, cy - 3 * dp, 15f, white, bold = true)
+                write(c, T.t("Tap to open it"), x, cy + 16 * dp, 13f, grey)
             }
             is Pop.TimerDone -> {
                 icon(c, Icon.Timer, box.left + pad + 18 * dp, cy, 26f, orange)
-                write(c, "Time's up", box.left + pad + 46 * dp, cy - 3 * dp, 15f, orange, bold = true)
+                write(c, T.t("Time's up"), box.left + pad + 46 * dp, cy - 3 * dp, 15f, orange, bold = true)
                 write(c, p.label, box.left + pad + 46 * dp, cy + 16 * dp, 13f, grey, max = box.width() - 160 * dp)
                 chip(c, "OK", box.right - pad - 56 * dp, cy, dim) { Isle.island.dismissPop(Isle.now()); Isle.changed() }
             }
@@ -927,7 +927,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 icon(c, Icon.Bluetooth, box.left + pad + 18 * dp, cy, 24f, blue)
                 val room = if (p.battery >= 0) 150 * dp else 90 * dp
                 write(c, p.name, box.left + pad + 46 * dp, cy - 3 * dp, 15f, white, bold = true, max = box.width() - room)
-                write(c, if (p.connected) "Connected" else "Disconnected", box.left + pad + 46 * dp, cy + 16 * dp, 13f, grey)
+                write(c, if (p.connected) T.t("Connected") else T.t("Disconnected"), box.left + pad + 46 * dp, cy + 16 * dp, 13f, grey)
                 // The device's own battery, as the computer shows for earbuds and headphones.
                 if (p.battery >= 0) {
                     val colour = if (p.battery > 20) green else if (p.battery > 10) orange else red
@@ -954,18 +954,18 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 val lx = box.left + h * 0.6f
                 val rx = box.right - h * 0.55f
                 val (i, colour, left, right) = when (p) {
-                    is Pop.Charging -> Quad(Icon.Bolt, if (p.charging) green else grey, if (!p.charging) "Not charging" else if (p.level >= 100) "Fully charged" else "Charging", "${p.level}%")
-                    is Pop.LowBattery -> Quad(Icon.Bolt, red, "Low battery", "${p.level}%")
+                    is Pop.Charging -> Quad(Icon.Bolt, if (p.charging) green else grey, if (!p.charging) T.t("Not charging") else if (p.level >= 100) T.t("Fully charged") else T.t("Charging"), "${p.level}%")
+                    is Pop.LowBattery -> Quad(Icon.Bolt, red, T.t("Low battery"), "${p.level}%")
                     is Pop.Ringer -> when (p.mode) {
-                        Pop.RingerMode.Silent -> Quad(Icon.BellOff, red, "", "Silent")
-                        Pop.RingerMode.Vibrate -> Quad(Icon.Vibrate, orange, "", "Vibrate")
-                        Pop.RingerMode.Ring -> Quad(Icon.Bell, white, "", "Ring")
+                        Pop.RingerMode.Silent -> Quad(Icon.BellOff, red, "", T.t("Silent"))
+                        Pop.RingerMode.Vibrate -> Quad(Icon.Vibrate, orange, "", T.t("Vibrate"))
+                        Pop.RingerMode.Ring -> Quad(Icon.Bell, white, "", T.t("Ring"))
                     }
-                    is Pop.Airplane -> Quad(Icon.Plane, orange, "Airplane mode", if (p.on) "On" else "Off")
-                    is Pop.DoNotDisturb -> Quad(Icon.Moon, purple, "Do Not Disturb", if (p.on) "On" else "Off")
-                    is Pop.Wifi -> Quad(Icon.Wifi, blue, p.name.ifEmpty { "Wi-Fi" }, "Connected")
+                    is Pop.Airplane -> Quad(Icon.Plane, orange, T.t("Airplane mode"), if (p.on) T.t("On") else T.t("Off"))
+                    is Pop.DoNotDisturb -> Quad(Icon.Moon, purple, T.t("Do Not Disturb"), if (p.on) T.t("On") else T.t("Off"))
+                    is Pop.Wifi -> Quad(Icon.Wifi, blue, p.name.ifEmpty { T.t("Wi-Fi") }, T.t("Connected"))
                     is Pop.Info -> Quad(null, white, p.text, "")
-                    is Pop.Payment -> Quad(Icon.Check, green, "Paid", p.amount)
+                    is Pop.Payment -> Quad(Icon.Check, green, T.t("Paid"), p.amount)
                     else -> Quad(null, white, "", "")
                 }
                 if (geometry.popsDown) {
@@ -1106,7 +1106,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         // centre at its top (the music card draws its own; the clock card
         // has the controls button).
         val box = if (live != null && live !is Live.Music) {
-            chip(c, "‹  Control Centre", whole.left + 18 * dp, whole.top + 26 * dp, dim) {
+            chip(c, T.t("‹  Control Centre"), whole.left + 18 * dp, whole.top + 26 * dp, dim) {
                 Isle.island.showControls()
                 Isle.changed()
             }
@@ -1128,9 +1128,9 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 c.drawCircle(l + 24 * dp, cy, 24 * dp, fill)
                 write(c, live.name.take(1).uppercase(), l + 24 * dp, cy + 7 * dp, 20f, white, bold = true, align = Paint.Align.CENTER)
                 val status = when {
-                    live.incoming -> "Incoming call"
+                    live.incoming -> T.t("Incoming call")
                     live.since > 0 -> Format.elapsed(now - live.since)
-                    else -> "Calling…"
+                    else -> T.t("Calling…")
                 }
                 write(c, live.name, l + 60 * dp, cy - 4 * dp, 18f, white, bold = true, max = box.width() * 0.4f)
                 write(c, status, l + 60 * dp, cy + 16 * dp, 13f, if (live.since > 0) green else grey, max = box.width() * 0.4f)
@@ -1149,7 +1149,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                     button(c, x, cy, 48f, bg, i) { Isle.send(intent) }
                     x -= 58 * dp
                 }
-                if (actions.isEmpty()) chip(c, "Open", r - 70 * dp, cy, dim) { Isle.open(live.id) }
+                if (actions.isEmpty()) chip(c, T.t("Open"), r - 70 * dp, cy, dim) { Isle.open(live.id) }
             }
             is Live.Navigation -> {
                 val extra = Isle.extras[live.id.removePrefix("note:")]
@@ -1160,11 +1160,11 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 write(c, live.title, l + 62 * dp, cy - 14 * dp, 22f, white, bold = true, max = r - l - 62 * dp)
                 write(c, live.text, l + 62 * dp, cy + 6 * dp, 13f, grey, max = r - l - 62 * dp)
                 hits.add(Hit(RectF(box)) { Isle.open(live.id) })
-                chip(c, "Open ${live.app}", l + 62 * dp, cy + 30 * dp, green, Color.BLACK) { Isle.open(live.id) }
+                chip(c, T.f("Open {}", live.app), l + 62 * dp, cy + 30 * dp, green, Color.BLACK) { Isle.open(live.id) }
             }
             is Live.Timer -> {
                 val streak = if (live.label == "Focus" || live.onBreak) Isle.prefs.streak.label(Streak.dayOf(now)) else null
-                write(c, listOfNotNull(if (live.onBreak) "Break" else live.label, streak).joinToString(" · "), l, t + 14 * dp, 13f, grey, max = r - l - 160 * dp)
+                write(c, listOfNotNull(if (live.onBreak) T.t("Break") else T.t(live.label), streak).joinToString(" · "), l, t + 14 * dp, 13f, grey, max = r - l - 160 * dp)
                 write(c, Format.clock(live.left(now)), l, t + 62 * dp, 44f, orange, bold = true)
                 // How much is left, as a thin bar under the time.
                 bar(c, l, l + 150 * dp, t + 80 * dp, live.left(now).toFloat() / live.total.coerceAtLeast(1), orange, 3f)
@@ -1186,15 +1186,15 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             is Live.Countdown -> {
                 write(c, "${live.app} · ${live.label}", l, t + 14 * dp, 13f, grey, max = r - l)
                 write(c, Format.clock(live.endsAt - now), l, t + 62 * dp, 44f, orange, bold = true)
-                chip(c, "Open", r - 70 * dp, box.bottom - pad - 20 * dp, dim) { Isle.open(live.id) }
+                chip(c, T.t("Open"), r - 70 * dp, box.bottom - pad - 20 * dp, dim) { Isle.open(live.id) }
             }
             is Live.Stopwatch -> {
-                write(c, "Stopwatch", l, t + 14 * dp, 13f, grey)
+                write(c, T.t("Stopwatch"), l, t + 14 * dp, 13f, grey)
                 write(c, Format.stopwatch(live.elapsed(now)), l, t + 62 * dp, 42f, white, bold = true, max = r - l - 130 * dp)
                 if (live.laps.isNotEmpty()) {
                     val parts = ArrayList<String>()
                     val first = maxOf(0, live.laps.size - 3)
-                    for (n in live.laps.size - 1 downTo first) parts.add("Lap " + (n + 1) + "  " + Format.stopwatch(live.laps[n]))
+                    for (n in live.laps.size - 1 downTo first) parts.add(T.f("Lap {} {}", n + 1, Format.stopwatch(live.laps[n])))
                     write(c, parts.joinToString("   "), l, t + 92 * dp, 13f, grey, max = r - l)
                 }
                 val cy = t + 44 * dp
@@ -1214,11 +1214,11 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 icon(c, Icon.Calendar, l + 14 * dp, t + 16 * dp, 24f, red)
                 write(c, live.title, l + 36 * dp, t + 22 * dp, 17f, white, bold = true, max = r - l - 36 * dp)
                 val starts = Format.until(live.startsAt - now)
-                write(c, "${timeText(live.startsAt)} · ${if (starts == "now") "now" else "starts $starts"}", l + 36 * dp, t + 44 * dp, 13f, grey)
+                write(c, "${timeText(live.startsAt)} · ${if (starts == islet.island.Words.t("now")) starts else T.f("starts {}", starts)}", l + 36 * dp, t + 44 * dp, 13f, grey)
                 val cy = box.bottom - pad - 18 * dp
                 var x = l
-                live.join?.let { url -> x += chip(c, "Join", x, cy, green, Color.BLACK) { Isle.openUrl(url) } + 10 * dp }
-                chip(c, "Open calendar", x, cy, dim) {
+                live.join?.let { url -> x += chip(c, T.t("Join"), x, cy, green, Color.BLACK) { Isle.openUrl(url) } + 10 * dp }
+                chip(c, T.t("Open calendar"), x, cy, dim) {
                     val uri = CalendarContract.CONTENT_URI.buildUpon().appendPath("time").appendPath(live.startsAt.toString()).build()
                     Isle.start(Intent(Intent.ACTION_VIEW, uri))
                 }
@@ -1232,7 +1232,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                     live.room,
                 ).filter { it.isNotEmpty() }.joinToString(" · ")
                 write(c, sub, l + 36 * dp, t + 44 * dp, 13f, grey, max = r - l - 36 * dp)
-                val label = if (started) "${Format.clock(live.endsAt - now)} left" else "Starts ${Format.until(live.startsAt - now)}"
+                val label = if (started) T.f("{} left", Format.clock(live.endsAt - now)) else T.f("Starts {}", Format.until(live.startsAt - now))
                 write(c, label, l, box.bottom - pad - 22 * dp, 20f, cyan, bold = true)
                 if (started) {
                     val total = (live.endsAt - live.startsAt).coerceAtLeast(1)
@@ -1269,7 +1269,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val soft = 0x1affffff
         // To the control centre (its back button comes back here), and the player.
         val hy = box.top + 31 * dp
-        chip(c, "‹  Control Centre", l, hy, dim) {
+        chip(c, T.t("‹  Control Centre"), l, hy, dim) {
             Isle.island.showControls()
             Isle.changed()
         }
@@ -1328,7 +1328,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val lyrics = Isle.lyrics
         val now = position + Lyrics.LEAD
         val line = lyrics?.lineAt(now, Isle.prefs.lyricsOffset)
-            ?: if (Isle.lyricsMissing) "No synced lyrics for this song" else null
+            ?: if (Isle.lyricsMissing) T.t("No synced lyrics for this song") else null
         val next = lyrics?.nextAfter(now, Isle.prefs.lyricsOffset)
         if (line != null) write(c, line, cx, ly, 17f, if (lyrics != null) white else grey, bold = lyrics != null, max = r - l, align = Paint.Align.CENTER)
         if (next != null) write(c, next, cx, ly + 24 * dp, 15f, 0x73ffffff, max = r - l, align = Paint.Align.CENTER)
@@ -1369,16 +1369,16 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val from = Isle.island.openedFrom
         val back = when {
             from != null -> when (from) {
-                is Live.Music -> "Now Playing"
-                is Live.Call -> "Call"
-                is Live.Navigation -> "Directions"
-                is Live.Timer, is Live.Countdown -> "Timer"
-                is Live.Stopwatch -> "Stopwatch"
-                is Live.Event -> "Meeting"
-                is Live.Progress -> "Download"
-                is Live.Lesson -> "Lesson"
+                is Live.Music -> T.t("Now Playing")
+                is Live.Call -> T.t("Call")
+                is Live.Navigation -> T.t("Directions")
+                is Live.Timer, is Live.Countdown -> T.t("Timer")
+                is Live.Stopwatch -> T.t("Stopwatch")
+                is Live.Event -> T.t("Meeting")
+                is Live.Progress -> T.t("Download")
+                is Live.Lesson -> T.t("Lesson")
             }
-            Isle.island.openedFromCalendar -> "Calendar"
+            Isle.island.openedFromCalendar -> T.t("Calendar")
             else -> null
         }
         if (back != null) {
@@ -1400,15 +1400,15 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val room = (right - left) * if (weather != null) 0.58f else 0.8f
         val size = fit(time, room, 52f, 34f, bold = true)
         val tw = write(c, time, left, top + 74 * dp, size, white, bold = true)
-        if (!h24) write(c, DateFormat.format("a", now).toString(), left + tw + 6 * dp, top + 74 * dp, 20f, white, bold = true)
-        write(c, DateFormat.format("EEEE, d MMMM", now).toString(), left + 2 * dp, top + 102 * dp, 15f, 0x99ffffff.toInt(), max = room + 30 * dp)
+        if (!h24) write(c, T.date("a", now), left + tw + 6 * dp, top + 74 * dp, 20f, white, bold = true)
+        write(c, T.date("EEEEdMMMM", now), left + 2 * dp, top + 102 * dp, 15f, 0x99ffffff.toInt(), max = room + 30 * dp)
         // The weather in the corner, with Open-Meteo's credit.
         weather?.let { w ->
             val p = Isle.prefs
             write(c, Format.temperature(w.celsius, p.fahrenheit), right, top + 58 * dp, 30f, white, bold = true, align = Paint.Align.RIGHT)
             icon(c, Icons.sky(w.sky, w.day), right - 90 * dp, top + 46 * dp, 28f, white)
             if (w.highC != null && w.lowC != null) {
-                write(c, "H ${Format.temperature(w.highC!!, p.fahrenheit)}  L ${Format.temperature(w.lowC!!, p.fahrenheit)}", right, top + 80 * dp, 12.5f, 0x99ffffff.toInt(), align = Paint.Align.RIGHT)
+                write(c, T.f("H {}  L {}", Format.temperature(w.highC!!, p.fahrenheit), Format.temperature(w.lowC!!, p.fahrenheit)), right, top + 80 * dp, 12.5f, 0x99ffffff.toInt(), align = Paint.Align.RIGHT)
             }
             write(c, "Open-Meteo", right, top + 102 * dp, 10f, 0x66ffffff, align = Paint.Align.RIGHT)
         }
@@ -1432,8 +1432,8 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             hits.add(Hit(RectF(x, y1 - 4 * dp, x + chipW, y1 + bh + 4 * dp), action))
         }
         val x0 = left - 6 * dp
-        pill(x0, Isle.wifiOn, Icon.Wifi, Isle.wifiName ?: "Wi-Fi") { Controls.wifi() }
-        pill(x0 + chipW + gap, Isle.btOn, Icon.Bluetooth, Isle.btName ?: "Bluetooth") { Controls.bluetooth() }
+        pill(x0, Isle.wifiOn, Icon.Wifi, Isle.wifiName ?: T.t("Wi-Fi")) { Controls.wifi() }
+        pill(x0 + chipW + gap, Isle.btOn, Icon.Bluetooth, Isle.btName ?: T.t("Bluetooth")) { Controls.bluetooth() }
         fun round(i: Int, y: Float, ic: Icon, action: () -> Unit) {
             val cx = right - bh / 2 - (tools - 1 - i) * (bh + gap)
             fill.color = faint
@@ -1441,20 +1441,20 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
             icon(c, ic, cx, y + bh / 2, 17f, white)
             hits.add(Hit(RectF(cx - bh / 2 - 4 * dp, y - 4 * dp, cx + bh / 2 + 4 * dp, y + bh + 4 * dp), action))
         }
-        round(0, y1, Icon.Clipboard) { openApp("Todo") }
-        round(1, y1, Icon.Gauge) { openApp("Speed") }
+        round(0, y1, Icon.Clipboard) { openApp(T.t("Todo")) }
+        round(1, y1, Icon.Gauge) { openApp(T.t("Speed")) }
         round(2, y1, Icon.Toggles) {
             Isle.island.showToggles()
             Isle.changed()
         }
         // Row two: search on the left; calendar, screenshot and lock on the right.
         val y2 = top + 164 * dp
-        val sw = measure("Search", 13f, true) + 50 * dp
+        val sw = measure(T.t("Search"), 13f, true) + 50 * dp
         fill.color = faint
         rect.set(x0, y2, x0 + sw, y2 + bh)
         c.drawRoundRect(rect, bh / 2, bh / 2, fill)
         icon(c, Icon.Search, x0 + 19 * dp, y2 + bh / 2, 16f, white)
-        write(c, "Search", x0 + 34 * dp, y2 + bh / 2 + 4.5f * dp, 13f, white, bold = true)
+        write(c, T.t("Search"), x0 + 34 * dp, y2 + bh / 2 + 4.5f * dp, 13f, white, bold = true)
         hits.add(Hit(RectF(x0, y2 - 4 * dp, x0 + sw, y2 + bh + 4 * dp)) { openLauncher() })
         round(0, y2, Icon.Calendar) {
             Isle.island.showCalendar()
@@ -1535,7 +1535,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val t = box.top + pad
         val cal = java.util.Calendar.getInstance()
         val today = cal.get(java.util.Calendar.DAY_OF_MONTH)
-        write(c, DateFormat.format("MMMM yyyy", cal).toString(), l, t + 16 * dp, 17f, white, bold = true)
+        write(c, T.date("MMMMyyyy", cal.timeInMillis), l, t + 16 * dp, 17f, white, bold = true)
         cal.set(java.util.Calendar.DAY_OF_MONTH, 1)
         val firstDay = cal.firstDayOfWeek
         val offset = Math.floorMod(cal.get(java.util.Calendar.DAY_OF_WEEK) - firstDay, 7)
@@ -1578,12 +1578,12 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         if (agenda.isNotEmpty()) {
             agenda.take(2).forEach { rows.add(Triple(Icon.Calendar, red, "${timeText(it.begin)}  ${it.title}")) }
         } else {
-            islet.island.Meetings.next(Isle.events, now)?.let { rows.add(Triple(Icon.Calendar, red, "${it.title} · ${DateFormat.format("EEE", it.begin)} ${timeText(it.begin)}")) }
+            islet.island.Meetings.next(Isle.events, now)?.let { rows.add(Triple(Icon.Calendar, red, "${it.title} · ${T.date("EEE", it.begin)} ${timeText(it.begin)}")) }
         }
         if (p.deadlines) {
             Deadlines.next(Isle.deadlines, now)?.let { rows.add(Triple(Icon.Flag, orange, "${it.title} · ${Deadlines.countdown(it, now)}")) }
         }
-        Isle.nextAlarm?.let { rows.add(Triple(Icon.Bell, white, "Alarm · ${DateFormat.format("EEE", it)} ${timeText(it)}")) }
+        Isle.nextAlarm?.let { rows.add(Triple(Icon.Bell, white, "${T.t("Alarm")} · ${T.date("EEE", it)} ${timeText(it)}")) }
         rows.take(3).forEachIndexed { i, (ic, colour, text) ->
             val y = by - 34 * dp - (2 - i) * 22 * dp + (3 - minOf(3, rows.size)) * 22 * dp
             icon(c, ic, l + 7 * dp, y - 4.5f * dp, 13f, colour)
@@ -1596,8 +1596,8 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         // Focus fits between the timer chips and the two round buttons on most phones.
         text.textSize = 13 * dp
         text.typeface = typeface(true)
-        if (x + text.measureText("Focus") + 24 * dp + 6 * dp <= r - 67 * dp) chip(c, "Focus", x, by, 0xff5a3a00.toInt(), orange) { Isle.startPomodoro(); Isle.island.open("timer"); Isle.changed() }
-        button(c, r - 52 * dp, by, 30f, dim, Icon.Bell) { openApp("Alarms") }
+        if (x + text.measureText(T.t("Focus")) + 24 * dp + 6 * dp <= r - 67 * dp) chip(c, T.t("Focus"), x, by, 0xff5a3a00.toInt(), orange) { Isle.startPomodoro(); Isle.island.open("timer"); Isle.changed() }
+        button(c, r - 52 * dp, by, 30f, dim, Icon.Bell) { openApp(T.t("Alarms")) }
         button(c, r - 15 * dp, by, 30f, dim, Icon.Stopwatch) {
             Isle.stopwatch.start(Isle.now())
             Isle.syncTimers()
@@ -1614,11 +1614,11 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val r = box.right - pad
         // A back button to the card it came from, and the title.
         val hy = box.top + pad + 14 * dp
-        chip(c, "‹  Back", l, hy, dim) {
+        chip(c, T.t("‹  Back"), l, hy, dim) {
             Isle.island.back()
             Isle.changed()
         }
-        write(c, "Controls", r, hy + 5 * dp, 15f, white, bold = true, align = Paint.Align.RIGHT)
+        write(c, T.t("Controls"), r, hy + 5 * dp, 15f, white, bold = true, align = Paint.Align.RIGHT)
         val t = box.top + pad + 40 * dp
         val tile = 48 * dp
         val gap = ((r - l) - 4 * tile) / 3
@@ -1659,7 +1659,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 sliders.add(Slider(RectF(l, y - h / 2, r, y + h / 2), set))
             } else {
                 icon(c, ic, l + h / 2, y, 16f, white)
-                write(c, "Tap to allow", l + h + 8 * dp, y + 5 * dp, 13f, grey)
+                write(c, T.t("Tap to allow"), l + h + 8 * dp, y + 5 * dp, 13f, grey)
                 hits.add(Hit(RectF(l, y - h / 2, r, y + h / 2), ask))
             }
             y += h + 10 * dp

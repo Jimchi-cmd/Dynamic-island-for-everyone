@@ -5,7 +5,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ## [Unreleased]
 
 ### Added
-- **Ten languages**: English, Spanish, French, German, Portuguese, Russian, Chinese (Simplified), Japanese, Arabic and Hindi. Automatic follows the computer's language; `islet language <code>` picks one. The island's text, dates, menus and screen-reader labels are translated; for Chinese, Japanese, Arabic and Hindi the island uses the computer's own fonts for those letters. All translations live in one table, `locales/strings.tsv`, shared with the Settings app and the phone app.
+- **Ten languages**: English, Spanish, French, German, Portuguese, Russian, Chinese (Simplified), Japanese, Arabic and Hindi. Automatic follows the computer's language; `islet language <code>` picks one. The island's text, dates, menus and screen-reader labels are translated; for Chinese, Japanese, Arabic and Hindi the island uses the computer's own fonts for those letters. Settings → General → Language and the phone app's Look → Language pick it too; Settings and the phone app are translated as well. All translations live in one table, `locales/strings.tsv`, shared by the island, Settings and the phone app.
 
 ## [0.6.0] - 2026-11-23
 

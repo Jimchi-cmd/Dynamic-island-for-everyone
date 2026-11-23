@@ -98,7 +98,7 @@ class Toggle(context: Context, private val theme: Theme) : View(context) {
                     invalidate()
                 }
             }.start()
-            contentDescription = if (v) "On" else "Off"
+            contentDescription = if (v) T.t("On") else T.t("Off")
         }
 
     /** Show a state without animating or reporting a change. */
@@ -262,7 +262,7 @@ class Kit(private val context: Context, val theme: Theme) {
                 setPadding(dp(6), dp(7), dp(6), dp(7))
                 if (id == chosen) background = rounded(if (theme.dark) 0xff636366.toInt() else Color.WHITE, 7)
                 setOnClickListener { pick(id) }
-                contentDescription = if (id == chosen) "$name, chosen" else name
+                contentDescription = if (id == chosen) T.f("{}, chosen", name) else name
             }
             bar.addView(seg, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
@@ -278,7 +278,7 @@ class Kit(private val context: Context, val theme: Theme) {
         fun b(label: String, d: Int) = text(label, 18f, theme.text).apply {
             gravity = Gravity.CENTER
             background = rounded(theme.field, 15)
-            contentDescription = if (d < 0) "Less" else "More"
+            contentDescription = if (d < 0) T.t("Less") else T.t("More")
             setOnClickListener {
                 step(d)
                 shown.text = value()

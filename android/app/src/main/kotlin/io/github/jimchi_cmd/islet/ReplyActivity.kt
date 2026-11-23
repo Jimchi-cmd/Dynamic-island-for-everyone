@@ -40,8 +40,8 @@ class ReplyActivity : AppCompatActivity() {
         val dialog = AlertDialog.Builder(this)
             .setTitle(action.title)
             .setView(padded)
-            .setPositiveButton("Send") { _, _ -> send(action, inputs, box.text.toString()) }
-            .setNegativeButton("Cancel", null)
+            .setPositiveButton(T.t("Send")) { _, _ -> send(action, inputs, box.text.toString()) }
+            .setNegativeButton(T.t("Cancel"), null)
             .setOnDismissListener { finish() }
             .create()
         box.setOnEditorActionListener { _, id, _ ->

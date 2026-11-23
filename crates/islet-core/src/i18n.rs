@@ -220,10 +220,10 @@ mod tests {
             .collect();
         let mut missing = Vec::new();
         let mut files = Vec::new();
-        for dir in ["crates", "ui", "android/app/src/main/kotlin", "src-tauri/src"] {
+        for dir in ["crates", "ui", "android/app/src/main/kotlin", "android/island/src/main/kotlin", "src-tauri/src"] {
             walk(&root.join(dir), &mut files);
         }
-        let calls = ["t(\"", "tr(\"", "tf(\"", "T.t(\"", "T.f(\"", "N(\"", "$t('", "tr('", "tf('", "N('"];
+        let calls = ["t(\"", "tr(\"", "tf(\"", "T.t(\"", "T.f(\"", "Words.t(\"", "Words.f(\"", "N(\"", "$t('", "tr('", "tf('", "N('"];
         for f in files {
             let Ok(src) = std::fs::read_to_string(&f) else { continue };
             for call in calls {

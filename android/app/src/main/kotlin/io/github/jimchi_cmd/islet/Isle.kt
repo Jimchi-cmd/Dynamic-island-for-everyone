@@ -158,6 +158,8 @@ object Isle {
         started = true
         app = context.applicationContext
         prefs = Prefs(app)
+        T.load(app, prefs.language)
+        islet.island.Words.tr = { T.t(it) }
         island.showEmpty = prefs.showEmpty
         focus.focusMinutes = prefs.focusMinutes
         focus.breakMinutes = prefs.breakMinutes
@@ -301,7 +303,7 @@ object Isle {
                 // The bar is full and nothing runs: the ring goes, and it says so once.
                 val was = island.get(id)
                 island.remove(id)
-                if (was is Live.Progress && prefs.progress && !quiet) island.pop(Pop.Info("${kind.title}: done"), t)
+                if (was is Live.Progress && prefs.progress && !quiet) island.pop(Pop.Info(T.f("{}: done", kind.title)), t)
             }
             NoteKind.Popup -> {
                 island.remove(id)
@@ -330,7 +332,7 @@ object Isle {
         island.forget(sbn.key, now())
         // A finished download says so once.
         if (live is Live.Progress && live.percent >= 90 && prefs.progress) {
-            island.pop(Pop.Info("${live.title}: done"), now())
+            island.pop(Pop.Info(T.f("{}: done", live.title)), now())
         }
         extras.remove(sbn.key)
         changed()
@@ -521,7 +523,7 @@ object Isle {
     /** The lyrics button on the music card: switching it on is what lets Islet ask LRCLIB. */
     fun toggleLyrics() {
         prefs.lyrics = !prefs.lyrics
-        if (prefs.lyrics) island.pop(Pop.Info("Lyrics on · from LRCLIB"), now())
+        if (prefs.lyrics) island.pop(Pop.Info(T.t("Lyrics on · from LRCLIB")), now())
         media(controller)
     }
 
@@ -627,7 +629,7 @@ object Isle {
         val c = controller ?: return
         if (c.playbackState?.state == PlaybackState.STATE_PLAYING) {
             c.transportControls.pause()
-            island.pop(Pop.Info("Sleep timer: paused"), now())
+            island.pop(Pop.Info(T.t("Sleep timer: paused")), now())
         }
     }
 
@@ -692,7 +694,7 @@ object Isle {
         val done = focus.check(now()) ?: return
         // A finished focus round (not a break, not a plain timer) counts toward the streak.
         if (done == "Focus") prefs.streak = prefs.streak.record(Streak.dayOf(now()))
-        val label = if (focus.active) "$done done · ${focus.live()?.label} now" else "$done done"
+        val label = if (focus.active) T.f("{} done · {} now", T.t(done), T.t(focus.live()?.label ?: "")) else T.f("{} done", T.t(done))
         island.pop(Pop.TimerDone(label), now())
         alert()
         syncTimers()

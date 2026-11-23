@@ -50,20 +50,20 @@ import islet.protocol.Pairing
 class MainActivity : AppCompatActivity() {
     private enum class Page(val title: String, val icon: Icon, val tint: IntArray) {
         Home("Islet", Icon.Gear, Tints.grey),
-        Setup("Set up the island", Icon.Check, Tints.green),
-        Look("Look", Icon.Brightness, Tints.grey),
-        Shows("What it shows", Icon.Bell, Tints.red),
-        Timers("Timer & focus", Icon.Timer, Tints.purple),
-        Alarms("Alarms", Icon.Bell, Tints.orange),
-        Study("Classes & deadlines", Icon.Book, Tints.cyan),
-        Weather("Weather & clocks", Icon.Sun, Tints.cyan),
-        Todo("To-do & notes", Icon.Note, Tints.yellow),
-        Controls("Control centre", Icon.Flashlight, Tints.slate),
-        Music("Music", Icon.Music, Tints.pink),
-        Speed("Speed test", Icon.Download, Tints.green),
-        Battery("Battery", Icon.Battery, Tints.green),
-        Launch("Quick launcher", Icon.Search, Tints.blue),
-        Computer("Your computer", Icon.Wifi, Tints.blue),
+        Setup(T.t("Set up the island"), Icon.Check, Tints.green),
+        Look(T.t("Look"), Icon.Brightness, Tints.grey),
+        Shows(T.t("What it shows"), Icon.Bell, Tints.red),
+        Timers(T.t("Timer & focus"), Icon.Timer, Tints.purple),
+        Alarms(T.t("Alarms"), Icon.Bell, Tints.orange),
+        Study(T.t("Classes & deadlines"), Icon.Book, Tints.cyan),
+        Weather(T.t("Weather & clocks"), Icon.Sun, Tints.cyan),
+        Todo(T.t("To-do & notes"), Icon.Note, Tints.yellow),
+        Controls(T.t("Control centre"), Icon.Flashlight, Tints.slate),
+        Music(T.t("Music"), Icon.Music, Tints.pink),
+        Speed(T.t("Speed test"), Icon.Download, Tints.green),
+        Battery(T.t("Battery"), Icon.Battery, Tints.green),
+        Launch(T.t("Quick launcher"), Icon.Search, Tints.blue),
+        Computer(T.t("Your computer"), Icon.Wifi, Tints.blue),
     }
 
     private lateinit var prefs: Prefs
@@ -240,7 +240,7 @@ class MainActivity : AppCompatActivity() {
             addView(c, LinearLayout.LayoutParams(kit.dp(22), kit.dp(22)))
             addView(kit.text("Islet", 17f, kit.theme.accent))
             setPadding(kit.dp(2), kit.dp(8), kit.dp(12), kit.dp(8))
-            contentDescription = "Back"
+            contentDescription = T.t("Back")
             setOnClickListener { go(Page.Home) }
         }
         r.addView(backButton)
@@ -266,24 +266,24 @@ class MainActivity : AppCompatActivity() {
     private fun islandStatus(): Pair<String, Int> {
         val t = kit.theme
         return when {
-            !prefs.islandOn -> "The island is off" to t.muted
-            IslandHost.overAccessibility -> "Showing round the camera" to t.ok
-            IslandAccessibility.switchedOn(this) -> "Your phone stopped the accessibility switch: open Set up to fix it" to t.warn
-            IslandHost.hosted -> "Showing round the camera. For taps on the small pill, turn on the accessibility switch." to t.warn
-            !hasAccess() -> "Not set up yet" to t.warn
-            else -> "One more step" to t.warn
+            !prefs.islandOn -> T.t("The island is off") to t.muted
+            IslandHost.overAccessibility -> T.t("Showing round the camera") to t.ok
+            IslandAccessibility.switchedOn(this) -> T.t("Your phone stopped the accessibility switch: open Set up to fix it") to t.warn
+            IslandHost.hosted -> T.t("Showing round the camera. For taps on the small pill, turn on the accessibility switch.") to t.warn
+            !hasAccess() -> T.t("Not set up yet") to t.warn
+            else -> T.t("One more step") to t.warn
         }
     }
 
     private fun home(col: LinearLayout) {
         val c = kit.card(col, top = 14)
-        c.add(kit.toggleRow("Show the island", islandStatus().first, prefs.islandOn) {
+        c.add(kit.toggleRow(T.t("Show the island"), islandStatus().first, prefs.islandOn) {
             prefs.islandOn = it
             IslandHost.rebuild()
             build()
         })
         if (!setUp || !IslandHost.overAccessibility) {
-            c.add(kit.valueRow("Set up", if (setUp) "Round the camera" else "2 steps", tile = tile(Page.Setup)) { go(Page.Setup) })
+            c.add(kit.valueRow(T.t("Set up"), if (setUp) T.t("Round the camera") else "2 steps", tile = tile(Page.Setup)) { go(Page.Setup) })
         }
         val pages = kit.card(col)
         pageRow(pages, Page.Look)
@@ -292,25 +292,23 @@ class MainActivity : AppCompatActivity() {
         val things = kit.card(col)
         pageRow(things, Page.Timers, prefs.streak.label(Streak.dayOf(System.currentTimeMillis())) ?: "")
         pageRow(things, Page.Alarms, Isle.nextAlarm?.let { android.text.format.DateFormat.getTimeFormat(this).format(java.util.Date(it)) } ?: "")
-        pageRow(things, Page.Study, prefs.timetable.lessons.size.takeIf { it > 0 }?.let { "$it lessons" } ?: "")
+        pageRow(things, Page.Study, prefs.timetable.lessons.size.takeIf { it > 0 }?.let { T.f("{} lessons", it) } ?: "")
         pageRow(things, Page.Weather, prefs.place?.name?.substringBefore(',') ?: "")
         pageRow(things, Page.Todo, prefs.todos.count { !it.done }.takeIf { it > 0 }?.toString() ?: "")
-        pageRow(things, Page.Music, if (prefs.lyrics) "Lyrics on" else "")
+        pageRow(things, Page.Music, if (prefs.lyrics) T.t("Lyrics on") else "")
         pageRow(things, Page.Speed)
         pageRow(things, Page.Battery, if (Isle.battery >= 0) "${Isle.battery}%" else "")
-        pageRow(things, Page.Launch, prefs.links.size.takeIf { it > 0 }?.let { "$it links" } ?: "")
+        pageRow(things, Page.Launch, prefs.links.size.takeIf { it > 0 }?.let { T.f("{} links", it) } ?: "")
         val link = kit.card(col)
         val pairing = Store.pairing(this)
         pageRow(link, Page.Computer, when {
-            pairing == null -> "Not paired"
-            Hub.computer != null -> "Connected"
+            pairing == null -> T.t("Not paired")
+            Hub.computer != null -> T.t("Connected")
             else -> pairing.name
         })
         col.addView(
             kit.text(
-                "Tap the island to open it, long-press for the control centre, swipe up to close it, and swipe sideways to " +
-                    "switch between two things.\n\nIslet has no account, no ads and no tracking. It only goes online for what " +
-                    "you switch on: weather for your place, lyrics, and the speed test.\n\nVersion ${versionName()}",
+                T.t("Tap the island to open it, long-press for the control centre, swipe up to close it, and swipe sideways to switch between two things.") + "\n\n" + T.t("Islet has no account, no ads and no tracking. It only goes online for what you switch on: weather for your place, lyrics, and the speed test.") + "\n\n" + T.f("Version {}", versionName()),
                 13f,
                 kit.theme.muted,
             ).apply { setPadding(kit.dp(16), kit.dp(14), kit.dp(16), 0) },
@@ -329,64 +327,64 @@ class MainActivity : AppCompatActivity() {
         val access = hasAccess()
         val accessibility = IslandAccessibility.instance != null
         val overlay = Settings.canDrawOverlays(this)
-        val steps = kit.card(col, "Two steps", top = 14)
-        steps.add(kit.row("Notification access", "For notifications, music, calls, directions and downloads.", kit.status(access), if (access) null else kit.button("Allow", primary = true) { askForAccess() }))
+        val steps = kit.card(col, T.t("Two steps"), top = 14)
+        steps.add(kit.row(T.t("Notification access"), T.t("For notifications, music, calls, directions and downloads."), kit.status(access), if (access) null else kit.button(T.t("Allow"), primary = true) { askForAccess() }))
         // On in the settings but not running: the phone stopped it.
         val stopped = !accessibility && IslandAccessibility.switchedOn(this)
         steps.add(
             kit.row(
-                if (stopped) "Round the camera: stopped by your phone" else "Round the camera",
+                if (stopped) T.t("Round the camera: stopped by your phone") else T.t("Round the camera"),
                 if (stopped) {
-                    "It's switched on, but Android isn't running it, so taps on the top of the island, the lock and screenshot buttons and the smoothest motion don't work. Turn Islet island off and on again, and set Islet's battery use to Unrestricted so the phone doesn't stop it again."
+                    T.t("It's switched on, but Android isn't running it, so taps on the top of the island, the lock and screenshot buttons and the smoothest motion don't work. Turn Islet island off and on again, and set Islet's battery use to Unrestricted so the phone doesn't stop it again.")
                 } else {
-                    "Settings → Accessibility → Islet island. Puts the island over the status bar, round the front camera, where taps reach it, and makes the lock and screenshot buttons work. Islet reads nothing on your screen."
+                    T.t("Settings → Accessibility → Islet island. Puts the island over the status bar, round the front camera, where taps reach it, and makes the lock and screenshot buttons work. Islet reads nothing on your screen.")
                 },
                 kit.status(accessibility),
-                if (accessibility) null else kit.button("Open", primary = true) { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                if (accessibility) null else kit.button(T.t("Open"), primary = true) { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
             ),
         )
         if (stopped) {
-            steps.add(kit.row("Battery use", "Settings → Apps → Islet → Battery → Unrestricted.", right = kit.button("Open") {
+            steps.add(kit.row(T.t("Battery use"), T.t("Settings → Apps → Islet → Battery → Unrestricted."), right = kit.button(T.t("Open")) {
                 startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
             }))
         }
         if (!accessibility) {
             steps.add(
                 kit.row(
-                    "Or: display over other apps",
-                    "Shows the island without the accessibility switch. It still sits round the camera, but on many phones the status bar then takes taps on the small pill.",
+                    T.t("Or: display over other apps"),
+                    T.t("Shows the island without the accessibility switch. It still sits round the camera, but on many phones the status bar then takes taps on the small pill."),
                     kit.status(overlay),
-                    if (overlay) null else kit.button("Allow") { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) },
+                    if (overlay) null else kit.button(T.t("Allow")) { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) },
                 ),
             )
         }
         col.addView(
             kit.text(
-                "A switch greyed out? Open Settings → Apps → Islet, tap ⋮ at the top right, choose \"Allow restricted settings\", and try again. Android asks this of apps installed outside the Play Store.",
+                T.t("A switch greyed out? Open Settings → Apps → Islet, tap ⋮ at the top right, choose \"Allow restricted settings\", and try again. Android asks this of apps installed outside the Play Store."),
                 13f,
                 kit.theme.muted,
             ).apply { setPadding(kit.dp(16), kit.dp(6), kit.dp(16), 0) },
         )
-        val extra = kit.card(col, "Optional")
+        val extra = kit.card(col, T.t("Optional"))
         fun optional(p: String, title: String, note: String) {
             val ok = granted(p)
-            extra.add(kit.row(title, note, kit.status(ok), if (ok) null else kit.button("Allow") { askPermission.launch(p) }))
+            extra.add(kit.row(title, note, kit.status(ok), if (ok) null else kit.button(T.t("Allow")) { askPermission.launch(p) }))
         }
-        optional(Manifest.permission.READ_CALENDAR, "Calendar", "Count down to meetings, with a Join button.")
+        optional(Manifest.permission.READ_CALENDAR, T.t("Calendar"), T.t("Count down to meetings, with a Join button."))
         optional(
             if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE,
-            "Photos",
-            "Show each new screenshot.",
+            T.t("Photos"),
+            T.t("Show each new screenshot."),
         )
-        if (Build.VERSION.SDK_INT >= 31) optional(Manifest.permission.BLUETOOTH_CONNECT, "Nearby devices", "Name the Bluetooth device that connected.")
-        optional(Manifest.permission.ACCESS_FINE_LOCATION, "Location", "Android shares the Wi-Fi network's name only with apps allowed location. Islet uses it for nothing else.")
+        if (Build.VERSION.SDK_INT >= 31) optional(Manifest.permission.BLUETOOTH_CONNECT, T.t("Nearby devices"), T.t("Name the Bluetooth device that connected."))
+        optional(Manifest.permission.ACCESS_FINE_LOCATION, T.t("Location"), T.t("Android shares the Wi-Fi network's name only with apps allowed location. Islet uses it for nothing else."))
         val canWrite = Settings.System.canWrite(this)
         extra.add(
             kit.row(
-                "Modify system settings",
-                "The brightness slider in the control centre.",
+                T.t("Modify system settings"),
+                T.t("The brightness slider in the control centre."),
                 kit.status(canWrite),
-                if (canWrite) null else kit.button("Allow") { startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName"))) },
+                if (canWrite) null else kit.button(T.t("Allow")) { startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName"))) },
             ),
         )
     }
@@ -394,52 +392,62 @@ class MainActivity : AppCompatActivity() {
     // ---- Look ------------------------------------------------------------------------------------
 
     private fun look(col: LinearLayout) {
-        val style = kit.card(col, "Style", "Tinted is a dark shade of the accent colour. Glass is frosted with a light rim; Android doesn't let the island blur what's behind it.", top = 14)
-        style.add(kit.segmented(listOf("black" to "Black", "tinted" to "Tinted", "glass" to "Glass"), prefs.style) {
+        val lang = kit.card(col, T.t("Language"), T.t("Islet, the island and these settings, in your language."), top = 14)
+        val langs = T.LANGUAGES.map { (code, name) -> code to if (code == "auto") T.t(name) else name }
+        lang.add(kit.valueRow(T.t("Language"), langs.firstOrNull { it.first == prefs.language }?.second ?: T.t("Automatic")) {
+            choose(T.t("Language"), langs, prefs.language) {
+                prefs.language = it
+                T.load(this, it)
+                changed()
+                recreate()
+            }
+        })
+        val style = kit.card(col, T.t("Style"), T.t("Tinted is a dark shade of the accent colour. Glass is frosted with a light rim; Android doesn't let the island blur what's behind it."), top = 14)
+        style.add(kit.segmented(listOf("black" to T.t("Black"), "tinted" to T.t("Tinted"), "glass" to T.t("Glass")), prefs.style) {
             prefs.style = it
             changed()
             build()
         })
-        val accents = listOf("purple" to "Purple", "blue" to "Blue", "pink" to "Pink", "green" to "Green", "orange" to "Orange", "white" to "White")
-        style.add(kit.valueRow("Accent colour", accents.firstOrNull { it.first == prefs.accent }?.second ?: "Purple") {
-            choose("Accent colour", accents, prefs.accent) { prefs.accent = it; changed(); build() }
+        val accents = listOf("purple" to T.t("Purple"), "blue" to T.t("Blue"), "pink" to T.t("Pink"), "green" to T.t("Green"), "orange" to T.t("Orange"), "white" to T.t("White"))
+        style.add(kit.valueRow(T.t("Accent colour"), accents.firstOrNull { it.first == prefs.accent }?.second ?: T.t("Purple")) {
+            choose(T.t("Accent colour"), accents, prefs.accent) { prefs.accent = it; changed(); build() }
         })
-        val faces = listOf("time" to "14:05", "day" to "Wed 14:05", "seconds" to "14:05:09")
-        style.add(kit.valueRow("Clock on the empty island", faces.firstOrNull { it.first == prefs.clockFace }?.second ?: "14:05") {
-            choose("Clock on the empty island", faces, prefs.clockFace) { prefs.clockFace = it; changed(); build() }
+        val faces = listOf("time" to "14:05", "day" to T.t("Wed 14:05"), "seconds" to "14:05:09")
+        style.add(kit.valueRow(T.t("Clock on the empty island"), faces.firstOrNull { it.first == prefs.clockFace }?.second ?: "14:05") {
+            choose(T.t("Clock on the empty island"), faces, prefs.clockFace) { prefs.clockFace = it; changed(); build() }
         })
-        style.add(kit.toggleRow("Notch shape", "Square top corners joined to the top of the screen, so the island grows out of the edge.", prefs.notch) { prefs.notch = it; changed() })
-        val size = kit.card(col, "Size")
+        style.add(kit.toggleRow(T.t("Notch shape"), T.t("Square top corners joined to the top of the screen, so the island grows out of the edge."), prefs.notch) { prefs.notch = it; changed() })
+        val size = kit.card(col, T.t("Size"))
         size.add(kit.segmented(IslandSize.entries.map { it.name to it.name }, prefs.size.name) {
             prefs.size = IslandSize.valueOf(it)
             changed()
             build()
         })
-        val place = kit.card(col, "Position", "If the pill doesn't sit exactly round your camera, nudge it. Changes show on the island straight away.")
-        place.add(kit.stepperRow("Left and right", value = { "${prefs.offsetX} dp" }) { prefs.offsetX += it * 2; changed() })
-        place.add(kit.stepperRow("Up and down", value = { "${prefs.offsetY} dp" }) { prefs.offsetY += it; changed() })
-        place.add(kit.stepperRow("Wider", value = { "${prefs.extraWidth} dp" }) { prefs.extraWidth += it * 4; changed() })
-        val fonts = listOf("inter" to "Inter (as on the computer)", "default" to "The phone's own", "light" to "Light", "condensed" to "Condensed", "serif" to "Serif", "mono" to "Mono")
-        val look = kit.card(col, "Island")
-        look.add(kit.valueRow("Font", fonts.first { it.first == prefs.font || it.first == "inter" && fonts.none { f -> f.first == prefs.font } }.second) {
-            choose("Font", fonts, prefs.font) { prefs.font = it; changed(); build() }
+        val place = kit.card(col, T.t("Position"), T.t("If the pill doesn't sit exactly round your camera, nudge it. Changes show on the island straight away."))
+        place.add(kit.stepperRow(T.t("Left and right"), value = { "${prefs.offsetX} dp" }) { prefs.offsetX += it * 2; changed() })
+        place.add(kit.stepperRow(T.t("Up and down"), value = { "${prefs.offsetY} dp" }) { prefs.offsetY += it; changed() })
+        place.add(kit.stepperRow(T.t("Wider"), value = { "${prefs.extraWidth} dp" }) { prefs.extraWidth += it * 4; changed() })
+        val fonts = listOf("inter" to T.t("Inter (as on the computer)"), "default" to T.t("The phone's own"), "light" to T.t("Light"), "condensed" to T.t("Condensed"), "serif" to T.t("Serif"), "mono" to T.t("Mono"))
+        val look = kit.card(col, T.t("Island"))
+        look.add(kit.valueRow(T.t("Font"), fonts.first { it.first == prefs.font || it.first == "inter" && fonts.none { f -> f.first == prefs.font } }.second) {
+            choose(T.t("Font"), fonts, prefs.font) { prefs.font = it; changed(); build() }
         })
-        look.add(kit.valueRow("Temperature", if (prefs.fahrenheit) "°F" else "°C") {
-            choose("Temperature", listOf("c" to "Celsius (°C)", "f" to "Fahrenheit (°F)"), if (prefs.fahrenheit) "f" else "c") {
+        look.add(kit.valueRow(T.t("Temperature"), if (prefs.fahrenheit) "°F" else "°C") {
+            choose(T.t("Temperature"), listOf("c" to T.t("Celsius (°C)"), "f" to T.t("Fahrenheit (°F)")), if (prefs.fahrenheit) "f" else "c") {
                 prefs.fahrenheit = it == "f"
                 changed()
                 build()
             }
         })
-        look.add(kit.toggleRow("Show the empty island", "The black pill round the camera when nothing is going on.", prefs.showEmpty) { prefs.showEmpty = it; changed() })
-        look.add(kit.toggleRow("Time on the empty island", "The time left of the camera and the battery right of it, when nothing is playing.", prefs.idleClock) { prefs.idleClock = it; changed() })
-        look.add(kit.toggleRow("Network speed in the strip", "The strip from a tap on the empty island shows download speed instead of memory use.", prefs.stripNetwork) { prefs.stripNetwork = it; changed() })
-        look.add(kit.toggleRow("Glowing rim", "A soft light round the island's edge.", prefs.ring) { prefs.ring = it; changed() })
-        look.add(kit.toggleRow("Border in the album's colour while music plays", null, prefs.albumBorder) { prefs.albumBorder = it; changed() })
-        look.add(kit.toggleRow("Moving bars beside the song", null, prefs.bars) { prefs.bars = it; changed() })
-        look.add(kit.toggleRow("Airplane mode and Do Not Disturb icons", "A plane or moon on the empty island while they're on.", prefs.modeIcons) { prefs.modeIcons = it; changed() })
-        look.add(kit.toggleRow("Camera and microphone dots", "Green and orange dots while an app uses them.", prefs.privacyDots) { prefs.privacyDots = it; changed() })
-        look.add(kit.toggleRow("Hide in landscape", "For videos and games.", prefs.hideInLandscape) { prefs.hideInLandscape = it; changed() })
+        look.add(kit.toggleRow(T.t("Show the empty island"), T.t("The black pill round the camera when nothing is going on."), prefs.showEmpty) { prefs.showEmpty = it; changed() })
+        look.add(kit.toggleRow(T.t("Time on the empty island"), T.t("The time left of the camera and the battery right of it, when nothing is playing."), prefs.idleClock) { prefs.idleClock = it; changed() })
+        look.add(kit.toggleRow(T.t("Network speed in the strip"), T.t("The strip from a tap on the empty island shows download speed instead of memory use."), prefs.stripNetwork) { prefs.stripNetwork = it; changed() })
+        look.add(kit.toggleRow(T.t("Glowing rim"), T.t("A soft light round the island's edge."), prefs.ring) { prefs.ring = it; changed() })
+        look.add(kit.toggleRow(T.t("Border in the album's colour while music plays"), null, prefs.albumBorder) { prefs.albumBorder = it; changed() })
+        look.add(kit.toggleRow(T.t("Moving bars beside the song"), null, prefs.bars) { prefs.bars = it; changed() })
+        look.add(kit.toggleRow(T.t("Airplane mode and Do Not Disturb icons"), T.t("A plane or moon on the empty island while they're on."), prefs.modeIcons) { prefs.modeIcons = it; changed() })
+        look.add(kit.toggleRow(T.t("Camera and microphone dots"), T.t("Green and orange dots while an app uses them."), prefs.privacyDots) { prefs.privacyDots = it; changed() })
+        look.add(kit.toggleRow(T.t("Hide in landscape"), T.t("For videos and games."), prefs.hideInLandscape) { prefs.hideInLandscape = it; changed() })
     }
 
     private fun choose(title: String, options: List<Pair<String, String>>, current: String, pick: (String) -> Unit) {
@@ -455,29 +463,29 @@ class MainActivity : AppCompatActivity() {
     // ---- What it shows ---------------------------------------------------------------------------
 
     private fun shows(col: LinearLayout) {
-        val live = kit.card(col, "On the island", top = 14)
-        live.add(kit.toggleRow("Calls", "With the phone app's answer and hang-up buttons.", prefs.calls) { prefs.calls = it; changed() })
-        live.add(kit.toggleRow("Directions", "From Google Maps, Waze and other maps apps.", prefs.navigation) { prefs.navigation = it; changed() })
-        live.add(kit.toggleRow("Downloads and progress", null, prefs.progress) { prefs.progress = it; changed() })
+        val live = kit.card(col, T.t("On the island"), top = 14)
+        live.add(kit.toggleRow(T.t("Calls"), T.t("With the phone app's answer and hang-up buttons."), prefs.calls) { prefs.calls = it; changed() })
+        live.add(kit.toggleRow(T.t("Directions"), T.t("From Google Maps, Waze and other maps apps."), prefs.navigation) { prefs.navigation = it; changed() })
+        live.add(kit.toggleRow(T.t("Downloads and progress"), null, prefs.progress) { prefs.progress = it; changed() })
         live.add(kit.toggleRow(
-            "Activities from other apps",
-            "Automation apps such as Tasker can put a title and a progress ring on the island: send the broadcast io.github.jimchi_cmd.islet.ACTIVITY with command (start, update or end), id, title and progress (0–100). Up to three at once.",
+            T.t("Activities from other apps"),
+            T.t("Automation apps such as Tasker can put a title and a progress ring on the island: send the broadcast io.github.jimchi_cmd.islet.ACTIVITY with command (start, update or end), id, title and progress (0–100). Up to three at once."),
             prefs.automation,
         ) { prefs.automation = it })
-        live.add(kit.toggleRow("Meetings", "A countdown from 15 minutes before, with a Join button.", prefs.calendar) {
+        live.add(kit.toggleRow(T.t("Meetings"), T.t("A countdown from 15 minutes before, with a Join button."), prefs.calendar) {
             prefs.calendar = it
             Sensors.refresh()
         })
-        val pops = kit.card(col, "Pop-ups")
-        pops.add(kit.toggleRow("Grow downward", "Pop-ups drop down from the camera instead of spreading sideways, and notifications open under the status bar, so its clock and battery stay in view.", prefs.popsDown) { prefs.popsDown = it; changed() })
-        pops.add(kit.toggleRow("Notifications", "On the lock screen only the app's name shows.", prefs.popNotes) { prefs.popNotes = it })
-        pops.add(kit.toggleRow("Charging and low battery", null, prefs.popPower) { prefs.popPower = it })
-        pops.add(kit.toggleRow("Ring, vibrate and silent", "Also airplane mode and Do Not Disturb.", prefs.popModes) { prefs.popModes = it })
-        pops.add(kit.toggleRow("Wi-Fi and Bluetooth", "With the device's battery, when it says.", prefs.popConnections) { prefs.popConnections = it })
-        pops.add(kit.toggleRow("Volume and brightness", "Shown on the island as well as Android's own slider. Brightness only when set by hand.", prefs.popLevels) { prefs.popLevels = it })
-        pops.add(kit.toggleRow("Screenshots", null, prefs.popScreenshots) { prefs.popScreenshots = it })
+        val pops = kit.card(col, T.t("Pop-ups"))
+        pops.add(kit.toggleRow(T.t("Grow downward"), T.t("Pop-ups drop down from the camera instead of spreading sideways, and notifications open under the status bar, so its clock and battery stay in view."), prefs.popsDown) { prefs.popsDown = it; changed() })
+        pops.add(kit.toggleRow(T.t("Notifications"), T.t("On the lock screen only the app's name shows."), prefs.popNotes) { prefs.popNotes = it })
+        pops.add(kit.toggleRow(T.t("Charging and low battery"), null, prefs.popPower) { prefs.popPower = it })
+        pops.add(kit.toggleRow(T.t("Ring, vibrate and silent"), T.t("Also airplane mode and Do Not Disturb."), prefs.popModes) { prefs.popModes = it })
+        pops.add(kit.toggleRow(T.t("Wi-Fi and Bluetooth"), T.t("With the device's battery, when it says."), prefs.popConnections) { prefs.popConnections = it })
+        pops.add(kit.toggleRow(T.t("Volume and brightness"), T.t("Shown on the island as well as Android's own slider. Brightness only when set by hand."), prefs.popLevels) { prefs.popLevels = it })
+        pops.add(kit.toggleRow(T.t("Screenshots"), null, prefs.popScreenshots) { prefs.popScreenshots = it })
         val quiet = prefs.quietApps
-        pops.add(kit.valueRow("Apps that never pop up", if (quiet.isEmpty()) "None" else quiet.size.toString()) { pickQuietApps() })
+        pops.add(kit.valueRow(T.t("Apps that never pop up"), if (quiet.isEmpty()) T.t("None") else quiet.size.toString()) { pickQuietApps() })
     }
 
     private fun launchableApps(): List<Pair<String, String>> {
@@ -502,12 +510,12 @@ class MainActivity : AppCompatActivity() {
                     checked[i] = on
                 }
             }
-            .setPositiveButton("Done") { _, _ -> done(apps.filterIndexed { i, _ -> checked[i] }.map { it.first }) }
-            .setNegativeButton("Cancel", null)
+            .setPositiveButton(T.t("Done")) { _, _ -> done(apps.filterIndexed { i, _ -> checked[i] }.map { it.first }) }
+            .setNegativeButton(T.t("Cancel"), null)
             .show()
     }
 
-    private fun pickQuietApps() = pickApps("Never pop up", prefs.quietApps, 500) {
+    private fun pickQuietApps() = pickApps(T.t("Never pop up"), prefs.quietApps, 500) {
         prefs.quietApps = it.toSet()
         build()
     }
@@ -515,39 +523,39 @@ class MainActivity : AppCompatActivity() {
     // ---- Timers ----------------------------------------------------------------------------------
 
     private fun timers(col: LinearLayout) {
-        val start = kit.card(col, "Timer", "Also on the island: open it while it's empty for 1, 5, 10 and 25-minute timers.", top = 14)
+        val start = kit.card(col, T.t("Timer"), T.t("Also on the island: open it while it's empty for 1, 5, 10 and 25-minute timers."), top = 14)
         start.add(
             kit.buttons(
                 kit.button("1 min") { Isle.startFocus(1.0) },
                 kit.button("5 min") { Isle.startFocus(5.0) },
                 kit.button("10 min") { Isle.startFocus(10.0) },
                 kit.button("25 min") { Isle.startFocus(25.0) },
-                kit.button("Stop") { Isle.focus.stop(); Isle.syncTimers() },
+                kit.button(T.t("Stop")) { Isle.focus.stop(); Isle.syncTimers() },
             ),
         )
-        val focus = kit.card(col, "Focus rounds", "Focus, a short break, and a longer break after every fourth round. A buzz and a sound when each part ends.")
-        focus.add(kit.stepperRow("Focus", value = { "${prefs.focusMinutes} min" }) { prefs.focusMinutes += it * 5 })
-        focus.add(kit.stepperRow("Break", value = { "${prefs.breakMinutes} min" }) { prefs.breakMinutes += it })
-        focus.add(kit.buttons(kit.button("Start focus rounds", primary = true) { Isle.startPomodoro() }))
+        val focus = kit.card(col, T.t("Focus rounds"), T.t("Focus, a short break, and a longer break after every fourth round. A buzz and a sound when each part ends."))
+        focus.add(kit.stepperRow(T.t("Focus"), value = { T.f("{} min", prefs.focusMinutes) }) { prefs.focusMinutes += it * 5 })
+        focus.add(kit.stepperRow(T.t("Break"), value = { T.f("{} min", prefs.breakMinutes) }) { prefs.breakMinutes += it })
+        focus.add(kit.buttons(kit.button(T.t("Start focus rounds"), primary = true) { Isle.startPomodoro() }))
         val day = Streak.dayOf(System.currentTimeMillis())
         val s = prefs.streak
-        val streak = kit.card(col, "Focus streak", "Days in a row with at least one finished focus round. It shows on the island's timer.")
+        val streak = kit.card(col, T.t("Focus streak"), T.t("Days in a row with at least one finished focus round. It shows on the island's timer."))
         streak.add(kit.row(
             when (s.current(day)) {
-                0 -> if (s.rounds == 0) "No focus rounds yet" else "No streak right now"
+                0 -> if (s.rounds == 0) T.t("No focus rounds yet") else T.t("No streak right now")
                 1 -> "1 day so far"
-                else -> "${s.current(day)} days in a row"
+                else -> T.f("{} days in a row", s.current(day))
             },
-            "Today ${s.doneOn(day)} · best ${s.best} ${if (s.best == 1) "day" else "days"} · ${s.rounds} in all",
+            T.f("Today {} · best {} · {} in all", s.doneOn(day), if (s.best == 1) T.t("1 day") else T.f("{} days", s.best), s.rounds),
             right = kit.text(s.current(day).toString(), 26f, bold = true),
         ))
-        val sw = kit.card(col, "Stopwatch")
+        val sw = kit.card(col, T.t("Stopwatch"))
         sw.add(
             kit.buttons(
-                kit.button("Start", primary = true) { Isle.stopwatch.start(Isle.now()); Isle.syncTimers() },
-                kit.button("Lap") { Isle.stopwatch.lap(Isle.now()); Isle.syncTimers() },
-                kit.button("Pause") { Isle.stopwatch.pause(Isle.now()); Isle.syncTimers() },
-                kit.button("Reset") { Isle.stopwatch.reset(); Isle.syncTimers() },
+                kit.button(T.t("Start"), primary = true) { Isle.stopwatch.start(Isle.now()); Isle.syncTimers() },
+                kit.button(T.t("Lap")) { Isle.stopwatch.lap(Isle.now()); Isle.syncTimers() },
+                kit.button(T.t("Pause")) { Isle.stopwatch.pause(Isle.now()); Isle.syncTimers() },
+                kit.button(T.t("Reset")) { Isle.stopwatch.reset(); Isle.syncTimers() },
             ),
         )
     }
@@ -557,29 +565,29 @@ class MainActivity : AppCompatActivity() {
     private fun weather(col: LinearLayout) {
         val place = prefs.place
         val w = Isle.weather
-        val c = kit.card(col, "Weather", "From Open-Meteo, free and without an account. Islet sends it only your place's coordinates, at most every half hour.", top = 14)
-        c.add(kit.valueRow("Place", place?.name?.substringBefore(',') ?: "Choose…") { searchPlace() })
-        if (place != null && w != null) c.add(kit.row("Now", "${w.words}${w.highC?.let { " · high ${Format.temperature(it, prefs.fahrenheit)}" } ?: ""}", right = kit.text(Format.temperature(w.celsius, prefs.fahrenheit), 22f, bold = true)))
-        if (place != null) c.add(kit.buttons(kit.button("Remove") { prefs.place = null; Isle.weather = null; build() }))
-        val clocks = kit.card(col, "World clocks", "Up to three, on the island's clock card.")
+        val c = kit.card(col, T.t("Weather"), T.t("From Open-Meteo, free and without an account. Islet sends it only your place's coordinates, at most every half hour."), top = 14)
+        c.add(kit.valueRow(T.t("Place"), place?.name?.substringBefore(',') ?: T.t("Choose…")) { searchPlace() })
+        if (place != null && w != null) c.add(kit.row(T.t("Now"), "${w.words}${w.highC?.let { " · " + T.f("high {}", Format.temperature(it, prefs.fahrenheit)) } ?: ""}", right = kit.text(Format.temperature(w.celsius, prefs.fahrenheit), 22f, bold = true)))
+        if (place != null) c.add(kit.buttons(kit.button(T.t("Remove")) { prefs.place = null; Isle.weather = null; build() }))
+        val clocks = kit.card(col, T.t("World clocks"), T.t("Up to three, on the island's clock card."))
         for (zone in prefs.worldClocks) {
-            clocks.add(kit.row(zone.substringAfterLast('/').replace('_', ' '), zone.substringBefore('/'), right = kit.button("Remove") {
+            clocks.add(kit.row(zone.substringAfterLast('/').replace('_', ' '), zone.substringBefore('/'), right = kit.button(T.t("Remove")) {
                 prefs.worldClocks = prefs.worldClocks - zone
                 build()
             }))
         }
-        if (prefs.worldClocks.size < 3) clocks.add(kit.valueRow("Add a city", "") { addClock() })
+        if (prefs.worldClocks.size < 3) clocks.add(kit.valueRow(T.t("Add a city"), "") { addClock() })
     }
 
     private fun searchPlace() {
         val input = EditText(this).apply {
-            hint = "City or town"
+            hint = T.t("City or town")
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
         }
         AlertDialog.Builder(this)
-            .setTitle("Weather for…")
+            .setTitle(T.t("Weather for…"))
             .setView(padded(input))
-            .setPositiveButton("Search") { _, _ ->
+            .setPositiveButton(T.t("Search")) { _, _ ->
                 val q = input.text.toString()
                 if (q.isBlank()) return@setPositiveButton
                 Isle.background {
@@ -587,7 +595,7 @@ class MainActivity : AppCompatActivity() {
                     runOnUiThread { choosePlace(found) }
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(T.t("Cancel"), null)
             .show()
     }
 
@@ -598,11 +606,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun choosePlace(found: List<Place>) {
         if (found.isEmpty()) {
-            message("No place by that name (or no connection).")
+            message(T.t("No place by that name (or no connection)."))
             return
         }
         AlertDialog.Builder(this)
-            .setTitle("Choose")
+            .setTitle(T.t("Choose"))
             .setItems(found.map { it.label }.toTypedArray()) { _, i ->
                 prefs.place = found[i]
                 Sensors.readWeather(force = true)
@@ -617,7 +625,7 @@ class MainActivity : AppCompatActivity() {
             .sortedBy { it.substringAfterLast('/') }
         val names = zones.map { "${it.substringAfterLast('/').replace('_', ' ')} (${it.substringBefore('/')})" }
         AlertDialog.Builder(this)
-            .setTitle("Add a city")
+            .setTitle(T.t("Add a city"))
             .setItems(names.toTypedArray()) { _, i ->
                 prefs.worldClocks = (prefs.worldClocks + zones[i]).distinct()
                 build()
@@ -629,33 +637,33 @@ class MainActivity : AppCompatActivity() {
 
     private fun todo(col: LinearLayout) {
         val todos = prefs.todos
-        val list = kit.card(col, "To-do", "The first unfinished one shows on the island's clock card.", top = 14)
+        val list = kit.card(col, T.t("To-do"), T.t("The first unfinished one shows on the island's clock card."), top = 14)
         for ((i, t) in todos.withIndex()) {
             val tick = kit.status(t.done).apply {
                 setOnClickListener {
                     prefs.todos = prefs.todos.toMutableList().also { it[i] = Todo(t.text, !t.done) }
                     build()
                 }
-                contentDescription = if (t.done) "Done" else "Not done"
+                contentDescription = if (t.done) T.t("Done") else T.t("Not done")
             }
-            list.add(kit.row(t.text, null, tick, kit.button("Delete") {
+            list.add(kit.row(t.text, null, tick, kit.button(T.t("Delete")) {
                 prefs.todos = prefs.todos.filterIndexed { j, _ -> j != i }
                 build()
             }))
         }
         list.add(
             kit.buttons(
-                kit.button("Add a to-do", primary = true) { ask("New to-do") { s -> prefs.todos = prefs.todos + Todo(s, false); build() } },
+                kit.button(T.t("Add a to-do"), primary = true) { ask(T.t("New to-do")) { s -> prefs.todos = prefs.todos + Todo(s, false); build() } },
                 *(if (todos.any { it.done }) arrayOf(kit.button("Clear done") { prefs.todos = prefs.todos.filter { !it.done }; build() }) else emptyArray()),
             ),
         )
         val notes = prefs.notes
-        val n = kit.card(col, "Quick notes", "One line at a time, with the date and time.")
+        val n = kit.card(col, T.t("Quick notes"), T.t("One line at a time, with the date and time."))
         for (line in notes.takeLast(8).reversed()) n.add(kit.para(line, kit.theme.text, 15f))
         n.add(
             kit.buttons(
-                kit.button("Add a note", primary = true) {
-                    ask("Quick note") { s ->
+                kit.button(T.t("Add a note"), primary = true) {
+                    ask(T.t("Quick note")) { s ->
                         val stamp = android.text.format.DateFormat.format("d MMM HH:mm", System.currentTimeMillis())
                         prefs.notes = prefs.notes + "$stamp  $s"
                         build()
@@ -664,10 +672,10 @@ class MainActivity : AppCompatActivity() {
                 *(
                     if (notes.isNotEmpty()) {
                         arrayOf(
-                            kit.button("Share all") {
-                                startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, notes.joinToString("\n")), "Share notes"))
+                            kit.button(T.t("Share all")) {
+                                startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, notes.joinToString("\n")), T.t("Share notes")))
                             },
-                            kit.button("Delete all") { prefs.notes = emptyList(); build() },
+                            kit.button(T.t("Delete all")) { prefs.notes = emptyList(); build() },
                         )
                     } else {
                         emptyArray()
@@ -682,8 +690,8 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle(title)
             .setView(padded(input))
-            .setPositiveButton("Add") { _, _ -> input.text.toString().trim().takeIf { it.isNotEmpty() }?.let(done) }
-            .setNegativeButton("Cancel", null)
+            .setPositiveButton(T.t("Add")) { _, _ -> input.text.toString().trim().takeIf { it.isNotEmpty() }?.let(done) }
+            .setNegativeButton(T.t("Cancel"), null)
             .show()
     }
 
@@ -692,15 +700,15 @@ class MainActivity : AppCompatActivity() {
     private fun controls(col: LinearLayout) {
         col.addView(
             kit.text(
-                "Long-press the island: flashlight, Do Not Disturb, ring or vibrate, volume, brightness, screenshot, lock and your shortcut apps. Android doesn't let apps switch Wi-Fi, Bluetooth or airplane mode, so those buttons open the phone's own panel.",
+                T.t("Long-press the island: flashlight, Do Not Disturb, ring or vibrate, volume, brightness, screenshot, lock and your shortcut apps. Android doesn't let apps switch Wi-Fi, Bluetooth or airplane mode, so those buttons open the phone's own panel."),
                 14f,
                 kit.theme.muted,
             ).apply { setPadding(kit.dp(16), kit.dp(14), kit.dp(16), 0) },
         )
-        val c = kit.card(col, "Shortcuts")
+        val c = kit.card(col, T.t("Shortcuts"))
         val names = prefs.shortcuts.map { Isle.appName(it) }
-        c.add(kit.valueRow("Apps (up to 4)", if (names.isEmpty()) "None" else names.joinToString(", ")) {
-            pickApps("Shortcuts", prefs.shortcuts.toSet(), 4) {
+        c.add(kit.valueRow(T.t("Apps (up to 4)"), if (names.isEmpty()) T.t("None") else names.joinToString(", ")) {
+            pickApps(T.t("Shortcuts"), prefs.shortcuts.toSet(), 4) {
                 prefs.shortcuts = it
                 build()
             }
@@ -711,21 +719,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun music(col: LinearLayout) {
         col.addView(
-            kit.text("Any app that plays music shows on the island, with its cover, controls and a progress bar you can drag.", 14f, kit.theme.muted)
+            kit.text(T.t("Any app that plays music shows on the island, with its cover, controls and a progress bar you can drag."), 14f, kit.theme.muted)
                 .apply { setPadding(kit.dp(16), kit.dp(14), kit.dp(16), 0) },
         )
-        val sleep = kit.card(col, "Sleep timer", "Pauses the music when the time is up. Also on the island: the moon button on the music card.", top = 14)
+        val sleep = kit.card(col, T.t("Sleep timer"), T.t("Pauses the music when the time is up. Also on the island: the moon button on the music card."), top = 14)
         val left = Isle.sleepMinutesLeft()
-        sleep.add(kit.row(if (left == null) "Off" else "Pauses in $left min", null))
+        sleep.add(kit.row(if (left == null) T.t("Off") else T.f("Pauses in {} min", left), null))
         sleep.add(kit.buttons(
             kit.button("15 min") { setSleep(15) },
             kit.button("30 min") { setSleep(30) },
             kit.button("45 min") { setSleep(45) },
             kit.button("60 min") { setSleep(60) },
-            kit.button("Off") { setSleep(null) },
+            kit.button(T.t("Off")) { setSleep(null) },
         ))
-        val bars = kit.card(col, "Bars", "Android lets apps read the loudness of what's playing only with the microphone permission. Islet doesn't use the microphone and records nothing: it reads four levels while music plays.")
-        bars.add(kit.toggleRow("Bars follow the sound", if (LiveBars.failed) "This phone doesn't allow it; the bars move on their own." else null, prefs.liveBars && LiveBars.allowed()) { on ->
+        val bars = kit.card(col, T.t("Bars"), T.t("Android lets apps read the loudness of what's playing only with the microphone permission. Islet doesn't use the microphone and records nothing: it reads four levels while music plays."))
+        bars.add(kit.toggleRow(T.t("Bars follow the sound"), if (LiveBars.failed) T.t("This phone doesn't allow it; the bars move on their own.") else null, prefs.liveBars && LiveBars.allowed()) { on ->
             if (on && !LiveBars.allowed()) {
                 askPermission.launch(Manifest.permission.RECORD_AUDIO)
                 prefs.liveBars = true
@@ -734,13 +742,13 @@ class MainActivity : AppCompatActivity() {
                 if (on) LiveBars.retry() else LiveBars.stop()
             }
         })
-        val c = kit.card(col, "Lyrics", "Lyrics come from LRCLIB, a free service: Islet sends it the song's title, artist and length.")
-        c.add(kit.toggleRow("Synced lyrics on the island", null, prefs.lyrics) {
+        val c = kit.card(col, T.t("Lyrics"), T.t("Lyrics come from LRCLIB, a free service: Islet sends it the song's title, artist and length."))
+        c.add(kit.toggleRow(T.t("Synced lyrics on the island"), null, prefs.lyrics) {
             prefs.lyrics = it
             Isle.media(Isle.controller)
             build()
         })
-        if (prefs.lyrics) c.add(kit.stepperRow("Timing", "If the words run early or late.", value = { "${prefs.lyricsOffset} ms" }) { prefs.lyricsOffset += it * 250L })
+        if (prefs.lyrics) c.add(kit.stepperRow(T.t("Timing"), T.t("If the words run early or late."), value = { "${prefs.lyricsOffset} ms" }) { prefs.lyricsOffset += it * 250L })
     }
 
     private fun setSleep(minutes: Int?) {
@@ -751,9 +759,9 @@ class MainActivity : AppCompatActivity() {
     // ---- Speed test ------------------------------------------------------------------------------------
 
     private fun speed(col: LinearLayout) {
-        val now = kit.card(col, "Right now", "Everything the phone sends and receives, every second. Nothing goes online for this.", top = 14)
+        val now = kit.card(col, T.t("Right now"), T.t("Everything the phone sends and receives, every second. Nothing goes online for this."), top = 14)
         val rate = kit.text("–", 17f, bold = true)
-        now.add(kit.row("Network use", null, right = rate))
+        now.add(kit.row(T.t("Network use"), null, right = rate))
         val tick = object : Runnable {
             override fun run() {
                 if (page != Page.Speed || !rate.isAttachedToWindow) return
@@ -763,18 +771,18 @@ class MainActivity : AppCompatActivity() {
             }
         }
         rate.post(tick)
-        val c = kit.card(col, "Speed test", "Uses about 35 MB with Cloudflare's public speed-test servers, only when you press the button.")
+        val c = kit.card(col, T.t("Speed test"), T.t("Uses about 35 MB with Cloudflare's public speed-test servers, only when you press the button."))
         if (speedResult.isNotEmpty()) c.add(kit.para(speedResult, kit.theme.text, 17f))
         c.add(
             kit.buttons(
-                kit.button("Test speed", primary = true) {
-                    speedResult = "Testing…"
+                kit.button(T.t("Test speed"), primary = true) {
+                    speedResult = T.t("Testing…")
                     build()
                     Isle.background {
                         val s = Net.speedTest()
                         runOnUiThread {
-                            speedResult = s?.let { "${Format.mbps(it.downMbps)} Mbps down · ${Format.mbps(it.upMbps)} Mbps up · ${it.latencyMs.toInt()} ms" }
-                                ?: "The test didn't finish. Check the connection."
+                            speedResult = s?.let { T.f("{} Mbps down · {} Mbps up · {} ms", Format.mbps(it.downMbps), Format.mbps(it.upMbps), it.latencyMs.toInt()) }
+                                ?: T.t("The test didn't finish. Check the connection.")
                             build()
                         }
                     }
@@ -788,13 +796,13 @@ class MainActivity : AppCompatActivity() {
     private fun alarms(col: LinearLayout) {
         val tf = android.text.format.DateFormat.getTimeFormat(this)
         val next = Isle.nextAlarm
-        val c = kit.card(col, null, "Alarms go into your phone's Clock app, so they ring even if Islet is closed. The next one shows on the island's calendar card.", top = 14)
-        c.add(kit.row("Next alarm", next?.let { android.text.format.DateFormat.format("EEEE", it).toString() + " " + tf.format(java.util.Date(it)) } ?: "None set", right = kit.text(next?.let { tf.format(java.util.Date(it)) } ?: "–", 26f, bold = true)))
+        val c = kit.card(col, null, T.t("Alarms go into your phone's Clock app, so they ring even if Islet is closed. The next one shows on the island's calendar card."), top = 14)
+        c.add(kit.row(T.t("Next alarm"), next?.let { T.date("EEEE", it) + " " + tf.format(java.util.Date(it)) } ?: T.t("None set"), right = kit.text(next?.let { tf.format(java.util.Date(it)) } ?: "–", 26f, bold = true)))
         c.add(kit.buttons(
-            kit.button("Set an alarm", primary = true) { pickAlarm() },
-            kit.button("In 20 min") { alarmIn(20) },
-            kit.button("In 1 hour") { alarmIn(60) },
-            kit.button("Open Clock") { Isle.start(Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS)) },
+            kit.button(T.t("Set an alarm"), primary = true) { pickAlarm() },
+            kit.button(T.t("In 20 min")) { alarmIn(20) },
+            kit.button(T.t("In 1 hour")) { alarmIn(60) },
+            kit.button(T.t("Open Clock")) { Isle.start(Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS)) },
         ))
     }
 
@@ -802,14 +810,14 @@ class MainActivity : AppCompatActivity() {
         val now = java.util.Calendar.getInstance()
         android.app.TimePickerDialog(this, { _, h, m ->
             val label = EditText(this).apply {
-                hint = "Label (optional)"
+                hint = T.t("Label (optional)")
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             }
             AlertDialog.Builder(this)
-                .setTitle("Alarm at " + Timetable.hm(h * 60 + m, android.text.format.DateFormat.is24HourFormat(this)))
+                .setTitle(T.f("Alarm at {}", Timetable.hm(h * 60 + m, android.text.format.DateFormat.is24HourFormat(this))))
                 .setView(padded(label))
-                .setPositiveButton("Set") { _, _ -> setAlarm(h, m, label.text.toString().trim()) }
-                .setNegativeButton("Cancel", null)
+                .setPositiveButton(T.t("Set")) { _, _ -> setAlarm(h, m, label.text.toString().trim()) }
+                .setNegativeButton(T.t("Cancel"), null)
                 .show()
         }, now.get(java.util.Calendar.HOUR_OF_DAY), now.get(java.util.Calendar.MINUTE), android.text.format.DateFormat.is24HourFormat(this)).show()
     }
@@ -826,10 +834,10 @@ class MainActivity : AppCompatActivity() {
             .putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true)
         if (label.isNotEmpty()) i.putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, label)
         if (!Isle.start(i)) {
-            message("This phone has no Clock app that takes alarms from other apps.")
+            message(T.t("This phone has no Clock app that takes alarms from other apps."))
             return
         }
-        Isle.pop(islet.island.Pop.Info("Alarm set for " + Timetable.hm(hour * 60 + minute, android.text.format.DateFormat.is24HourFormat(this))))
+        Isle.pop(islet.island.Pop.Info(T.f("Alarm set for {}", Timetable.hm(hour * 60 + minute, android.text.format.DateFormat.is24HourFormat(this)))))
         window.decorView.postDelayed({ Sensors.refresh(); build() }, 800)
     }
 
@@ -840,23 +848,23 @@ class MainActivity : AppCompatActivity() {
         val now = System.currentTimeMillis()
         val h24 = android.text.format.DateFormat.is24HourFormat(this)
         val today = t.line(Timetable.weekday(now), Timetable.minuteOfDay(now), h24)
-        val week = kit.card(col, "Timetable", "Your week's lessons. The island counts down from 15 minutes before each one, then shows the time left in it.", top = 14)
-        if (today != null) week.add(kit.row(today, "Today", tile = IconTile(this, Icon.Book, Tints.cyan)))
+        val week = kit.card(col, T.t("Timetable"), T.t("Your week's lessons. The island counts down from 15 minutes before each one, then shows the time left in it."), top = 14)
+        if (today != null) week.add(kit.row(today, T.t("Today"), tile = IconTile(this, Icon.Book, Tints.cyan)))
         for ((i, l) in t.lessons.withIndex()) {
             week.add(kit.row(
-                "${Timetable.DAYS[l.day].take(3)} ${Timetable.hm(l.start, h24)}–${Timetable.hm(l.end, h24)}  ${l.name}",
+                "${T.t(Timetable.DAYS[l.day].take(3))} ${Timetable.hm(l.start, h24)}–${Timetable.hm(l.end, h24)}  ${l.name}",
                 l.room.ifEmpty { null },
-                right = kit.button("Remove") { prefs.timetable = prefs.timetable.remove(i); changed(); build() },
+                right = kit.button(T.t("Remove")) { prefs.timetable = prefs.timetable.remove(i); changed(); build() },
             ))
         }
-        week.add(kit.buttons(kit.button("Add a lesson", primary = true) { addLesson() }))
-        val opts = kit.card(col, "On the island")
-        opts.add(kit.toggleRow("Count down to lessons", null, prefs.lessons) { prefs.lessons = it; changed() })
-        opts.add(kit.toggleRow("Do Not Disturb during lessons", "Turns it on when a lesson starts and off when it ends (if Islet turned it on). Needs notification access.", prefs.lessonQuiet) { prefs.lessonQuiet = it; changed() })
-        val due = kit.card(col, "Deadlines", "From your calendar: events called exam, test, essay, assignment, homework, project, due and the like, in the next two weeks. They show on the island's calendar card.")
-        due.add(kit.toggleRow("Count down to deadlines", null, prefs.deadlines) { prefs.deadlines = it; Sensors.refresh(); build() })
+        week.add(kit.buttons(kit.button(T.t("Add a lesson"), primary = true) { addLesson() }))
+        val opts = kit.card(col, T.t("On the island"))
+        opts.add(kit.toggleRow(T.t("Count down to lessons"), null, prefs.lessons) { prefs.lessons = it; changed() })
+        opts.add(kit.toggleRow(T.t("Do Not Disturb during lessons"), T.t("Turns it on when a lesson starts and off when it ends (if Islet turned it on). Needs notification access."), prefs.lessonQuiet) { prefs.lessonQuiet = it; changed() })
+        val due = kit.card(col, T.t("Deadlines"), T.t("From your calendar: events called exam, test, essay, assignment, homework, project, due and the like, in the next two weeks. They show on the island's calendar card."))
+        due.add(kit.toggleRow(T.t("Count down to deadlines"), null, prefs.deadlines) { prefs.deadlines = it; Sensors.refresh(); build() })
         if (prefs.deadlines && !granted(Manifest.permission.READ_CALENDAR)) {
-            due.add(kit.row("Calendar access", "Needed to find deadlines.", right = kit.button("Allow") { askPermission.launch(Manifest.permission.READ_CALENDAR) }))
+            due.add(kit.row(T.t("Calendar access"), T.t("Needed to find deadlines."), right = kit.button(T.t("Allow")) { askPermission.launch(Manifest.permission.READ_CALENDAR) }))
         }
         if (prefs.deadlines) {
             for (e in Isle.deadlines.filter { it.end > now }.take(8)) {
@@ -867,26 +875,26 @@ class MainActivity : AppCompatActivity() {
 
     private fun addLesson() {
         AlertDialog.Builder(this)
-            .setTitle("Which day?")
+            .setTitle(T.t("Which day?"))
             .setItems(Timetable.DAYS.toTypedArray()) { _, day ->
                 val h24 = android.text.format.DateFormat.is24HourFormat(this)
                 android.app.TimePickerDialog(this, { _, sh, sm ->
                     android.app.TimePickerDialog(this, { _, eh, em ->
-                        val name = EditText(this).apply { hint = "Lesson"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS }
-                        val room = EditText(this).apply { hint = "Room (optional)"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS }
+                        val name = EditText(this).apply { hint = T.t("Lesson"); inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS }
+                        val room = EditText(this).apply { hint = T.t("Room (optional)"); inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS }
                         val form = kit.column().apply { addView(name); addView(room) }
                         AlertDialog.Builder(this)
-                            .setTitle("${Timetable.DAYS[day]} ${Timetable.hm(sh * 60 + sm, h24)}–${Timetable.hm(eh * 60 + em, h24)}")
+                            .setTitle("${T.t(Timetable.DAYS[day])} ${Timetable.hm(sh * 60 + sm, h24)}–${Timetable.hm(eh * 60 + em, h24)}")
                             .setView(padded(form))
-                            .setPositiveButton("Add") { _, _ ->
+                            .setPositiveButton(T.t("Add")) { _, _ ->
                                 prefs.timetable.add(day, sh * 60 + sm, eh * 60 + em, name.text.toString(), room.text.toString())
                                     .onSuccess { prefs.timetable = it; changed(); build() }
-                                    .onFailure { message(it.message ?: "That lesson can't be added.") }
+                                    .onFailure { message(it.message ?: T.t("That lesson can't be added.")) }
                             }
-                            .setNegativeButton("Cancel", null)
+                            .setNegativeButton(T.t("Cancel"), null)
                             .show()
-                    }, (sh + 1) % 24, sm, h24).apply { setTitle("Ends at") }.show()
-                }, 9, 0, h24).apply { setTitle("Starts at") }.show()
+                    }, (sh + 1) % 24, sm, h24).apply { setTitle(T.t("Ends at")) }.show()
+                }, 9, 0, h24).apply { setTitle(T.t("Starts at")) }.show()
             }
             .show()
     }
@@ -897,56 +905,56 @@ class MainActivity : AppCompatActivity() {
         val b = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val bm = getSystemService(android.os.BatteryManager::class.java)
         val level = Isle.battery
-        val c = kit.card(col, null, "Android doesn't tell apps how much the battery has worn, but it shares its health, temperature and, on Android 14 and later, how many times it has been charged.", top = 14)
-        c.add(kit.row("Charge", when (b?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0)) {
-            android.os.BatteryManager.BATTERY_PLUGGED_AC -> "Charging from the wall"
-            android.os.BatteryManager.BATTERY_PLUGGED_USB -> "Charging over USB"
-            android.os.BatteryManager.BATTERY_PLUGGED_WIRELESS -> "Charging wirelessly"
-            else -> "On battery"
+        val c = kit.card(col, null, T.t("Android doesn't tell apps how much the battery has worn, but it shares its health, temperature and, on Android 14 and later, how many times it has been charged."), top = 14)
+        c.add(kit.row(T.t("Charge"), when (b?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0)) {
+            android.os.BatteryManager.BATTERY_PLUGGED_AC -> T.t("Charging from the wall")
+            android.os.BatteryManager.BATTERY_PLUGGED_USB -> T.t("Charging over USB")
+            android.os.BatteryManager.BATTERY_PLUGGED_WIRELESS -> T.t("Charging wirelessly")
+            else -> T.t("On battery")
         }, right = kit.text(if (level >= 0) "$level%" else "–", 26f, bold = true)))
         val health = when (b?.getIntExtra(android.os.BatteryManager.EXTRA_HEALTH, 0)) {
-            android.os.BatteryManager.BATTERY_HEALTH_GOOD -> "Good"
-            android.os.BatteryManager.BATTERY_HEALTH_OVERHEAT -> "Too hot"
-            android.os.BatteryManager.BATTERY_HEALTH_COLD -> "Too cold"
-            android.os.BatteryManager.BATTERY_HEALTH_DEAD -> "Worn out: time for a new battery"
-            android.os.BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> "Over voltage"
-            android.os.BatteryManager.BATTERY_HEALTH_UNSPECIFIED_FAILURE -> "Failing"
-            else -> "Not reported"
+            android.os.BatteryManager.BATTERY_HEALTH_GOOD -> T.t("Good")
+            android.os.BatteryManager.BATTERY_HEALTH_OVERHEAT -> T.t("Too hot")
+            android.os.BatteryManager.BATTERY_HEALTH_COLD -> T.t("Too cold")
+            android.os.BatteryManager.BATTERY_HEALTH_DEAD -> T.t("Worn out: time for a new battery")
+            android.os.BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> T.t("Over voltage")
+            android.os.BatteryManager.BATTERY_HEALTH_UNSPECIFIED_FAILURE -> T.t("Failing")
+            else -> T.t("Not reported")
         }
-        c.add(kit.row("Health", null, right = kit.text(health, 16f, if (health == "Good") kit.theme.ok else kit.theme.text, bold = true)))
+        c.add(kit.row(T.t("Health"), null, right = kit.text(health, 16f, if (health == T.t("Good")) kit.theme.ok else kit.theme.text, bold = true)))
         b?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)?.takeIf { it != Int.MIN_VALUE }?.let {
-            c.add(kit.row("Temperature", null, right = kit.text(Format.temperature(it / 10.0, prefs.fahrenheit), 16f, bold = true)))
+            c.add(kit.row(T.t("Temperature"), null, right = kit.text(Format.temperature(it / 10.0, prefs.fahrenheit), 16f, bold = true)))
         }
         b?.getIntExtra(android.os.BatteryManager.EXTRA_VOLTAGE, 0)?.takeIf { it > 0 }?.let {
-            c.add(kit.row("Voltage", null, right = kit.text("%.2f V".format(java.util.Locale.ROOT, it / 1000.0), 16f, bold = true)))
+            c.add(kit.row(T.t("Voltage"), null, right = kit.text("%.2f V".format(java.util.Locale.ROOT, it / 1000.0), 16f, bold = true)))
         }
         if (Build.VERSION.SDK_INT >= 34) {
             b?.getIntExtra(android.os.BatteryManager.EXTRA_CYCLE_COUNT, -1)?.takeIf { it >= 0 }?.let {
-                c.add(kit.row("Charge cycles", "Most batteries keep about 80% of their charge for 500 to 800 cycles.", right = kit.text(it.toString(), 16f, bold = true)))
+                c.add(kit.row(T.t("Charge cycles"), T.t("Most batteries keep about 80% of their charge for 500 to 800 cycles."), right = kit.text(it.toString(), 16f, bold = true)))
             }
         }
         b?.getStringExtra(android.os.BatteryManager.EXTRA_TECHNOLOGY)?.takeIf { it.isNotBlank() }?.let {
-            c.add(kit.row("Type", null, right = kit.text(it, 16f, bold = true)))
+            c.add(kit.row(T.t("Type"), null, right = kit.text(it, 16f, bold = true)))
         }
         bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)?.takeIf { it > 0 && level > 0 }?.let { uah ->
             // Charge left now, and roughly what a full charge holds today.
-            c.add(kit.row("Holds now", "About ${uah / 10 / level} mAh when full", right = kit.text("${uah / 1000} mAh", 16f, bold = true)))
+            c.add(kit.row(T.t("Holds now"), T.f("About {} mAh when full", uah / 10 / level), right = kit.text("${uah / 1000} mAh", 16f, bold = true)))
         }
         // As the computer's system panel: memory and storage too.
-        val s = kit.card(col, "Memory and storage", null)
+        val s = kit.card(col, T.t("Memory and storage"), null)
         getSystemService(android.app.ActivityManager::class.java)?.let { am ->
             val info = android.app.ActivityManager.MemoryInfo()
             am.getMemoryInfo(info)
             if (info.totalMem > 0) {
                 val used = info.totalMem - info.availMem
-                s.add(kit.row("Memory", "${gb(used)} of ${gb(info.totalMem)} in use", right = kit.text("${used * 100 / info.totalMem}%", 16f, bold = true)))
+                s.add(kit.row(T.t("Memory"), T.f("{} of {} in use", gb(used), gb(info.totalMem)), right = kit.text("${used * 100 / info.totalMem}%", 16f, bold = true)))
             }
         }
         try {
             val st = android.os.StatFs(android.os.Environment.getDataDirectory().path)
             val total = st.totalBytes
             val free = st.availableBytes
-            if (total > 0) s.add(kit.row("Storage", "${gb(free)} free of ${gb(total)}", right = kit.text("${(total - free) * 100 / total}%", 16f, bold = true)))
+            if (total > 0) s.add(kit.row(T.t("Storage"), T.f("{} free of {}", gb(free), gb(total)), right = kit.text("${(total - free) * 100 / total}%", 16f, bold = true)))
         } catch (e: Exception) {
             // Not readable here.
         }
@@ -957,38 +965,38 @@ class MainActivity : AppCompatActivity() {
     // ---- Quick launcher ----------------------------------------------------------------------------------------
 
     private fun launch(col: LinearLayout) {
-        val c = kit.card(col, null, "On the island: tap the empty island twice for the card, then the search button. Type a few letters of an app or a link and tap it.", top = 14)
-        c.add(kit.buttons(kit.button("Open the launcher", primary = true) { startActivity(Intent(this, LauncherActivity::class.java)) }))
+        val c = kit.card(col, null, T.t("On the island: tap the empty island twice for the card, then the search button. Type a few letters of an app or a link and tap it."), top = 14)
+        c.add(kit.buttons(kit.button(T.t("Open the launcher"), primary = true) { startActivity(Intent(this, LauncherActivity::class.java)) }))
         val links = prefs.links
-        val l = kit.card(col, "Your links", "Websites, phone numbers (tel:), email (mailto:) or an app's own links. Up to 30.")
+        val l = kit.card(col, T.t("Your links"), T.t("Websites, phone numbers (tel:), email (mailto:) or an app's own links. Up to 30."))
         for ((i, link) in links.withIndex()) {
-            l.add(kit.row(link.name, link.url, tile = IconTile(this, Icon.Link, Tints.blue), right = kit.button("Remove") {
+            l.add(kit.row(link.name, link.url, tile = IconTile(this, Icon.Link, Tints.blue), right = kit.button(T.t("Remove")) {
                 prefs.links = prefs.links.filterIndexed { j, _ -> j != i }
                 build()
             }))
         }
-        l.add(kit.buttons(kit.button("Add a link", primary = true) { addLink() }))
+        l.add(kit.buttons(kit.button(T.t("Add a link"), primary = true) { addLink() }))
     }
 
     private fun addLink() {
-        val name = EditText(this).apply { hint = "Name"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS }
+        val name = EditText(this).apply { hint = T.t("Name"); inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS }
         val url = EditText(this).apply { hint = "example.com or tel:…"; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI }
         AlertDialog.Builder(this)
-            .setTitle("Add a link")
+            .setTitle(T.t("Add a link"))
             .setView(padded(kit.column().apply { addView(name); addView(url) }))
-            .setPositiveButton("Add") { _, _ ->
+            .setPositiveButton(T.t("Add")) { _, _ ->
                 val u = Launcher.tidyLink(url.text.toString())
                 val n = name.text.toString().trim()
                 when {
-                    n.isEmpty() -> message("Give the link a name.")
-                    !Launcher.safeLink(u) -> message("That doesn't look like a link Islet can open.")
+                    n.isEmpty() -> message(T.t("Give the link a name."))
+                    !Launcher.safeLink(u) -> message(T.t("That doesn't look like a link Islet can open."))
                     else -> {
                         prefs.links = prefs.links + Link(n, u)
                         build()
                     }
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(T.t("Cancel"), null)
             .show()
     }
 
@@ -1001,46 +1009,45 @@ class MainActivity : AppCompatActivity() {
         c.add(
             kit.row(
                 when {
-                    pairing == null -> "Not paired"
-                    !hasAccess() -> "Paired with ${pairing.name}"
-                    computer != null -> "Connected to $computer"
-                    else -> "Looking for ${pairing.name}…"
+                    pairing == null -> T.t("Not paired")
+                    !hasAccess() -> T.f("Paired with {}", pairing.name)
+                    computer != null -> T.f("Connected to {}", computer)
+                    else -> T.f("Looking for {}…", pairing.name)
                 },
                 when {
                     pairing == null ->
-                        "Show your phone's notifications, music and battery on Islet on your computer too. On the computer, open " +
-                            "Islet Settings → Wi-Fi, Bluetooth & phone → Your Android phone → Pair a phone, then scan the code."
-                    computer != null -> "Your notifications, music and battery level show on the computer's island."
-                    !hasAccess() -> "Allow notification access first (Set up)."
+                        T.t("Show your phone's notifications, music and battery on Islet on your computer too. On the computer, open Islet Settings → Wi-Fi, Bluetooth & phone → Your Android phone → Pair a phone, then scan the code.")
+                    computer != null -> T.t("Your notifications, music and battery level show on the computer's island.")
+                    !hasAccess() -> T.t("Allow notification access first (Set up).")
                     else ->
-                        "Make sure the computer is on, Islet is running and both are on the same Wi-Fi." +
-                            (if (Hub.problem.isNotEmpty()) "\nLast try: ${Hub.problem}." else "")
+                        T.t("Make sure the computer is on, Islet is running and both are on the same Wi-Fi.") +
+                            (if (Hub.problem.isNotEmpty()) "\n" + T.f("Last try: {}.", Hub.problem) else "")
                 },
                 kit.status(computer != null),
             ),
         )
         c.add(
             kit.buttons(
-                kit.button(if (pairing == null) "Scan the code" else "Scan a new code", primary = pairing == null) {
+                kit.button(if (pairing == null) T.t("Scan the code") else T.t("Scan a new code"), primary = pairing == null) {
                     scan.launch(
                         ScanOptions()
                             .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                            .setPrompt("Point at the code in Islet Settings on your computer")
+                            .setPrompt(T.t("Point at the code in Islet Settings on your computer"))
                             .setBeepEnabled(false)
                             .setOrientationLocked(false),
                     )
                 },
-                kit.button("Paste a code") { pasteCode() },
+                kit.button(T.t("Paste a code")) { pasteCode() },
             ),
         )
         if (pairing != null) {
-            val s = kit.card(col, "Send to the computer", "Your phone talks straight to your computer over your Wi-Fi, encrypted with a key only the two hold.")
-            s.add(kit.toggleRow("Notifications", null, Store.sendNotes(this)) { Store.setSendNotes(this, it) })
-            s.add(kit.toggleRow("What is playing", null, Store.sendMedia(this)) {
+            val s = kit.card(col, T.t("Send to the computer"), T.t("Your phone talks straight to your computer over your Wi-Fi, encrypted with a key only the two hold."))
+            s.add(kit.toggleRow(T.t("Notifications"), null, Store.sendNotes(this)) { Store.setSendNotes(this, it) })
+            s.add(kit.toggleRow(T.t("What is playing"), null, Store.sendMedia(this)) {
                 Store.setSendMedia(this, it)
                 IsletListener.instance?.reload()
             })
-            s.add(kit.buttons(kit.button("Forget this computer") {
+            s.add(kit.buttons(kit.button(T.t("Forget this computer")) {
                 Store.forget(this)
                 IsletListener.instance?.reload()
                 build()
@@ -1060,7 +1067,7 @@ class MainActivity : AppCompatActivity() {
     private fun pairWith(code: String) {
         val pairing = Pairing.fromUri(code)
         if (pairing == null) {
-            message("That isn't an Islet pairing code. On your computer, open Islet Settings → Wi-Fi, Bluetooth & phone → Your Android phone.")
+            message(T.t("That isn't an Islet pairing code. On your computer, open Islet Settings → Wi-Fi, Bluetooth & phone → Your Android phone."))
             return
         }
         Store.pair(this, pairing)
@@ -1072,15 +1079,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun askForAccess() {
         AlertDialog.Builder(this)
-            .setTitle("Allow notification access")
+            .setTitle(T.t("Allow notification access"))
             .setMessage(
-                "Islet needs notification access to show your notifications, music, calls and directions on the island " +
-                    "(and on your computer, if you pair one). On the next screen, turn on Islet.\n\n" +
-                    "If the switch is greyed out: open this app's App info, tap the three dots at the top right, " +
-                    "choose \"Allow restricted settings\", then come back.",
+                T.t("Islet needs notification access to show your notifications, music, calls and directions on the island (and on your computer, if you pair one). On the next screen, turn on Islet.") + "\n\n" + T.t("If the switch is greyed out: open this app's App info, tap the three dots at the top right, choose \"Allow restricted settings\", then come back."),
             )
-            .setPositiveButton("Open settings") { _, _ -> startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
-            .setNegativeButton("Not now", null)
+            .setPositiveButton(T.t("Open settings")) { _, _ -> startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+            .setNegativeButton(T.t("Not now"), null)
             .show()
     }
 
@@ -1094,10 +1098,10 @@ class MainActivity : AppCompatActivity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
         }
         AlertDialog.Builder(this)
-            .setTitle("Paste the pairing code")
+            .setTitle(T.t("Paste the pairing code"))
             .setView(padded(input))
-            .setPositiveButton("Pair") { _, _ -> pairWith(input.text.toString()) }
-            .setNegativeButton("Cancel", null)
+            .setPositiveButton(T.t("Pair")) { _, _ -> pairWith(input.text.toString()) }
+            .setNegativeButton(T.t("Cancel"), null)
             .show()
     }
 }

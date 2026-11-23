@@ -63,6 +63,11 @@ class Prefs(context: Context) {
         get() = flag("notch", false)
         set(v) = set("notch", v)
 
+    /** The language Islet speaks: "auto" (the phone's, when Islet has it) or a code from `T.LANGUAGES`. */
+    var language: String
+        get() = p.getString("language", "auto") ?: "auto"
+        set(v) = p.edit().putString("language", v).apply()
+
     /** Pop-ups grow down from the camera, clear of the status bar's clock and icons. */
     var popsDown: Boolean
         get() = flag("pops_down", false)

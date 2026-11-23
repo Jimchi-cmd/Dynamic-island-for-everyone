@@ -68,7 +68,7 @@ object IslandHost {
         // island: say once how to fix it.
         if (a == null && !toldAboutTaps) {
             toldAboutTaps = true
-            Isle.pop(islet.island.Pop.Info("For taps, turn on Round the camera in Islet"))
+            Isle.pop(islet.island.Pop.Info(T.t("For taps, turn on Round the camera in Islet")))
         }
         Isle.changed()
     }

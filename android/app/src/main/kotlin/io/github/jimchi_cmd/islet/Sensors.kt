@@ -85,7 +85,7 @@ object Sensors {
                         device?.name
                     } catch (e: SecurityException) {
                         null
-                    } ?: "Bluetooth device"
+                    } ?: T.t("Bluetooth device")
                     val connected = intent.action == BluetoothDevice.ACTION_ACL_CONNECTED
                     Isle.btName = if (connected) name else null
                     Isle.pop(Pop.Bluetooth(name, connected, if (connected) deviceBattery(device) else -1))
@@ -109,7 +109,7 @@ object Sensors {
                             device.name
                         } catch (e: SecurityException) {
                             null
-                        } ?: "Bluetooth device"
+                        } ?: T.t("Bluetooth device")
                         Isle.pop(Pop.Bluetooth(name, true, level))
                     }
                 }
@@ -479,7 +479,7 @@ object Sensors {
                         found.add(
                             CalendarEvent(
                                 c.getLong(0),
-                                c.getString(1).orEmpty().ifEmpty { "Event" },
+                                c.getString(1).orEmpty().ifEmpty { T.t("Event") },
                                 c.getLong(2),
                                 c.getLong(3),
                                 c.getInt(4) != 0,

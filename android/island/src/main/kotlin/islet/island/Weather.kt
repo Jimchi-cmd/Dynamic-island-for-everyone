@@ -69,7 +69,7 @@ object Forecast {
         else -> Sky.Cloudy
     }
 
-    fun words(code: Int): String = when (code) {
+    fun words(code: Int): String = Words.t(when (code) {
         0 -> "Clear"
         1 -> "Mostly clear"
         2 -> "Partly cloudy"
@@ -88,5 +88,5 @@ object Forecast {
         95 -> "Thunderstorm"
         96, 99 -> "Thunderstorm with hail"
         else -> "Cloudy"
-    }
+    })
 }

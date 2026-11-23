@@ -42,7 +42,7 @@ class LauncherActivity : AppCompatActivity() {
         all = Isle.prefs.links.map { Launchable(it.name, it.url, isLink = true) } + apps()
 
         val box = EditText(this).apply {
-            hint = "Search apps and links"
+            hint = T.t("Search apps and links")
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             imeOptions = EditorInfo.IME_ACTION_GO
             setSingleLine()
@@ -102,7 +102,7 @@ class LauncherActivity : AppCompatActivity() {
         shown = Launcher.search(query, all)
         list.removeAllViews()
         if (shown.isEmpty()) {
-            list.addView(kit.para("Nothing called that. Add your own links in Islet → Quick launcher."))
+            list.addView(kit.para(T.t("Nothing called that. Add your own links in Islet → Quick launcher.")))
             return
         }
         for (a in shown) {
@@ -124,7 +124,7 @@ class LauncherActivity : AppCompatActivity() {
         } else {
             Isle.launch(a.target)
         }
-        if (!ok) Isle.pop(islet.island.Pop.Info("Couldn't open ${a.name}"))
+        if (!ok) Isle.pop(islet.island.Pop.Info(T.f("Couldn't open {}", a.name)))
         finish()
     }
 }

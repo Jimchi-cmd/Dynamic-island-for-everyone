@@ -120,9 +120,9 @@ class Timetable(lessons: List<Lesson> = emptyList()) {
 
         /** "45 min", "1 h", "1 h 30". */
         fun mins(m: Int): String = when {
-            m < 60 -> "$m min"
-            m % 60 == 0 -> "${m / 60} h"
-            else -> "${m / 60} h %02d".format(m % 60)
+            m < 60 -> Words.f("{} min", m)
+            m % 60 == 0 -> Words.f("{} h", m / 60)
+            else -> Words.f("{} h {}", m / 60, "%02d".format(m % 60))
         }
 
         /** "14:00", or "2:00 PM". */
@@ -131,7 +131,7 @@ class Timetable(lessons: List<Lesson> = emptyList()) {
             val m = minute % 60
             if (h24) return "%02d:%02d".format(h, m)
             val h12 = if (h % 12 == 0) 12 else h % 12
-            return "%d:%02d %s".format(h12, m, if (h < 12) "AM" else "PM")
+            return "%d:%02d %s".format(h12, m, Words.t(if (h < 12) "AM" else "PM"))
         }
 
         private fun tidy(s: String) = s.split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(" ").take(MAX_LEN)
@@ -158,14 +158,14 @@ object Deadlines {
     fun countdown(e: CalendarEvent, now: Long, zone: TimeZone = TimeZone.getDefault()): String {
         val left = e.begin - now
         if (!e.allDay && left <= 0) return "now"
-        if (!e.allDay && left < 3_600_000) return "in ${(left + 59_999) / 60_000} min"
+        if (!e.allDay && left < 3_600_000) return Words.f("in {} min", (left + 59_999) / 60_000)
         // All-day events are stored at midnight UTC.
         val days = Streak.dayOf(e.begin, if (e.allDay) UTC else zone) - Streak.dayOf(now, zone)
-        if (!e.allDay && left < 24 * 3_600_000 && days <= 1) return "in ${(left + 1_800_000) / 3_600_000} h"
+        if (!e.allDay && left < 24 * 3_600_000 && days <= 1) return Words.f("in {} h", (left + 1_800_000) / 3_600_000)
         return when {
-            days <= 0 -> "today"
-            days == 1L -> "tomorrow"
-            else -> "in $days days"
+            days <= 0 -> Words.t("today")
+            days == 1L -> Words.t("tomorrow")
+            else -> Words.f("in {} days", days)
         }
     }
 
@@ -195,7 +195,7 @@ data class Streak(val lastDay: Long = 0, val days: Int = 0, val best: Int = 0, v
     fun doneOn(day: Long): Int = if (days > 0 && day == lastDay) today else 0
 
     /** "3 days in a row", or null before the second day. */
-    fun label(day: Long): String? = current(day).takeIf { it >= 2 }?.let { "$it days in a row" }
+    fun label(day: Long): String? = current(day).takeIf { it >= 2 }?.let { Words.f("{} days in a row", it) }
 
     fun encode() = "$lastDay,$days,$best,$rounds,$today"
 

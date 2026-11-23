@@ -33,11 +33,11 @@ object Format {
     fun until(ms: Long): String {
         val min = ((ms + if (ms >= 0) 59_999 else 0) / 60_000)
         return when {
-            ms <= 0 && ms > -60_000 -> "now"
-            min < 0 -> "${-min} min ago"
-            min < 60 -> "in $min min"
-            min % 60 == 0L -> "in ${min / 60} h"
-            else -> "in ${min / 60} h ${min % 60} min"
+            ms <= 0 && ms > -60_000 -> Words.t("now")
+            min < 0 -> Words.f("{} min ago", -min)
+            min < 60 -> Words.f("in {} min", min)
+            min % 60 == 0L -> Words.f("in {} h", min / 60)
+            else -> Words.f("in {} h {} min", min / 60, min % 60)
         }
     }
 

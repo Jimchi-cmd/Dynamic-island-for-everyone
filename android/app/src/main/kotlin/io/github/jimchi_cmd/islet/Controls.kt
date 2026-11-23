@@ -26,11 +26,11 @@ object Controls {
             cm.cameraIdList.firstOrNull { cm.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }
         } catch (e: Exception) {
             null
-        } ?: return Isle.pop(Pop.Info("No flashlight"))
+        } ?: return Isle.pop(Pop.Info(T.t("No flashlight")))
         try {
             cm.setTorchMode(id, !Isle.torchOn)
         } catch (e: Exception) {
-            Isle.pop(Pop.Info("The camera is busy"))
+            Isle.pop(Pop.Info(T.t("The camera is busy")))
         }
     }
 
@@ -38,7 +38,7 @@ object Controls {
     fun doNotDisturb() {
         val listener = IsletListener.instance
         if (listener == null) {
-            Isle.pop(Pop.Info("Allow notification access first"))
+            Isle.pop(Pop.Info(T.t("Allow notification access first")))
             return
         }
         listener.requestInterruptionFilter(
@@ -54,7 +54,7 @@ object Controls {
         try {
             am.ringerMode = if (am.ringerMode == AudioManager.RINGER_MODE_NORMAL) AudioManager.RINGER_MODE_VIBRATE else AudioManager.RINGER_MODE_NORMAL
         } catch (e: SecurityException) {
-            Isle.pop(Pop.Info("Change it with the volume buttons"))
+            Isle.pop(Pop.Info(T.t("Change it with the volume buttons")))
         }
     }
 
@@ -79,14 +79,14 @@ object Controls {
 
     private fun global(action: Int) {
         if (Build.VERSION.SDK_INT < 28) {
-            Isle.pop(Pop.Info("Needs Android 9 or later"))
+            Isle.pop(Pop.Info(T.t("Needs Android 9 or later")))
             return
         }
         val a = IslandAccessibility.instance
         if (a == null) {
             // Android lets only an accessibility service press these. Say so, and go
             // straight to the switch (it may be on but stopped by the phone: off and on fixes it).
-            Isle.pop(Pop.Info(if (IslandAccessibility.switchedOn(app)) "Turn Islet island off and on again" else "Turn on Islet island to use this"))
+            Isle.pop(Pop.Info(if (IslandAccessibility.switchedOn(app)) T.t("Turn Islet island off and on again") else T.t("Turn on Islet island to use this")))
             Isle.island.close(Isle.now())
             Isle.changed()
             Isle.start(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -97,7 +97,7 @@ object Controls {
         // Let the island shrink out of the picture first.
         Isle.app.mainLooper.let {
             android.os.Handler(it).postDelayed({
-                if (!a.performGlobalAction(action)) Isle.pop(Pop.Info("Your phone didn't allow that"))
+                if (!a.performGlobalAction(action)) Isle.pop(Pop.Info(T.t("Your phone didn't allow that")))
             }, 450)
         }
     }
