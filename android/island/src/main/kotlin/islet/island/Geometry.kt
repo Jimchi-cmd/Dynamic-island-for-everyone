@@ -47,6 +47,8 @@ class Geometry(
     val popsDown: Boolean = false,
     /** Lyrics are switched on: the music card has room under its controls for two lines. */
     val musicLyrics: Boolean = false,
+    /** Control Centre's height in its layout (see `ControlCentre.height`), dp. */
+    val controlsHeight: Double = CLOCK_CARD,
 ) {
     private val k get() = size.scale
 
@@ -91,7 +93,7 @@ class Geometry(
         }
         is Scene.Expanded -> centered(cardWidth, expandedHeight(scene.live) * k, 40.0 * k)
         // The control centre is the clock card, as on the computer; its toggles button opens the toggles.
-        Scene.Controls -> centered(cardWidth, CLOCK_CARD * k, 40.0 * k)
+        Scene.Controls -> centered(cardWidth, controlsHeight * k, 40.0 * k)
         Scene.Toggles -> centered(cardWidth, 292.0 * k, 40.0 * k)
         Scene.Peek -> centered(idleWidth + 2 * (wing + 30 * k), idleHeight + 4 * k, (idleHeight + 4 * k) / 2)
         Scene.Calendar -> centered(cardWidth, 344.0 * k, 40.0 * k)
@@ -122,7 +124,7 @@ class Geometry(
         is Live.Call -> 120.0
         is Live.Navigation -> 120.0
         is Live.Stopwatch -> 140.0
-        null -> CLOCK_CARD
+        null -> controlsHeight
         else -> 128.0
     }
 

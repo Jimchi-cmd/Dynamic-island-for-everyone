@@ -25,6 +25,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.accessibility.AccessibilityEvent
 import islet.island.Box
+import islet.island.ControlCentre
 import islet.island.Deadlines
 import islet.island.Format
 import islet.island.Geometry
@@ -75,7 +76,11 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     /** Buttons drawn this frame, in view pixels. */
     private class Hit(val rect: RectF, val action: () -> Unit)
 
-    private class Slider(val rect: RectF, val set: (Float) -> Unit)
+    /** A slider: along it (left is 0), or up a tall one (`vertical`, the bottom is 0). */
+    private class Slider(val rect: RectF, val vertical: Boolean = false, val set: (Float) -> Unit) {
+        fun at(x: Float, y: Float) =
+            (if (vertical) (rect.bottom - y) / rect.height() else (x - rect.left) / rect.width()).coerceIn(0f, 1f)
+    }
 
     private val hits = ArrayList<Hit>()
 
@@ -93,7 +98,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     private val clip = Path()
     private val thumbs = HashMap<String, Bitmap?>()
 
-    private companion object {
+    internal companion object {
         /** The rim's glow, outside in: (width in dp, colour). */
         /** How far (dp) a finger may move and still tap; how far it must move to swipe. */
         const val TAP_SLOP = 24f
@@ -104,6 +109,12 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         /** How long the old and new contents cross-fade (ms). */
         const val CROSS_MS = 260L
         const val SWIPE = 36f
+
+        /** Control Centre's background photo, in the app's own files. */
+        const val CC_PHOTO = "control-centre.jpg"
+
+        /** "#rrggbb" as RGB, or null. */
+        fun tintOf(hex: String): Int? = hex.trim().removePrefix("#").takeIf { it.length == 6 }?.toIntOrNull(16)
 
         /** The accent colours (RGB), as on the computer. */
         val ACCENTS = mapOf(
@@ -236,6 +247,11 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     /** The pill's box as drawn now, in dp (for tests). */
     internal fun drawnBox(): Box? = currentBox()
 
+    /** For tests: where the buttons and sliders drawn last are (px). */
+    internal fun hitRects(): List<RectF> = hits.map { RectF(it.rect) }
+
+    internal fun sliderRects(): List<RectF> = sliders.map { RectF(it.rect) }
+
     private fun currentBox(): Box? {
         val f = from ?: return to
         val t = to ?: return f
@@ -359,7 +375,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 c.drawPath(outline(dp / 2, radius), line)
             }
             "tinted" -> {
-                val rgb = ACCENTS[prefs.accent] ?: 0x9f8cff
+                val rgb = tintOf(prefs.tint) ?: ACCENTS[prefs.accent] ?: 0x9f8cff
                 fill.color = Color.rgb((rgb shr 16 and 0xff) * 22 / 100, (rgb shr 8 and 0xff) * 22 / 100, (rgb and 0xff) * 22 / 100)
                 c.drawPath(outline(0f, radius), fill)
             }
@@ -1360,40 +1376,29 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
      * activity's card, a "Now Playing ›" button at the top goes back to it.
      */
     private fun drawClockCard(c: Canvas, box: RectF) {
+        val photo = ccPhoto()
+        if (photo != null) {
+            // The photo, cropped to fill the card and darkened under the buttons.
+            val k = maxOf(box.width() / photo.width, box.height() / photo.height)
+            val w = photo.width * k
+            val h = photo.height * k
+            rect.set(box.centerX() - w / 2, box.centerY() - h / 2, box.centerX() + w / 2, box.centerY() + h / 2)
+            c.drawBitmap(photo, null, rect, bitmapPaint)
+            fill.color = 0x6b000000
+            c.drawRect(box, fill)
+        }
+        val style = Isle.prefs.ccStyle
+        if (style != "classic" && style in ControlCentre.STYLES) {
+            drawStyledCard(c, box, style, photo != null)
+            return
+        }
         val left = box.left + 26 * dp
         val right = box.right - 20 * dp
         val top = box.top
         val now = Isle.now()
         val faint = 0x24ffffff
         // The way back to the card it was opened from.
-        val from = Isle.island.openedFrom
-        val back = when {
-            from != null -> when (from) {
-                is Live.Music -> T.t("Now Playing")
-                is Live.Call -> T.t("Call")
-                is Live.Navigation -> T.t("Directions")
-                is Live.Timer, is Live.Countdown -> T.t("Timer")
-                is Live.Stopwatch -> T.t("Stopwatch")
-                is Live.Event -> T.t("Meeting")
-                is Live.Progress -> T.t("Download")
-                is Live.Lesson -> T.t("Lesson")
-            }
-            Isle.island.openedFromCalendar -> T.t("Calendar")
-            else -> null
-        }
-        if (back != null) {
-            val w = measure("$back", 12.5f, true) + 34 * dp
-            val y = top + 8 * dp
-            fill.color = faint
-            rect.set(left - 2 * dp, y, left - 2 * dp + w, y + 22 * dp)
-            c.drawRoundRect(rect, 11 * dp, 11 * dp, fill)
-            write(c, back, left + 9 * dp, y + 15.5f * dp, 12.5f, 0xe6ffffff.toInt(), bold = true)
-            write(c, "›", rect.right - 13 * dp, y + 16.5f * dp, 16f, 0xe6ffffff.toInt(), bold = true, align = Paint.Align.CENTER)
-            hits.add(Hit(RectF(rect.left, rect.top - 6 * dp, rect.right, rect.bottom + 6 * dp)) {
-                Isle.island.back()
-                Isle.changed()
-            })
-        }
+        backLabel()?.let { backButton(c, it, left, top + 8 * dp) }
         // The time, big, with AM/PM smaller beside it; the date under it.
         val weather = Isle.weather
         val time = shortTime(now)
@@ -1462,6 +1467,293 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         }
         round(1, y2, Icon.Screenshot) { Controls.screenshot() }
         round(2, y2, Icon.Lock) { Controls.lock() }
+    }
+
+    private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private var photo: android.graphics.Bitmap? = null
+    private var photoStamp = -1L
+
+    /** Control Centre's photo, when one is set (read again only when the file changes). */
+    private fun ccPhoto(): android.graphics.Bitmap? {
+        if (!Isle.prefs.ccPhoto) return null
+        val f = java.io.File(context.filesDir, CC_PHOTO)
+        val stamp = if (f.exists()) f.lastModified() else 0L
+        if (stamp != photoStamp) {
+            photoStamp = stamp
+            photo = if (stamp == 0L) null else runCatching { android.graphics.BitmapFactory.decodeFile(f.path) }.getOrNull()
+        }
+        return photo
+    }
+
+    /** The way back to the card Control Centre was opened from ("Now Playing ›"), or null. */
+    private fun backLabel(): String? {
+        val from = Isle.island.openedFrom
+        return when {
+            from != null -> when (from) {
+                is Live.Music -> T.t("Now Playing")
+                is Live.Call -> T.t("Call")
+                is Live.Navigation -> T.t("Directions")
+                is Live.Timer, is Live.Countdown -> T.t("Timer")
+                is Live.Stopwatch -> T.t("Stopwatch")
+                is Live.Event -> T.t("Meeting")
+                is Live.Progress -> T.t("Download")
+                is Live.Lesson -> T.t("Lesson")
+            }
+            Isle.island.openedFromCalendar -> T.t("Calendar")
+            else -> null
+        }
+    }
+
+    private fun backButton(c: Canvas, back: String, left: Float, y: Float) {
+        val w = measure(back, 12.5f, true) + 34 * dp
+        fill.color = 0x24ffffff
+        rect.set(left - 2 * dp, y, left - 2 * dp + w, y + 22 * dp)
+        c.drawRoundRect(rect, 11 * dp, 11 * dp, fill)
+        write(c, back, left + 9 * dp, y + 15.5f * dp, 12.5f, 0xe6ffffff.toInt(), bold = true)
+        write(c, "›", rect.right - 13 * dp, y + 16.5f * dp, 16f, 0xe6ffffff.toInt(), bold = true, align = Paint.Align.CENTER)
+        hits.add(Hit(RectF(rect.left, rect.top - 6 * dp, rect.right, rect.bottom + 6 * dp)) {
+            Isle.island.back()
+            Isle.changed()
+        })
+    }
+
+    /** A Control Centre button: its icon, its name under it in the dock, and what a tap does. */
+    private fun ccIcon(id: String) = when (id) {
+        "wifi" -> Icon.Wifi
+        "bluetooth" -> Icon.Bluetooth
+        "search" -> Icon.Search
+        "todo" -> Icon.Clipboard
+        "speed" -> Icon.Gauge
+        "controls" -> Icon.Toggles
+        "calendar" -> Icon.Calendar
+        "screenshot" -> Icon.Screenshot
+        else -> Icon.Lock
+    }
+
+    private fun ccLabel(id: String) = when (id) {
+        "wifi" -> T.t("Wi-Fi")
+        "bluetooth" -> T.t("Bluetooth")
+        "search" -> T.t("Search")
+        "todo" -> T.t("To-do")
+        "speed" -> T.t("Speed")
+        "controls" -> T.t("Controls‖short button label")
+        "calendar" -> T.t("Calendar")
+        "screenshot" -> T.t("Capture‖short label for the screenshot button")
+        else -> T.t("Lock")
+    }
+
+    private fun ccOn(id: String) = (id == "wifi" && Isle.wifiOn) || (id == "bluetooth" && Isle.btOn)
+
+    private fun ccTap(id: String) {
+        when (id) {
+            "wifi" -> Controls.wifi()
+            "bluetooth" -> Controls.bluetooth()
+            "search" -> openLauncher()
+            "todo" -> openApp(T.t("Todo"))
+            "speed" -> openApp(T.t("Speed"))
+            "controls" -> {
+                Isle.island.showToggles()
+                Isle.changed()
+            }
+            "calendar" -> {
+                Isle.island.showCalendar()
+                Isle.changed()
+            }
+            "screenshot" -> Controls.screenshot()
+            else -> Controls.lock()
+        }
+    }
+
+    private fun roundRect(c: Canvas, l: Float, t: Float, r: Float, b: Float, radius: Float, color: Int) {
+        fill.color = color
+        rect.set(l, t, r, b)
+        c.drawRoundRect(rect, radius, radius, fill)
+    }
+
+    /** A round button with an icon (blue while on). */
+    private fun disc(c: Canvas, id: String, cx: Float, cy: Float, d: Float, iconDp: Float) {
+        fill.color = if (ccOn(id)) 0xeb0a84ff.toInt() else 0x29ffffff
+        c.drawCircle(cx, cy, d / 2, fill)
+        icon(c, ccIcon(id), cx, cy, iconDp, white)
+    }
+
+    /**
+     * Control Centre in one of the newer layouts (Modules, Sliders, Dock),
+     * with the buttons in the order set in the app.
+     */
+    private fun drawStyledCard(c: Canvas, box: RectF, style: String, photo: Boolean) {
+        val left = box.left + 22 * dp
+        val right = box.right - 22 * dp
+        val back = backLabel()
+        if (back != null) backButton(c, back, left + 2 * dp, box.top + 8 * dp)
+        val top = box.top + (ControlCentre.TOP + if (back != null) ControlCentre.BACK else 0.0).toFloat() * dp
+        val order = ControlCentre.order(Isle.prefs.ccOrder)
+        val now = Isle.now()
+        val dimText = 0x99ffffff.toInt()
+        val weather = Isle.weather
+        if (style == "dock") {
+            if (!photo) {
+                // A soft wash of the accent colour into near-black.
+                val rgb = tintOf(Isle.prefs.tint) ?: ACCENTS[Isle.prefs.accent] ?: 0x9f8cff
+                val deep = Color.rgb((rgb shr 16 and 0xff) * 30 / 100 + 10, (rgb shr 8 and 0xff) * 30 / 100 + 10, (rgb and 0xff) * 30 / 100 + 10)
+                fill.shader = android.graphics.LinearGradient(box.left, box.top, box.right, box.bottom, deep, 0xff0a0a14.toInt(), android.graphics.Shader.TileMode.CLAMP)
+                c.drawRect(box, fill)
+                fill.shader = null
+            }
+            icon(c, Icon.Wifi, left + 8 * dp, top + 7 * dp, 15f, 0xb3ffffff.toInt())
+            val net = if (!Isle.wifiOn) T.t("Wi-Fi off") else Isle.wifiName ?: T.t("Wi-Fi")
+            write(c, net, left + 21 * dp, top + 12 * dp, 13f, 0xb3ffffff.toInt(), max = (right - left) / 2)
+            weather?.let { w ->
+                val temp = Format.temperature(w.celsius, Isle.prefs.fahrenheit)
+                val tw = write(c, temp, right, top + 12 * dp, 14f, white, bold = true, align = Paint.Align.RIGHT)
+                icon(c, Icons.sky(w.sky, w.day), right - tw - 13 * dp, top + 7 * dp, 18f, white)
+                write(c, "Open-Meteo", right, top + 26 * dp, 9.5f, 0x66ffffff, align = Paint.Align.RIGHT)
+            }
+            val time = shortTime(now)
+            val size = fit(time, (right - left) * 0.7f, 62f, 40f, bold = true)
+            val tw = measure(time, size, true)
+            val sw = if (h24) 0f else measure(T.date("a", now), 20f, true) + 6 * dp
+            val x = box.centerX() - (tw + sw) / 2
+            write(c, time, x, top + 76 * dp, size, white, bold = true)
+            if (!h24) write(c, T.date("a", now), x + tw + 6 * dp, top + 76 * dp, 20f, 0xccffffff.toInt(), bold = true)
+            write(c, T.date("EEEEdMMMM", now), box.centerX(), top + 100 * dp, 14f, dimText, align = Paint.Align.CENTER, max = right - left)
+            // The dock: every button in one row, with its name under it.
+            val dl = left - 6 * dp
+            val dr = right + 6 * dp
+            val dt = top + ControlCentre.DOCK_HEAD.toFloat() * dp
+            roundRect(c, dl, dt, dr, dt + ControlCentre.DOCK.toFloat() * dp, 28 * dp, 0x17ffffff)
+            val cw = (dr - dl) / maxOf(order.size, 6)
+            val x0 = dl + ((dr - dl) - cw * order.size) / 2
+            // One size for every name: the size the longest one fits at.
+            val fs = order.minOf { fit(ccLabel(it), cw - 3 * dp, 10.5f, 8f) }
+            order.forEachIndexed { i, id ->
+                val cx = x0 + cw * (i + 0.5f)
+                val cy = dt + 30 * dp
+                val d = minOf(40 * dp, cw - 7 * dp)
+                disc(c, id, cx, cy, d, minOf(19f, d / dp * 0.5f))
+                val label = ccLabel(id)
+                write(c, label, cx, dt + 66 * dp, fs, 0xc7ffffff.toInt(), align = Paint.Align.CENTER, max = cw - 3 * dp)
+                hits.add(Hit(RectF(x0 + cw * i, dt + 4 * dp, x0 + cw * (i + 1), dt + ControlCentre.DOCK.toFloat() * dp - 4 * dp)) { ccTap(id) })
+            }
+            return
+        }
+        // Modules and Sliders: the time, the date and the weather on top.
+        val time = shortTime(now)
+        val size = fit(time, (right - left) * 0.55f, 40f, 30f, bold = true)
+        val tw = write(c, time, left, top + 40 * dp, size, white, bold = true)
+        if (!h24) write(c, T.date("a", now), left + tw + 5 * dp, top + 40 * dp, 17f, white, bold = true)
+        write(c, T.date("EEEEdMMMM", now), left + 2 * dp, top + 62 * dp, 14f, dimText, max = (right - left) * if (weather != null) 0.66f else 1f)
+        weather?.let { w ->
+            val p = Isle.prefs
+            val temp = Format.temperature(w.celsius, p.fahrenheit)
+            val ww = write(c, temp, right, top + 31 * dp, 24f, white, bold = true, align = Paint.Align.RIGHT)
+            icon(c, Icons.sky(w.sky, w.day), right - ww - 18 * dp, top + 22 * dp, 24f, white)
+            if (w.highC != null && w.lowC != null) {
+                write(c, T.f("H {}  L {}", Format.temperature(w.highC!!, p.fahrenheit), Format.temperature(w.lowC!!, p.fahrenheit)), right, top + 48 * dp, 12f, dimText, align = Paint.Align.RIGHT)
+            }
+            write(c, "Open-Meteo", right, top + 62 * dp, 9.5f, 0x66ffffff, align = Paint.Align.RIGHT)
+        }
+        val b = top + ControlCentre.HEAD.toFloat() * dp
+        val bh = ControlCentre.BODY.toFloat() * dp
+        val tile = 0x1affffff
+        if (style == "modules") {
+            // A block of four round buttons; search beside it; the rest under search.
+            val others = order.filter { it != "search" }
+            val d = 46 * dp
+            val bw = 12 * dp + 2 * d + 10 * dp + 12 * dp
+            roundRect(c, left, b, left + bw, b + bh, 26 * dp, tile)
+            others.take(4).forEachIndexed { i, id ->
+                val cx = left + 12 * dp + d / 2 + (i % 2) * (d + 10 * dp)
+                val cy = b + 12 * dp + d / 2 + (i / 2) * (d + 10 * dp)
+                disc(c, id, cx, cy, d, 21f)
+                hits.add(Hit(RectF(cx - d / 2 - 4 * dp, cy - d / 2 - 4 * dp, cx + d / 2 + 4 * dp, cy + d / 2 + 4 * dp)) { ccTap(id) })
+            }
+            val rx = left + bw + 10 * dp
+            val rest = others.drop(4).take(4)
+            val rowH = (bh - 10 * dp) / 2
+            var ry = b
+            if ("search" in order) {
+                roundRect(c, rx, b, right, b + rowH, 22 * dp, tile)
+                icon(c, Icon.Search, rx + 24 * dp, b + rowH / 2, 20f, white)
+                write(c, T.t("Search"), rx + 44 * dp, b + rowH / 2 + 5.5f * dp, 16f, white, bold = true, max = right - rx - 52 * dp)
+                hits.add(Hit(RectF(rx, b, right, b + rowH)) { ccTap("search") })
+                ry += rowH + 10 * dp
+            }
+            if (rest.isNotEmpty()) {
+                val n = rest.size
+                val w = ((right - rx) - (n - 1) * 8 * dp) / n
+                rest.forEachIndexed { i, id ->
+                    val x = rx + i * (w + 8 * dp)
+                    roundRect(c, x, ry, x + w, ry + rowH, 18 * dp, tile)
+                    icon(c, ccIcon(id), x + w / 2, ry + rowH / 2, 20f, white)
+                    hits.add(Hit(RectF(x, ry, x + w, ry + rowH)) { ccTap(id) })
+                }
+            }
+            return
+        }
+        // Sliders: volume and brightness, tall, beside a grid of the buttons.
+        val sw = 54 * dp
+        fun tall(x: Float, ic: Icon, value: Float, allowed: Boolean, set: (Float) -> Unit, ask: () -> Unit) {
+            roundRect(c, x, b, x + sw, b + bh, 20 * dp, 0x21ffffff)
+            val f = if (allowed) value.coerceIn(0f, 1f) * bh else 0f
+            if (f > 1f) roundRect(c, x, b + bh - f, x + sw, b + bh, minOf(20 * dp, f / 2), 0xebffffff.toInt())
+            val onFill = f > 36 * dp
+            icon(c, ic, x + sw / 2, b + bh - 22 * dp, 22f, if (onFill) 0xbf000000.toInt() else white)
+            if (allowed) {
+                sliders.add(Slider(RectF(x, b, x + sw, b + bh), vertical = true, set = set))
+            } else {
+                hits.add(Hit(RectF(x, b, x + sw, b + bh), ask))
+            }
+        }
+        tall(left, Icon.Sound, reading("volume") { Controls.volume }, true, { readings.remove("volume"); Controls.volume = it }) {}
+        tall(left + sw + 10 * dp, Icon.Brightness, reading("brightness") { Controls.brightness }, reading("canWrite") { Controls.canSetBrightness }, { readings.remove("brightness"); Controls.brightness = it }) { Controls.askForBrightness() }
+        val gx = left + 2 * (sw + 10 * dp)
+        val gw = right - gx
+        val rh = (bh - 16 * dp) / 3
+        val u = (gw - 24 * dp) / 4
+        fun units(id: String, wide: Boolean) = if (wide && (id == "wifi" || id == "bluetooth" || id == "search")) 2 else 1
+        fun pack(wide: Boolean): List<Triple<String, Int, Int>> {
+            var row = 0
+            var col = 0
+            val out = ArrayList<Triple<String, Int, Int>>()
+            for (id in order) {
+                val n = units(id, wide)
+                if (col + n > 4) {
+                    row++
+                    col = 0
+                }
+                if (row >= 3) break
+                out.add(Triple(id, row, col))
+                col += n
+            }
+            return out
+        }
+        val wide = pack(true).size == order.size
+        for ((id, row, col) in pack(wide)) {
+            val n = units(id, wide)
+            val x = gx + col * (u + 8 * dp)
+            val y = b + row * (rh + 8 * dp)
+            val w = n * u + (n - 1) * 8 * dp
+            roundRect(c, x, y, x + w, y + rh, 16 * dp, tile)
+            if (n == 2) {
+                disc(c, id, x + 6 * dp + 13 * dp, y + rh / 2, 26 * dp, 15f)
+                val state = when (id) {
+                    "wifi" -> if (!Isle.wifiOn) T.t("Off") else Isle.wifiName ?: T.t("On")
+                    "bluetooth" -> if (!Isle.btOn) T.t("Off") else Isle.btName ?: T.t("On")
+                    else -> null
+                }
+                val tx = x + 38 * dp
+                if (state != null) {
+                    write(c, ccLabel(id), tx, y + rh / 2 - 1 * dp, 12.5f, white, bold = true, max = w - 42 * dp)
+                    write(c, state, tx, y + rh / 2 + 12 * dp, 11f, dimText, max = w - 42 * dp)
+                } else {
+                    write(c, ccLabel(id), tx, y + rh / 2 + 4.5f * dp, 13f, white, bold = true, max = w - 42 * dp)
+                }
+            } else {
+                icon(c, ccIcon(id), x + w / 2, y + rh / 2, 19f, white)
+            }
+            hits.add(Hit(RectF(x, y, x + w, y + rh)) { ccTap(id) })
+        }
     }
 
     /** How wide `s` is drawn at `size` sp (px). */
@@ -1656,7 +1948,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 rect.set(l, y - h / 2, l + h + (r - l - h) * value.coerceIn(0f, 1f), y + h / 2)
                 c.drawRoundRect(rect, h / 2, h / 2, fill)
                 icon(c, ic, l + h / 2, y, 16f, Color.BLACK)
-                sliders.add(Slider(RectF(l, y - h / 2, r, y + h / 2), set))
+                sliders.add(Slider(RectF(l, y - h / 2, r, y + h / 2), set = set))
             } else {
                 icon(c, ic, l + h / 2, y, 16f, white)
                 write(c, T.t("Tap to allow"), l + h + 8 * dp, y + 5 * dp, 13f, grey)
@@ -1789,12 +2081,12 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 swiped = false
             }
             MotionEvent.ACTION_MOVE -> dragging?.let {
-                it.set(((x - it.rect.left) / it.rect.width()).coerceIn(0f, 1f))
+                it.set(it.at(x, y))
                 invalidate()
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> dragging?.let {
-                it.set(((x - it.rect.left) / it.rect.width()).coerceIn(0f, 1f))
+                it.set(it.at(x, y))
                 dragging = null
                 seekTo?.let { f ->
                     val m = Isle.island.get("music") as? Live.Music

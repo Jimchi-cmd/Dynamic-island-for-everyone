@@ -31,6 +31,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
+import islet.island.ControlCentre
 import islet.island.Forecast
 import islet.island.Format
 import islet.island.IslandSize
@@ -80,6 +81,34 @@ class MainActivity : AppCompatActivity() {
     private val askPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         Sensors.refresh()
         build()
+    }
+
+    /** A photo for behind Control Centre: shrunk and kept in the app's own files. */
+    private val pickPhoto = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val saved = runCatching { savePhoto(uri) }.getOrDefault(false)
+        if (saved) {
+            prefs.ccPhoto = true
+            changed()
+        } else {
+            android.widget.Toast.makeText(this, T.t("That isn't a picture Islet can read."), android.widget.Toast.LENGTH_SHORT).show()
+        }
+        build()
+    }
+
+    private fun savePhoto(uri: android.net.Uri): Boolean {
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return false
+        // About twice the card's size is plenty: decode it smaller, then shrink.
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 1200) sample *= 2
+        val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+        val raw = contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, opts) } ?: return false
+        val k = minOf(1f, 1200f / maxOf(raw.width, raw.height))
+        val bmp = if (k < 1f) android.graphics.Bitmap.createScaledBitmap(raw, (raw.width * k).toInt().coerceAtLeast(1), (raw.height * k).toInt().coerceAtLeast(1), true) else raw
+        java.io.File(filesDir, IslandView.CC_PHOTO).outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, it) }
+        return true
     }
 
     private val back = object : OnBackPressedCallback(false) {
@@ -408,6 +437,34 @@ class MainActivity : AppCompatActivity() {
             changed()
             build()
         })
+        if (prefs.style == "tinted") {
+            val tints = listOf(
+                "" to T.t("Same as accent"),
+                "#d6336c" to T.t("Pink"),
+                "#e03131" to T.t("Red"),
+                "#f76707" to T.t("Orange"),
+                "#f59f00" to T.t("Yellow"),
+                "#2f9e44" to T.t("Green"),
+                "#0c8599" to T.t("Teal"),
+                "#1971c2" to T.t("Blue"),
+                "#4263eb" to T.t("Indigo"),
+                "#7048e8" to T.t("Purple"),
+                "#868e96" to T.t("Graphite"),
+                "custom" to T.t("Your own…"),
+            )
+            val now = tints.firstOrNull { it.first.equals(prefs.tint, ignoreCase = true) }?.second ?: prefs.tint
+            style.add(kit.valueRow(T.t("Tint colour"), now) {
+                choose(T.t("Tint colour"), tints, prefs.tint) { pick ->
+                    if (pick == "custom") {
+                        askTint()
+                    } else {
+                        prefs.tint = pick
+                        changed()
+                        build()
+                    }
+                }
+            })
+        }
         val accents = listOf("purple" to T.t("Purple"), "blue" to T.t("Blue"), "pink" to T.t("Pink"), "green" to T.t("Green"), "orange" to T.t("Orange"), "white" to T.t("White"))
         style.add(kit.valueRow(T.t("Accent colour"), accents.firstOrNull { it.first == prefs.accent }?.second ?: T.t("Purple")) {
             choose(T.t("Accent colour"), accents, prefs.accent) { prefs.accent = it; changed(); build() }
@@ -417,6 +474,7 @@ class MainActivity : AppCompatActivity() {
             choose(T.t("Clock on the empty island"), faces, prefs.clockFace) { prefs.clockFace = it; changed(); build() }
         })
         style.add(kit.toggleRow(T.t("Notch shape"), T.t("Square top corners joined to the top of the screen, so the island grows out of the edge."), prefs.notch) { prefs.notch = it; changed() })
+        controlCentre(col)
         val size = kit.card(col, T.t("Size"))
         size.add(kit.segmented(IslandSize.entries.map { it.name to it.name }, prefs.size.name) {
             prefs.size = IslandSize.valueOf(it)
@@ -448,6 +506,102 @@ class MainActivity : AppCompatActivity() {
         look.add(kit.toggleRow(T.t("Airplane mode and Do Not Disturb icons"), T.t("A plane or moon on the empty island while they're on."), prefs.modeIcons) { prefs.modeIcons = it; changed() })
         look.add(kit.toggleRow(T.t("Camera and microphone dots"), T.t("Green and orange dots while an app uses them."), prefs.privacyDots) { prefs.privacyDots = it; changed() })
         look.add(kit.toggleRow(T.t("Hide in landscape"), T.t("For videos and games."), prefs.hideInLandscape) { prefs.hideInLandscape = it; changed() })
+    }
+
+    /** A tint colour typed as #rrggbb. */
+    private fun askTint() {
+        val field = android.widget.EditText(this).apply {
+            hint = "#3a7bd5"
+            setText(prefs.tint)
+            setSingleLine()
+        }
+        AlertDialog.Builder(this)
+            .setTitle(T.t("Tint colour"))
+            .setView(field)
+            .setPositiveButton(T.t("Save")) { _, _ ->
+                val rgb = IslandView.tintOf(field.text.toString())
+                if (rgb != null) {
+                    prefs.tint = String.format("#%06x", rgb)
+                    changed()
+                    build()
+                }
+            }
+            .setNegativeButton(T.t("Cancel"), null)
+            .show()
+    }
+
+    /** Control Centre: its layout, a photo behind it, and the order of its buttons. */
+    private fun controlCentre(col: LinearLayout) {
+        val cc = kit.card(col, T.t("Control Centre"), T.t("The card that opens when you tap the island."), top = 14)
+        val names = listOf("classic" to T.t("Classic"), "modules" to T.t("Modules"), "sliders" to T.t("Sliders"), "dock" to T.t("Dock"))
+        cc.add(kit.segmented(names, prefs.ccStyle) {
+            prefs.ccStyle = it
+            changed()
+            build()
+        })
+        val hints = mapOf(
+            "classic" to T.t("The time, Wi-Fi and Bluetooth with their names, the tools in a row"),
+            "modules" to T.t("A block of round buttons, with search beside it"),
+            "sliders" to T.t("Volume and brightness as tall sliders beside the buttons"),
+            "dock" to T.t("A big clock, with every button in one labelled row"),
+        )
+        hints[prefs.ccStyle]?.let { cc.add(kit.para(it)) }
+        if (prefs.ccPhoto) {
+            cc.add(kit.row(T.t("Background photo"), T.t("Darkened so the buttons stay easy to read. It stays on this phone."), right = kit.buttons(
+                kit.button(T.t("Change…")) { pickPhoto.launch("image/*") },
+                kit.button(T.t("Remove")) {
+                    prefs.ccPhoto = false
+                    java.io.File(filesDir, IslandView.CC_PHOTO).delete()
+                    changed()
+                    build()
+                },
+            )))
+        } else {
+            cc.add(kit.valueRow(T.t("Background photo"), T.t("None"), T.t("Darkened so the buttons stay easy to read. It stays on this phone.")) {
+                pickPhoto.launch("image/*")
+            })
+        }
+        val order = kit.card(col, T.t("Button order"), T.t("Every layout places Control Centre's buttons in this order; when a layout has no room for them all, the ones at the end are left out."), top = 14)
+        val ids = ControlCentre.order(prefs.ccOrder)
+        val labels = mapOf(
+            "wifi" to T.t("Wi-Fi"),
+            "bluetooth" to T.t("Bluetooth"),
+            "search" to T.t("Search"),
+            "todo" to T.t("To-do list"),
+            "speed" to T.t("Speed test"),
+            "controls" to T.t("Control centre"),
+            "calendar" to T.t("Calendar"),
+            "screenshot" to T.t("Screenshot"),
+            "lock" to T.t("Lock"),
+        )
+        ids.forEachIndexed { i, id ->
+            val name = labels[id] ?: id
+            fun arrow(label: String, by: Int, enabled: Boolean) = kit.text(label, 18f, if (enabled) kit.theme.text else kit.theme.muted, bold = true).apply {
+                gravity = android.view.Gravity.CENTER
+                minWidth = kit.dp(40)
+                minHeight = kit.dp(36)
+                contentDescription = if (by < 0) T.f("Move {} up", name) else T.f("Move {} down", name)
+                isEnabled = enabled
+                setOnClickListener {
+                    prefs.ccOrder = ControlCentre.moved(ids, id, by)
+                    changed()
+                    build()
+                }
+            }
+            val arrows = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(arrow("↑", -1, i > 0))
+                addView(arrow("↓", 1, i < ids.size - 1))
+            }
+            order.add(kit.row("${i + 1}.  $name", right = arrows))
+        }
+        if (prefs.ccOrder.isNotEmpty()) {
+            order.add(kit.buttons(kit.button(T.t("Usual order")) {
+                prefs.ccOrder = emptyList()
+                changed()
+                build()
+            }))
+        }
     }
 
     private fun choose(title: String, options: List<Pair<String, String>>, current: String, pick: (String) -> Unit) {

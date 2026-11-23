@@ -8,6 +8,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - **Control Centre layouts** (Settings → General → Look): Classic (as before), **Modules** (a block of round buttons with the timer beside it), **Sliders** (volume and brightness as tall sliders beside the buttons) and **Dock** (a big clock with every button in one labelled row). `islet look control-centre <layout>`.
 - **Your own button order** for Control Centre, used by every layout (`islet card order …`), and a **background photo** behind it, darkened so the buttons stay readable (`islet look photo <file>|none`). The photo stays on the computer.
 - **Tint colour**: the Tinted and Tinted glass styles can have a colour of their own instead of the accent colour (`islet look tint <#rrggbb>|accent`).
+- **Phone app**: the same four Control Centre layouts, a background photo, the button order (Look → Control Centre, Button order) and a tint colour of your own for the Tinted style.
 
 ### Fixed
 - Windows (MSIX package): turning on **Start at login** in Settings could fail with "The parameter is incorrect". Settings now has its own startup task in the package, Islet finds whichever one Windows lets it see, and if none is found it says to use Task Manager → Startup apps.

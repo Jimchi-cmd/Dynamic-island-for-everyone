@@ -311,6 +311,7 @@ class IslandWindow(private val context: Context, private val type: Int) {
             },
             prefs.popsDown,
             prefs.lyrics,
+            islet.island.ControlCentre.height(prefs.ccStyle, Isle.island.openedFrom != null || Isle.island.openedFromCalendar),
         )
         // Round the camera either way. (As an ordinary overlay, some phones'
         // status bars take taps on the small pill; the accessibility switch

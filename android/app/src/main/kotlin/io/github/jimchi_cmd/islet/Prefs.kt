@@ -78,6 +78,26 @@ class Prefs(context: Context) {
         get() = p.getString("style", "black") ?: "black"
         set(v) = p.edit().putString("style", v).apply()
 
+    /** Control Centre's layout: "classic", "modules", "sliders" or "dock" (see `ControlCentre.STYLES`). */
+    var ccStyle: String
+        get() = p.getString("cc_style", "classic") ?: "classic"
+        set(v) = p.edit().putString("cc_style", v).apply()
+
+    /** Control Centre's buttons in the user's order (ids from `ControlCentre.BUTTONS`; empty = the usual order). */
+    var ccOrder: List<String>
+        get() = (p.getString("cc_order", "") ?: "").split(',').filter { it.isNotBlank() }
+        set(v) = p.edit().putString("cc_order", v.joinToString(",")).apply()
+
+    /** A photo behind Control Centre (saved as `CC_PHOTO` in the app's own files). */
+    var ccPhoto: Boolean
+        get() = flag("cc_photo", false)
+        set(v) = set("cc_photo", v)
+
+    /** The tinted style's colour, "#rrggbb" ("" = the accent colour). */
+    var tint: String
+        get() = p.getString("tint", "") ?: ""
+        set(v) = p.edit().putString("tint", v).apply()
+
     /** The empty island shows the time and the battery beside the camera. */
     var idleClock: Boolean
         get() = flag("idle_clock", true)
