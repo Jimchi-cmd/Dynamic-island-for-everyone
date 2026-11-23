@@ -27,6 +27,7 @@
     type PlaceSuggestion,
     alarmAddArgs,
     DAY_LETTERS,
+    WEEKDAY_NAMES,
     describeDays,
     formatAlarmTime,
     keyLooksValid,
@@ -2221,11 +2222,11 @@
                 class="day"
                 class:on={alarmDays & (1 << i)}
                 aria-pressed={(alarmDays & (1 << i)) !== 0}
-                aria-label={['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i]}
-                onclick={() => (alarmDays ^= 1 << i)}>{d}</button
+                aria-label={tr(WEEKDAY_NAMES[i])}
+                onclick={() => (alarmDays ^= 1 << i)}>{tr(d)}</button
               >
             {/each}
-            <span class="muted small">{describeDays(alarmDays)}</span>
+            <span class="muted small">{describeDays(alarmDays, tr)}</span>
           </div>
           <div class="actions"><button class="primary" onclick={addAlarm}>{tr("Add alarm")}</button></div>
           {#if alarmNote}<p class="small" role="status">{alarmNote}</p>{/if}
@@ -2234,7 +2235,7 @@
           <div class="card row">
             <div>
               <h2 class:muted={!a.enabled}>{formatAlarmTime(a, h24)}</h2>
-              <p class="muted">{a.label || 'Alarm'} · {describeDays(a.days)}</p>
+              <p class="muted">{a.label || tr('Alarm')} · {describeDays(a.days, tr)}</p>
             </div>
             <div class="row">
               <button class="link" onclick={() => alarmCmd('remove', a.id)}>{tr("Delete")}</button>
@@ -2393,7 +2394,7 @@
           {#if worldClocks.length}
             <div class="actions left">
               {#each worldClocks as c (c)}
-                <button onclick={() => worldChange(false, c)} aria-label={tf('Remove {}', c)}>{c} ✕</button>
+                <button onclick={() => worldChange(false, c)} aria-label={tf('Remove {}', tr(c))}>{tr(c)} ✕</button>
               {/each}
             </div>
           {/if}
@@ -2405,7 +2406,10 @@
               searchable
               options={[
                 { value: '', label: tr(N('Choose…')) },
-                ...cities.filter((c) => !worldClocks.includes(c)).map((c) => ({ value: c, label: c })),
+                ...cities
+                  .filter((c) => !worldClocks.includes(c))
+                  .map((c) => ({ value: c, label: tr(c) }))
+                  .sort((a, b) => a.label.localeCompare(b.label)),
               ]}
               onchange={(v) => v && worldChange(true, v)}
             />

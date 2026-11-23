@@ -44,7 +44,7 @@ impl Hotkey {
         }
         hk.key = key.ok_or_else(|| format!("no key in {s:?} (e.g. Ctrl+Alt+I)"))?;
         if !(hk.ctrl || hk.alt || hk.logo) {
-            return Err("a shortcut needs Ctrl, Alt or the Windows/Command key".into());
+            return Err(crate::i18n::t("a shortcut needs Ctrl, Alt or the Windows/Command key").into());
         }
         Ok(hk)
     }

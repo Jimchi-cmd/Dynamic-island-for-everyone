@@ -99,6 +99,13 @@ object T {
         return android.icu.text.SimpleDateFormat(pattern, loc).format(java.util.Date(ms))
     }
 
+    /** A time zone's city ("Europe/Paris") in the language in use, as Android names it. */
+    fun city(zone: String): String {
+        val fallback = zone.substringAfterLast('/').replace('_', ' ')
+        return runCatching { android.icu.text.TimeZoneNames.getInstance(locale()).getExemplarLocationName(zone) }
+            .getOrNull()?.takeIf { it.isNotBlank() } ?: fallback
+    }
+
     /** The locale for dates and numbers in the language in use. */
     fun locale(): Locale = when (code) {
         "zh" -> Locale.SIMPLIFIED_CHINESE

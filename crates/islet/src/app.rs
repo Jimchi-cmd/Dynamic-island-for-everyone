@@ -2464,7 +2464,8 @@ impl App {
             .filter_map(|c| {
                 let (name, _, _) = islet_core::worldclock::find(c)?;
                 let (now, days) = islet_core::worldclock::city_time(name, self.wall as i64, here)?;
-                Some((name.to_string(), now, days))
+                // The city's name in the language in use.
+                Some((tr(name).to_string(), now, days))
             })
             .collect()
     }
@@ -5518,6 +5519,7 @@ mod tests {
         for (code, _) in islet_core::i18n::LANGUAGES.iter().skip(1) {
             islet_core::i18n::set_language(code);
             let mut cc = App::new(Demo::None, false);
+            cc.set_prefs(IslandPrefs { world_clocks: vec!["London".into(), "Tokyo".into()], ..IslandPrefs::default() });
             cc.set_time(NOW, 0.0);
             use islet_core::weather::{Sky, Weather};
             let w = Weather {
@@ -5534,7 +5536,16 @@ mod tests {
             timer.set_time(NOW, 0.0);
             timer.timer_command(TimerCommand::Start { secs: 300.0, label: String::new() }, 0.0);
             click(&mut timer, 0.5);
-            for (name, a) in [("cc", &cc), ("timer", &timer)] {
+            let mut cal = App::new(Demo::None, false);
+            cal.set_time(NOW, 0.0);
+            click(&mut cal, 0.5);
+            let cr = cal.content_rect(cal.pill_rect(5.0));
+            let (r, _) = content::quick_row(cr, cal.clock_row())
+                .into_iter()
+                .find(|(_, q)| *q == content::Quick::Calendar)
+                .unwrap();
+            press(&mut cal, r, 5.0);
+            for (name, a) in [("cc", &cc), ("timer", &timer), ("calendar", &cal)] {
                 let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
                 let mut cell = Pixmap::new(cw * 2, ch * 2).unwrap();
                 let frame = a.frame(30.0);

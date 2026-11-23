@@ -45,6 +45,11 @@ use tiny_skia::Pixmap;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if !args.is_empty() {
+        // Commands answer in the language set for Islet, as the island does.
+        let setting = config::load_prefs().language;
+        islet_core::i18n::set_language(islet_core::i18n::resolve(&setting, &islet_render::text::system_locale()));
+    }
     if let Some(result) = cli::run(&args) {
         attach_console();
         match result {

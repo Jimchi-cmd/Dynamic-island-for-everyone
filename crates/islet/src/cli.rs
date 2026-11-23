@@ -12,6 +12,7 @@ use crate::{autostart, config, control, net, providers, secrets};
 use control::Control;
 use islet_core::alarm::{self, Alarm};
 use islet_core::connectivity::Radio;
+use islet_core::i18n::{t as tr, tf};
 use islet_core::nav::{TravelMode, Trip};
 use islet_core::timer::{self, TimerCommand};
 
@@ -215,12 +216,13 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["todo", "--json"] => serde_json::to_string(&load_todo().items).map_err(|e| e.to_string()),
         ["todo", "add"] => read_line("Type a note and press Enter:")
             .and_then(|line| edit_todo(|t| t.add(&line).map(|_| "Added.".to_string()))),
-        ["todo", "done", id] => todo_id(id)
-            .and_then(|id| edit_todo(|t| if t.toggle(id) { Ok("Done.".into()) } else { Err(format!("no item {id}")) })),
-        ["todo", "remove", id] => todo_id(id).and_then(|id| {
-            edit_todo(|t| if t.remove(id) { Ok("Removed.".into()) } else { Err(format!("no item {id}")) })
+        ["todo", "done", id] => todo_id(id).and_then(|id| {
+            edit_todo(|t| if t.toggle(id) { Ok(tr("Done.").into()) } else { Err(tf("no item {}", &[&id])) })
         }),
-        ["todo", "clear-done"] => edit_todo(|t| Ok(format!("Removed {} finished.", t.clear_done()))),
+        ["todo", "remove", id] => todo_id(id).and_then(|id| {
+            edit_todo(|t| if t.remove(id) { Ok(tr("Removed.").into()) } else { Err(tf("no item {}", &[&id])) })
+        }),
+        ["todo", "clear-done"] => edit_todo(|t| Ok(tf("Removed {} finished.", &[&t.clear_done()]))),
         ["shortcut"] => Ok(shortcuts_text()),
         ["shortcut", "--json"] => serde_json::to_string(&config::load_prefs().shortcuts).map_err(|e| e.to_string()),
         ["shortcut", "add", "--name", name, "--target", target] => shortcut_add(name, target),
@@ -234,7 +236,7 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         }
         ["world", "add", city @ ..] if !city.is_empty() => world(true, &city.join(" ")),
         ["world", "remove", city @ ..] if !city.is_empty() => world(false, &city.join(" ")),
-        ["pro", ..] => Err("Islet Pro is gone: everything it had is now free for everyone.".into()),
+        ["pro", ..] => Err(tr("Islet Pro is gone: everything it had is now free for everyone.").into()),
         ["performance"] => Ok(config::load_prefs().performance),
         ["performance", mode] => set_performance(mode),
         ["language"] => Ok(config::load_prefs().language),
@@ -292,7 +294,7 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["shelf", "clear"] => {
             config::save_shelf(&[]);
             let _ = control::send(&Control::ShelfChanged);
-            Ok("The shelf is empty.".into())
+            Ok(tr("The shelf is empty.").into())
         }
         ["rules"] | ["rules", "hide"] => Ok(config::load_prefs().hide_with.join("\n")),
         ["rules", "hide", "--json"] => {
@@ -343,9 +345,9 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
             let (n, _) = islet_core::prefs::ACCENTS
                 .iter()
                 .find(|(n, _)| n.eq_ignore_ascii_case(name))
-                .ok_or_else(|| format!("accent is one of: {}", accent_names()))?;
+                .ok_or_else(|| tf("accent is one of: {}", &[&accent_names()]))?;
             p.accent = (*n).into();
-            Ok(format!("Accent: {n}."))
+            Ok(tf("Accent: {}.", &[&n]))
         }),
         ["look", "style", name] => set_style(name),
         ["look", "shape", name] => set_choice(name, &islet_core::prefs::SHAPES, "shape", |p, v| p.shape = v),
@@ -354,36 +356,36 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         }
         ["look", "tint", "accent"] => set_look(|p| {
             p.tint.clear();
-            Ok("Tint: the accent colour.".into())
+            Ok(tr("Tint: the accent colour.").into())
         }),
         ["look", "tint", hex] => set_look(|p| {
-            let [r, g, b] = islet_core::prefs::parse_hex(hex).ok_or("tint is a colour like #3a7bd5, or accent")?;
+            let [r, g, b] = islet_core::prefs::parse_hex(hex).ok_or(tr("tint is a colour like #3a7bd5, or accent"))?;
             p.tint = format!("#{r:02x}{g:02x}{b:02x}");
-            Ok(format!("Tint: {}.", p.tint))
+            Ok(tf("Tint: {}.", &[&p.tint]))
         }),
         ["look", "photo", "none"] => set_look(|p| {
             p.cc_photo = false;
             if let Some(d) = config::dir() {
                 let _ = std::fs::remove_file(d.join(islet_core::prefs::CC_PHOTO));
             }
-            Ok("No photo behind Control Centre.".into())
+            Ok(tr("No photo behind Control Centre.").into())
         }),
         ["look", "photo", "-"] => read_line("Paste the photo, base64-encoded, and press Enter:").and_then(|text| {
-            let bytes = base64_decode(&text).ok_or("that isn't base64")?;
+            let bytes = base64_decode(&text).ok_or(tr("that isn't base64"))?;
             set_photo(&bytes)
         }),
         ["look", "photo", file] => std::fs::read(file).map_err(|e| format!("{file}: {e}")).and_then(|b| set_photo(&b)),
         ["card", "order", "default"] => set_look(|p| {
             p.cc_order.clear();
-            Ok("Control Centre's buttons are in the usual order.".into())
+            Ok(tr("Control Centre's buttons are in the usual order.").into())
         }),
         ["card", "order", list] => set_look(|p| {
             let ids: Vec<&str> = list.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
             if let Some(bad) = ids.iter().find(|id| !islet_core::prefs::CC_BUTTONS.contains(id)) {
-                return Err(format!("no such button: {bad} (one of: {})", islet_core::prefs::CC_BUTTONS.join(", ")));
+                return Err(tf("no such button: {} (one of: {})", &[&bad, &islet_core::prefs::CC_BUTTONS.join(", ")]));
             }
             p.cc_order = ids.iter().map(|s| s.to_string()).collect();
-            Ok(format!("Order: {}.", p.cc_order().join(", ")))
+            Ok(tf("Order: {}.", &[&p.cc_order().join(", ")]))
         }),
         ["fonts"] => Ok(fonts_text()),
         ["fonts", "--json"] => serde_json::to_string(
@@ -393,7 +395,7 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["look", "font", "default"] => set_look(|p| {
             p.font.clear();
             p.font_files.clear();
-            Ok("The island uses its built-in font.".into())
+            Ok(tr("The island uses its built-in font.").into())
         }),
         ["look", "font", name] => set_font(name),
         ["look", "clock", name] => set_choice(name, &islet_core::prefs::CLOCK_FACES, "clock", |p, v| p.clock_face = v),
@@ -405,59 +407,59 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         }),
         ["look", "position", name] => set_look(|p| {
             let place = islet_core::geometry::Placement::parse(name)
-                .ok_or_else(|| format!("position is one of: {}", islet_core::geometry::Placement::NAMES.join(", ")))?;
+                .ok_or_else(|| tf("position is one of: {}", &[&islet_core::geometry::Placement::NAMES.join(", ")]))?;
             p.position = place.name().into();
-            Ok(format!("Position: {}.", place.name()))
+            Ok(tf("Position: {}.", &[&place.name()]))
         }),
         ["look", "size", name, "--display", display] => set_look(|p| {
             if *name == "default" {
                 p.display_sizes.remove(*display);
-                return Ok(format!("{display} uses the usual size."));
+                return Ok(tf("{} uses the usual size.", &[&display]));
             }
             let (n, _) = islet_core::prefs::SIZES
                 .iter()
                 .find(|(n, _)| n.eq_ignore_ascii_case(name))
-                .ok_or("size is small, medium, large or default")?;
+                .ok_or(tr("size is small, medium, large or default"))?;
             if !crate::platform::displays().iter().any(|d| d == display) {
-                return Err(format!("no display called {display:?} (see `islet displays`)"));
+                return Err(tf("no display called “{}” (see `islet displays`)", &[&display]));
             }
             p.display_sizes.insert(display.to_string(), (*n).into());
-            Ok(format!("Size on {display}: {n}."))
+            Ok(tf("Size on {}: {}.", &[&display, &n]))
         }),
         ["look", "size", name] => set_look(|p| {
             let (n, _) = islet_core::prefs::SIZES
                 .iter()
                 .find(|(n, _)| n.eq_ignore_ascii_case(name))
-                .ok_or("size is small, medium or large")?;
+                .ok_or(tr("size is small, medium or large"))?;
             p.size = (*n).into();
-            Ok(format!("Size: {n}."))
+            Ok(tf("Size: {}.", &[&n]))
         }),
         ["places", rest @ ..] => places(rest),
         ["displays"] => Ok(crate::platform::displays().join("\n")),
         ["displays", "--json"] => Ok(serde_json::to_string(&crate::platform::displays()).unwrap_or_default()),
         ["look", "display", "all"] => set_look(|p| {
             p.display = islet_core::prefs::ALL_DISPLAYS.into();
-            Ok("An island shows on every display.".into())
+            Ok(tr("An island shows on every display.").into())
         }),
         ["look", "display", "primary"] => set_look(|p| {
             p.display.clear();
-            Ok("The island shows on the primary display.".into())
+            Ok(tr("The island shows on the primary display.").into())
         }),
         ["look", "display", name] => set_look(|p| {
             if !crate::platform::displays().iter().any(|d| d == name) {
-                return Err(format!("no display called {name:?} (see `islet displays`)"));
+                return Err(tf("no display called “{}” (see `islet displays`)", &[&name]));
             }
             p.display = name.to_string();
-            Ok(format!("The island shows on {name}."))
+            Ok(tf("The island shows on {}.", &[&name]))
         }),
         ["look", "offset", px] => set_look(|p| {
             let v: u32 = px
                 .parse()
                 .ok()
                 .filter(|v| *v <= islet_core::prefs::MAX_OFFSET)
-                .ok_or_else(|| format!("offset is 0–{} px", islet_core::prefs::MAX_OFFSET))?;
+                .ok_or_else(|| tf("offset is 0–{} px", &[&islet_core::prefs::MAX_OFFSET]))?;
             p.offset = v;
-            Ok(format!("Offset: {v} px."))
+            Ok(tf("Offset: {} px.", &[&v]))
         }),
         ["hotkey", combo] => set_hotkey(combo),
         _ => Err(format!("unknown command\n\n{USAGE}")),
@@ -470,37 +472,37 @@ pub fn parse_trip(args: &[&str]) -> Result<Trip, String> {
     let mut place_id = None;
     let mut it = args.iter();
     while let Some(&arg) = it.next() {
-        let mut value = |name: &str| it.next().copied().ok_or_else(|| format!("{name} needs a value"));
+        let mut value = |name: &str| it.next().copied().ok_or_else(|| tf("{} needs a value", &[&name]));
         match arg {
             "--from" => origin = Some(value("--from")?.to_string()),
             "--label" => label = value("--label")?.to_string(),
             "--place-id" => place_id = Some(value("--place-id")?.to_string()),
             "--mode" => {
                 let m = value("--mode")?;
-                mode = TravelMode::parse(m).ok_or_else(|| format!("unknown travel mode {m:?}"))?;
+                mode = TravelMode::parse(m).ok_or_else(|| tf("unknown travel mode “{}”", &[&m]))?;
             }
-            other if other.starts_with("--") => return Err(format!("unknown option {other}")),
+            other if other.starts_with("--") => return Err(tf("unknown option {}", &[&other])),
             word => destination.push(word),
         }
     }
     let destination = destination.join(" ");
     if destination.trim().is_empty() {
-        return Err("say where to: islet nav start <destination> --from <origin>".into());
+        return Err(tr("say where to: islet nav start <destination> --from <origin>").into());
     }
     let origin = origin
         .filter(|o| !o.trim().is_empty())
-        .ok_or("say where from with --from (Islet has no location access; an address or \"lat,lng\" works)")?;
+        .ok_or(tr("say where from with --from (Islet has no location access; an address or “lat,lng” works)"))?;
     Ok(Trip { label, destination, origin, mode, place_id })
 }
 
 fn start_trip(trip: Trip) -> Result<String, String> {
     let title = trip.title().to_string();
     match control::send(&Control::NavStart(trip.clone())) {
-        Ok(()) => Ok(format!("Showing the trip to {title} on the island.")),
+        Ok(()) => Ok(tf("Showing the trip to {} on the island.", &[&title])),
         Err(_) => {
             // Not running: save it so the island shows it when it starts.
             config::save_trip(Some(&trip));
-            Ok(format!("Saved the trip to {title}; it will show when Islet starts."))
+            Ok(tf("Saved the trip to {}; it will show when Islet starts.", &[&title]))
         }
     }
 }
@@ -509,7 +511,7 @@ fn stop_trip() -> Result<String, String> {
     if control::send(&Control::NavStop).is_err() {
         config::save_trip(None);
     }
-    Ok("Stopped.".into())
+    Ok(tr("Stopped.").into())
 }
 
 pub fn parse_alarm(args: &[&str], id: u32) -> Result<Alarm, String> {
@@ -517,21 +519,21 @@ pub fn parse_alarm(args: &[&str], id: u32) -> Result<Alarm, String> {
     let (mut label, mut days) = (String::new(), 0u8);
     let mut it = args.iter();
     while let Some(&arg) = it.next() {
-        let mut value = |name: &str| it.next().copied().ok_or_else(|| format!("{name} needs a value"));
+        let mut value = |name: &str| it.next().copied().ok_or_else(|| tf("{} needs a value", &[&name]));
         match arg {
             "--label" => label = value("--label")?.to_string(),
             "--days" => {
                 let d = value("--days")?;
                 days =
-                    alarm::parse_days(d).ok_or_else(|| format!("unknown days {d:?} (try weekdays or mon,wed,fri)"))?;
+                    alarm::parse_days(d).ok_or_else(|| tf("unknown days “{}” (try weekdays or mon,wed,fri)", &[&d]))?;
             }
-            other if other.starts_with("--") => return Err(format!("unknown option {other}")),
+            other if other.starts_with("--") => return Err(tf("unknown option {}", &[&other])),
             w => words.push(w),
         }
     }
     let time = words.join(" ");
     let (hour, minute) =
-        alarm::parse_time(&time).ok_or_else(|| format!("say when: islet alarm add 7:30 (not {time:?})"))?;
+        alarm::parse_time(&time).ok_or_else(|| tf("say when: islet alarm add 7:30 (not “{}”)", &[&time]))?;
     Ok(Alarm { id, hour, minute, label, days, enabled: true })
 }
 
@@ -583,7 +585,7 @@ fn alarm_list(json: bool) -> String {
 fn alarm_edit(verb: &str, id: &str) -> Result<String, String> {
     let id: u32 = id.parse().map_err(|_| format!("{id:?} is not an alarm number (see islet alarm list)"))?;
     let mut alarms = config::load_alarms();
-    let pos = alarms.iter().position(|a| a.id == id).ok_or_else(|| format!("no alarm {id}"))?;
+    let pos = alarms.iter().position(|a| a.id == id).ok_or_else(|| tf("no alarm {}", &[&id]))?;
     let msg = match verb {
         "remove" => {
             alarms.remove(pos);
@@ -611,20 +613,20 @@ fn weather_set_exact(lat: &str, lon: &str, name: &str) -> Result<String, String>
     let lat = lat.parse::<f64>().map_err(|_| format!("{lat:?} isn't a latitude"))?;
     let lon = lon.parse::<f64>().map_err(|_| format!("{lon:?} isn't a longitude"))?;
     set_weather(Some(islet_core::prefs::Place { name: name.to_string(), lat, lon }))?;
-    Ok(format!("Weather for {name}."))
+    Ok(tf("Weather for {}.", &[&name]))
 }
 
 fn weather_set_search(words: &[&str]) -> Result<String, String> {
     let q = words.join(" ");
-    let place = providers::weather::search(&q)?.into_iter().next().ok_or_else(|| format!("no place called {q:?}"))?;
+    let place = providers::weather::search(&q)?.into_iter().next().ok_or_else(|| tf("no place called “{}”", &[&q]))?;
     let name = place.name.clone();
     set_weather(Some(place))?;
-    Ok(format!("Weather for {name}."))
+    Ok(tf("Weather for {}.", &[&name]))
 }
 
 fn weather_now() -> Result<String, String> {
     let p = config::load_prefs();
-    let place = p.weather.ok_or("Weather is off. Turn it on with: islet weather set <city>")?;
+    let place = p.weather.ok_or(tr("Weather is off. Turn it on with: islet weather set <city>"))?;
     let w = providers::weather::fetch(&place)?;
     let t = |c| islet_core::weather::format_temp(c, p.fahrenheit);
     let range = match (w.high_c, w.low_c) {
@@ -644,7 +646,7 @@ fn weather_search(args: &[&str]) -> Result<String, String> {
     let json = args.contains(&"--json");
     let q: Vec<&str> = args.iter().copied().filter(|a| *a != "--json").collect();
     if q.is_empty() {
-        return Err("search for what? islet weather search Kampala".into());
+        return Err(tr("search for what? islet weather search Kampala").into());
     }
     let places = providers::weather::search(&q.join(" "))?;
     if json {
@@ -666,11 +668,11 @@ fn calendar_set() -> Result<String, String> {
     std::io::stdin().read_line(&mut link).map_err(|e| e.to_string())?;
     let link = link.trim();
     if !(link.starts_with("https://") || link.starts_with("webcal://")) {
-        return Err("that doesn't look like a calendar link (it should start with https:// or webcal://)".into());
+        return Err(tr("that doesn't look like a calendar link (it should start with https:// or webcal://)").into());
     }
     secrets::set_calendar_url(link)?;
     set_switch("calendar", "on")?;
-    Ok("Saved to the OS keychain; calendar is on.".into())
+    Ok(tr("Saved to the OS keychain; calendar is on.").into())
 }
 
 fn calendar_list(json: bool) -> Result<String, String> {
@@ -684,7 +686,7 @@ fn calendar_list(json: bool) -> Result<String, String> {
         return Ok(serde_json::to_string(&list).unwrap_or_default());
     }
     if events.is_empty() {
-        return Ok("No events in the next week.".into());
+        return Ok(tr("No events in the next week.").into());
     }
     Ok(events
         .iter()
@@ -703,7 +705,7 @@ fn calendar_list(json: bool) -> Result<String, String> {
 
 pub fn parse_activity(id: &str, args: &[&str]) -> Result<islet_core::activity::Custom, String> {
     if id.is_empty() || id.starts_with('-') || id.contains(['\t', '\n']) {
-        return Err("give the activity an id: islet activity start build --title Build".into());
+        return Err(tr("give the activity an id: islet activity start build --title Build").into());
     }
     let mut c = islet_core::activity::Custom {
         id: id.into(),
@@ -716,7 +718,7 @@ pub fn parse_activity(id: &str, args: &[&str]) -> Result<islet_core::activity::C
     };
     let mut it = args.iter();
     while let Some(&arg) = it.next() {
-        let mut value = |name: &str| it.next().copied().ok_or_else(|| format!("{name} needs a value"));
+        let mut value = |name: &str| it.next().copied().ok_or_else(|| tf("{} needs a value", &[&name]));
         match arg {
             "--title" => c.title = value("--title")?.into(),
             "--subtitle" => c.subtitle = value("--subtitle")?.into(),
@@ -729,10 +731,10 @@ pub fn parse_activity(id: &str, args: &[&str]) -> Result<islet_core::activity::C
             }
             "--color" => {
                 let v = value("--color")?.trim_start_matches('#');
-                let n = u32::from_str_radix(v, 16).ok().filter(|_| v.len() == 6).ok_or("--color takes #rrggbb")?;
+                let n = u32::from_str_radix(v, 16).ok().filter(|_| v.len() == 6).ok_or(tr("--color takes #rrggbb"))?;
                 c.color = Some([(n >> 16) as u8, (n >> 8) as u8, n as u8]);
             }
-            o => return Err(format!("unknown option {o}")),
+            o => return Err(tf("unknown option {}", &[&o])),
         }
     }
     if c.title.trim().is_empty() {
@@ -776,8 +778,8 @@ fn places(args: &[&str]) -> Result<String, String> {
     while let Some(&a) = it.next() {
         match a {
             "--json" => json = true,
-            "--session" => session = Some(*it.next().ok_or("--session needs a value")?),
-            o if o.starts_with("--") => return Err(format!("unknown option {o}")),
+            "--session" => session = Some(*it.next().ok_or(tr("--session needs a value"))?),
+            o if o.starts_with("--") => return Err(tf("unknown option {}", &[&o])),
             w => words.push(w),
         }
     }
@@ -795,8 +797,8 @@ fn places(args: &[&str]) -> Result<String, String> {
         .http_status_as_error(false)
         .build()
         .send(islet_core::nav::autocomplete_body(&input, session).to_string())
-        .map_err(|e| format!("network: {e}"))?;
-    let body = resp.body_mut().read_to_string().map_err(|e| format!("network: {e}"))?;
+        .map_err(|e| tf("network: {}", &[&e]))?;
+    let body = resp.body_mut().read_to_string().map_err(|e| tf("network: {}", &[&e]))?;
     let list = islet_core::nav::parse_autocomplete(&body)?;
     if json {
         return serde_json::to_string(&list).map_err(|e| e.to_string());
@@ -832,14 +834,14 @@ fn fonts_text() -> String {
 fn set_font(name: &str) -> Result<String, String> {
     let fonts = islet_render::text::installed_fonts();
     let Some(font) = fonts.iter().find(|f| f.family.eq_ignore_ascii_case(name)) else {
-        return Err(format!("“{name}” isn't installed (islet fonts lists the fonts you have)"));
+        return Err(tf("“{}” isn't installed (islet fonts lists the fonts you have)", &[&name]));
     };
     let family = font.family.clone();
     let files = font.files.iter().map(|p| p.display().to_string()).collect();
     set_look(move |p| {
         p.font = family.clone();
         p.font_files = files;
-        Ok(format!("The island's text is in {family}."))
+        Ok(tf("The island's text is in {}.", &[&family]))
     })
 }
 
@@ -856,7 +858,7 @@ fn set_hotkey(combo: &str) -> Result<String, String> {
 fn hide_with(add: bool, app: &str) -> Result<String, String> {
     let app = app.trim();
     if app.is_empty() || app.len() > 60 {
-        return Err("name the app (up to 60 characters)".into());
+        return Err(tr("name the app (up to 60 characters)").into());
     }
     let mut p = config::load_prefs();
     p.hide_with.retain(|x| !x.eq_ignore_ascii_case(app));
@@ -876,7 +878,7 @@ fn hide_with(add: bool, app: &str) -> Result<String, String> {
 fn clipboard_exclude(add: bool, app: &str) -> Result<String, String> {
     let app = app.trim();
     if app.is_empty() || app.len() > 60 {
-        return Err("name the app (up to 60 characters)".into());
+        return Err(tr("name the app (up to 60 characters)").into());
     }
     let mut p = config::load_prefs();
     p.clipboard_exclude.retain(|x| !x.eq_ignore_ascii_case(app));
@@ -896,7 +898,7 @@ fn set_extra_hotkey(which: &str, combo: &str) -> Result<String, String> {
     let taken = [&p.hotkey, &p.launcher_hotkey, &p.note_hotkey];
     let mine = if which == "launcher" { &p.launcher_hotkey } else { &p.note_hotkey };
     if !label.is_empty() && taken.iter().any(|t| **t == label) && *mine != label {
-        return Err(format!("{label} is already one of Islet's shortcuts"));
+        return Err(tf("{} is already one of Islet's shortcuts", &[&label]));
     }
     if which == "launcher" {
         p.launcher_hotkey = label.clone();
@@ -910,7 +912,7 @@ fn set_extra_hotkey(which: &str, combo: &str) -> Result<String, String> {
 }
 
 fn set_switch(key: &str, value: &str) -> Result<String, String> {
-    let on = islet_core::prefs::parse_on_off(value).ok_or_else(|| format!("say on or off, not {value:?}"))?;
+    let on = islet_core::prefs::parse_on_off(value).ok_or_else(|| tf("say on or off, not “{}”", &[&value]))?;
     // Power saver used to be a switch: it is a Performance mode now.
     if key == "power-saver" {
         return set_performance(if on { "saver" } else { "auto" });
@@ -936,7 +938,7 @@ fn prefs_text(json: bool) -> String {
 }
 
 fn duration(s: &str) -> Result<f64, String> {
-    timer::parse_duration(s).ok_or_else(|| format!("{s:?} isn't a duration (try 25m, 1h30m, 90s or 1:30)"))
+    timer::parse_duration(s).ok_or_else(|| tf("“{}” isn't a duration (try 25m, 1h30m, 90s or 1:30)", &[&s]))
 }
 
 pub fn parse_timer(args: &[&str]) -> Result<TimerCommand, String> {
@@ -944,12 +946,12 @@ pub fn parse_timer(args: &[&str]) -> Result<TimerCommand, String> {
     let mut it = args.iter();
     while let Some(&arg) = it.next() {
         match arg {
-            "--label" => label = it.next().ok_or("--label needs a value")?.to_string(),
-            o if o.starts_with("--") => return Err(format!("unknown option {o}")),
+            "--label" => label = it.next().ok_or(tr("--label needs a value"))?.to_string(),
+            o if o.starts_with("--") => return Err(tf("unknown option {}", &[&o])),
             d => secs = Some(duration(d)?),
         }
     }
-    Ok(TimerCommand::Start { secs: secs.ok_or("how long? islet timer start 25m")?, label })
+    Ok(TimerCommand::Start { secs: secs.ok_or(tr("how long? islet timer start 25m"))?, label })
 }
 
 /// The focus streak (focus.json), as a sentence or as JSON for Settings.
@@ -972,15 +974,18 @@ pub fn parse_focus(args: &[&str]) -> Result<TimerCommand, String> {
     let (mut work, mut brk, mut rounds) = (25.0 * 60.0, 5.0 * 60.0, 4u32);
     let mut it = args.iter();
     while let Some(&arg) = it.next() {
-        let mut value = |name: &str| it.next().copied().ok_or_else(|| format!("{name} needs a value"));
+        let mut value = |name: &str| it.next().copied().ok_or_else(|| tf("{} needs a value", &[&name]));
         match arg {
             "--work" => work = duration(value("--work")?)?,
             "--break" => brk = duration(value("--break")?)?,
             "--rounds" => {
-                rounds =
-                    value("--rounds")?.parse().ok().filter(|r| (1..=12).contains(r)).ok_or("--rounds takes 1 to 12")?
+                rounds = value("--rounds")?
+                    .parse()
+                    .ok()
+                    .filter(|r| (1..=12).contains(r))
+                    .ok_or(tr("--rounds takes 1 to 12"))?
             }
-            o => return Err(format!("unknown option {o}")),
+            o => return Err(tf("unknown option {}", &[&o])),
         }
     }
     Ok(TimerCommand::Focus { work, brk, rounds })
@@ -1045,8 +1050,8 @@ fn wifi_connect(ssid: &str, password_stdin: bool) -> Result<String, String> {
         None
     };
     match conn::backend().wifi_connect(ssid, password.as_deref()) {
-        Ok(()) => Ok(format!("Connected to {ssid}.")),
-        Err(ConnectError::NeedsPassword) => Err(format!("{ssid} needs a password (use --password-stdin)")),
+        Ok(()) => Ok(tf("Connected to {}.", &[&ssid])),
+        Err(ConnectError::NeedsPassword) => Err(tf("{} needs a password (use --password-stdin)", &[&ssid])),
         Err(ConnectError::Failed(e)) => Err(e),
     }
 }
@@ -1124,7 +1129,7 @@ fn set_performance(mode: &str) -> Result<String, String> {
     let mode = modes
         .iter()
         .find(|m| m.eq_ignore_ascii_case(mode))
-        .ok_or_else(|| format!("performance is one of: {}", modes.join(", ")))?;
+        .ok_or_else(|| tf("performance is one of: {}", &[&modes.join(", ")]))?;
     set_look(|p| {
         p.performance = (*mode).into();
         Ok(match *mode {
@@ -1142,10 +1147,10 @@ fn set_language(code: &str) -> Result<String, String> {
     let (code, name) = langs
         .iter()
         .find(|(c, _)| c.eq_ignore_ascii_case(code))
-        .ok_or_else(|| format!("language is one of: {}", langs.map(|(c, _)| c).join(", ")))?;
+        .ok_or_else(|| tf("language is one of: {}", &[&langs.map(|(c, _)| c).join(", ")]))?;
     set_look(|p| {
         p.language = (*code).into();
-        Ok(format!("Language: {name}."))
+        Ok(tf("Language: {}.", &[&name]))
     })
 }
 
@@ -1165,10 +1170,10 @@ fn set_style(name: &str) -> Result<String, String> {
     let style = styles
         .iter()
         .find(|s| s.eq_ignore_ascii_case(name))
-        .ok_or_else(|| format!("style is one of: {}", styles.join(", ")))?;
+        .ok_or_else(|| tf("style is one of: {}", &[&styles.join(", ")]))?;
     set_look(|p| {
         p.style = (*style).into();
-        Ok(format!("Style: {style}."))
+        Ok(tf("Style: {}.", &[&style]))
     })
 }
 
@@ -1182,7 +1187,7 @@ fn set_choice(
     let choice = choices
         .iter()
         .find(|c| c.eq_ignore_ascii_case(name))
-        .ok_or_else(|| format!("{what} is one of: {}", choices.join(", ")))?;
+        .ok_or_else(|| tf("{} is one of: {}", &[&what, &choices.join(", ")]))?;
     set_look(|p| {
         set(p, (*choice).to_string());
         Ok(format!("{what}: {choice}."))
@@ -1206,23 +1211,23 @@ fn shortcut_add(name: &str, target: &str) -> Result<String, String> {
     let s = Shortcut::new(name, target)?;
     let mut p = config::load_prefs();
     if p.shortcuts.len() >= MAX_SHORTCUTS {
-        return Err(format!("You can have up to {MAX_SHORTCUTS} shortcuts. Remove one first."));
+        return Err(tf("You can have up to {} shortcuts. Remove one first.", &[&MAX_SHORTCUTS]));
     }
     p.shortcuts.push(s);
     config::save_prefs(&p)?;
     prefs_changed();
-    Ok("Added.".into())
+    Ok(tr("Added.").into())
 }
 
 /// Remove shortcut number `n` (1-based, as listed).
 fn shortcut_remove(n: &str) -> Result<String, String> {
     let mut p = config::load_prefs();
     let i = n.parse::<usize>().ok().filter(|i| (1..=p.shortcuts.len()).contains(i));
-    let i = i.ok_or_else(|| format!("{n:?} isn't one of your shortcuts (see: islet shortcut)"))?;
+    let i = i.ok_or_else(|| tf("“{}” isn't one of your shortcuts (see: islet shortcut)", &[&n]))?;
     p.shortcuts.remove(i - 1);
     config::save_prefs(&p)?;
     prefs_changed();
-    Ok("Removed.".into())
+    Ok(tr("Removed.").into())
 }
 
 fn load_todo() -> islet_core::todo::Todo {
@@ -1251,30 +1256,32 @@ fn edit_timetable(
 /// `islet class add mon 9:00 10:00 "Maths" [--room "Room 4"]`.
 fn class_add(day: &str, start: &str, end: &str, name: &str, rest: &[&str]) -> Result<String, String> {
     use islet_core::timetable::{parse_day, DAY_NAMES};
-    let d = parse_day(day).ok_or_else(|| format!("{day:?} isn't a day (mon, tue, wed, thu, fri, sat or sun)"))?;
+    let d = parse_day(day).ok_or_else(|| tf("“{}” isn't a day (mon, tue, wed, thu, fri, sat or sun)", &[&day]))?;
     let minutes = |s: &str| {
         islet_core::alarm::parse_time(s)
             .map(|(h, m)| u16::from(h) * 60 + u16::from(m))
-            .ok_or_else(|| format!("{s:?} isn't a time (try 9:00 or 2:30pm)"))
+            .ok_or_else(|| tf("“{}” isn't a time (try 9:00 or 2:30pm)", &[&s]))
     };
     let (start, end) = (minutes(start)?, minutes(end)?);
     let room = match rest {
         [] => "",
         ["--room", r] => r,
-        _ => return Err("after the name, only --room <where> is understood".into()),
+        _ => return Err(tr("after the name, only --room <where> is understood").into()),
     };
     if name.starts_with('-') {
-        return Err("the lesson's name can't start with \"-\"".into());
+        return Err(tr("the lesson's name can't start with “-”").into());
     }
     edit_timetable(|t| {
         t.add(d, start, end, name, room)?;
-        Ok(format!("Added {} on {}.", name.trim(), DAY_NAMES[d as usize]))
+        Ok(tf("Added {} on {}.", &[&name.trim(), &DAY_NAMES[d as usize]]))
     })
 }
 
 fn class_remove(n: &str) -> Result<String, String> {
-    let i: usize = n.parse().ok().filter(|i| *i >= 1).ok_or("say which lesson by its number (see: islet class)")?;
-    edit_timetable(|t| if t.remove(i - 1) { Ok("Removed.".into()) } else { Err(format!("there is no lesson {i}")) })
+    let i: usize = n.parse().ok().filter(|i| *i >= 1).ok_or(tr("say which lesson by its number (see: islet class)"))?;
+    edit_timetable(
+        |t| if t.remove(i - 1) { Ok(tr("Removed.").into()) } else { Err(tf("there is no lesson {}", &[&i])) },
+    )
 }
 
 fn class_text() -> String {
@@ -1339,7 +1346,7 @@ fn phone_pair(new_key: bool, json: bool) -> Result<String, String> {
     config::save_json("phone.json", &PhoneFile { port })?;
     let hosts = crate::providers::phone::local_addresses();
     if hosts.is_empty() {
-        return Err("This computer isn't on a network. Join the Wi-Fi your phone is on, then pair again.".into());
+        return Err(tr("This computer isn't on a network. Join the Wi-Fi your phone is on, then pair again.").into());
     }
     let name = match config::computer_name() {
         n if n.is_empty() => "My computer".to_string(),
@@ -1450,7 +1457,7 @@ fn phone_unpair() -> Result<String, String> {
     config::save_prefs(&p)?;
     config::remove("phone.json");
     prefs_changed();
-    Ok("Unpaired. The old code no longer works; forget this computer in the phone app too.".into())
+    Ok(tr("Unpaired. The old code no longer works; forget this computer in the phone app too.").into())
 }
 
 /// The quick-notes file: "Islet notes.txt" in Documents (or the home
@@ -1462,7 +1469,7 @@ fn notes_file() -> Result<std::path::PathBuf, String> {
     let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
         .filter(|h| !h.is_empty())
         .map(std::path::PathBuf::from)
-        .ok_or("can't find your home folder")?;
+        .ok_or(tr("can't find your home folder"))?;
     let docs = home.join("Documents");
     Ok(if docs.is_dir() { docs } else { home }.join(islet_core::quicknote::FILE_NAME))
 }
@@ -1476,9 +1483,9 @@ fn add_note(text: &str) -> Result<String, String> {
         .create(true)
         .append(true)
         .open(&path)
-        .map_err(|e| format!("can't open {}: {e}", path.display()))?;
-    file.write_all(line.as_bytes()).map_err(|e| format!("can't write {}: {e}", path.display()))?;
-    Ok(format!("Noted in {}.", path.display()))
+        .map_err(|e| tf("can't open {}: {}", &[&path.display(), &e]))?;
+    file.write_all(line.as_bytes()).map_err(|e| tf("can't write {}: {}", &[&path.display(), &e]))?;
+    Ok(tf("Noted in {}.", &[&path.display()]))
 }
 
 /// Change the to-do list, save it and tell the island.
@@ -1510,7 +1517,7 @@ fn stopwatch(cmd: &str) -> Result<String, String> {
         "resume" => (S::Resume, "Resumed."),
         "lap" => (S::Lap, "Lap."),
         "reset" => (S::Reset, "Reset."),
-        other => return Err(format!("unknown stopwatch command {other:?} (start, pause, resume, lap or reset)")),
+        other => return Err(tf("unknown stopwatch command “{}” (start, pause, resume, lap or reset)", &[&other])),
     };
     control::send(&Control::Stopwatch(cmd)).map(|()| msg.into())
 }
@@ -1520,10 +1527,11 @@ fn world(add: bool, city: &str) -> Result<String, String> {
     use islet_core::worldclock::{find, MAX};
     let mut p = config::load_prefs();
     if add {
-        let (name, _, _) = find(city).ok_or_else(|| format!("{city:?} isn't in the list (see: islet world cities)"))?;
+        let (name, _, _) =
+            find(city).ok_or_else(|| tf("“{}” isn't in the list (see: islet world cities)", &[&city]))?;
         if !p.world_clocks.iter().any(|c| c.eq_ignore_ascii_case(name)) {
             if p.world_clocks.len() >= MAX {
-                return Err(format!("You can show up to {MAX} world clocks. Remove one first."));
+                return Err(tf("You can show up to {} world clocks. Remove one first.", &[&MAX]));
             }
             p.world_clocks.push(name.to_string());
         }
@@ -1542,16 +1550,16 @@ const PHOTO_MAX: usize = 25 * 1024 * 1024;
 /// Save a photo for behind Control Centre: shrunk, as a PNG in the config folder.
 fn set_photo(bytes: &[u8]) -> Result<String, String> {
     if bytes.len() > PHOTO_MAX {
-        return Err("that photo is too big (25 MB at most)".into());
+        return Err(tr("that photo is too big (25 MB at most)").into());
     }
-    let pm = providers::art::photo_pixmap(bytes).ok_or("that isn't a PNG or JPEG picture")?;
+    let pm = providers::art::photo_pixmap(bytes).ok_or(tr("that isn't a PNG or JPEG picture"))?;
     let png = pm.encode_png().map_err(|e| e.to_string())?;
-    let dir = config::dir().ok_or("no config folder")?;
+    let dir = config::dir().ok_or(tr("no config folder"))?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     std::fs::write(dir.join(islet_core::prefs::CC_PHOTO), png).map_err(|e| e.to_string())?;
     set_look(|p| {
         p.cc_photo = true;
-        Ok("The photo is behind Control Centre.".into())
+        Ok(tr("The photo is behind Control Centre.").into())
     })
 }
 
@@ -1596,10 +1604,10 @@ fn store_key() -> Result<String, String> {
     let key = read_line("Paste your Google Routes API key and press Enter:")?;
     let key = key.as_str();
     if key.is_empty() {
-        return Err("no key given".into());
+        return Err(tr("no key given").into());
     }
     secrets::set_routes_key(key)?;
-    Ok("Saved to the OS keychain.".into())
+    Ok(tr("Saved to the OS keychain.").into())
 }
 
 #[cfg(test)]

@@ -1833,7 +1833,7 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val offset = Math.floorMod(cal.get(java.util.Calendar.DAY_OF_WEEK) - firstDay, 7)
         val days = cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
         val colW = (r - l) / 7
-        val names = java.text.DateFormatSymbols.getInstance().shortWeekdays
+        val names = java.text.DateFormatSymbols.getInstance(T.locale()).shortWeekdays
         for (i in 0 until 7) {
             val d = Math.floorMod(firstDay - 1 + i, 7) + 1
             write(c, names[d].take(2), l + colW * (i + 0.5f), t + 42 * dp, 11f, grey, align = Paint.Align.CENTER)

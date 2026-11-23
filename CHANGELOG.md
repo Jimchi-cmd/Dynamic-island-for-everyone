@@ -4,6 +4,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Changed
+- More of Islet speaks your language: the command line's messages (and so Settings' error messages), the world clocks' cities, the calendar's weekday letters and month titles, and the alarm days in Settings. The phone's calendar and its world clock cities now follow the language picked in Islet instead of the phone's. `islet --help` stays in English.
+
 ## [0.8.0] - 2026-11-23
 
 ### Added

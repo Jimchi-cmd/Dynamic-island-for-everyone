@@ -60,6 +60,9 @@ class LanguageTest {
         islet.island.Words.tr = { T.t(it) }
         assertEquals("dans 5 min", islet.island.Format.until(5 * 60_000L))
         assertEquals("Pluie", islet.island.Forecast.words(63))
+        // Cities and the calendar's weekdays follow the language picked in Islet, not the phone's.
+        assertEquals("Londres", T.city("Europe/London"))
+        assertEquals("lun.", java.text.DateFormatSymbols.getInstance(T.locale()).shortWeekdays[java.util.Calendar.MONDAY])
     }
 
     @Test

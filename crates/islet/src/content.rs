@@ -302,7 +302,16 @@ pub fn expanded_calendar(
     let (left, top) = (pill.x as f32 + PAD as f32, (pill.y + LIST_TOP) as f32);
     let col = 28.0f32;
     let head = TextStyle { size: 10.5, weight: 600, opacity: o * 0.45, align: Align::Center, ..TextStyle::default() };
-    for (i, d) in ["M", "T", "W", "T", "F", "S", "S"].iter().enumerate() {
+    let heads = [
+        tr("M‖Monday, one letter"),
+        tr("T‖Tuesday, one letter"),
+        tr("W‖Wednesday, one letter"),
+        tr("T‖Thursday, one letter"),
+        tr("F‖Friday, one letter"),
+        tr("S‖Saturday, one letter"),
+        tr("S‖Sunday, one letter"),
+    ];
+    for (i, d) in heads.iter().enumerate() {
         v.push(text(*d, head, left + col * (i as f32 + 0.5), top + 9.0));
     }
     // Monday-first column of the 1st.
@@ -1919,14 +1928,19 @@ fn world_pieces(
             (None, 0) => hm,
             (None, d) => format!("{hm} {d:+}"),
         };
-        let lead = if i == 0 { format!("{city} ") } else { format!("  ·  {city} ") };
-        let (lw, ww) = (engine.measure(&lead, &name), engine.measure(&when, &time));
-        if x + lw + ww > max {
+        // Gaps as space, not as spaces: a right-to-left name would carry
+        // its trailing space to the wrong side.
+        let (gap, dot) = (4.0, if i == 0 { 0.0 } else { 18.0 });
+        let (cw, ww) = (engine.measure(city, &name), engine.measure(&when, &time));
+        if x + dot + cw + gap + ww > max {
             break;
         }
-        v.push((lead, name, x));
-        v.push((when, time, x + lw));
-        x += lw + ww;
+        if i > 0 {
+            v.push(("·".to_string(), name, x + 7.0));
+        }
+        v.push((city.clone(), name, x + dot));
+        v.push((when, time, x + dot + cw + gap));
+        x += dot + cw + gap + ww;
     }
     v
 }

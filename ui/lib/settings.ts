@@ -1,4 +1,4 @@
-import { N } from './i18n';
+import { english, N } from './i18n';
 // Pure helpers for the Settings window (unit-tested; no Tauri calls here).
 
 export type Os = 'macos' | 'windows' | 'linux' | string;
@@ -127,25 +127,38 @@ export interface Alarm {
   enabled: boolean;
 }
 
-export const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+/** One letter for each weekday, Sunday first (keys in the translation table). */
+export const DAY_LETTERS = [
+  N('S‖Sunday, one letter'),
+  N('M‖Monday, one letter'),
+  N('T‖Tuesday, one letter'),
+  N('W‖Wednesday, one letter'),
+  N('T‖Thursday, one letter'),
+  N('F‖Friday, one letter'),
+  N('S‖Saturday, one letter'),
+];
+/** The days' names, Sunday first (keys in the translation table). */
+export const WEEKDAY_NAMES = [N('Sunday'), N('Monday'), N('Tuesday'), N('Wednesday'), N('Thursday'), N('Friday'), N('Saturday')];
+const DAY_SHORT = [N('Sun'), N('Mon'), N('Tue'), N('Wed'), N('Thu'), N('Fri'), N('Sat')];
 const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const DAILY = 0b1111111;
 const WEEKDAYS = 0b0111110;
 const WEEKENDS = 0b1000001;
 
-export function describeDays(days: number): string {
+/** When an alarm repeats, in words; `t` translates (English by default). */
+export function describeDays(days: number, t: (key: string) => string = english): string {
   switch (days & DAILY) {
     case 0:
-      return 'Once';
+      return t(N('Once'));
     case DAILY:
-      return 'Every day';
+      return t(N('Every day'));
     case WEEKDAYS:
-      return 'Weekdays';
+      return t(N('Weekdays'));
     case WEEKENDS:
-      return 'Weekends';
+      return t(N('Weekends'));
     default:
-      return DAY_NAMES.filter((_, i) => days & (1 << i))
-        .map((d) => d.charAt(0).toUpperCase() + d.slice(1))
+      return DAY_SHORT.filter((_, i) => days & (1 << i))
+        .map((d) => t(d))
         .join(', ');
   }
 }

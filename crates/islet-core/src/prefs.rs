@@ -217,14 +217,14 @@ impl Shortcut {
     pub fn new(name: &str, target: &str) -> Result<Shortcut, String> {
         let (name, target) = (name.trim(), target.trim());
         if name.is_empty() || name.chars().count() > 40 {
-            return Err("Give the shortcut a short name.".into());
+            return Err(crate::i18n::t("Give the shortcut a short name.").into());
         }
         if target.is_empty() || target.len() > 1024 || target.starts_with('-') || target.contains(['\n', '\r', '\0']) {
-            return Err("Enter a folder, a file or an https:// link.".into());
+            return Err(crate::i18n::t("Enter a folder, a file or an https:// link.").into());
         }
         // Links must be web links; anything else is a path on this computer.
         if target.contains("://") && !target.starts_with("https://") && !target.starts_with("http://") {
-            return Err("Only https:// and http:// links can be opened.".into());
+            return Err(crate::i18n::t("Only https:// and http:// links can be opened.").into());
         }
         Ok(Shortcut { name: name.to_string(), target: target.to_string() })
     }

@@ -26,7 +26,7 @@ impl Todo {
     pub fn add(&mut self, text: &str) -> Result<u32, String> {
         let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
         if text.is_empty() {
-            return Err("Write something first.".into());
+            return Err(crate::i18n::t("Write something first.").into());
         }
         let text: String = text.chars().take(MAX_LEN).collect();
         let id = self.items.iter().map(|i| i.id).max().map_or(1, |m| m + 1);

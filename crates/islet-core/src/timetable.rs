@@ -62,20 +62,20 @@ impl Timetable {
     pub fn add(&mut self, day: u8, start: u16, end: u16, name: &str, room: &str) -> Result<(), String> {
         let name = tidy(name);
         if name.is_empty() {
-            return Err("Give the lesson a name.".into());
+            return Err(crate::i18n::t("Give the lesson a name.").into());
         }
         if day > 6 || start >= 24 * 60 || end > 24 * 60 {
-            return Err("That isn't a time in the week.".into());
+            return Err(crate::i18n::t("That isn't a time in the week.").into());
         }
         if end <= start {
-            return Err("A lesson ends after it starts.".into());
+            return Err(crate::i18n::t("A lesson ends after it starts.").into());
         }
         if self.lessons.len() >= MAX {
             return Err(format!("A timetable holds up to {MAX} lessons. Remove one first."));
         }
         let lesson = Lesson { day, start, end, name, room: tidy(room) };
         if self.lessons.contains(&lesson) {
-            return Err("That lesson is already there.".into());
+            return Err(crate::i18n::t("That lesson is already there.").into());
         }
         self.lessons.push(lesson);
         self.lessons.sort_by_key(|l| (l.day, l.start, l.end));

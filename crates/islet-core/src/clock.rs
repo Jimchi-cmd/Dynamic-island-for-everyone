@@ -69,8 +69,26 @@ pub fn weekday_short(weekday: u8) -> &'static str {
 
 /// "November 2026", in the language's own order.
 pub fn month_year(month: u8, year: i32) -> String {
-    tf("{} {}‖month and year", &[&month_name(month), &year])
+    // A month on its own: some languages name it differently than in a
+    // date ("ноябрь 2026" but "4 ноября").
+    let alone = month.checked_sub(1).and_then(|i| MONTHS_ALONE.get(i as usize)).map_or("", |m| t(m));
+    tf("{} {}‖month and year", &[&alone, &year])
 }
+
+const MONTHS_ALONE: [&str; 12] = [
+    "January‖month on its own, as a calendar's title",
+    "February‖month on its own, as a calendar's title",
+    "March‖month on its own, as a calendar's title",
+    "April‖month on its own, as a calendar's title",
+    "May‖month on its own, as a calendar's title",
+    "June‖month on its own, as a calendar's title",
+    "July‖month on its own, as a calendar's title",
+    "August‖month on its own, as a calendar's title",
+    "September‖month on its own, as a calendar's title",
+    "October‖month on its own, as a calendar's title",
+    "November‖month on its own, as a calendar's title",
+    "December‖month on its own, as a calendar's title",
+];
 
 /// "Wed 4 Nov": the date when the line has to share its space.
 pub fn format_date_short(t: &LocalTime) -> String {

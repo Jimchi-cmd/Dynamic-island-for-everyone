@@ -13,7 +13,7 @@ pub const MAX_LEN: usize = 500;
 pub fn entry(text: &str, now: &LocalTime) -> Result<String, String> {
     let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(MAX_LEN).collect();
     if text.is_empty() {
-        return Err("Write something first.".into());
+        return Err(crate::i18n::t("Write something first.").into());
     }
     Ok(format!("{:04}-{:02}-{:02} {:02}:{:02}  {text}\n", now.year, now.month, now.day, now.hour, now.minute))
 }

@@ -725,7 +725,7 @@ class MainActivity : AppCompatActivity() {
         if (place != null) c.add(kit.buttons(kit.button(T.t("Remove")) { prefs.place = null; Isle.weather = null; build() }))
         val clocks = kit.card(col, T.t("World clocks"), T.t("Up to three, on the island's clock card."))
         for (zone in prefs.worldClocks) {
-            clocks.add(kit.row(zone.substringAfterLast('/').replace('_', ' '), zone.substringBefore('/'), right = kit.button(T.t("Remove")) {
+            clocks.add(kit.row(T.city(zone), zone.substringBefore('/'), right = kit.button(T.t("Remove")) {
                 prefs.worldClocks = prefs.worldClocks - zone
                 build()
             }))
@@ -776,8 +776,8 @@ class MainActivity : AppCompatActivity() {
     private fun addClock() {
         val zones = java.util.TimeZone.getAvailableIDs()
             .filter { '/' in it && !it.startsWith("Etc") && !it.startsWith("SystemV") }
-            .sortedBy { it.substringAfterLast('/') }
-        val names = zones.map { "${it.substringAfterLast('/').replace('_', ' ')} (${it.substringBefore('/')})" }
+            .sortedBy { T.city(it) }
+        val names = zones.map { "${T.city(it)} (${it.substringBefore('/')})" }
         AlertDialog.Builder(this)
             .setTitle(T.t("Add a city"))
             .setItems(names.toTypedArray()) { _, i ->
