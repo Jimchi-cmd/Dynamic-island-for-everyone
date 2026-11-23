@@ -5,6 +5,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 ## [Unreleased]
 
 ### Added
+- **Phone and computer together**: answer the phone's messages from the computer's island with quick replies (your own four, or type one in Settings or `islet phone reply`); **Ring my phone** (Settings, the island's menu, `islet phone ring`) rings it loudly even on silent; **Send to your phone** puts text or a link on the phone's clipboard (`islet phone send`); and the phone's **Share → Send to computer** puts text on the computer's clipboard.
 - **Release keys in one step**: `scripts/setup-signing.ps1` (Windows) or `scripts/setup-signing.sh` makes the phone app's signing key and the update key on the maintainer's own computer and adds them to the repository's secrets (or says what to paste). With them, each phone release installs over the last one and Islet on a computer can update itself in place. A [code signing policy](CODE_SIGNING_POLICY.md) and a plain checklist ([docs/signing.md](docs/signing.md)) for the free Windows signing from SignPath Foundation.
 
 ## [0.9.0] - 2026-11-23

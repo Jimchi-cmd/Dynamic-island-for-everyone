@@ -34,6 +34,10 @@ pub fn allowed(args: &[String]) -> bool {
         ["note"] | ["note", "--where"] => true,
         ["phone", "pair", "--json"] | ["phone", "pair", "--new", "--json"] => true,
         ["phone", "status", "--json"] | ["phone", "unpair"] => true,
+        // The texts come on stdin, never as arguments.
+        ["phone", "ring" | "replies"]
+        | ["phone", "send" | "reply" | "replies", "-"]
+        | ["phone", "replies", "default"] => true,
         // The "update available" pill on the island.
         ["activity", "end", "islet-update"] => true,
         ["activity", "start", "islet-update", "--title", title, "--subtitle", sub, "--progress", "100", "--open", link] => {

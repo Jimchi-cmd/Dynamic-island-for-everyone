@@ -175,6 +175,7 @@ fn describe(r: &Report) -> String {
         Report::Calendar(c) => format!("calendar: {} events", c.as_ref().map_or(0, |c| c.len())),
         // Never log what a notification says.
         Report::Notification(n) => format!("notification from {:?}", n.app),
+        Report::Shared(phone, text) => format!("shared from {phone:?}: {} characters", text.chars().count()),
         Report::Custom(c) => format!("activity {:?}: {:?}", c.id, c.progress),
         Report::CustomEnded(id) => format!("activity {id:?} ended"),
         Report::RemoteMedia(m) => format!("remote media: {:?}", m.as_ref().map(|m| &m.app_name)),
@@ -401,6 +402,22 @@ impl Providers {
             }
             Some(_) => {}
             None => self.phone = None,
+        }
+    }
+
+    /// Send the paired phone a message. False when it isn't connected.
+    pub fn phone_tell(&self, msg: &islet_core::phone::ToPhone) -> bool {
+        self.phone.as_ref().is_some_and(|link| link.tell(msg))
+    }
+
+    /// Put text on the clipboard. With clipboard history off, a watcher is
+    /// started just to hold it (the island ignores what it reports then).
+    pub fn copy_text(&mut self, text: String) {
+        if self.clipboard.is_none() {
+            self.clipboard = clipboard::start(self.sink.clone());
+        }
+        if let Some(w) = &self.clipboard {
+            w.copy(islet_core::clipboard::Clip::Text(text));
         }
     }
 

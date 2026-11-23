@@ -44,6 +44,10 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
+    <!-- Optional: when the computer rings the phone or sends it a link, a
+         notification with a Stop or Open button (asked for in the app). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- To show an app's name ("Messages") rather than its package id. -->
     <queries>
         <intent>
@@ -97,6 +101,27 @@
             android:taskAffinity=""
             android:theme="@style/Theme.Islet.Clear"
             android:windowSoftInputMode="stateVisible" />
+
+        <!-- "Islet" in the Share menu: text and links go to the computer. -->
+        <activity
+            android:name=".ShareActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="@string/share_label"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Islet.Clear">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <!-- The Stop button when the computer rings the phone. -->
+        <receiver
+            android:name=".StopRinging"
+            android:exported="false" />
 
         <!-- The quick launcher, from the island's search button. -->
         <activity

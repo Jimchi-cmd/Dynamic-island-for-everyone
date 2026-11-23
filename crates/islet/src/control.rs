@@ -42,6 +42,10 @@ pub enum Control {
     /// Caps Lock turned on or off, as seen by a helper that can watch it
     /// (the GNOME Shell extension; GNOME hides it from XWayland apps).
     CapsLock(bool),
+    /// The paired phone: ring it, send it text, or answer its newest message.
+    PhoneRing,
+    PhoneSend(String),
+    PhoneReply(String),
 }
 
 fn token() -> String {
@@ -115,6 +119,13 @@ fn handle(stream: &TcpStream, token: &str) -> Result<Control, String> {
         (Some("toggle"), _) => Ok(Control::Toggle),
         (Some("caps-lock"), Some("on")) => Ok(Control::CapsLock(true)),
         (Some("caps-lock"), Some("off")) => Ok(Control::CapsLock(false)),
+        (Some("phone-ring"), _) => Ok(Control::PhoneRing),
+        (Some("phone-send"), Some(json)) => {
+            serde_json::from_str(json).map(Control::PhoneSend).map_err(|e| e.to_string())
+        }
+        (Some("phone-reply"), Some(json)) => {
+            serde_json::from_str(json).map(Control::PhoneReply).map_err(|e| e.to_string())
+        }
         _ => Err("unknown command".into()),
     }
 }
@@ -155,6 +166,14 @@ pub fn send(cmd: &Control) -> Result<(), String> {
         Control::Ping => format!("{token}\tping"),
         Control::Toggle => format!("{token}\ttoggle"),
         Control::CapsLock(on) => format!("{token}\tcaps-lock\t{}", if *on { "on" } else { "off" }),
+        Control::PhoneRing => format!("{token}\tphone-ring"),
+        // As JSON: one line, whatever the text holds.
+        Control::PhoneSend(text) => {
+            format!("{token}\tphone-send\t{}", serde_json::to_string(text).map_err(|e| e.to_string())?)
+        }
+        Control::PhoneReply(text) => {
+            format!("{token}\tphone-reply\t{}", serde_json::to_string(text).map_err(|e| e.to_string())?)
+        }
     };
     writeln!(stream, "{line}").map_err(|e| e.to_string())?;
     let mut reply = String::new();

@@ -2,6 +2,7 @@
 <resources>
     <string name="app_name">Islet</string>
     <string name="listener_label">Islet: show on my computer</string>
+    <string name="share_label">Send to computer</string>
     <string name="accessibility_label">Islet island</string>
     <string name="accessibility_summary">Shows the island round the camera</string>
     <string name="accessibility_description">Lets Islet draw its island over the status bar, round the front camera, and gives the island\'s control centre its screenshot and lock buttons. Islet asks for no accessibility events and reads nothing on your screen.</string>

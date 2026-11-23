@@ -152,6 +152,15 @@ If the computer's firewall asks whether Islet may accept connections, allow it o
 - Send yourself a message: it pops up on the island.
 - Plug the phone in: the island shows it charging.
 
+### Phone and computer together
+
+- **Answer messages from the computer:** when a message that can be answered (WhatsApp, Messages and other chat apps with a reply button) arrives, the computer's island shows quick replies under it: tap one and it goes out from the phone. Choose your own four in Islet Settings → **Phone and computer together**, or type a reply there (or `islet phone reply "See you at 5"`).
+- **Find your phone:** **Ring my phone** in Settings, in the island's right-click menu, or `islet phone ring`. The phone rings loudly at alarm volume, even on silent, until you tap **Stop**, open Islet, or a minute passes.
+- **Send to the phone:** type or paste in Settings → **Send to your phone** (or `islet phone send <text>`). It lands on the phone's clipboard, with a notification; a link opens with one tap.
+- **Send to the computer:** on the phone, **Share → Send to computer** (Islet) puts text or a link on the computer's clipboard, and the island says so.
+
+For the Stop and Open buttons, allow Islet's notifications on the phone (Your computer → **Allow notifications**, on Android 13 and later).
+
 ### If it doesn't connect
 
 - **"Looking for…" doesn't change:** check that both devices are on the same Wi-Fi, that Islet is running on the computer, and that the firewall allows it. Guest and public Wi-Fi often stop devices from reaching each other.

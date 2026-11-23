@@ -70,9 +70,18 @@ class ProtocolTest {
     fun `messages are the JSON the computer expects`() {
         assertEquals("""{"t":"battery","level":82,"charging":true}""", FromPhone.battery(82, true))
         assertEquals(
-            """{"t":"note","app":"Messages","title":"Amina","text":"She said \"hi\"\nand left"}""",
+            """{"t":"note","app":"Messages","title":"Amina","text":"She said \"hi\"\nand left","id":"","reply":false}""",
             FromPhone.note("Messages", "Amina", "She said \"hi\"\nand left"),
         )
+        assertEquals(
+            """{"t":"note","app":"WhatsApp","title":"Sam","text":"Lunch?","id":"n7","reply":true}""",
+            FromPhone.note("WhatsApp", "Sam", "Lunch?", "n7", true),
+        )
+        assertEquals("""{"t":"share","text":"Room 12B"}""", FromPhone.share("Room 12B"))
+        assertEquals(ToPhone.Reply("n7", "On my way"), ToPhone.parse("""{"t":"reply","id":"n7","text":"On my way"}"""))
+        assertEquals(ToPhone.Ring, ToPhone.parse("""{"t":"ring"}"""))
+        assertEquals(ToPhone.Send("https://example.com"), ToPhone.parse("""{"t":"send","text":"https://example.com"}"""))
+        assertNull(ToPhone.parse("""{"t":"reply","text":"no id"}"""))
         assertEquals(
             """{"t":"media","title":"Song","artist":"Band","app":"Spotify","playing":true,"duration":200.000,"position":50.500}""",
             FromPhone.media("Song", "Band", "Spotify", true, 200.0, 50.5),
@@ -132,6 +141,9 @@ class ProtocolTest {
                     override fun onConnected(computer: String) = events.put("connected to $computer")
                     override fun onDisconnected(reason: String) = events.put("disconnected")
                     override fun onCommand(action: String) = events.put("command $action")
+                    override fun onReply(id: String, text: String) = events.put("reply $id $text")
+                    override fun onRing() = events.put("ring")
+                    override fun onSend(text: String) = events.put("send $text")
                 },
             )
             link.start()
@@ -141,6 +153,12 @@ class ProtocolTest {
             assertEquals("""{"t":"battery","level":82,"charging":false}""", computer.heard.poll(5, TimeUnit.SECONDS))
             computer.say("""{"t":"command","do":"play_pause"}""")
             assertEquals("command play_pause", events.poll(5, TimeUnit.SECONDS))
+            computer.say("""{"t":"reply","id":"n7","text":"On my way"}""")
+            assertEquals("reply n7 On my way", events.poll(5, TimeUnit.SECONDS))
+            computer.say("""{"t":"ring"}""")
+            assertEquals("ring", events.poll(5, TimeUnit.SECONDS))
+            computer.say("""{"t":"send","text":"Room 12B"}""")
+            assertEquals("send Room 12B", events.poll(5, TimeUnit.SECONDS))
             link.stop()
             assertTrue(!link.send(FromPhone.PING), "nothing is sent once stopped")
         }

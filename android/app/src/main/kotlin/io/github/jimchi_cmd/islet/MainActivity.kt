@@ -163,6 +163,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        // Found it: opening Islet stops the ringing.
+        if (Together.ringing) Together.stopRinging(this)
         Hub.onChange = { runOnUiThread { if (page == Page.Computer || page == Page.Home) build() } }
         if (hasAccess() && IsletListener.instance == null) {
             NotificationListenerService.requestRebind(ComponentName(this, IsletListener::class.java))
@@ -1201,6 +1203,13 @@ class MainActivity : AppCompatActivity() {
                 Store.setSendMedia(this, it)
                 IsletListener.instance?.reload()
             })
+            if (!Together.mayNotify(this) && android.os.Build.VERSION.SDK_INT >= 33) {
+                s.add(kit.row(
+                    T.t("Allow notifications"),
+                    T.t("So that when your computer rings this phone or sends it a link, there's a Stop or Open button."),
+                    right = kit.button(T.t("Allow")) { askPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS) },
+                ))
+            }
             s.add(kit.buttons(kit.button(T.t("Forget this computer")) {
                 Store.forget(this)
                 IsletListener.instance?.reload()

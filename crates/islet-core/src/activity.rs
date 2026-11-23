@@ -173,6 +173,8 @@ pub struct Note {
     pub app: String,
     pub summary: String,
     pub body: String,
+    /// The paired phone's name for it, when it can be answered from here.
+    pub reply: Option<String>,
 }
 
 /// How long a new notification shows, and how many are kept.
@@ -239,6 +241,8 @@ pub enum Report {
     UpNext(Option<(crate::calendar::CalEvent, f64)>),
     /// A desktop notification arrived.
     Notification(Note),
+    /// Text shared from the paired phone (its name, the text).
+    Shared(String, String),
     /// Playback on another device (Spotify Connect), or None.
     RemoteMedia(Option<MediaInfo>),
     /// A script's live activity started or changed…
@@ -455,6 +459,13 @@ impl Activities {
         self.notes.iter()
     }
 
+    /// The phone's message `id` was answered: no more quick replies for it.
+    pub fn answered(&mut self, id: &str) {
+        for n in self.notes.iter_mut().filter(|n| n.reply.as_deref() == Some(id)) {
+            n.reply = None;
+        }
+    }
+
     pub fn calendar(&self) -> &[crate::calendar::CalEvent] {
         &self.calendar
     }
@@ -643,6 +654,16 @@ impl Activities {
                 self.remote = m;
                 true
             }
+            // Shared from the phone: it is on the clipboard now (the island copies it).
+            Report::Shared(phone, text) => self.report(
+                Report::Notification(Note {
+                    app: phone,
+                    summary: crate::i18n::t("Copied from your phone").into(),
+                    body: text,
+                    reply: None,
+                }),
+                t,
+            ),
             Report::Notification(n) => {
                 self.notes.push_front(n);
                 self.notes.truncate(if self.note_cap == 0 { NOTE_HISTORY } else { self.note_cap });

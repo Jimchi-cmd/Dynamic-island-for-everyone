@@ -26,8 +26,13 @@ object FromPhone {
 
     fun battery(level: Int, charging: Boolean) = """{"t":"battery","level":${level.coerceIn(0, 100)},"charging":$charging}"""
 
-    fun note(app: String, title: String, text: String) =
-        """{"t":"note","app":${jsonString(app)},"title":${jsonString(title)},"text":${jsonString(text)}}"""
+    /** `id` names it for a reply; `reply`: the computer may answer it. */
+    fun note(app: String, title: String, text: String, id: String = "", reply: Boolean = false) =
+        """{"t":"note","app":${jsonString(app)},"title":${jsonString(title)},"text":${jsonString(text)},""" +
+            """"id":${jsonString(id)},"reply":$reply}"""
+
+    /** Text or a link from the phone's Share menu, for the computer's clipboard. */
+    fun share(text: String) = """{"t":"share","text":${jsonString(text.take(MAX_TEXT))}}"""
 
     /** `title` empty: nothing is playing. Times in seconds (0: unknown). */
     fun media(title: String, artist: String, app: String, playing: Boolean, duration: Double, position: Double) =
@@ -39,6 +44,9 @@ object FromPhone {
     private fun number(v: Double) = if (v.isFinite() && v > 0) String.format(java.util.Locale.ROOT, "%.3f", v) else "0"
 }
 
+/** The longest text sent either way (characters). */
+const val MAX_TEXT = 4000
+
 /** What the computer tells the phone. */
 sealed class ToPhone {
     data class Ok(val name: String) : ToPhone()
@@ -48,6 +56,15 @@ sealed class ToPhone {
 
     object Pong : ToPhone()
 
+    /** Answer the notification `id` (from `FromPhone.note`). */
+    data class Reply(val id: String, val text: String) : ToPhone()
+
+    /** Ring loudly until found. */
+    object Ring : ToPhone()
+
+    /** Text or a link for the phone's clipboard. */
+    data class Send(val text: String) : ToPhone()
+
     companion object {
         /** Null for anything this version doesn't know. */
         fun parse(json: String): ToPhone? {
@@ -56,6 +73,9 @@ sealed class ToPhone {
                 "ok" -> Ok(fields["name"] ?: "")
                 "command" -> fields["do"]?.let { Command(it) }
                 "pong" -> Pong
+                "reply" -> Reply(fields["id"] ?: return null, (fields["text"] ?: return null).take(MAX_TEXT))
+                "ring" -> Ring
+                "send" -> Send((fields["text"] ?: return null).take(MAX_TEXT))
                 else -> null
             }
         }

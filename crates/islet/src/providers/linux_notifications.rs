@@ -54,7 +54,12 @@ fn monitor(conn: &Connection, sink: &Sink) -> zbus::Result<()> {
             continue;
         }
         let app = if app.trim().is_empty() { "Notification".to_string() } else { app };
-        sink.send(Report::Notification(Note { app, summary: plain_text(&summary), body: plain_text(&body) }));
+        sink.send(Report::Notification(Note {
+            app,
+            summary: plain_text(&summary),
+            body: plain_text(&body),
+            reply: None,
+        }));
     }
     Ok(())
 }

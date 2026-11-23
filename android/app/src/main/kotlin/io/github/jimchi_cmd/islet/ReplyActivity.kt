@@ -58,16 +58,8 @@ class ReplyActivity : AppCompatActivity() {
         box.requestFocus()
     }
 
-    private fun send(action: Notification.Action, inputs: Array<RemoteInput>, text: String) {
-        if (text.isBlank()) return
-        val results = Bundle().apply { inputs.forEach { putCharSequence(it.resultKey, text.trim()) } }
-        val fill = Intent()
-        RemoteInput.addResultsToIntent(inputs, fill, results)
-        try {
-            action.actionIntent.send(this, 0, fill)
-        } catch (e: android.app.PendingIntent.CanceledException) {
-            // The conversation was closed meanwhile.
-        }
+    private fun send(action: Notification.Action, @Suppress("UNUSED_PARAMETER") inputs: Array<RemoteInput>, text: String) {
+        Together.answer(this, action, text)
     }
 
     companion object {

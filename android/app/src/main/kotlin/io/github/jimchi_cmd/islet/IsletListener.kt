@@ -42,6 +42,12 @@ class IsletListener : NotificationListenerService(), LinkListener {
     private var lastBattery = ""
     private var watching = false
 
+    /** Reply buttons of recent notifications, by the id the computer knows them by. */
+    private val replies = object : LinkedHashMap<String, Notification.Action>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Notification.Action>?) = size > 30
+    }
+    private var nextReply = 0
+
     /** The last text sent for each notification, so an update that changes nothing isn't sent again. */
     private val sentNotes = object : LinkedHashMap<String, String>() {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > 60
@@ -246,7 +252,38 @@ class IsletListener : NotificationListenerService(), LinkListener {
         val shown = "$title\n$text"
         if (sentNotes[sbn.key] == shown) return
         sentNotes[sbn.key] = shown
-        post(FromPhone.note(appName(sbn.packageName), title.take(120), text.take(300)))
+        // A message the computer may answer: its reply button, kept under an id.
+        val answer = Together.replyAction(n)
+        if (answer != null) {
+            val id = "n" + (++nextReply)
+            replies[id] = answer
+            post(FromPhone.note(appName(sbn.packageName), title.take(120), text.take(300), id, true))
+        } else {
+            post(FromPhone.note(appName(sbn.packageName), title.take(120), text.take(300)))
+        }
+    }
+
+    override fun onReply(id: String, text: String) {
+        main.post {
+            val action = replies.remove(id) ?: return@post
+            if (Together.answer(this, action, text)) Isle.pop(islet.island.Pop.Info(T.t("Reply sent from your computer")))
+        }
+    }
+
+    override fun onRing() {
+        main.post { Together.ring(this) }
+    }
+
+    override fun onSend(text: String) {
+        main.post { Together.received(this, Hub.computer ?: T.t("your computer"), text) }
+    }
+
+    /** Text from the Share menu, for the computer. False when it isn't connected. */
+    fun share(text: String): Boolean {
+        val current = link ?: return false
+        if (!current.connected) return false
+        post(FromPhone.share(text))
+        return true
     }
 
     // ---- Music --------------------------------------------------------------

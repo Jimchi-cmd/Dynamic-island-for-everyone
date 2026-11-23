@@ -424,6 +424,23 @@ fn run() -> platform::Result<()> {
                 Control::PluginsReload => {}
                 Control::CapsLock(on) => needs_frame |= app.handle(Event::CapsLock(on), t),
                 Control::ActivityEnd(id) => needs_frame |= app.report(Report::CustomEnded(id), t),
+                // The paired phone: ring it, send it text, or answer its newest message.
+                Control::PhoneRing | Control::PhoneSend(_) if scripted => {}
+                Control::PhoneRing => {
+                    if !providers.phone_tell(&islet_core::phone::ToPhone::Ring) {
+                        needs_frame |= app.phone_unreachable(t);
+                    }
+                }
+                Control::PhoneSend(text) => {
+                    if !providers.phone_tell(&islet_core::phone::ToPhone::Send { text }) {
+                        needs_frame |= app.phone_unreachable(t);
+                    }
+                }
+                Control::PhoneReply(text) => match app.reply_target() {
+                    // Goes out with the other things the island asked for, below.
+                    Some(id) => app.send_reply(id, text),
+                    None => needs_frame |= app.phone_unreachable(t),
+                },
             }
         }
         for action in app.take_nav_actions() {
@@ -474,6 +491,14 @@ fn run() -> platform::Result<()> {
                     }
                 }
                 UiAction::DragOut(_) => {}
+                UiAction::Phone(msg) if !scripted => {
+                    if !providers.phone_tell(&msg) {
+                        needs_frame |= app.phone_unreachable(t);
+                    }
+                }
+                UiAction::Phone(_) => {}
+                UiAction::CopyText(text) if !scripted => providers.copy_text(text),
+                UiAction::CopyText(_) => {}
                 // From the island's menu: save it like `islet set` would.
                 UiAction::SetSwitch(key, on) if !scripted => {
                     let mut prefs = config::load_prefs();

@@ -15,6 +15,15 @@ interface LinkListener {
 
     /** A button on the island's music card: "play_pause", "next" or "previous". */
     fun onCommand(action: String)
+
+    /** The computer answers notification `id` (one sent with `reply`). */
+    fun onReply(id: String, text: String) {}
+
+    /** "Ring my phone" on the computer. */
+    fun onRing() {}
+
+    /** Text or a link sent from the computer. */
+    fun onSend(text: String) {}
 }
 
 /**
@@ -150,6 +159,9 @@ class Link(private val pairing: Pairing, private val phoneName: String, private 
                 val json = String(open.open(readFrame(input)), Charsets.UTF_8)
                 when (val msg = ToPhone.parse(json)) {
                     is ToPhone.Command -> listener.onCommand(msg.action)
+                    is ToPhone.Reply -> listener.onReply(msg.id, msg.text)
+                    is ToPhone.Ring -> listener.onRing()
+                    is ToPhone.Send -> listener.onSend(msg.text)
                     else -> {} // pong, or something newer: nothing to do
                 }
             }

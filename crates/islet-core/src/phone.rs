@@ -114,10 +114,19 @@ pub enum FromPhone {
         level: u8,
         charging: bool,
     },
-    /// A notification on the phone.
+    /// A notification on the phone. `id` names it for a reply; `reply`:
+    /// it can be answered (a messaging app's reply button).
     Note {
         app: String,
         title: String,
+        text: String,
+        #[serde(default)]
+        id: String,
+        #[serde(default)]
+        reply: bool,
+    },
+    /// Text or a link shared to the computer from the phone's Share menu.
+    Share {
         text: String,
     },
     /// What is playing on the phone (`title` empty: nothing).
@@ -140,7 +149,7 @@ pub enum FromPhone {
 }
 
 /// What the computer tells the phone.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "t", rename_all = "snake_case")]
 pub enum ToPhone {
     /// The hello was read: the keys match.
@@ -152,7 +161,24 @@ pub enum ToPhone {
         r#do: String,
     },
     Pong,
+    /// Answer a notification (`id` from its `Note`).
+    Reply {
+        id: String,
+        text: String,
+    },
+    /// Ring loudly until it is found (or a minute has passed).
+    Ring,
+    /// Text or a link for the phone's clipboard.
+    Send {
+        text: String,
+    },
 }
+
+/// The paired phone's id among the battery devices.
+pub const PHONE_DEVICE: &str = "islet-phone";
+
+/// The longest text sent either way (characters).
+pub const MAX_TEXT: usize = 4000;
 
 const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 

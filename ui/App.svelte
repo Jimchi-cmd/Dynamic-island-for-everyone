@@ -868,10 +868,34 @@
     try {
       const v = JSON.parse(await api.islet(['phone', 'status', '--json']));
       phoneState = { paired: v.paired === true, on: v.on === true };
+      if (phoneState.paired) await loadQuickReplies();
     } catch {
       phoneState = null;
     }
   }
+  // The phone and the computer together: ring, send, reply, quick replies.
+  let phoneSendText = $state('');
+  let phoneReplyText = $state('');
+  let phoneSayNote = $state('');
+  let quickReplies: string[] = $state(['', '', '', '']);
+  async function loadQuickReplies() {
+    try {
+      const lines = (await api.islet(['phone', 'replies'])).split('\n');
+      quickReplies = [0, 1, 2, 3].map((i) => lines[i] ?? '');
+    } catch {
+      // The island's command line isn't there: keep the boxes empty.
+    }
+  }
+  async function phoneSay(args: string[], input?: string, then?: () => void) {
+    phoneSayNote = '';
+    try {
+      phoneSayNote = await api.islet(args, input);
+      then?.();
+    } catch (e) {
+      phoneSayNote = api.message(e);
+    }
+  }
+
   async function phoneRun(args: string[]) {
     phoneNote = '';
     try {
@@ -2060,7 +2084,7 @@
           {/if}
           <div class="actions left">
             <button class="primary" onclick={() => phoneRun(['phone', 'pair', '--json'])}>
-              {pairing ? 'Show the code again' : phoneState?.paired ? 'Show the pairing code' : 'Pair a phone'}
+              {pairing ? tr('Show the code again') : phoneState?.paired ? tr('Show the pairing code') : tr('Pair a phone')}
             </button>
             {#if phoneState?.paired}
               <button onclick={() => phoneRun(['phone', 'pair', '--new', '--json'])}>{tr("New code")}</button>
@@ -2070,6 +2094,45 @@
           </div>
           {#if phoneNote}<p class="small" role="status">{phoneNote}</p>{/if}
         </div>
+        {#if phoneState?.paired}
+          <div class="card">
+            <h2>{tr("Phone and computer together")}</h2>
+            <div class="net">
+              <span class="name">{tr("Can't find your phone?")}</span>
+              <button onclick={() => phoneSay(['phone', 'ring'])}>{tr("Ring my phone")}</button>
+            </div>
+            <p class="muted small">{tr("It rings loudly, even on silent, until you stop it on the phone (or for a minute).")}</p>
+            <label for="psend">{tr("Send to your phone")}</label>
+            <textarea id="psend" rows="2" bind:value={phoneSendText} placeholder={tr("A link, an address, a note…")}></textarea>
+            <div class="actions">
+              <button class="primary" disabled={!phoneSendText.trim()} onclick={() => phoneSay(['phone', 'send', '-'], phoneSendText, () => (phoneSendText = ''))}
+                >{tr("Send")}</button
+              >
+            </div>
+            <p class="muted small">{tr("It lands on the phone's clipboard, with a notification (links open with one tap). On the phone, Share → Islet sends things the other way, onto this computer's clipboard.")}</p>
+            <label for="preply">{tr("Reply to the phone's newest message")}</label>
+            <input id="preply" bind:value={phoneReplyText} placeholder={tr("Your reply")} />
+            <div class="actions">
+              <button disabled={!phoneReplyText.trim()} onclick={() => phoneSay(['phone', 'reply', '-'], phoneReplyText, () => (phoneReplyText = ''))}
+                >{tr("Reply")}</button
+              >
+            </div>
+            <span class="label">{tr("Quick replies")}</span>
+            <p class="muted small">{tr("Shown under a message on the island that can be answered (WhatsApp, Messages and other chat apps). Up to four, each a few words.")}</p>
+            <div class="two">
+              {#each [0, 1, 2, 3] as i (i)}
+                <input aria-label={tf('Quick reply {}', i + 1)} maxlength="30" bind:value={quickReplies[i]} />
+              {/each}
+            </div>
+            <div class="actions">
+              <button onclick={() => phoneSay(['phone', 'replies', 'default'], undefined, loadQuickReplies)}>{tr("Usual ones")}</button>
+              <button class="primary" onclick={() => phoneSay(['phone', 'replies', '-'], quickReplies.map((r) => r.trim()).filter(Boolean).join('\n'))}
+                >{tr("Save")}</button
+              >
+            </div>
+            {#if phoneSayNote}<p class="small" role="status">{phoneSayNote}</p>{/if}
+          </div>
+        {/if}
         {#if connNote}<p class="small" role="status">{connNote}</p>{/if}
       {:else if page === 'timer'}
         <h1>{tr("Timer & focus")}</h1>

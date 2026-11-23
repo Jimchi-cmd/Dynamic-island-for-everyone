@@ -37,6 +37,10 @@ Usage:
                                            Islet app scans; --new makes a fresh key
   islet phone status [--json]              is a phone paired, and where the island listens
   islet phone unpair                       forget the phone
+  islet phone ring                         make the phone ring until it's found
+  islet phone send <text>|-                text or a link for the phone's clipboard (- reads stdin)
+  islet phone reply <text>|-               answer the phone's newest message
+  islet phone replies [<a|b|c>|default]    the quick replies under the phone's messages
   islet speedtest [--json]                 measure the connection (about 36 MB, with Cloudflare's
                                            speed-test servers; only when you run it)
   islet plugins [--json|--where|reload]    your plugin widgets (scripts in the plugins folder; see
@@ -179,6 +183,20 @@ pub fn run(args: &[String]) -> Option<Result<String, String>> {
         ["phone", "status"] => Ok(phone_status(false)),
         ["phone", "status", "--json"] => Ok(phone_status(true)),
         ["phone", "unpair"] => phone_unpair(),
+        ["phone", "ring"] => control::send(&Control::PhoneRing).map(|_| tr("Ringing your phone.").into()),
+        ["phone", "send", rest @ ..] => text_arg(rest, "Type what to send and press Enter:")
+            .and_then(|text| control::send(&Control::PhoneSend(text)))
+            .map(|_| tr("Sent to your phone.").into()),
+        ["phone", "reply", rest @ ..] => text_arg(rest, "Type your reply and press Enter:")
+            .and_then(|text| control::send(&Control::PhoneReply(text)))
+            .map(|_| tr("Sent.").into()),
+        ["phone", "replies"] => Ok(phone_replies_text()),
+        ["phone", "replies", "default"] => set_look(|p| {
+            p.phone_replies.clear();
+            Ok(tr("The usual quick replies.").into())
+        }),
+        ["phone", "replies", "-"] => read_lines().and_then(|lines| set_phone_replies(&lines)),
+        ["phone", "replies", list] => set_phone_replies(&list.split('|').map(String::from).collect::<Vec<_>>()),
         ["speedtest"] => crate::net::speed_test().map(|r| {
             format!(
                 "{}\n({:.0} MB used, with Cloudflare's speed-test servers)",
@@ -1588,6 +1606,49 @@ fn base64_decode(text: &str) -> Option<Vec<u8>> {
         }
     }
     Some(out)
+}
+
+/// The text after a command, or stdin's for `-` (or nothing).
+fn text_arg(rest: &[&str], prompt: &str) -> Result<String, String> {
+    let text = match rest {
+        [] | ["-"] => read_line(prompt)?,
+        words => words.join(" "),
+    };
+    let text: String = text.trim().chars().take(islet_core::phone::MAX_TEXT).collect();
+    if text.is_empty() {
+        return Err(tr("Write something first.").into());
+    }
+    Ok(text)
+}
+
+/// Every line of stdin.
+fn read_lines() -> Result<Vec<String>, String> {
+    use std::io::Read;
+    let mut all = String::new();
+    std::io::stdin().read_to_string(&mut all).map_err(|e| e.to_string())?;
+    Ok(all.lines().map(String::from).collect())
+}
+
+fn phone_replies_text() -> String {
+    let p = config::load_prefs();
+    if p.phone_replies.is_empty() {
+        islet_core::prefs::PHONE_REPLIES.iter().map(|r| tr(r)).collect::<Vec<_>>().join("\n")
+    } else {
+        p.phone_replies.join("\n")
+    }
+}
+
+/// The quick replies: up to four, each a few words.
+fn set_phone_replies(list: &[String]) -> Result<String, String> {
+    use islet_core::prefs::{MAX_REPLIES, MAX_REPLY_LEN};
+    let replies: Vec<String> = list.iter().map(|r| r.trim().to_string()).filter(|r| !r.is_empty()).collect();
+    if replies.len() > MAX_REPLIES || replies.iter().any(|r| r.chars().count() > MAX_REPLY_LEN) {
+        return Err(tf("Up to {} quick replies, each up to {} characters.", &[&MAX_REPLIES, &MAX_REPLY_LEN]));
+    }
+    set_look(|p| {
+        p.phone_replies = replies;
+        Ok(tr("Saved.").into())
+    })
 }
 
 fn read_line(prompt: &str) -> Result<String, String> {

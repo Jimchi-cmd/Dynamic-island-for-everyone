@@ -16,7 +16,7 @@ use std::time::Duration;
 /// The source name of music playing on the phone.
 pub const SOURCE: &str = "islet-phone";
 /// The battery pop-up's id for the phone.
-const DEVICE_ID: &str = "islet-phone";
+const DEVICE_ID: &str = islet_core::phone::PHONE_DEVICE;
 /// The first port tried; the next few follow if it is taken.
 pub const PORT: u16 = 47821;
 const PORT_TRIES: u16 = 6;
@@ -54,10 +54,15 @@ impl Link {
             MediaCommand::Previous => "previous",
             MediaCommand::SeekTo(_) => return,
         };
-        if let Ok(mut outbox) = self.outbox.lock() {
-            if let Some((stream, channel)) = outbox.as_mut() {
-                let _ = send(stream, channel, &ToPhone::Command { r#do: name.into() });
-            }
+        self.tell(&ToPhone::Command { r#do: name.into() });
+    }
+
+    /// Send the phone a message. False when it isn't connected.
+    pub fn tell(&self, msg: &ToPhone) -> bool {
+        let Ok(mut outbox) = self.outbox.lock() else { return false };
+        match outbox.as_mut() {
+            Some((stream, channel)) => send(stream, channel, msg).is_ok(),
+            None => false,
         }
     }
 }
@@ -188,13 +193,26 @@ fn serve(
                 sink.send(if battery_seen { Report::DeviceChanged(device) } else { Report::DeviceConnected(device) });
                 battery_seen = true;
             }
-            FromPhone::Note { app, title, text } => {
+            FromPhone::Note { app, title, text, id, reply } => {
                 let clip = |s: String, n: usize| s.chars().filter(|c| !c.is_control()).take(n).collect::<String>();
+                let id = clip(id, 64);
                 sink.send(Report::Notification(Note {
                     app: format!("{} · {phone}", clip(app, 40)),
                     summary: clip(title, 120),
                     body: clip(text, 300),
+                    reply: (reply && !id.is_empty()).then_some(id),
                 }));
+            }
+            FromPhone::Share { text } => {
+                // Line breaks kept; other control characters dropped.
+                let text: String = text
+                    .chars()
+                    .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+                    .take(islet_core::phone::MAX_TEXT)
+                    .collect();
+                if !text.trim().is_empty() {
+                    sink.send(Report::Shared(phone.clone(), text));
+                }
             }
             FromPhone::Media { title, artist, app, playing, duration, position } => {
                 sink.send(Report::RemoteMedia(media(&phone, title, artist, app, playing, duration, position)));
@@ -340,6 +358,24 @@ mod tests {
         assert_eq!(phone.hear(), ToPhone::Command { r#do: "next".into() });
         phone.say(r#"{"t":"ping"}"#);
         assert_eq!(phone.hear(), ToPhone::Pong);
+        // A message that can be answered, and the answer going back.
+        phone.say(r#"{"t":"note","app":"WhatsApp","title":"Sam","text":"Lunch?","id":"n7","reply":true}"#);
+        let Report::Notification(n) = next(&|r| matches!(r, Report::Notification(_))) else { unreachable!() };
+        assert_eq!(n.reply.as_deref(), Some("n7"));
+        assert!(link.tell(&ToPhone::Reply { id: "n7".into(), text: "On my way".into() }));
+        assert_eq!(phone.hear(), ToPhone::Reply { id: "n7".into(), text: "On my way".into() });
+        // Without the flag (an older app, or an app with no reply button): no quick replies.
+        phone.say(r#"{"t":"note","app":"Mail","title":"News","text":"…","id":"n8"}"#);
+        let Report::Notification(n) = next(&|r| matches!(r, Report::Notification(_))) else { unreachable!() };
+        assert_eq!(n.reply, None);
+        // Ring it; send it a link; and text shared from the phone comes in.
+        assert!(link.tell(&ToPhone::Ring));
+        assert_eq!(phone.hear(), ToPhone::Ring);
+        assert!(link.tell(&ToPhone::Send { text: "https://example.com/a".into() }));
+        assert_eq!(phone.hear(), ToPhone::Send { text: "https://example.com/a".into() });
+        phone.say(r#"{"t":"share","text":"Room 12B\nsecond floor\u0007"}"#);
+        let Report::Shared(from, text) = next(&|r| matches!(r, Report::Shared(..))) else { unreachable!() };
+        assert_eq!((from.as_str(), text.as_str()), ("Pixel 8", "Room 12B\nsecond floor"));
         // A message from a newer app version is skipped, not fatal.
         phone.say(r#"{"t":"something_new","x":1}"#);
         phone.say(r#"{"t":"media"}"#);
@@ -348,6 +384,7 @@ mod tests {
         // Hanging up takes the phone's battery and music off the island.
         drop(phone);
         assert!(matches!(next(&|r| matches!(r, Report::DeviceGone(_))), Report::DeviceGone(id) if id == DEVICE_ID));
+        assert!(!link.tell(&ToPhone::Ring), "nothing to tell with no phone connected");
     }
 
     #[test]

@@ -180,6 +180,10 @@ pub enum UiAction {
     SetAppVolume(String, u8),
     /// A shelf file dragged out of the island: start the system's drag.
     DragOut(Vec<String>),
+    /// A message for the paired phone (a quick reply, "ring", text).
+    Phone(islet_core::phone::ToPhone),
+    /// Put text on the clipboard (shared from the phone).
+    CopyText(String),
 }
 
 /// Windows has no public API to connect Bluetooth devices: its settings do.
@@ -1050,6 +1054,15 @@ impl App {
                         .find(|(r, _)| r.contains(x, y))
                         .map(|(_, q)| ConnHit::Quick(q))
                 }),
+            OpenContent::Notes => content::quick_reply_chips(
+                content::below_header(cr),
+                &self.quick_replies(),
+                self.reply_target().is_some(),
+                self.activities.notes().count(),
+            )
+            .into_iter()
+            .position(|r| r.contains(x, y))
+            .map(ConnHit::QuickReply),
             OpenContent::Panel(Panel::Calendar) => content::calendar_arrows(cr)
                 .into_iter()
                 .find(|(r, _)| r.contains(x, y))
@@ -1091,6 +1104,52 @@ impl App {
         }
     }
 
+    /// Is the paired phone connected (its battery shows)?
+    fn phone_here(&self) -> bool {
+        self.activities.devices().iter().any(|d| d.id == islet_core::phone::PHONE_DEVICE)
+    }
+
+    /// The quick replies offered under the phone's messages.
+    fn quick_replies(&self) -> Vec<String> {
+        let own: Vec<String> = self
+            .prefs
+            .phone_replies
+            .iter()
+            .map(|r| r.trim().to_string())
+            .filter(|r| !r.is_empty())
+            .take(islet_core::prefs::MAX_REPLIES)
+            .collect();
+        if own.is_empty() {
+            islet_core::prefs::PHONE_REPLIES.iter().map(|r| tr(r).to_string()).collect()
+        } else {
+            own
+        }
+    }
+
+    /// The newest notification, when it is the phone's and can be answered: its id.
+    pub fn reply_target(&self) -> Option<String> {
+        self.activities.notes().next().and_then(|n| n.reply.clone())
+    }
+
+    /// Answer the phone's message `id`, once.
+    pub fn send_reply(&mut self, id: String, text: String) {
+        self.activities.answered(&id);
+        self.ui_actions.push(UiAction::Phone(islet_core::phone::ToPhone::Reply { id, text }));
+    }
+
+    /// Something for the phone couldn't go: it isn't connected.
+    pub fn phone_unreachable(&mut self, t: f64) -> bool {
+        self.report(
+            Report::Notification(islet_core::activity::Note {
+                app: "Islet".into(),
+                summary: tr("Your phone isn't connected").into(),
+                body: tr("Open Islet on the phone, on the same Wi-Fi as this computer.").into(),
+                reply: None,
+            }),
+            t,
+        )
+    }
+
     /// The right-click menu's rows, as they stand now.
     fn menu_items(&self, t: f64) -> Vec<content::MenuItem> {
         use content::{MenuAction, MenuItem};
@@ -1125,6 +1184,9 @@ impl App {
             let detail = self.sleep_at.map_or(tr("Off").to_string(), left);
             v.push(MenuItem { detail: Some(detail), ..item(MenuAction::Sleep, Icon::Moon, tr("Sleep timer")) });
         }
+        if self.phone_here() {
+            v.push(item(MenuAction::RingPhone, Icon::Phone, tr("Ring my phone")));
+        }
         // Your first shortcuts, in the rows that are left.
         let room = content::MENU_MAX_ROWS.saturating_sub(v.len() + 1).min(2);
         for (i, sc) in self.prefs.shortcuts.iter().enumerate().take(room) {
@@ -1140,6 +1202,11 @@ impl App {
         match item.action {
             MenuAction::Settings => {
                 self.ui_actions.push(UiAction::Settings("general".into()));
+                self.menu = false;
+                self.signal(Signal::Escape, t);
+            }
+            MenuAction::RingPhone => {
+                self.ui_actions.push(UiAction::Phone(islet_core::phone::ToPhone::Ring));
                 self.menu = false;
                 self.signal(Signal::Escape, t);
             }
@@ -1492,6 +1559,13 @@ impl App {
                 }
             }
             ConnHit::DarkMode => self.ui_actions.push(UiAction::DarkMode),
+            ConnHit::QuickReply(i) => {
+                let (Some(id), Some(words)) = (self.reply_target(), self.quick_replies().into_iter().nth(i)) else {
+                    return false;
+                };
+                self.send_reply(id, words);
+                return self.signal(Signal::Escape, t);
+            }
             ConnHit::Month(dir) => {
                 let (y, m) = self.cal_month();
                 self.cal_view = Some(islet_core::calendar::shift_month(y, m, i32::from(dir)));
@@ -1763,6 +1837,13 @@ impl App {
                             content::HogButton::Close => tf("Close {}", &[&c.title]),
                         };
                         buttons.push((name, r));
+                    }
+                }
+                OpenContent::Notes if self.reply_target().is_some() => {
+                    let replies = self.quick_replies();
+                    let chips = content::quick_reply_chips(cr, &replies, true, self.activities.notes().count());
+                    for (r, words) in chips.into_iter().zip(&replies) {
+                        buttons.push((tf("Reply “{}”", &[words]), r));
                     }
                 }
                 OpenContent::Agenda => {
@@ -2178,6 +2259,10 @@ impl App {
 
     /// Apply a provider report. Returns true if a redraw is needed.
     pub fn report(&mut self, r: Report, t: f64) -> bool {
+        // Shared from the phone: onto the clipboard, and a note saying so.
+        if let Report::Shared(_, text) = &r {
+            self.ui_actions.push(UiAction::CopyText(text.clone()));
+        }
         // Hidden apps' sessions don't reach the island.
         let r = match r {
             Report::Media(Some(m)) if self.prefs.excludes(&m.app_name, &m.source) => Report::Media(None),
@@ -2682,7 +2767,10 @@ impl App {
                     out.extend(content::expanded_hog(card, c, eo, engine))
                 }
                 OpenContent::Custom(c) => out.extend(content::expanded_custom(card, c, t, eo, engine)),
-                OpenContent::Notes => out.extend(content::expanded_notes(card, self.activities.notes(), eo, engine)),
+                OpenContent::Notes => {
+                    let replies = if self.reply_target().is_some() { self.quick_replies() } else { Vec::new() };
+                    out.extend(content::expanded_notes(card, self.activities.notes(), &replies, eo, engine))
+                }
                 OpenContent::Panel(Panel::Wifi) => out.extend(content::expanded_wifi(
                     cr,
                     self.activities.connectivity(),
@@ -2955,7 +3043,10 @@ impl App {
                         OpenContent::Stopwatch(_) => content::STOPWATCH_H,
                         OpenContent::Agenda => content::agenda_height(self.agenda().len()),
                         OpenContent::Custom(_) => content::CUSTOM_H,
-                        OpenContent::Notes => content::notes_height(self.activities.notes().count()),
+                        OpenContent::Notes => {
+                            let replies = if self.reply_target().is_some() { self.quick_replies() } else { Vec::new() };
+                            content::notes_height(self.activities.notes().count(), &replies)
+                        }
                         OpenContent::Panel(p) => {
                             let c = self.activities.connectivity();
                             match p {
@@ -5608,6 +5699,94 @@ mod tests {
         islet_core::i18n::set_language("en");
     }
 
+    #[test]
+    fn the_phone_can_be_answered_rung_and_shares_to_the_clipboard() {
+        use islet_core::activity::{BatteryDevice, DeviceKind, Note};
+        use islet_core::phone::{ToPhone, PHONE_DEVICE};
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        let phone = BatteryDevice {
+            id: PHONE_DEVICE.into(),
+            name: "Pixel 8".into(),
+            kind: DeviceKind::Phone,
+            percent: 80,
+            charging: false,
+            parts: Vec::new(),
+        };
+        app.report(Report::DeviceConnected(phone), 0.0);
+        // A message that can be answered: quick replies under it.
+        let note = |reply: Option<&str>| Note {
+            app: "WhatsApp · Pixel 8".into(),
+            summary: "Sam".into(),
+            body: "Lunch?".into(),
+            reply: reply.map(String::from),
+        };
+        app.report(Report::Notification(note(None)), 29.0);
+        app.report(Report::Notification(note(None)), 29.5);
+        app.report(Report::Notification(note(Some("n7"))), 30.0);
+        click(&mut app, 30.5);
+        assert!(matches!(app.open_content(&app.live(31.0)), OpenContent::Notes));
+        let card = content::below_header(app.content_rect(app.settled_pill()));
+        let chips = content::quick_reply_chips(card, &app.quick_replies(), true, app.activities.notes().count());
+        assert_eq!(chips.len(), 4, "the four usual replies fit, on two lines");
+        assert!(chips.iter().all(|r| r.bottom() <= app.settled_pill().bottom()), "inside the card");
+        assert!(app.settled_pill().bottom() <= WINDOW.1, "inside the window, even with more notifications");
+        app.take_ui_actions();
+        press(&mut app, chips[1], 32.0);
+        assert_eq!(
+            app.take_ui_actions(),
+            vec![UiAction::Phone(ToPhone::Reply { id: "n7".into(), text: "On my way".into() })]
+        );
+        assert_eq!(app.reply_target(), None, "answered once");
+        // Your own replies replace the usual ones.
+        app.set_prefs(IslandPrefs {
+            phone_replies: vec!["Yes".into(), " ".into(), "No".into()],
+            ..IslandPrefs::default()
+        });
+        assert_eq!(app.quick_replies(), vec!["Yes".to_string(), "No".to_string()]);
+        // The menu rings the phone while it is connected.
+        let items = app.menu_items(40.0);
+        assert!(items.iter().any(|i| i.action == content::MenuAction::RingPhone));
+        app.report(Report::DeviceGone(PHONE_DEVICE.into()), 41.0);
+        assert!(!app.menu_items(42.0).iter().any(|i| i.action == content::MenuAction::RingPhone));
+        // Text shared from the phone goes onto the clipboard, and the island says so.
+        app.take_ui_actions();
+        app.report(Report::Shared("Pixel 8".into(), "Room 12B".into()), 50.0);
+        assert_eq!(app.take_ui_actions(), vec![UiAction::CopyText("Room 12B".into())]);
+        let newest = app.activities.notes().next().unwrap();
+        assert_eq!((newest.app.as_str(), newest.summary.as_str()), ("Pixel 8", "Copied from your phone"));
+    }
+
+    /// A phone message with its quick replies, for review:
+    /// `ISLET_REPLY_SHOT=/path/out.png cargo test -p islet reply_shot`
+    #[test]
+    fn reply_shot() {
+        let Some(out) = std::env::var_os("ISLET_REPLY_SHOT") else { return };
+        use tiny_skia::Pixmap;
+        let mut engine = TextEngine::new();
+        let mut app = App::new(Demo::None, false);
+        app.set_time(NOW, 0.0);
+        app.report(
+            Report::Notification(islet_core::activity::Note {
+                app: "WhatsApp · Pixel 8".into(),
+                summary: "Sam".into(),
+                body: "Lunch at 1? The usual place".into(),
+                reply: Some("n7".into()),
+            }),
+            1.0,
+        );
+        click(&mut app, 1.5);
+        let (cw, ch) = (WINDOW.0 as u32, WINDOW.1 as u32);
+        let mut cell = Pixmap::new(cw * 2, ch * 2).unwrap();
+        cell.fill(tiny_skia::Color::from_rgba8(52, 62, 110, 255));
+        let frame = app.frame(30.0);
+        islet_render::draw(&mut cell, &frame, 2.0);
+        let clip = islet_render::clip_mask(&frame, cw * 2, ch * 2, 2.0);
+        let els = app.elements(30.0, &mut engine);
+        islet_render::elements::draw_elements(&mut cell, &els, &mut engine, 2.0, clip.as_ref());
+        cell.save_png(out).unwrap();
+    }
+
     /// The island opening and closing, frame by frame, for review:
     /// `ISLET_ANIM_SHOTS=/path/dir cargo test -p islet anim_frames`
     /// (one strip each: Control Centre opening, a song's card opening, Control Centre closing).
@@ -6470,7 +6649,12 @@ mod tests {
     }
 
     fn note(app: &str, summary: &str, body: &str) -> Report {
-        Report::Notification(islet_core::activity::Note { app: app.into(), summary: summary.into(), body: body.into() })
+        Report::Notification(islet_core::activity::Note {
+            app: app.into(),
+            summary: summary.into(),
+            body: body.into(),
+            reply: None,
+        })
     }
 
     #[test]

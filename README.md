@@ -38,7 +38,7 @@ Islet is free and open source, with every feature included: no paid tier, no acc
 - **Controls:** volume and brightness sliders and a dark-mode switch, one tap from the clock card.
 - **Performance alert** (opt-in): says when one program hogs the processor or the memory, with a Close button.
 - **System panel:** processor, memory, disk, network speed and battery health.
-- **Android** (free): an island on the phone itself, round the front camera, with music, calls, directions, timers, meetings, downloads, pop-ups, weather, clocks, to-dos and a control centre. The same app also puts the phone's notifications, music and battery on your computer's island. See [docs/phone.md](docs/phone.md).
+- **Android** (free): an island on the phone itself, round the front camera, with music, calls, directions, timers, meetings, downloads, pop-ups, weather, clocks, to-dos and a control centre. The same app also puts the phone's notifications, music and battery on your computer's island, lets you answer its messages with quick replies, ring it when it's lost, and send text and links either way. See [docs/phone.md](docs/phone.md).
 - **Status at a glance:** point at the empty island and it widens to show the weather, your battery and how busy the processor is, either side of the time.
 - **Class timetable:** enter your week once; the island counts down to the next lesson and shows your free gaps.
 - **Alarms:** one-time or repeating. When one rings, the island opens with a swinging bell and a chime until you snooze or stop it.

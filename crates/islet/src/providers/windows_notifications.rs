@@ -52,7 +52,7 @@ fn note_of(n: &UserNotification) -> Option<Note> {
     if summary.is_empty() && app.is_empty() {
         return None;
     }
-    Some(Note { app, summary, body: texts.get(1..).map(|r| r.join("\n")).unwrap_or_default() })
+    Some(Note { app, summary, body: texts.get(1..).map(|r| r.join("\n")).unwrap_or_default(), reply: None })
 }
 
 pub fn start(sink: Sink) -> Result<Listener, String> {

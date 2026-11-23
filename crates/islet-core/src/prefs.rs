@@ -145,7 +145,15 @@ pub struct IslandPrefs {
     pub cc_photo: bool,
     /// The colour of the tinted styles, "#rrggbb" ("" = the accent colour).
     pub tint: String,
+    /// Quick replies for the phone's messages ("" = the usual ones, see `PHONE_REPLIES`).
+    pub phone_replies: Vec<String>,
 }
+
+/// The usual quick replies (translated where they show).
+pub const PHONE_REPLIES: [&str; 4] = ["OK", "On my way", "Can't talk now", "Call you later"];
+/// At most this many quick replies, each at most this long (characters).
+pub const MAX_REPLIES: usize = 4;
+pub const MAX_REPLY_LEN: usize = 30;
 
 /// Control Centre's layouts:
 /// - "classic": the time, Wi-Fi and Bluetooth with their names, the tools in a row
@@ -353,6 +361,7 @@ impl Default for IslandPrefs {
             cc_order: Vec::new(),
             cc_photo: false,
             tint: String::new(),
+            phone_replies: Vec::new(),
         }
     }
 }

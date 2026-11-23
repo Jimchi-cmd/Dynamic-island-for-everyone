@@ -106,6 +106,8 @@ pub enum ConnHit {
     Month(i8),
     /// The Controls panel's dark / light switch.
     DarkMode,
+    /// A quick reply under the phone's newest message.
+    QuickReply(usize),
 }
 
 /// The clock card's quick actions.
@@ -459,17 +461,65 @@ fn relative_label(starts_at: f64, t: f64) -> String {
 
 pub const NOTE_ROWS: usize = 3;
 
-pub fn notes_height(rows: usize) -> f64 {
-    46.0 + rows.clamp(1, NOTE_ROWS) as f64 * 52.0 + 4.0
+/// The notifications card's height; `replies`: the quick replies under it.
+pub fn notes_height(rows: usize, replies: &[String]) -> f64 {
+    // With quick replies, only the message they answer shows.
+    let rows = if replies.is_empty() { rows } else { 1 };
+    let base = 46.0 + rows.clamp(1, NOTE_ROWS) as f64 * 52.0 + 4.0;
+    let lines = chip_layout(372.0, replies).iter().map(|(line, _, _)| *line + 1).max().unwrap_or(0);
+    base + lines as f64 * REPLY_LINE + if lines > 0 { 6.0 } else { 0.0 }
+}
+
+const REPLY_LINE: f64 = 38.0;
+const CHIP_H: f64 = 30.0;
+
+/// Where each quick reply goes in a card `width` wide: its line, its x
+/// from the left padding, and its width. At most two lines.
+fn chip_layout(width: f64, replies: &[String]) -> Vec<(usize, f64, f64)> {
+    let room = width - 2.0 * PAD;
+    let (mut line, mut x) = (0usize, 0.0);
+    let mut v = Vec::new();
+    for r in replies {
+        // About 7 px a character at 13 px semibold, plus the capsule's ends.
+        let w = (r.chars().count() as f64 * 7.0 + 24.0).clamp(44.0, room);
+        if x > 0.0 && x + w > room {
+            line += 1;
+            x = 0.0;
+        }
+        if line >= 2 {
+            break;
+        }
+        v.push((line, x, w));
+        x += w + 8.0;
+    }
+    v
+}
+
+/// The quick replies under the notifications (for the phone's newest
+/// message): capsules as wide as their words, on one or two lines.
+pub fn quick_reply_chips(pill: Rect, replies: &[String], shown: bool, rows: usize) -> Vec<Rect> {
+    if !shown {
+        return Vec::new();
+    }
+    let _ = rows;
+    let top = pill.y + notes_height(1, &[]) + 2.0;
+    chip_layout(pill.w, replies)
+        .into_iter()
+        .map(|(line, x, w)| Rect::new(pill.x + PAD + x, top + line as f64 * REPLY_LINE, w, CHIP_H))
+        .collect()
 }
 
 /// Recent notifications: app, title and the first line of the text.
 pub fn expanded_notes<'a>(
     pill: Rect,
     notes: impl Iterator<Item = &'a Note>,
+    replies: &[String],
     o: f32,
     engine: &mut TextEngine,
 ) -> Vec<Element> {
+    // With quick replies, only the message they answer shows.
+    let notes: Vec<&Note> = notes.take(if replies.is_empty() { NOTE_ROWS } else { 1 }).collect();
+    let rows = notes.len();
     let (x, y, w) = (pill.x as f32, pill.y as f32, pill.w as f32);
     let pad = PAD as f32;
     let head = TextStyle { size: 16.0, weight: 600, opacity: o, ..TextStyle::default() };
@@ -481,7 +531,7 @@ pub fn expanded_notes<'a>(
     let title = TextStyle { size: 14.5, weight: 600, opacity: o, ..TextStyle::default() };
     let body = TextStyle { size: 13.0, opacity: o * 0.8, ..TextStyle::default() };
     let width = w - 2.0 * pad;
-    for (i, n) in notes.take(NOTE_ROWS).enumerate() {
+    for (i, n) in notes.iter().take(NOTE_ROWS).enumerate() {
         let ry = y + 46.0 + i as f32 * 52.0;
         v.push(text(engine.ellipsize(&n.app, &app, width), app, x + pad, ry + 12.0));
         v.push(text(engine.ellipsize(&n.summary, &title, width), title, x + pad, ry + 29.0));
@@ -489,6 +539,14 @@ pub fn expanded_notes<'a>(
         if !first.is_empty() {
             v.push(text(engine.ellipsize(first, &body, width), body, x + pad, ry + 45.0));
         }
+    }
+    // Quick replies to the newest message, from the phone.
+    let chip = TextStyle { size: 13.0, weight: 600, opacity: o, align: Align::Center, ..TextStyle::default() };
+    for (r, words) in quick_reply_chips(pill, replies, true, rows).into_iter().zip(replies) {
+        let (cx, cy, cw, ch) = (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
+        v.push(Element::Bar { x: cx, y: cy, w: cw, h: ch, color: accent(), opacity: o * 0.9 });
+        let words = engine.ellipsize(words, &chip, cw - 14.0);
+        v.push(text(words, chip, cx + cw / 2.0, cy + ch / 2.0 + 4.5));
     }
     v
 }
@@ -2732,6 +2790,8 @@ pub enum MenuAction {
     Sleep,
     /// One of the user's own shortcuts, by its place in the list.
     Shortcut(u8),
+    /// Make the paired phone ring.
+    RingPhone,
     Quit,
 }
 
