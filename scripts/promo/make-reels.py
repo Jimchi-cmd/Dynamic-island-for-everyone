@@ -277,6 +277,34 @@ LIFE = [
          also=["Per-app volume", "Clipboard history", "File shelf", "Your phone's notifications"]),
 ]
 
+# What's new: Control Centre your way, ten languages, the phone and the computer
+# together (made with --only, or all of them with --new).
+NEW = [
+    dict(name="styles", song_bar=5, frames="laptop:styles", tag="NEW · YOUR CONTROL CENTRE", glow=(255, 70, 140), deep=(22, 4, 14), accent=(255, 110, 170), seed=5,
+         beats=[(0.6, "Unfolds as it opens", "Control Centre, Classic"), (3.8, "Modules", "Big tiles, in your order"),
+                (7.0, "Sliders", "Volume & brightness, tall"), (10.2, "Your own photo", "Behind the dock"),
+                (13.4, "Any tint", "Pick your own colour")],
+         also=["Move any button", "Four layouts on the phone", "Glass, black or tinted", "Switch in Settings"]),
+    dict(name="languages", song_bar=33, frames="laptop:languages", tag="NEW · TEN LANGUAGES", glow=(60, 140, 255), deep=(4, 10, 26), accent=(110, 180, 255), seed=6,
+         beats=[(0.5, "Ten languages", "Pick one in Settings"), (2.2, "Spanish & French", "Every word, city names too"),
+                (5.4, "German & Portuguese", "Months and weekdays too"), (8.6, "Russian & Chinese", "On the laptop and the phone"),
+                (11.8, "Japanese & Arabic", "Right to left, done right"), (15.0, "And Hindi", "Or follow your system")],
+         also=["Settings app translated", "Phone app translated", "World clock cities", "Command line too"]),
+    dict(name="together", song_bar=49, frames="laptop:together", tag="NEW · PHONE + COMPUTER", glow=(40, 200, 150), deep=(4, 18, 14), accent=(70, 230, 170), seed=7,
+         beats=[(0.5, "Your phone, connected", "Its battery on your computer"), (4.2, "Messages arrive", "From your phone, up top"),
+                (6.0, "Reply in one click", "Quick replies, or your own"), (9.6, "Ring my phone", "Find it in seconds"),
+                (12.6, "Copy on the phone", "Paste on the computer")],
+         also=["Send text to the phone", "Share to computer", "Music from either one", "Low battery warnings"]),
+    dict(name="new-phone", song_bar=77, frames="phone:new-phone", tag="NEW ON ANDROID", glow=(170, 80, 255), deep=(12, 4, 24), accent=(200, 140, 255), seed=8,
+         beats=[(0.4, "Unfolds as it opens", "Control Centre, Classic"), (3.2, "Modules", "Big tiles, your order"),
+                (6.0, "Sliders", "Volume & brightness, tall"), (8.8, "Your own photo", "Behind the dock"),
+                (11.6, "Tint & language", "Your colour, your words"), (14.0, "Quicker pop-ups", "Out of the way of yours")],
+         also=["Brief, normal or long", "Reply from the computer", "Share to computer", "Ten languages"]),
+]
+NEW_FREE = ["Four layouts", "Your own photo", "Any tint colour", "Ten languages", "Phone + computer", "Quick replies"]
+for _f in NEW:
+    _f["free"] = NEW_FREE
+
 FREE_ITEMS = ["Glass & tinted looks", "Album-colour glow", "Stopwatch & world clocks", "Quick notes & to-do", "Your own shortcuts", "Clock faces"]
 URL = "github.com/Jimchi-cmd/Dynamic-island-for-everyone"
 
@@ -454,7 +482,7 @@ def make(film, frames_dir, out_path, song=None, analysis=None):
     also_cards = [glass_card(a, None, tuple(int(v) for v in colorsys.hsv_to_rgb((i * 0.17 + 0.55) % 1, 0.6, 0.95 * 255)), i % 6) for i, a in enumerate(film["also"])]
     free_title = extruded("All free", 150, (255, 236, 200), (255, 120, 170), depth=16)
     free_sub = Kinetic("Every feature · no ads · no accounts", 38, "Medium", GREY)
-    free_cards = [glass_card(p, None, c, i, width=496, font=31) for i, (p, c) in enumerate(zip(FREE_ITEMS, [(255, 159, 10), (255, 55, 95), (90, 200, 250), (52, 199, 89), (175, 82, 222), (10, 132, 255)]))]
+    free_cards = [glass_card(p, None, c, i, width=496, font=31) for i, (p, c) in enumerate(zip(film.get("free", FREE_ITEMS), [(255, 159, 10), (255, 55, 95), (90, 200, 250), (52, 199, 89), (175, 82, 222), (10, 132, 255)]))]
     end_title = Kinetic("Get Islet", 120)
     end_sub = Kinetic("Free · open source · no ads", 40, "Medium", GREY)
     button = Image.new("RGBA", (560, 120), (0, 0, 0, 0))
@@ -630,6 +658,7 @@ def main():
     ap.add_argument("--phone-frames", default=os.path.join(ROOT, "android/app/build/promo"))
     ap.add_argument("--laptop-frames", default=os.path.join(ROOT, "build"), help="holds promo-laptop-<reel> folders")
     ap.add_argument("--only")
+    ap.add_argument("--new", action="store_true", help="the what's-new reels instead of the life ones")
     ap.add_argument("--song", help="cut every reel to this song (its beats are found automatically)")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
@@ -638,7 +667,8 @@ def main():
         analysis = _load("beats", "beats.py").analyse(a.song)
         print(f"song: {analysis['bpm']:.1f} BPM, {len(analysis['downbeats'])} bars")
     ok = True
-    for film in LIFE:
+    films = NEW if a.new or (a.only and a.only in [f["name"] for f in NEW]) else LIFE
+    for film in films:
         if a.only and film["name"] != a.only:
             continue
         kind, name = film["frames"].split(":")

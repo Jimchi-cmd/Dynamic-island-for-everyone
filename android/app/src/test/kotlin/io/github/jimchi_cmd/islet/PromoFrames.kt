@@ -92,6 +92,11 @@ class PromoFrames {
         p.stripNetwork = false
         p.streak = Streak()
         p.worldClocks = emptyList()
+        p.ccStyle = "classic"
+        p.ccPhoto = false
+        p.tint = ""
+        p.noteLength = "normal"
+        T.load(ctx, "en")
         // A fixed morning, so every video shows the same time of day.
         val c = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 10)
@@ -274,11 +279,60 @@ class PromoFrames {
         )),
     )
 
+    /** A made-up photo for Control Centre: a dusk sky over hills. */
+    private fun photo() {
+        val bmp = Bitmap.createBitmap(900, 600, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val sky = Paint().apply {
+            shader = LinearGradient(0f, 0f, 0f, 600f, intArrayOf(0xff283c8c.toInt(), 0xffe6785a.toInt(), 0xfffac878.toInt()), floatArrayOf(0f, 0.6f, 1f), Shader.TileMode.CLAMP)
+        }
+        c.drawRect(0f, 0f, 900f, 600f, sky)
+        val hill = android.graphics.Path().apply {
+            moveTo(0f, 600f)
+            lineTo(0f, 430f)
+            quadTo(260f, 330f, 520f, 450f)
+            quadTo(720f, 380f, 900f, 420f)
+            lineTo(900f, 600f)
+            close()
+        }
+        c.drawPath(hill, Paint().apply { color = 0xff1e1932.toInt(); isAntiAlias = true })
+        File(ctx.filesDir, IslandView.CC_PHOTO).outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+    }
+
+    /** What's new: Control Centre's layouts, a photo, a tint, a language, shorter pop-ups. */
+    private fun features(): List<Reel> = listOf(
+        Reel("new-phone", 16.0, listOf(
+            0.4 to { Isle.island.longPress() },
+            2.8 to { Isle.island.close(now()); Isle.prefs.ccStyle = "modules" },
+            3.2 to { Isle.island.longPress() },
+            5.6 to { Isle.island.close(now()); Isle.prefs.ccStyle = "sliders" },
+            6.0 to { Isle.island.longPress() },
+            8.4 to {
+                Isle.island.close(now())
+                photo()
+                Isle.prefs.ccStyle = "dock"
+                Isle.prefs.ccPhoto = true
+            },
+            8.8 to { Isle.island.longPress() },
+            11.2 to {
+                Isle.island.close(now())
+                Isle.prefs.ccPhoto = false
+                Isle.prefs.ccStyle = "modules"
+                Isle.prefs.style = "tinted"
+                Isle.prefs.tint = "#d6336c"
+                T.load(ctx, "es")
+            },
+            11.6 to { Isle.island.longPress() },
+            13.8 to { Isle.island.close(now()); T.load(ctx, "en"); Isle.prefs.style = "black"; Isle.prefs.noteLength = "brief" },
+            14.0 to { Isle.island.pop(Pop.Note("q", "Chat", "Sam", "See you at 6!", emptyList(), 1), now()) },
+        )),
+    )
+
     @Test
     fun render() {
         assumeTrue("set ISLET_PROMO to draw the promo frames", System.getenv("ISLET_PROMO") != null)
         val only = System.getenv("ISLET_PROMO").takeIf { it.length > 1 }
-        for (reel in (reels() + life()).filter { only == null || it.name.startsWith(only) }) draw(reel)
+        for (reel in (reels() + life() + features()).filter { only == null || it.name.startsWith(only) }) draw(reel)
     }
 
     private fun draw(reel: Reel) {

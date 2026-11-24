@@ -5842,20 +5842,11 @@ mod tests {
         strip("open-music", times.iter().map(|dt| shoot(&m, 3.05 + dt, &mut engine)).collect());
     }
 
-    /// Control Centre in each style, with a photo and a custom tint, for review:
-    /// `ISLET_CC_SHOTS=/path/dir cargo test -p islet cc_shots`
-    #[test]
-    fn cc_shots() {
-        let Some(dir) = std::env::var_os("ISLET_CC_SHOTS") else { return };
-        use islet_core::connectivity::{BtState, ConnUpdate};
-        use islet_core::weather::{Sky, Weather};
+    /// A made-up photo for Control Centre: a dusk sky over hills.
+    fn dusk_photo() -> islet_core::activity::ArtImage {
         use tiny_skia::{
             Color, GradientStop, LinearGradient, Paint, PathBuilder, Pixmap, Point, SpreadMode, Transform,
         };
-        let dir = std::path::PathBuf::from(dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let mut engine = TextEngine::new();
-        // A made-up photo: a dusk sky over hills.
         let mut pm = Pixmap::new(900, 600).unwrap();
         let sky = LinearGradient::new(
             Point::from_xy(0.0, 0.0),
@@ -5885,7 +5876,21 @@ mod tests {
         pb.line_to(900.0, 600.0);
         pb.close();
         pm.fill_path(&pb.finish().unwrap(), &hill, tiny_skia::FillRule::Winding, Transform::identity(), None);
-        let photo = crate::providers::art::photo(&pm.encode_png().unwrap()).unwrap();
+        crate::providers::art::photo(&pm.encode_png().unwrap()).unwrap()
+    }
+
+    /// Control Centre in each style, with a photo and a custom tint, for review:
+    /// `ISLET_CC_SHOTS=/path/dir cargo test -p islet cc_shots`
+    #[test]
+    fn cc_shots() {
+        let Some(dir) = std::env::var_os("ISLET_CC_SHOTS") else { return };
+        use islet_core::connectivity::{BtState, ConnUpdate};
+        use islet_core::weather::{Sky, Weather};
+        use tiny_skia::Pixmap;
+        let dir = std::path::PathBuf::from(dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut engine = TextEngine::new();
+        let photo = dusk_photo();
         let shots: [(&str, &str, bool, &str, &str); 7] = [
             ("classic", "classic", false, "black", ""),
             ("modules", "modules", false, "black", ""),
@@ -8217,6 +8222,135 @@ mod tests {
                     ],
                 )
             }
+            "styles" => {
+                // Control Centre in each layout, then with a photo and a tint of your own.
+                use islet_core::connectivity::{BtState, ConnUpdate};
+                app.set_cc_photo(Some(dusk_photo()));
+                app.report(Report::Connectivity(ConnUpdate::Wifi(wifi(Some("Home")))), 0.0);
+                let bt = BtState { available: true, powered: true, ..BtState::default() };
+                app.report(Report::Connectivity(ConnUpdate::Bluetooth(bt)), 0.0);
+                app.report(Report::Volume(0.55, false), 0.0);
+                app.report(Report::Brightness(0.8), 0.0);
+                let look = |cc_style: &'static str, photo: bool, style: &'static str, tint: &'static str| {
+                    move |a: &mut App, _t: f64| {
+                        a.set_prefs(IslandPrefs {
+                            cc_style: cc_style.into(),
+                            cc_photo: photo,
+                            style: style.into(),
+                            tint: tint.into(),
+                            ..IslandPrefs::default()
+                        });
+                    }
+                };
+                (
+                    17.0,
+                    vec![
+                        (0.0, Box::new(look("classic", false, "black", "")) as Step),
+                        (0.6, Box::new(click)),
+                        (2.9, Box::new(escape)),
+                        (3.4, Box::new(look("modules", false, "black", ""))),
+                        (3.8, Box::new(click)),
+                        (6.1, Box::new(escape)),
+                        (6.6, Box::new(look("sliders", false, "black", ""))),
+                        (7.0, Box::new(click)),
+                        (9.3, Box::new(escape)),
+                        (9.8, Box::new(look("dock", true, "black", ""))),
+                        (10.2, Box::new(click)),
+                        (12.5, Box::new(escape)),
+                        (13.0, Box::new(look("modules", false, "tinted", "#d6336c"))),
+                        (13.4, Box::new(click)),
+                        (16.2, Box::new(escape)),
+                    ],
+                )
+            }
+            "languages" => {
+                // Control Centre, one language after another.
+                use islet_core::weather::{Sky, Weather};
+                app.set_prefs(IslandPrefs {
+                    world_clocks: vec!["London".into(), "Tokyo".into()],
+                    ..IslandPrefs::default()
+                });
+                let w = Weather {
+                    place: "Kampala".into(),
+                    temp_c: 24.0,
+                    high_c: Some(27.0),
+                    low_c: Some(17.0),
+                    sky: Sky::PartlyCloudy,
+                    is_day: true,
+                };
+                app.report(Report::Weather(Some(w)), 0.0);
+                let speak = |code: &'static str| {
+                    move |_a: &mut App, _t: f64| {
+                        islet_core::i18n::set_language(code);
+                    }
+                };
+                let mut steps: Vec<(f64, Step)> = vec![(0.0, Box::new(speak("en"))), (0.5, Box::new(click))];
+                for (i, code) in ["es", "fr", "de", "pt", "ru", "zh", "ja", "ar", "hi"].into_iter().enumerate() {
+                    steps.push((2.2 + 1.6 * i as f64, Box::new(speak(code))));
+                }
+                (17.0, steps)
+            }
+            "together" => {
+                // The phone and the computer together: a message answered, the phone rung, a copy shared.
+                use islet_core::activity::{BatteryDevice, DeviceKind, Note};
+                use islet_core::phone::PHONE_DEVICE;
+                let phone = |a: &mut App, t: f64| {
+                    let device = BatteryDevice {
+                        id: PHONE_DEVICE.into(),
+                        name: "My phone".into(),
+                        kind: DeviceKind::Phone,
+                        percent: 76,
+                        charging: false,
+                        parts: Vec::new(),
+                    };
+                    a.report(Report::DeviceConnected(device), t);
+                };
+                let message = |a: &mut App, t: f64| {
+                    let note = Note {
+                        app: "Messages · My phone".into(),
+                        summary: "Sam".into(),
+                        body: "Lunch at 1? The usual place".into(),
+                        reply: Some("m1".into()),
+                    };
+                    a.report(Report::Notification(note), t);
+                };
+                let answer = |a: &mut App, t: f64| {
+                    let card = content::below_header(a.content_rect(a.settled_pill()));
+                    let chips =
+                        content::quick_reply_chips(card, &a.quick_replies(), true, a.activities.notes().count());
+                    if let Some(r) = chips.get(1) {
+                        press(a, *r, t);
+                    }
+                };
+                let menu = |a: &mut App, t: f64| {
+                    let (x, y) = centre(a, t);
+                    a.handle(Event::PointerDown { x, y, button: Button::Secondary }, t);
+                };
+                let ring = |a: &mut App, t: f64| {
+                    let items = a.menu_items(t);
+                    if let Some(i) = items.iter().position(|m| m.action == content::MenuAction::RingPhone) {
+                        let r = content::menu_rows(a.content_rect(a.pill_rect(t)), items.len())[i];
+                        press(a, r, t);
+                    }
+                };
+                let shared = |a: &mut App, t: f64| {
+                    a.report(Report::Shared("My phone".into(), "Room 12B, second floor".into()), t);
+                };
+                (
+                    17.0,
+                    vec![
+                        (0.5, Box::new(phone) as Step),
+                        (3.0, Box::new(message)),
+                        (6.0, Box::new(click)),
+                        (8.2, Box::new(answer)),
+                        (9.6, Box::new(menu)),
+                        (11.2, Box::new(ring)),
+                        (12.6, Box::new(shared)),
+                        (14.4, Box::new(click)),
+                        (16.4, Box::new(escape)),
+                    ],
+                )
+            }
             "desk" => {
                 app.report(Report::System(Some(stats(0.18))), 0.0);
                 let buds_in = |a: &mut App, t: f64| {
@@ -8255,6 +8389,10 @@ mod tests {
                 ],
             ),
         };
+        if reel == "languages" {
+            // Chinese, Japanese, Arabic and Hindi need the system's fonts.
+            engine.add_system_fonts();
+        }
         let mut next = 0;
         for i in 0..(seconds * fps) as u32 {
             let t = f64::from(i) / fps;
@@ -8271,5 +8409,6 @@ mod tests {
             islet_render::elements::draw_elements(&mut cell, &els, &mut engine, scale, mask.as_ref());
             cell.save_png(dir.join(format!("f{i:04}.png"))).unwrap();
         }
+        islet_core::i18n::set_language("en");
     }
 }

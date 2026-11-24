@@ -27,3 +27,6 @@ paste-into-github.txt
 # Sidecars staged for bundling (scripts/stage-island.sh)
 /src-tauri/binaries/
 __pycache__/
+
+# Promo video frames (scripts/promo)
+/build/

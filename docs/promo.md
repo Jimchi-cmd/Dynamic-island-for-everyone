@@ -38,6 +38,24 @@ python3 scripts/promo/make-reels.py --out promo-videos --song your-song.mp3
 
 **Copyright:** a commercial song inside the video file is often muted or claimed. Post the silent version and pick the same song from the app's own sound library (TikTok and Instagram license their libraries); the timing still matches if the in-app sound starts at the same point.
 
+### What's new
+
+Four more reels in the same style, each about one of the newer features: `styles` (Control Centre's four layouts, unfolding as they open, with a photo and a tint of your own), `languages` (Control Centre going through all ten languages), `together` (a phone message answered from the computer, Ring my phone, and text copied on the phone landing on the computer's clipboard) and `new-phone` (the phone's layouts, a tint, a language and the shorter pop-ups).
+
+```bash
+for r in styles languages together; do ISLET_PROMO_REEL=$r ISLET_PROMO_DIR=$PWD/build/promo-laptop-$r cargo test -p islet --bin islet promo_frames; done
+```
+
+```bash
+cd android && ISLET_PROMO=new-phone gradle :app:testDebugUnitTest --tests '*PromoFrames*' --rerun
+```
+
+```bash
+python3 scripts/promo/make-reels.py --new --out promo-videos [--song your-song.mp3]
+```
+
+Give `ISLET_PROMO_DIR` a full path: `cargo test` runs inside `crates/islet`, so a relative one lands there.
+
 ## "Islet in real life" (with music)
 
 Five more vertical videos, 25–26 s each, with an original soundtrack and smooth camera moves: Islet in a meeting, in class, on the way, at the gym and at your desk, then an Islet Pro card with its extras and the GitHub link.
