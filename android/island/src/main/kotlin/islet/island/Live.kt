@@ -102,6 +102,20 @@ sealed class Pop {
     /** How long it stays, in milliseconds. */
     abstract val lasts: Long
 
+    companion object {
+        /**
+         * How long a notification shows (ms): set from the app's choice
+         * (`NOTE_LENGTHS`). Short by default, so it is gone before the
+         * phone's own notification banner has finished.
+         */
+        @Volatile var noteMs: Long = 3000L
+
+        /** "brief", "normal" or "long", and how long each shows a notification (ms). */
+        val NOTE_LENGTHS = listOf("brief" to 2000L, "normal" to 3000L, "long" to 5000L)
+
+        fun noteMsFor(choice: String): Long = NOTE_LENGTHS.firstOrNull { it.first == choice }?.second ?: 3000L
+    }
+
     /** Pop-ups with the same key replace each other instead of queueing. */
     open val key: String get() = this::class.java.simpleName
 
@@ -117,7 +131,8 @@ sealed class Pop {
         val actions: List<String> = emptyList(),
         val count: Int = 1,
     ) : Pop() {
-        override val lasts get() = if (actions.isEmpty()) 5000L else 7000L
+        /** Half as long again with buttons, for time to reach them. */
+        override val lasts get() = if (actions.isEmpty()) noteMs else noteMs * 3 / 2
     }
 
     /** A card payment, read from a wallet app's notification. */

@@ -28,3 +28,28 @@ class ControlCentreTest {
         assertEquals(240.0, g.box(Scene.Controls).h)
     }
 }
+
+class NoteLengthTest {
+    @Test
+    fun notifications_go_quickly_unless_asked_to_stay() {
+        val before = Pop.noteMs
+        try {
+            assertEquals(3000L, Pop.noteMsFor("normal"))
+            assertEquals(2000L, Pop.noteMsFor("brief"))
+            assertEquals(5000L, Pop.noteMsFor("long"))
+            assertEquals(3000L, Pop.noteMsFor("nonsense"))
+            Pop.noteMs = Pop.noteMsFor("brief")
+            assertEquals(2000L, Pop.Note("k", "Messages", "Sam", "Hi").lasts)
+            assertEquals(3000L, Pop.Note("k", "Messages", "Sam", "Hi", actions = listOf("Reply")).lasts, "longer with buttons")
+            // It leaves on time, and the next one waiting comes on.
+            val island = Island()
+            island.pop(Pop.Note("a", "Messages", "Sam", "Hi"), 0)
+            island.pop(Pop.Note("b", "Mail", "News", "…"), 10)
+            assertTrue(island.scene(1999) is Scene.Popped)
+            val next = island.scene(2001) as? Scene.Popped
+            assertEquals("b", (next?.pop as? Pop.Note)?.key)
+        } finally {
+            Pop.noteMs = before
+        }
+    }
+}

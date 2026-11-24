@@ -129,6 +129,14 @@ class Prefs(context: Context) {
         get() = flag("pop_notes", true)
         set(v) = set("pop_notes", v)
 
+    /** How long a notification pops up: "brief", "normal" or "long" (`Pop.NOTE_LENGTHS`). */
+    var noteLength: String
+        get() = p.getString("note_length", "normal") ?: "normal"
+        set(v) {
+            p.edit().putString("note_length", v).apply()
+            islet.island.Pop.noteMs = islet.island.Pop.noteMsFor(v)
+        }
+
     var popPower: Boolean
         get() = flag("pop_power", true)
         set(v) = set("pop_power", v)

@@ -161,6 +161,7 @@ object Isle {
         T.load(app, prefs.language)
         islet.island.Words.tr = { T.t(it) }
         island.showEmpty = prefs.showEmpty
+        islet.island.Pop.noteMs = islet.island.Pop.noteMsFor(prefs.noteLength)
         focus.focusMinutes = prefs.focusMinutes
         focus.breakMinutes = prefs.breakMinutes
     }

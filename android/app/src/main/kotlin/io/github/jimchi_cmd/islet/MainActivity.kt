@@ -635,6 +635,17 @@ class MainActivity : AppCompatActivity() {
         val pops = kit.card(col, T.t("Pop-ups"))
         pops.add(kit.toggleRow(T.t("Grow downward"), T.t("Pop-ups drop down from the camera instead of spreading sideways, and notifications open under the status bar, so its clock and battery stay in view."), prefs.popsDown) { prefs.popsDown = it; changed() })
         pops.add(kit.toggleRow(T.t("Notifications"), T.t("On the lock screen only the app's name shows."), prefs.popNotes) { prefs.popNotes = it })
+        val lengths = listOf("brief" to T.t("Brief (2 s)"), "normal" to T.t("Normal (3 s)"), "long" to T.t("Long (5 s)"))
+        pops.add(kit.valueRow(
+            T.t("How long notifications show"),
+            lengths.firstOrNull { it.first == prefs.noteLength }?.second ?: T.t("Normal (3 s)"),
+            T.t("Shorter gets out of the way of the phone's own notification banner. A little longer when it has buttons."),
+        ) {
+            choose(T.t("How long notifications show"), lengths, prefs.noteLength) {
+                prefs.noteLength = it
+                build()
+            }
+        })
         pops.add(kit.toggleRow(T.t("Charging and low battery"), null, prefs.popPower) { prefs.popPower = it })
         pops.add(kit.toggleRow(T.t("Ring, vibrate and silent"), T.t("Also airplane mode and Do Not Disturb."), prefs.popModes) { prefs.popModes = it })
         pops.add(kit.toggleRow(T.t("Wi-Fi and Bluetooth"), T.t("With the device's battery, when it says."), prefs.popConnections) { prefs.popConnections = it })
