@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-24
+
 ### Changed
 - Phone: notification pop-ups go sooner (3 seconds instead of 5, a little longer with buttons), so they get out of the way of the phone's own notification banner. **What it shows → How long notifications show** picks Brief (2 s), Normal or Long (5 s, as before).
 
