@@ -52,6 +52,15 @@ function Read-Saved([string]$name) {
     return $null
 }
 
+# Write the passwords file now, so a key is never left without its password.
+function Save-Passwords {
+    Set-Content -Path (Join-Path $dir 'passwords.txt') -Value @(
+        "ANDROID_KEYSTORE_PASSWORD=$storePw",
+        'ANDROID_KEY_ALIAS=islet',
+        "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$updPw"
+    )
+}
+
 $keytool = Find-Keytool
 if (-not (Get-Command npx.cmd -ErrorAction SilentlyContinue)) {
     throw 'npx not found: install Node.js with "winget install OpenJS.NodeJS.LTS", then open a new PowerShell and run this again.'
@@ -63,6 +72,7 @@ $jks = Join-Path $dir 'islet-release.jks'
 if (Test-Path $jks) {
     Write-Host "Keeping the phone key already in $jks"
     $storePw = Read-Saved 'ANDROID_KEYSTORE_PASSWORD'
+    if (-not $storePw) { throw "No password saved for $jks. If you haven't released with it yet, delete it and run this again." }
 } else {
     $storePw = New-Password
     & $keytool -genkeypair -keystore $jks -storetype PKCS12 -alias islet -keyalg RSA -keysize 4096 `
@@ -70,12 +80,14 @@ if (Test-Path $jks) {
     if ($LASTEXITCODE -ne 0) { throw 'keytool could not make the phone key.' }
     Write-Host "Made the phone key: $jks"
 }
+$updPw = Read-Saved 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD'
+Save-Passwords
 
 # 2. The update key (Tauri's, Ed25519).
 $key = Join-Path $dir 'islet-updater.key'
 if (Test-Path $key) {
     Write-Host "Keeping the update key already in $key"
-    $updPw = Read-Saved 'TAURI_SIGNING_PRIVATE_KEY_PASSWORD'
+    if (-not $updPw) { throw "No password saved for $key. If you haven't released with it yet, delete it and its .pub and run this again." }
 } else {
     $updPw = New-Password
     $cli = '2'
@@ -85,15 +97,13 @@ if (Test-Path $key) {
         if ($v) { $cli = $v -replace '^[^0-9]*', '' }
     }
     & npx.cmd --yes "@tauri-apps/cli@$cli" signer generate --ci -w $key -p $updPw | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Tauri could not make the update key.' }
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Tauri could not make the update key. If npm said SELF_SIGNED_CERT_IN_CHAIN (antivirus or network checking secure connections), run $env:NODE_OPTIONS = "--use-system-ca" and this again.'
+    }
     Write-Host "Made the update key: $key"
 }
 
-Set-Content -Path (Join-Path $dir 'passwords.txt') -Value @(
-    "ANDROID_KEYSTORE_PASSWORD=$storePw",
-    'ANDROID_KEY_ALIAS=islet',
-    "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$updPw"
-)
+Save-Passwords
 
 $jksB64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($jks))
 $priv = (Get-Content $key -Raw).Trim()

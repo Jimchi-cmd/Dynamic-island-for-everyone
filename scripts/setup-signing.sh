@@ -32,38 +32,44 @@ command -v npx >/dev/null || die "npx not found: install Node.js 20 or later and
 
 mkdir -p "$dir"
 chmod 700 "$dir"
+umask 077
+saved() { sed -n "s/^$1=//p" "$dir/passwords.txt" 2>/dev/null || true; }
+# Written after each key, so a key is never left without its password.
+save_passwords() {
+  printf 'ANDROID_KEYSTORE_PASSWORD=%s\nANDROID_KEY_ALIAS=islet\nTAURI_SIGNING_PRIVATE_KEY_PASSWORD=%s\n' \
+    "$store_pw" "${upd_pw:-}" >"$dir/passwords.txt"
+}
 
 # 1. The phone app's signing key.
 jks="$dir/islet-release.jks"
 if [[ -e "$jks" ]]; then
   echo "Keeping the phone key already in $jks"
-  store_pw=$(sed -n 's/^ANDROID_KEYSTORE_PASSWORD=//p' "$dir/passwords.txt")
+  store_pw=$(saved ANDROID_KEYSTORE_PASSWORD)
+  [[ -n "$store_pw" ]] || die "no password saved for $jks; if you haven't released with it yet, delete it and run this again"
 else
   store_pw=$(password)
   keytool -genkeypair -keystore "$jks" -storetype PKCS12 -alias islet -keyalg RSA -keysize 4096 \
     -validity 10000 -dname "CN=Islet" -storepass "$store_pw" -keypass "$store_pw" >/dev/null
   echo "Made the phone key: $jks"
 fi
+upd_pw=$(saved TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
+save_passwords
 
 # 2. The update key (Tauri's, Ed25519).
 key="$dir/islet-updater.key"
 if [[ -e "$key" ]]; then
   echo "Keeping the update key already in $key"
-  upd_pw=$(sed -n 's/^TAURI_SIGNING_PRIVATE_KEY_PASSWORD=//p' "$dir/passwords.txt")
+  [[ -n "$upd_pw" ]] || die "no password saved for $key; if you haven't released with it yet, delete it and its .pub and run this again"
 else
   upd_pw=$(password)
   # The Tauri version the project builds with (this file may be run on its own, too).
   cli=$(node -p "require('./package.json').devDependencies['@tauri-apps/cli'].replace(/^[^0-9]*/, '')" 2>/dev/null || echo 2)
-  npx --yes "@tauri-apps/cli@$cli" signer generate --ci -w "$key" -p "$upd_pw" >/dev/null
+  npx --yes "@tauri-apps/cli@$cli" signer generate --ci -w "$key" -p "$upd_pw" >/dev/null ||
+    die "Tauri could not make the update key (if npm said SELF_SIGNED_CERT_IN_CHAIN, try NODE_OPTIONS=--use-system-ca)"
   echo "Made the update key: $key"
 fi
 
-umask 077
-cat > "$dir/passwords.txt" <<EOF
-ANDROID_KEYSTORE_PASSWORD=$store_pw
-ANDROID_KEY_ALIAS=islet
-TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$upd_pw
-EOF
+save_passwords
 chmod 600 "$dir"/*
 
 b64() { base64 <"$1" | tr -d '\n'; }
