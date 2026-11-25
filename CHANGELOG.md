@@ -4,6 +4,14 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-25
+
+### Changed
+- **Signed releases**: from this version the phone app is signed with Islet's own release key (`Islet-0.11.1-android.apk`), so later versions install over it and keep your settings, and Islet on a computer can update itself from Settings. Coming from an earlier phone version (signed with a test key), uninstall it once before installing this one.
+
+### Fixed
+- `scripts/setup-signing.ps1` and `setup-signing.sh` save each key's password as soon as the key is made, so a run that stops halfway (for example when antivirus HTTPS scanning blocks npm) can simply be run again; the npm error now says how to get past it.
+
 ## [0.11.0] - 2026-11-24
 
 ### Changed
