@@ -132,3 +132,35 @@ object Notes {
         return NoteKind.Popup
     }
 }
+
+/**
+ * Rings for running transfers whose bar has stopped moving. An app can leave
+ * a "running" notification with a bar that never changes (a stuck or paused
+ * job); after [STALE_MS] without a change its ring leaves the island.
+ */
+class ProgressWatch {
+    private val since = HashMap<String, Pair<Int, Long>>()
+
+    /** The bar of `id` is at `percent` (-1: no figure) now. False once it has stood still too long. */
+    fun seen(id: String, percent: Int, now: Long): Boolean {
+        val last = since[id]
+        if (last == null || last.first != percent) since[id] = percent to now
+        return !stale(id, now)
+    }
+
+    fun stale(id: String, now: Long): Boolean = since[id]?.let { now - it.second >= STALE_MS } ?: false
+
+    /** The rings that have stood still too long. */
+    fun staleIds(now: Long): List<String> = since.keys.filter { stale(it, now) }
+
+    /** When the next ring goes stale, if one is waiting. */
+    fun nextCheck(now: Long): Long? = since.values.map { it.second + STALE_MS }.filter { it > now }.minOrNull()
+
+    fun forget(id: String) {
+        since.remove(id)
+    }
+
+    companion object {
+        const val STALE_MS = 5 * 60_000L
+    }
+}

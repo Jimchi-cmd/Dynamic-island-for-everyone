@@ -8,7 +8,7 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 - **A download website** at https://jimchi-cmd.github.io/Dynamic-island-for-everyone/: what Islet does, the four new videos, and one button that picks the right download for the visitor's device (Windows, Mac, Linux or Android). It is rebuilt with each release's files, sets no cookies and loads nothing from other sites ([docs/website.md](docs/website.md)).
 
 ### Fixed
-- Phone: a notification with a progress bar that isn't a running download (Netflix's “continue watching”, a paused download) no longer stays on the island as a ring with the app's icon for as long as it sits in the notification shade. Only downloads and uploads that are running get the ring.
+- Phone: a notification with a progress bar that isn't a running download (Netflix's “continue watching”, a paused download) no longer stays on the island as a ring with the app's icon for as long as it sits in the notification shade. Only downloads and uploads that are running get the ring, and a ring whose bar hasn't moved for five minutes goes too (an app's job that is stuck or paused).
 
 ## [0.11.1] - 2026-11-25
 

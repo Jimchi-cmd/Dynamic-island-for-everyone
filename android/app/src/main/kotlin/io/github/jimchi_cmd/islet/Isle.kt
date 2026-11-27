@@ -171,6 +171,9 @@ object Isle {
 
     fun now() = clock()
 
+    /** When each download ring's bar last moved. */
+    private val progress = islet.island.ProgressWatch()
+
     /** Something changed: redraw, and come back when the next change is due. */
     fun changed() {
         if (Looper.myLooper() != Looper.getMainLooper()) {
@@ -182,6 +185,8 @@ object Isle {
         val timetable = prefs.timetable
         updateLesson(timetable)
         dropPausedMusic()
+        // A ring whose bar has stopped moving goes.
+        for (id in progress.staleIds(now())) island.remove(id)
         island.tick(now())
         onChange?.invoke()
         LiveBars.update()
@@ -193,6 +198,7 @@ object Isle {
             timetable.nextCheck(now()).takeIf { prefs.lessons || prefs.lessonQuiet },
             sleepAt,
             pausedSince?.takeIf { !island.isOpen }?.let { it + PAUSE_LINGER },
+            progress.nextCheck(now()),
         ).minOrNull()
         if (next != null) main.postDelayed(due, (next - now()).coerceIn(50, 15 * 60_000))
     }
@@ -299,7 +305,11 @@ object Isle {
             }
             is NoteKind.Navigation -> if (prefs.navigation) island.put(Live.Navigation(id, kind.title, kind.text, f.app))
             is NoteKind.Countdown -> island.put(Live.Countdown(id, kind.label, kind.endsAt, f.app))
-            is NoteKind.Progress -> if (prefs.progress) island.put(Live.Progress(id, kind.title, f.app, kind.percent))
+            is NoteKind.Progress -> if (prefs.progress && progress.seen(id, kind.percent, t)) {
+                island.put(Live.Progress(id, kind.title, f.app, kind.percent))
+            } else {
+                island.remove(id)
+            }
             is NoteKind.Finished -> {
                 // The bar is full and nothing runs: the ring goes, and it says so once.
                 val was = island.get(id)
@@ -328,6 +338,7 @@ object Isle {
     fun removed(sbn: StatusBarNotification) {
         if (!started) return
         val id = "note:${sbn.key}"
+        progress.forget(id)
         val live = island.get(id)
         island.remove(id)
         island.forget(sbn.key, now())

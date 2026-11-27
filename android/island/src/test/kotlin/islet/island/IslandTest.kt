@@ -2,6 +2,7 @@ package islet.island
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -169,6 +170,16 @@ class IslandTest {
         )
         assertEquals(NoteKind.Ignore, Notes.classify(watched, "me"), "a suggestion, with a watched bar")
         assertEquals(NoteKind.Popup, Notes.classify(watched.copy(category = null), "me"), "an ordinary pop-up, once")
+        // A "running" bar that stops moving leaves the island after a while.
+        val watch = ProgressWatch()
+        assertTrue(watch.seen("p", 40, 0))
+        assertTrue(watch.seen("p", 40, ProgressWatch.STALE_MS - 1), "not yet")
+        assertEquals(ProgressWatch.STALE_MS, watch.nextCheck(1))
+        assertFalse(watch.seen("p", 40, ProgressWatch.STALE_MS), "stood still for five minutes")
+        assertEquals(listOf("p"), watch.staleIds(ProgressWatch.STALE_MS))
+        assertTrue(watch.seen("p", 41, ProgressWatch.STALE_MS + 10), "moving again: back")
+        watch.forget("p")
+        assertEquals(emptyList(), watch.staleIds(10 * ProgressWatch.STALE_MS))
         val wallet = base.copy(pkg = "com.google.android.apps.walletnfcrel", title = "Coffee Corner", text = "\$12.50 with Visa ••1234")
         assertEquals(NoteKind.Payment("Coffee Corner", "\$12.50"), Notes.classify(wallet, "me"))
         assertEquals(NoteKind.Payment("Supermarket", "UGX 25,000"), Notes.classify(wallet.copy(title = "UGX 25,000", text = "Supermarket"), "me"))
