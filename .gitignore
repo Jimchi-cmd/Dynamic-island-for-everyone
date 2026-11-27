@@ -34,5 +34,5 @@ __pycache__/
 # Design tools installed locally for the website (third-party, not part of the project)
 /.agents/
 /.claude/skills/
-/.taste-skill/
+.taste-skill/
 /skills-lock.json
