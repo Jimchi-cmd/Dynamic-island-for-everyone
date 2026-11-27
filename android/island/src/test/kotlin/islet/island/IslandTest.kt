@@ -154,12 +154,21 @@ class IslandTest {
             Notes.classify(base.copy(ongoing = true, chronometer = true, countDown = true, whenMs = 90_000, title = "Timer"), "me"),
         )
         assertEquals(NoteKind.Progress("file.zip", 25), Notes.classify(base.copy(title = "file.zip", progress = 25, progressMax = 100, ongoing = true), "me"))
-        assertEquals(NoteKind.Progress("Ann", -1), Notes.classify(base.copy(indeterminate = true), "me"))
+        assertEquals(NoteKind.Progress("Ann", -1), Notes.classify(base.copy(indeterminate = true, ongoing = true), "me"))
         // Finished, but the notification stays with a full bar: no ring.
         val done = base.copy(title = "file.zip", progress = 100, progressMax = 100)
         assertEquals(NoteKind.Finished("file.zip"), Notes.classify(done, "me"))
         assertEquals(NoteKind.Progress("file.zip", 100), Notes.classify(done.copy(ongoing = true), "me"), "still running")
-        assertEquals(NoteKind.Progress("file.zip", 40), Notes.classify(done.copy(progress = 40), "me"), "paused")
+        // A bar on a notification that can be swiped away isn't a running
+        // transfer: a paused download, or how much of an episode was watched.
+        // It is an ordinary notification, so it never stays on the island.
+        assertEquals(NoteKind.Popup, Notes.classify(done.copy(progress = 40), "me"), "paused")
+        val watched = NoteFacts(
+            key = "w", pkg = "com.netflix.mediaclient", app = "Netflix", title = "Continue watching",
+            text = "Episode 4", progress = 35, progressMax = 100, category = "recommendation",
+        )
+        assertEquals(NoteKind.Ignore, Notes.classify(watched, "me"), "a suggestion, with a watched bar")
+        assertEquals(NoteKind.Popup, Notes.classify(watched.copy(category = null), "me"), "an ordinary pop-up, once")
         val wallet = base.copy(pkg = "com.google.android.apps.walletnfcrel", title = "Coffee Corner", text = "\$12.50 with Visa ••1234")
         assertEquals(NoteKind.Payment("Coffee Corner", "\$12.50"), Notes.classify(wallet, "me"))
         assertEquals(NoteKind.Payment("Supermarket", "UGX 25,000"), Notes.classify(wallet.copy(title = "UGX 25,000", text = "Supermarket"), "me"))

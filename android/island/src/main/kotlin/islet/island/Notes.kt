@@ -110,8 +110,14 @@ object Notes {
             // "Download complete" often keeps a full bar; nothing is running
             // any more once the notification can be swiped away.
             if (!n.indeterminate && !n.ongoing && n.progress >= n.progressMax) return NoteKind.Finished(title.ifEmpty { n.app })
-            val percent = if (n.indeterminate || n.progressMax <= 0) -1 else (n.progress * 100L / n.progressMax).toInt().coerceIn(0, 100)
-            return NoteKind.Progress(title.ifEmpty { n.app }, percent)
+            // Only a transfer that is running (Android won't let it be swiped
+            // away) gets a ring. A bar on an ordinary notification, such as
+            // how much of an episode was watched or a paused download, would
+            // otherwise sit on the island for as long as it stays in the shade.
+            if (n.ongoing) {
+                val percent = if (n.indeterminate || n.progressMax <= 0) -1 else (n.progress * 100L / n.progressMax).toInt().coerceIn(0, 100)
+                return NoteKind.Progress(title.ifEmpty { n.app }, percent)
+            }
         }
         if (n.media || n.ongoing || n.groupSummary || n.secret) return NoteKind.Ignore
         if (n.pkg in WALLETS) {

@@ -4,6 +4,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Fixed
+- Phone: a notification with a progress bar that isn't a running download (Netflix's “continue watching”, a paused download) no longer stays on the island as a ring with the app's icon for as long as it sits in the notification shade. Only downloads and uploads that are running get the ring.
+
 ## [0.11.1] - 2026-11-25
 
 ### Changed
