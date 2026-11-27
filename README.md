@@ -13,7 +13,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 
 | Your device | The file to download |
 |---|---|
-| Android phone (8 or later) | `Islet-…-android-debug.apk` · then follow [the phone guide](docs/phone.md#set-it-up) |
+| Android phone (8 or later) | `Islet-…-android.apk` · then follow [the phone guide](docs/phone.md#set-it-up) |
 | Windows 10/11 | `Islet_…_x64-setup.exe` |
 | Mac | `Islet_…_universal.dmg` |
 | Linux | `.deb`, `.rpm` or `.AppImage` |
@@ -66,7 +66,7 @@ Get the latest version from [Releases](https://github.com/Jimchi-cmd/Dynamic-isl
 
 **New to Islet? Read the [step-by-step manual](docs/manual.md)**: downloading, installing on each system, first start, every feature, and fixes for common problems.
 
-Islet isn't code-signed yet, so browsers, Windows SmartScreen and macOS Gatekeeper may warn the first time. The manual and **[docs/install.md](docs/install.md)** walk through getting past each warning safely, plus permissions, updating and uninstalling.
+**Code signing:** the phone app and Islet's in-app updates are signed with the project's own keys. For Windows, Islet has applied for free code signing from SignPath.io, with a certificate by SignPath Foundation ([code signing policy](CODE_SIGNING_POLICY.md)); until it is granted, and on Mac, browsers, Windows SmartScreen and macOS Gatekeeper may warn the first time. The manual and **[docs/install.md](docs/install.md)** walk through getting past each warning safely, plus permissions, updating and uninstalling.
 
 ## Privacy
 

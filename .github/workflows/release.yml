@@ -363,12 +363,21 @@ jobs:
           cat SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
 
       - name: Release notes (from the CHANGELOG)
+        env:
+          HAS_SIGNPATH: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
         run: |
           ver="${TAG#v}"
           {
             echo "**New to Islet?** Follow the [step-by-step manual](https://github.com/${{ github.repository }}/blob/main/docs/manual.md) to download, install and set it up."
             echo
             awk -v v="$ver" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md
+            echo
+            policy="https://github.com/${{ github.repository }}/blob/main/CODE_SIGNING_POLICY.md"
+            if [ "$HAS_SIGNPATH" = true ]; then
+              echo "Windows code signing: free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/) ([policy]($policy))."
+            else
+              echo "Windows code signing: applied for with [SignPath Foundation](https://signpath.org/) (free code signing by [SignPath.io](https://about.signpath.io/), [policy]($policy)); until then Windows may warn the first time."
+            fi
           } > release-notes.md
           cat release-notes.md >> "$GITHUB_STEP_SUMMARY"
 
