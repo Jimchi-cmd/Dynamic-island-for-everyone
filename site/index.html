@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en" data-type="software">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Islet: an island app for your computer and phone</title>
+  <meta name="description" content="Islet puts a Dynamic Island-style pill at the top of your screen: music, timers, calendar, notifications and your phone's messages. Free and open source for Windows, Mac, Linux and Android.">
+  <meta name="page-type" content="software">
+  <meta name="site-kind" content="software">
+  <meta name="theme-color" content="#f7f7f5">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Islet: an island app for your computer and phone">
+  <meta property="og:description" content="Music, timers and your phone's messages in a pill at the top of your screen. Windows, Mac, Linux and Android; about 5 MB of memory; no accounts or ads.">
+  <meta property="og:image" content="media/hero.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css">
+  <!-- The hero's entrance runs only when scripts do, so the page never waits on it. -->
+  <script>document.documentElement.classList.add('m-enter');</script>
+</head>
+<body>
+  <!-- Deal: palette card-pastels (off-white ground, pink accent: the island's own pink), Geist, soft radius,
+       pill buttons, wordmark; hero collage; nav-centre; one dark band; close-type in a dark closing footer;
+       moment cursor-spotlight (a light on the hero's ground that follows the pointer). -->
+  <header class="nav">
+    <div class="wrap nav-row">
+      <a class="skip" href="#main">Skip to the content</a>
+      <a class="mark" href="#top" aria-label="Islet, back to the top"><img src="icon.svg" alt="" width="26" height="26"><span>Islet</span></a>
+      <nav aria-label="Sections">
+        <a href="#features">Features</a>
+        <a href="#videos">Videos</a>
+        <a href="#download">Download</a>
+        <a href="#questions">Questions</a>
+      </nav>
+      <a class="btn btn-small" href="#download">Get Islet</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top" data-enter>
+      <div class="wrap">
+       <div class="hero-text hero-grid">
+        <div class="hero-copy">
+          <h1>An island app for your computer and phone</h1>
+          <p class="lead">Islet puts a Dynamic&nbsp;Island-style pill at the top of your screen on Windows, Mac, Linux and Android. Your music, timers and your phone's messages open from it, and it stays small when nothing is happening.</p>
+          <div class="actions">
+            <a id="get" class="btn" href="#download">Download Islet</a>
+            <a class="btn btn-line" href="#videos">Watch the videos</a>
+          </div>
+          <p id="get-note" class="proof">Free and open source · about 5 MB of memory · version {{version}}</p>
+        </div>
+        <div class="hero-art" data-spotlight>
+          <div class="screen">
+            <video src="media/hero.mp4" poster="media/hero.jpg" autoplay muted loop playsinline aria-label="Islet's Control Centre opening in each of its four layouts"></video>
+          </div>
+          <img class="hero-card" src="media/phone.webp" alt="Islet on an Android phone, tinted pink" width="760" height="520">
+        </div>
+       </div>
+      </div>
+    </section>
+
+    <section class="features" id="features">
+      <div class="wrap">
+        <h2>What the island shows</h2>
+        <div class="bento">
+          <article class="card card-row span-2">
+            <div class="card-text">
+              <h3>Music, with synced lyrics</h3>
+              <p>Album art, play and skip, a scrubber and the words of the song, from whatever you play music in.</p>
+            </div>
+            <div class="panel panel-pink"><img src="media/music.webp" alt="Islet's music card: song, artist, controls and lyrics" loading="lazy" width="760" height="520"></div>
+          </article>
+          <article class="card">
+            <div class="card-text">
+              <h3>Control Centre in four layouts</h3>
+              <p>Wi-Fi, Bluetooth and a timer, with your own photo behind them.</p>
+            </div>
+            <div class="panel panel-sand"><img src="media/control-centre.webp" alt="Control Centre in the Dock layout over a dusk photo" loading="lazy" width="760" height="520"></div>
+          </article>
+          <article class="card">
+            <div class="card-text">
+              <h3>Your phone's messages</h3>
+              <p>Answer them from the computer, ring a lost phone, share text both ways.</p>
+            </div>
+            <div class="panel panel-sage"><img src="media/together.webp" alt="A phone message on the computer's island with quick replies" loading="lazy" width="760" height="520"></div>
+          </article>
+          <article class="card card-row card-flip span-2">
+            <div class="card-text">
+              <h3>Ten languages</h3>
+              <p>English, Spanish, French, German, Portuguese, Russian, Chinese, Japanese, Arabic and Hindi, with dates and city names to match.</p>
+            </div>
+            <div class="panel panel-sky"><img src="media/languages.webp" alt="Control Centre in Japanese" loading="lazy" width="760" height="520"></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="numbers" aria-labelledby="numbers-title">
+      <div class="wrap">
+        <h2 id="numbers-title">Small enough for a 4&nbsp;GB laptop</h2>
+        <div class="split numbers-split">
+        <div>
+        <p class="lead">The island is a native program, not a web page, so it costs almost nothing while it waits for something to show.</p>
+        <dl class="figures">
+          <div><dt>5&nbsp;MB</dt><dd>of memory while it waits</dd></div>
+          <div><dt>0&nbsp;%</dt><dd>of the processor between events</dd></div>
+          <div><dt>10</dt><dd>languages built in</dd></div>
+          <div><dt>4</dt><dd>systems: Windows, Mac, Linux, Android</dd></div>
+        </dl>
+        </div>
+        <img class="small-island" src="media/small-island.webp" alt="The island when it is small: a song with its lyrics, the phone at 76 percent, a message from Sam" loading="lazy" width="760" height="640">
+        </div>
+      </div>
+    </section>
+
+    <section class="videos band" id="videos">
+      <div class="wrap">
+        <h2>Watch Islet work</h2>
+        <p class="lead">Four short clips, drawn frame by frame by Islet's own code: Control Centre, the phone and computer together, Android, and the ten languages.</p>
+        <div class="reels">
+          <button class="reel" type="button" aria-label="Play: Control Centre in its four layouts"><video src="media/reel-styles.mp4" poster="media/reel-styles.jpg" muted playsinline preload="none"></video></button>
+          <button class="reel" type="button" aria-label="Play: Answering a phone message from the computer"><video src="media/reel-together.mp4" poster="media/reel-together.jpg" muted playsinline preload="none"></video></button>
+          <button class="reel" type="button" aria-label="Play: Islet on an Android phone"><video src="media/reel-new-phone.mp4" poster="media/reel-new-phone.jpg" muted playsinline preload="none"></video></button>
+          <button class="reel" type="button" aria-label="Play: Control Centre in ten languages"><video src="media/reel-languages.mp4" poster="media/reel-languages.jpg" muted playsinline preload="none"></video></button>
+        </div>
+      </div>
+    </section>
+
+    <section class="download" id="download">
+      <div class="wrap">
+        <h2>Download Islet {{version}}</h2>
+        <div class="split download-split">
+          <div>
+            <p class="lead">Released {{date}}. Every feature is included, with no paid version.</p>
+          <div class="platforms">
+            <article class="platform">
+              <h3>Windows</h3>
+              <p class="sub">Windows 10 and 11 · {{size:windows}}</p>
+              <a class="btn" href="{{url:windows}}">Get the installer</a>
+              <div class="alts"><a href="{{url:windowsMsi}}">.msi</a><a href="{{url:windowsZip}}">Portable .zip</a></div>
+              <p class="hint">If Windows says “Windows protected your PC”, click More info, then Run anyway.</p>
+            </article>
+            <article class="platform">
+              <h3>Mac</h3>
+              <p class="sub">Apple silicon and Intel · {{size:mac}}</p>
+              <a class="btn" href="{{url:mac}}">Get the disk image</a>
+              <div class="alts"><a href="https://github.com/Jimchi-cmd/Dynamic-island-for-everyone/blob/main/docs/install.md">Install steps</a></div>
+              <p class="hint">The first time, open System Settings, Privacy &amp; Security, and click Open Anyway.</p>
+            </article>
+            <article class="platform">
+              <h3>Linux</h3>
+              <p class="sub">Ubuntu, Fedora and more · {{size:deb}}</p>
+              <a class="btn" href="{{url:deb}}">Get the .deb</a>
+              <div class="alts"><a href="{{url:rpm}}">.rpm</a><a href="{{url:appimage}}">.AppImage</a><a href="{{url:gnome}}">GNOME extension</a></div>
+              <p class="hint">Runs on X11 and Wayland desktops.</p>
+            </article>
+            <article class="platform">
+              <h3>Android</h3>
+              <p class="sub">Android 8 or later · {{size:android}}</p>
+              <a class="btn" href="{{url:android}}">Get the app</a>
+              <div class="alts"><a href="https://github.com/Jimchi-cmd/Dynamic-island-for-everyone/blob/main/docs/phone.md#set-it-up">Phone set-up guide</a></div>
+              <p class="hint">Let your browser install apps, then switch Islet on with the guide.</p>
+            </article>
+          </div>
+          </div>
+          <div class="get-col">
+            <img class="get-picture" src="media/get.webp" alt="Islet's app icon over the small island saying text was copied from the phone" loading="lazy" width="760" height="720">
+            <div class="alts more"><a href="{{release}}">Release notes</a><a href="{{url:sums}}">Checksums</a><a href="https://github.com/Jimchi-cmd/Dynamic-island-for-everyone/releases">Older versions</a><a href="https://github.com/Jimchi-cmd/Dynamic-island-for-everyone#build-from-source">Build from source</a></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="questions" id="questions">
+      <div class="wrap">
+        <h2>Questions about Islet</h2>
+        <div class="split">
+          <div class="faq">
+            <details open><summary>Is Islet really free?</summary><p>Yes. Every feature, with no ads, accounts or paid version. The code is open source under the MIT licence, so anyone can read it on GitHub.</p></details>
+            <details><summary>Why does my computer warn me at install?</summary><p>Windows and Mac warn about apps from small developers without a paid signing certificate. Islet has applied for free Windows signing from SignPath Foundation; until then, the steps above get past the warning. The phone app and Islet's own updates are already signed.</p></details>
+            <details><summary>What does Islet send over the internet?</summary><p>Nothing about you. It goes online only for features you switch on, such as the weather for a place you pick or synced lyrics, and never for analytics. This site sets no cookies and loads nothing from other sites.</p></details>
+            <details><summary>Does Islet work on an iPhone?</summary><p>No. Apple doesn't let apps draw over other apps or read their notifications, so Islet is for Android phones and for Windows, Mac and Linux computers.</p></details>
+          </div>
+          <div class="panel panel-pink faq-art"><img src="media/phone-sliders.webp" alt="Islet's Control Centre on a phone, with volume and brightness sliders" loading="lazy" width="760" height="516"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="closing band">
+    <div class="wrap">
+      <div class="close-main">
+        <img class="close-pill" src="media/pill-music.webp" alt="The small island playing a song, with its lyrics" loading="lazy" width="760" height="89">
+        <p class="close-type">Free, with nothing to sign up for.</p>
+        <a class="btn" href="#download">Choose your download</a>
+      </div>
+      <div class="foot-bottom">
+      <div class="foot-row">
+        <a class="mark" href="#top"><img src="icon.svg" alt="" width="22" height="22" loading="lazy"><span>Islet</span></a>
+        <nav class="foot-links" aria-label="Project">
+          <a href="https://github.com/Jimchi-cmd/Dynamic-island-for-everyone">Source code</a>
+          <a href="https://github.com/Jimchi-cmd/Dynamic-island-for-everyone/blob/main/LICENSE">MIT licence</a>
+          <a href="https://github.com/Jimchi-cmd/Dynamic-island-for-everyone/blob/main/CODE_SIGNING_POLICY.md">Code signing policy</a>
+          <a href="https://github.com/Jimchi-cmd/Dynamic-island-for-everyone/blob/main/README.md#privacy">Privacy</a>
+        </nav>
+      </div>
+      <p class="legal">Islet is not affiliated with, endorsed by or sponsored by Apple Inc. “Dynamic Island”, “iPhone” and “macOS” are trademarks of Apple Inc. Windows is a trademark of Microsoft Corporation; Android is a trademark of Google LLC. Islet draws its own icons and uses no Apple fonts, symbols or sounds. Set in Geist (SIL Open Font License).</p>
+      </div>
+    </div>
+  </footer>
+
+  <script id="release" type="application/json">{{files}}</script>
+  <script type="module" src="download.js"></script>
+  <script type="module" src="spotlight.js"></script>
+  <script type="module" src="reels.js"></script>
+</body>
+</html>

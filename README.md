@@ -9,7 +9,7 @@ The island is a tiny native program with no web browser inside. It idles at **ab
 
 ## Download (free)
 
-**[Get the latest version →](https://github.com/Jimchi-cmd/Dynamic-island-for-everyone/releases/latest)** Under **Assets**, pick the file for your device:
+**[Get the latest version →](https://jimchi-cmd.github.io/Dynamic-island-for-everyone/#download)** The website picks the right download for your device, or [choose from every file](https://github.com/Jimchi-cmd/Dynamic-island-for-everyone/releases/latest) under **Assets**:
 
 | Your device | The file to download |
 |---|---|

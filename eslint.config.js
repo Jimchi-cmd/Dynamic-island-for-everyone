@@ -4,11 +4,18 @@ import svelte from 'eslint-plugin-svelte';
 import globals from 'globals';
 
 export default ts.config(
-  { ignores: ['dist/', 'node_modules/', 'src-tauri/target/', 'perf/target/', 'target/'] },
+  {
+    ignores: [
+      'dist/', 'node_modules/', 'src-tauri/target/', 'perf/target/', 'target/', 'build/',
+      // Design tools installed locally (not part of the project).
+      '.agents/', '.claude/', '.taste-skill/',
+    ],
+  },
   js.configs.recommended,
   ...ts.configs.recommended,
   ...svelte.configs.recommended,
   { languageOptions: { globals: { ...globals.browser } } },
+  { files: ['scripts/**/*.mjs'], languageOptions: { globals: { ...globals.node } } },
   {
     files: ['**/*.svelte', '**/*.svelte.ts'],
     languageOptions: { parserOptions: { parser: ts.parser } },

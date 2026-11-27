@@ -30,3 +30,9 @@ __pycache__/
 
 # Promo video frames (scripts/promo)
 /build/
+
+# Design tools installed locally for the website (third-party, not part of the project)
+/.agents/
+/.claude/skills/
+/.taste-skill/
+/skills-lock.json

@@ -15,6 +15,6 @@ export default defineConfig({
   },
   test: {
     root: '.',
-    include: ['ui/**/*.test.ts'],
+    include: ['ui/**/*.test.ts', 'site/**/*.test.ts'],
   },
 });
