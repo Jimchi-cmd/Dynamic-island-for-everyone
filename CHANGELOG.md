@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.11.4] - 2026-11-28
+
 ### Fixed
 - Phone: with **Stay clear of the status bar** on (the default since 0.11.3), the empty island's time and battery were drawn across the front camera: the pill had been made camera-narrow. The pill keeps its room beside the camera again, the time left of it and the battery right, and each side is now just as wide as what it shows ("14:05", "Sat 14:05" or the battery), so the pill is no wider than it needs to be and stays clear of the status bar's icons.
 
