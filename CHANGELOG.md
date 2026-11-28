@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-11-28
+
 ### Added
 - **A download website** at https://jimchi-cmd.github.io/Dynamic-island-for-everyone/: what Islet does, the four new videos, and one button that picks the right download for the visitor's device (Windows, Mac, Linux or Android). It is rebuilt with each release's files, sets no cookies and loads nothing from other sites ([docs/website.md](docs/website.md)).
 
