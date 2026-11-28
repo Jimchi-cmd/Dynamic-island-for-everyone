@@ -49,6 +49,13 @@ class Geometry(
     val musicLyrics: Boolean = false,
     /** Control Centre's height in its layout (see `ControlCentre.height`), dp. */
     val controlsHeight: Double = CLOCK_CARD,
+    /**
+     * The widest thing beside the camera on the empty island (the time in its
+     * format, or the battery), dp: each side is made just wide enough for it,
+     * so the pill neither crowds the camera nor reaches the status bar's icons.
+     * 0: the fixed size.
+     */
+    val clockContent: Double = 0.0,
 ) {
     private val k get() = size.scale
 
@@ -71,6 +78,20 @@ class Geometry(
     /** Room each side of the camera for the empty island's time and battery. */
     val clockWing get() = 40.0 * k
 
+    /** Half the camera hole's width (dp). */
+    val cameraHalf get() = (camera?.width ?: 24.0) / 2
+
+    /**
+     * The empty island's width with its time and battery: from the middle, the
+     * camera, a gap, the widest of the two, and a margin to the pill's end.
+     */
+    val clockWidth: Double
+        get() = if (clockContent > 0) {
+            maxOf(idleWidth, 2 * (cameraHalf + (CLOCK_GAP + CLOCK_PAD) * k + clockContent)) + extraWidth
+        } else {
+            idleWidth + 2 * (clockWing + clockExtra * k)
+        }
+
     /** Width for content beside the camera on each side. */
     val wing get() = 62.0 * k
 
@@ -79,7 +100,7 @@ class Geometry(
     fun box(scene: Scene): Box = when (scene) {
         Scene.Hidden -> centered(idleWidth * 0.6, idleHeight * 0.6, idleHeight)
         // The time left of the camera and the battery right of it, never over it.
-        Scene.Idle -> centered(idleWidth + if (idleClock) 2 * (clockWing + clockExtra * k) else 0.0, idleHeight, idleHeight / 2)
+        Scene.Idle -> centered(if (idleClock) clockWidth else idleWidth, idleHeight, idleHeight / 2)
         is Scene.Compact -> if (popsDown) {
             // Narrow round the camera (an icon each side), its words in a row under the status bar.
             val rows = DROP_TEXT + if (lyricsRow && scene.live is Live.Music) LYRICS_ROW else 0.0
@@ -162,6 +183,10 @@ class Geometry(
         const val DROP_WIDTH = 150.0
         const val DROP_ROWS = 46.0
         const val DROP_LEVEL = 30.0
+
+        /** The empty island's clock: its gap from the camera and its margin to the pill's end (dp). */
+        const val CLOCK_GAP = 8.0
+        const val CLOCK_PAD = 13.0
 
         /** The small island growing downward: its width, and its row of words under the camera (dp). */
         const val COMPACT_DROP_WIDTH = 140.0

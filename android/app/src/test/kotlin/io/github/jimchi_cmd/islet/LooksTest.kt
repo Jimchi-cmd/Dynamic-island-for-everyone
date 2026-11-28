@@ -127,6 +127,14 @@ class LooksTest {
         p.popsDown = true
         p.idleClock = true
         shot("down-idle")
+        p.clockFace = "seconds"
+        shot("down-idle-seconds")
+        p.clockFace = "day"
+        shot("down-idle-day")
+        p.clockFace = "time"
+        Isle.charging = true
+        shot("down-idle-charging")
+        Isle.charging = false
         p.lyrics = true
         Isle.artColor = 0xffe24070.toInt()
         Isle.island.put(Live.Music("Midnight Drive", "The Example Band", "Player", true, 215_000, 46_000, SystemClock.elapsedRealtime()))

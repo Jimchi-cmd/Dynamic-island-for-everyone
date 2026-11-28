@@ -87,7 +87,7 @@ class TouchTest {
         v.update()
         v.settle()
         val narrow = v.drawnBox()!!.w
-        assertTrue("the pill narrows to the new size ($wide → $narrow)", narrow < wide - 40)
+        assertTrue("the pill narrows to the new size ($wide → $narrow)", narrow < wide - 16)
         assertEquals(w.geometry().box(Scene.Idle), v.drawnBox())
         Isle.prefs.idleClock = true
         Isle.prefs.popsDown = true

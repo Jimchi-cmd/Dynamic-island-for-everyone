@@ -754,6 +754,18 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
     }
 
     /** The empty island's clock, in the chosen face. */
+    /**
+     * The widest thing beside the camera on the empty island, in dp: the time
+     * in its format (every digit an 8, so the pill doesn't change width each
+     * minute) or the battery with its charging bolt.
+     */
+    fun idleContentDp(): Double {
+        val time = idleTime(Isle.now()).replace(Regex("[0-9]"), "8")
+        val clock = measure(time, 14f, true) / dp
+        val battery = if (Isle.charging) 41f else 29f
+        return maxOf(clock, battery).toDouble()
+    }
+
     private fun idleTime(ms: Long): String = when (Isle.prefs.clockFace) {
         "day" -> T.date("EEE", ms) + " " + shortTime(ms)
         "seconds" -> shortTime(ms) + DateFormat.format(":ss", ms)
@@ -788,12 +800,17 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         val cy = box.centerY()
         val p = Isle.prefs
         if (p.idleClock) {
-            // As on the computer: the time beside the camera, the battery on the other side.
-            val h = box.height()
-            write(c, idleTime(Isle.now()), box.left + h * 0.5f, cy + 5 * dp, 14f, white, bold = true)
+            // As on the computer: the time left of the camera, the battery right of it,
+            // each in the middle of its side (the pill is made just wide enough for them).
+            val gap = ((geometry.cameraHalf + Geometry.CLOCK_GAP) * dp).toFloat()
+            val pad = (Geometry.CLOCK_PAD * dp).toFloat()
+            val leftMid = (box.left + pad + box.centerX() - gap) / 2
+            val rightMid = (box.centerX() + gap + box.right - pad) / 2
+            write(c, idleTime(Isle.now()), leftMid, cy + 5 * dp, 14f, white, bold = true, align = Paint.Align.CENTER)
             val dots = p.privacyDots && (Isle.cameraOn || Isle.micOn)
             val modes = p.modeIcons && (Isle.airplane || Isle.dnd)
-            val right = box.right - h * 0.5f
+            val content = (if (Isle.charging) 41f else 29f) * dp
+            val right = rightMid + content / 2
             when {
                 dots -> privacyDots(c, right, cy)
                 modes -> {

@@ -421,6 +421,19 @@ class IslandTest {
     }
 
     @Test
+    fun the_empty_islands_clock_is_as_wide_as_what_it_shows() {
+        val cam = Camera(205.0, 18.0, 24.0, 24.0)
+        val short = Geometry(411.0, cam, idleClock = true, clockContent = 36.0).box(Scene.Idle)
+        val long = Geometry(411.0, cam, idleClock = true, clockContent = 70.0).box(Scene.Idle)
+        // From the middle: the camera, a gap, the time or battery, a margin.
+        assertEquals(2 * (12.0 + Geometry.CLOCK_GAP + Geometry.CLOCK_PAD + 36.0), short.w)
+        assertEquals(68.0, long.w - short.w, "\"Wed 14:05\" gets room, \"4:21\" doesn't take more")
+        assertEquals(205.0, short.centerX, "centred on the camera")
+        // Never narrower than the plain pill.
+        assertEquals(Geometry(411.0, cam).box(Scene.Idle).w, Geometry(411.0, cam, idleClock = true, clockContent = 1.0).box(Scene.Idle).w)
+    }
+
+    @Test
     fun cards_keep_their_height_at_every_island_size() {
         // The size setting is the pill's: a card's words and buttons don't
         // scale, so a smaller card would cut its last row off.
