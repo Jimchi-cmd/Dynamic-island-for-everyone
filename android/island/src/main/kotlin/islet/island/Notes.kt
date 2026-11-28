@@ -23,6 +23,8 @@ data class NoteFacts(
     val media: Boolean = false,
     /** Built with CallStyle (Android 12+). */
     val callStyle: Boolean = false,
+    /** CallStyle's own word on the call: 1 ringing, 2 under way, 3 being screened (0: not said). */
+    val callType: Int = 0,
     /** The buttons' labels, lower case. */
     val actions: List<String> = emptyList(),
 )
@@ -53,6 +55,11 @@ sealed class NoteKind {
 }
 
 object Notes {
+    /** CallStyle's call types (Notification.EXTRA_CALL_TYPE). */
+    const val CALL_INCOMING = 1
+    const val CALL_ONGOING = 2
+    const val CALL_SCREENING = 3
+
     /** Maps apps whose ongoing notification is the next turn. */
     val MAPS = setOf(
         "com.google.android.apps.maps",
@@ -94,7 +101,12 @@ object Notes {
         val title = n.title.trim()
         val text = n.text.trim()
         if (n.category == "call" || n.callStyle) {
-            val ringing = n.actions.any { a -> ANSWER.any { a.contains(it) } }
+            // CallStyle says which it is; otherwise an "Answer" button means it is ringing.
+            val ringing = when (n.callType) {
+                CALL_INCOMING, CALL_SCREENING -> true
+                CALL_ONGOING -> false
+                else -> n.actions.any { a -> ANSWER.any { a.contains(it) } }
+            }
             // A call's clock starts when it is answered.
             val since = if (!ringing && n.chronometer && n.whenMs > 0) n.whenMs else 0L
             return NoteKind.Call(title.ifEmpty { "Call" }, ringing, since)
@@ -162,5 +174,43 @@ class ProgressWatch {
 
     companion object {
         const val STALE_MS = 5 * 60_000L
+    }
+}
+
+/** What a call's button does, so the island can colour it: green answers, red ends. */
+enum class CallRole { Answer, Decline, Mute, Speaker, Video, Other }
+
+object CallButtons {
+    private val ANSWER = listOf("answer", "accept", "pick", "join")
+    private val DECLINE = listOf("decline", "reject", "hang", "end", "dismiss", "ignore", "leave")
+
+    /**
+     * The role of each button, from its label. A ringing call whose buttons
+     * say nothing the island knows (a CallStyle call, whose buttons Android
+     * draws itself, or a label in another language) follows Android's own
+     * order: decline first, answer last.
+     */
+    fun roles(labels: List<String>, ringing: Boolean): List<CallRole> {
+        val roles = labels.map { label ->
+            val l = label.lowercase()
+            when {
+                ANSWER.any { l.contains(it) } -> CallRole.Answer
+                DECLINE.any { l.contains(it) } -> CallRole.Decline
+                l.contains("mute") -> CallRole.Mute
+                l.contains("speaker") -> CallRole.Speaker
+                l.contains("video") -> CallRole.Video
+                else -> CallRole.Other
+            }
+        }
+        if (ringing && roles.size >= 2 && roles.none { it == CallRole.Answer || it == CallRole.Decline }) {
+            return roles.mapIndexed { i, r ->
+                when (i) {
+                    0 -> CallRole.Decline
+                    roles.lastIndex -> CallRole.Answer
+                    else -> r
+                }
+            }
+        }
+        return roles
     }
 }

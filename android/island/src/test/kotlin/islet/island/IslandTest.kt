@@ -170,6 +170,22 @@ class IslandTest {
         )
         assertEquals(NoteKind.Ignore, Notes.classify(watched, "me"), "a suggestion, with a watched bar")
         assertEquals(NoteKind.Popup, Notes.classify(watched.copy(category = null), "me"), "an ordinary pop-up, once")
+        // An open activity card leaves the band beside the camera to the status bar's icons.
+        val g = Geometry(400.0, Camera(200.0, 18.0, 24.0, 24.0))
+        val card = g.box(Scene.Expanded(Live.Call("note:c", "Sam", "Phone", true, 0)))
+        assertEquals(Geometry.CARD_HEADER + g.cardBand + 120.0, card.h)
+        assertTrue(g.cardBand >= g.idleHeight, "the row starts under the camera's pill")
+        // CallStyle says whether a call is ringing, whatever its buttons say.
+        val snap = base.copy(pkg = "com.snapchat.android", title = "Snapchat", text = "Incoming call", callStyle = true, actions = listOf("", ""))
+        assertEquals(NoteKind.Call("Snapchat", true, 0), Notes.classify(snap.copy(callType = Notes.CALL_INCOMING), "me"))
+        assertEquals(NoteKind.Call("Snapchat", false, 0), Notes.classify(snap.copy(callType = Notes.CALL_ONGOING), "me"))
+        // Buttons: by their words, else Android's order for a ringing call.
+        assertEquals(listOf(CallRole.Decline, CallRole.Answer), CallButtons.roles(listOf("", ""), ringing = true), "unlabelled")
+        assertEquals(listOf(CallRole.Decline, CallRole.Answer), CallButtons.roles(listOf("Rechazar", "Contestar"), ringing = true), "another language")
+        assertEquals(listOf(CallRole.Answer, CallRole.Decline), CallButtons.roles(listOf("Answer", "Decline"), ringing = true), "by their words")
+        assertEquals(listOf(CallRole.Mute, CallRole.Decline), CallButtons.roles(listOf("Mute", "Hang up"), ringing = false))
+        assertEquals(listOf(CallRole.Other, CallRole.Other), CallButtons.roles(listOf("", ""), ringing = false), "under way: no guessing")
+        assertEquals(listOf(CallRole.Decline, CallRole.Answer), CallButtons.roles(listOf("Ignore", "Join"), ringing = true))
         // A "running" bar that stops moving leaves the island after a while.
         val watch = ProgressWatch()
         assertTrue(watch.seen("p", 40, 0))

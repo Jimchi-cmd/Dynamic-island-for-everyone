@@ -116,9 +116,16 @@ class Geometry(
     /** Just under the camera's pill, which is about where the status bar ends. */
     val belowStatusBar get() = top + idleHeight + 4 * k
 
+    /**
+     * The band an open activity card leaves empty beside the camera (dp): the
+     * phone's status bar icons are drawn over it, so the card's first row
+     * (its "‹ Control Centre" button) starts under the camera's pill.
+     */
+    val cardBand get() = idleHeight + 4 * k
+
     private fun expandedHeight(live: Live?): Double = when (live) {
         null, is Live.Music -> 0.0
-        else -> CARD_HEADER
+        else -> CARD_HEADER + cardBand / k
     } + when (live) {
         is Live.Music -> MUSIC_CARD + if (musicLyrics) MUSIC_LYRICS else 0.0
         is Live.Call -> 120.0

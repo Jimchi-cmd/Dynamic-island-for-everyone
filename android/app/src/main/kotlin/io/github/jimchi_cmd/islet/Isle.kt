@@ -47,6 +47,10 @@ class NoteExtra(
     val icon: Drawable?,
     /** The buttons as Android gave them (a "Reply" one takes typed text). */
     val raw: List<Notification.Action> = emptyList(),
+    /** A CallStyle call's own answer, decline and hang-up actions (Android draws those buttons itself). */
+    val answer: PendingIntent? = null,
+    val decline: PendingIntent? = null,
+    val hangUp: PendingIntent? = null,
 )
 
 /**
@@ -246,6 +250,19 @@ object Isle {
         }
     }
 
+    // CallStyle's extras (Notification.EXTRA_CALL_TYPE and friends, Android 12+), by name so older phones read nothing.
+    private const val EXTRA_CALL_TYPE = "android.callType"
+    private const val EXTRA_ANSWER_INTENT = "android.answerIntent"
+    private const val EXTRA_DECLINE_INTENT = "android.declineIntent"
+    private const val EXTRA_HANG_UP_INTENT = "android.hangUpIntent"
+
+    private fun intent(x: android.os.Bundle?, key: String): PendingIntent? = try {
+        @Suppress("DEPRECATION")
+        x?.getParcelable(key) as? PendingIntent
+    } catch (e: Exception) {
+        null
+    }
+
     private fun facts(sbn: StatusBarNotification): NoteFacts? {
         val n = sbn.notification ?: return null
         val x = n.extras ?: return null
@@ -270,6 +287,7 @@ object Isle {
             // (YouTube's is "DecoratedMediaCustomViewStyle").
             media = template.contains("Media") || x.containsKey(Notification.EXTRA_MEDIA_SESSION),
             callStyle = template.contains("CallStyle"),
+            callType = x.getInt(EXTRA_CALL_TYPE, 0),
             actions = n.actions.orEmpty().mapNotNull { it.title?.toString()?.lowercase() },
         )
     }
@@ -295,7 +313,13 @@ object Isle {
             }
         }
         val raw = n.actions.orEmpty().filter { it.actionIntent != null && !it.title.isNullOrBlank() }
-        extras[sbn.key] = NoteExtra(sbn.packageName, n.contentIntent, actions, icon, raw)
+        val x = n.extras
+        extras[sbn.key] = NoteExtra(
+            sbn.packageName, n.contentIntent, actions, icon, raw,
+            answer = intent(x, EXTRA_ANSWER_INTENT),
+            decline = intent(x, EXTRA_DECLINE_INTENT),
+            hangUp = intent(x, EXTRA_HANG_UP_INTENT),
+        )
         val t = now()
         when (kind) {
             is NoteKind.Call -> if (prefs.calls) {

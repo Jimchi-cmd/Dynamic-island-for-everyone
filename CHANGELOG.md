@@ -4,6 +4,10 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Fixed
+- Phone: calls from apps that use Android's call style (Snapchat, and others) show **Incoming call** with a red decline and a green answer button, instead of "Calling…" and two grey phone buttons: Islet reads Android's own word on whether the call is ringing and its own answer, decline and hang-up actions. Buttons whose labels it doesn't know follow Android's order (decline, then answer).
+- Phone: an open card's "‹ Control Centre" button sits under the camera's pill, clear of the status bar's icons, which were drawn over it.
+
 ## [0.11.2] - 2026-11-28
 
 ### Added

@@ -29,6 +29,8 @@ import islet.island.ControlCentre
 import islet.island.Deadlines
 import islet.island.Format
 import islet.island.Geometry
+import islet.island.CallButtons
+import islet.island.CallRole
 import islet.island.Live
 import islet.island.Lists
 import islet.island.Lyrics
@@ -1183,11 +1185,13 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
         // centre at its top (the music card draws its own; the clock card
         // has the controls button).
         val box = if (live != null && live !is Live.Music) {
-            chip(c, T.t("‹  Control Centre"), whole.left + 18 * dp, whole.top + 26 * dp, dim) {
+            // Under the camera's pill: the status bar's icons are drawn over the band beside it.
+            val band = (geometry.cardBand * dp).toFloat()
+            chip(c, T.t("‹  Control Centre"), whole.left + 18 * dp, whole.top + band + 18 * dp, dim) {
                 Isle.island.showControls()
                 Isle.changed()
             }
-            RectF(whole.left, whole.top + Geometry.CARD_HEADER.toFloat() * dp, whole.right, whole.bottom)
+            RectF(whole.left, whole.top + band + Geometry.CARD_HEADER.toFloat() * dp, whole.right, whole.bottom)
         } else {
             whole
         }
@@ -1211,17 +1215,27 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
                 }
                 write(c, live.name, l + 60 * dp, cy - 4 * dp, 18f, white, bold = true, max = box.width() * 0.4f)
                 write(c, status, l + 60 * dp, cy + 16 * dp, 13f, if (live.since > 0) green else grey, max = box.width() * 0.4f)
-                val actions = Isle.extras[live.id.removePrefix("note:")]?.actions.orEmpty().takeLast(3)
+                val extra = Isle.extras[live.id.removePrefix("note:")]
+                // A CallStyle call's own answer and decline (or hang up), else the notification's buttons.
+                val own = when {
+                    live.incoming && extra?.answer != null -> listOfNotNull(
+                        extra.decline?.let { CallRole.Decline to it },
+                        CallRole.Answer to extra.answer,
+                    )
+                    !live.incoming && extra?.hangUp != null -> listOf(CallRole.Decline to extra.hangUp)
+                    else -> null
+                }
+                val shown = extra?.actions.orEmpty().takeLast(3)
+                val actions = own ?: CallButtons.roles(shown.map { it.first }, live.incoming).zip(shown.map { it.second })
                 var x = r - 24 * dp
-                for ((label, intent) in actions.reversed()) {
-                    val lower = label.lowercase()
-                    val (bg, i) = when {
-                        listOf("answer", "accept", "pick").any { lower.contains(it) } -> green to Icon.Phone
-                        listOf("decline", "reject", "hang", "end", "dismiss").any { lower.contains(it) } -> red to Icon.HangUp
-                        lower.contains("mute") -> dim to Icon.Mic
-                        lower.contains("speaker") -> dim to Icon.Sound
-                        lower.contains("video") -> dim to Icon.Video
-                        else -> dim to Icon.Phone
+                for ((role, intent) in actions.reversed()) {
+                    val (bg, i) = when (role) {
+                        CallRole.Answer -> green to Icon.Phone
+                        CallRole.Decline -> red to Icon.HangUp
+                        CallRole.Mute -> dim to Icon.Mic
+                        CallRole.Speaker -> dim to Icon.Sound
+                        CallRole.Video -> dim to Icon.Video
+                        CallRole.Other -> dim to Icon.Phone
                     }
                     button(c, x, cy, 48f, bg, i) { Isle.send(intent) }
                     x -= 58 * dp
