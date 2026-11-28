@@ -144,6 +144,17 @@ class LooksTest {
         Isle.island.put(Live.Progress("note:d", "file.zip", "Files", 40))
         shot("down-download")
         Isle.island.all.forEach { Isle.island.remove(it.id) }
+        // Control Centre whole at the Small size (it used to lose its last row).
+        p.size = islet.island.IslandSize.Small
+        Isle.island.longPress()
+        v.update()
+        v.settle()
+        val tall = Bitmap.createBitmap(dm.widthPixels, (300 * dm.density).toInt(), Bitmap.Config.ARGB_8888)
+        tall.eraseColor(0xff2b2b33.toInt())
+        v.draw(Canvas(tall))
+        File(dir, "small-control-centre.png").outputStream().use { tall.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        Isle.island.close(0)
+        p.size = islet.island.IslandSize.Medium
         Isle.onChange = null
     }
 

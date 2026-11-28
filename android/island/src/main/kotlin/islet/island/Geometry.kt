@@ -90,24 +90,25 @@ class Geometry(
             centered(idleWidth + 2 * wing, idleHeight, idleHeight / 2)
         }
         is Scene.Popped -> if (popsDown) dropped(scene.pop) else when (scene.pop) {
-            is Pop.Note -> centered(cardWidth - 8, (if (scene.pop.actions.isEmpty()) 82.0 else 112.0) * k, 36.0 * k)
+            is Pop.Note -> centered(cardWidth - 8, if (scene.pop.actions.isEmpty()) 82.0 else 112.0, 36.0 * k)
             is Pop.Level -> centered(idleWidth + 2 * wing + 30 * k, idleHeight + 22 * k, idleHeight / 2)
             is Pop.Screenshot, is Pop.TimerDone, is Pop.Bluetooth ->
-                centered(cardWidth - 12, 78.0 * k, 34.0 * k)
+                centered(cardWidth - 12, 78.0, 34.0 * k)
             else -> centered(idleWidth + 2 * wing + 30 * k, idleHeight + 6 * k, (idleHeight + 6 * k) / 2)
         }
-        is Scene.Expanded -> centered(cardWidth, expandedHeight(scene.live) * k, 40.0 * k)
+        // Cards keep the height their contents need: the size setting is the pill's (their words and buttons don't scale).
+        is Scene.Expanded -> centered(cardWidth, expandedHeight(scene.live), 40.0 * k)
         // The control centre is the clock card, as on the computer; its toggles button opens the toggles.
-        Scene.Controls -> centered(cardWidth, controlsHeight * k, 40.0 * k)
-        Scene.Toggles -> centered(cardWidth, 292.0 * k, 40.0 * k)
+        Scene.Controls -> centered(cardWidth, controlsHeight, 40.0 * k)
+        Scene.Toggles -> centered(cardWidth, 292.0, 40.0 * k)
         Scene.Peek -> centered(idleWidth + 2 * (wing + 30 * k), idleHeight + 4 * k, (idleHeight + 4 * k) / 2)
-        Scene.Calendar -> centered(cardWidth, 344.0 * k, 40.0 * k)
+        Scene.Calendar -> centered(cardWidth, 344.0, 40.0 * k)
     }
 
     /** A pop-up that grows downward (see `popsDown`). */
     private fun dropped(pop: Pop): Box = when (pop) {
         is Pop.Note, is Pop.Screenshot, is Pop.TimerDone, is Pop.Bluetooth -> {
-            val h = (if (pop is Pop.Note) (if (pop.actions.isEmpty()) 82.0 else 112.0) else 78.0) * k
+            val h = if (pop is Pop.Note) (if (pop.actions.isEmpty()) 82.0 else 112.0) else 78.0
             val w = if (pop is Pop.Note) cardWidth - 8 else cardWidth - 12
             centered(w, h, if (pop is Pop.Note) 36.0 * k else 34.0 * k).copy(y = belowStatusBar)
         }
@@ -133,7 +134,7 @@ class Geometry(
 
     private fun expandedHeight(live: Live?): Double = when (live) {
         null, is Live.Music -> 0.0
-        else -> CARD_HEADER + cardBand / k
+        else -> CARD_HEADER + cardBand
     } + when (live) {
         is Live.Music -> MUSIC_CARD + if (musicLyrics) MUSIC_LYRICS else 0.0
         is Live.Call -> 120.0

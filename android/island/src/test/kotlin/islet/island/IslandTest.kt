@@ -419,6 +419,24 @@ class IslandTest {
     }
 
     @Test
+    fun cards_keep_their_height_at_every_island_size() {
+        // The size setting is the pill's: a card's words and buttons don't
+        // scale, so a smaller card would cut its last row off.
+        val cam = Camera(200.0, 20.0, 24.0, 24.0)
+        for (size in IslandSize.values()) {
+            val g = Geometry(400.0, cam, size = size)
+            val medium = Geometry(400.0, cam)
+            assertEquals(medium.box(Scene.Controls).h, g.box(Scene.Controls).h, "Control Centre, $size")
+            assertEquals(medium.box(Scene.Calendar).h, g.box(Scene.Calendar).h, "calendar, $size")
+            assertEquals(medium.box(Scene.Expanded(music)).h, g.box(Scene.Expanded(music)).h, "music card, $size")
+            val note = Scene.Popped(Pop.Note("k", "Chat", "Sam", "Hi", emptyList(), 1))
+            assertEquals(medium.box(note).h, g.box(note).h, "notification, $size")
+        }
+        // The pill itself still follows the setting.
+        assertTrue(Geometry(400.0, cam, size = IslandSize.Small).box(Scene.Idle).w < Geometry(400.0, cam).box(Scene.Idle).w)
+    }
+
+    @Test
     fun the_music_card_makes_room_for_lyrics_only_when_they_are_on() {
         val cam = Camera(200.0, 20.0, 24.0, 24.0)
         val plain = Geometry(400.0, cam).box(Scene.Expanded(music))
