@@ -49,7 +49,7 @@ pub fn local(t: &Track) -> Option<Lyrics> {
     })
 }
 
-/// Exact match first, then a search with a tidied title.
+/// Exact match first, then searches with a tidied title and artist (see `search_urls`).
 pub fn fetch(t: &Track) -> Result<Option<Lyrics>, String> {
     let (status, body) = call(&lyrics::get_url(t))?;
     match status {
@@ -61,11 +61,18 @@ pub fn fetch(t: &Track) -> Result<Option<Lyrics>, String> {
         404 => {}
         s => return Err(format!("LRCLIB answered {s}")),
     }
-    let (status, body) = call(&lyrics::search_url(t))?;
-    match status {
-        200 => lyrics::parse_search(&body, t),
-        s => Err(format!("LRCLIB answered {s}")),
+    for url in lyrics::search_urls(t) {
+        let (status, body) = call(&url)?;
+        match status {
+            200 => {
+                if let Some(l) = lyrics::parse_search(&body, t)? {
+                    return Ok(Some(l));
+                }
+            }
+            s => return Err(format!("LRCLIB answered {s}")),
+        }
     }
+    Ok(None)
 }
 
 /// Send the song that is playing (None: nothing, or lyrics are off).

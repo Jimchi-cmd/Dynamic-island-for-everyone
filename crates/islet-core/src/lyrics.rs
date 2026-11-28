@@ -197,18 +197,69 @@ pub fn search_url(t: &Track) -> String {
     format!("{API}/search?track_name={}&artist_name={}", encode(&clean_title(&t.title)), encode(&t.artist))
 }
 
+/// The searches to try after the exact match, best first: the tidied title
+/// and first artist; "Artist - Song" read from the title (as YouTube
+/// videos are named, under the channel's name); then a free-text search.
+pub fn search_urls(t: &Track) -> Vec<String> {
+    use crate::nav::encode;
+    let title = clean_title(&t.title);
+    let artist = clean_artist(&t.artist);
+    let mut urls = vec![format!("{API}/search?track_name={}&artist_name={}", encode(&title), encode(&artist))];
+    if let Some((a, song)) = title.split_once(" - ") {
+        let (a, song) = (a.trim(), clean_title(song));
+        if !a.is_empty() && !song.is_empty() {
+            urls.push(format!("{API}/search?track_name={}&artist_name={}", encode(&song), encode(&clean_artist(a))));
+        }
+    }
+    urls.push(format!("{API}/search?q={}", encode(&format!("{artist} {title}").replace(" - ", " "))));
+    urls.dedup();
+    urls
+}
+
+/// The first artist, without what streaming sites add: "Artist - Topic",
+/// "ArtistVEVO", "A, B & C", "A feat. B".
+pub fn clean_artist(artist: &str) -> String {
+    let mut a = artist.trim().to_string();
+    for tail in [" - Topic", "VEVO", "Vevo", " - Official"] {
+        if let Some(head) = a.strip_suffix(tail) {
+            a = head.trim().to_string();
+        }
+    }
+    let lower = a.to_lowercase();
+    let cut = [", ", " & ", " x ", " feat. ", " feat ", " ft. ", " featuring ", " and ", "; ", " / "]
+        .iter()
+        .filter_map(|sep| lower.find(sep))
+        .min();
+    if let Some(i) = cut.filter(|&i| i > 0) {
+        a.truncate(i);
+    }
+    if a.trim().is_empty() {
+        artist.trim().to_string()
+    } else {
+        a.trim().to_string()
+    }
+}
+
 /// Drop the decorations players add to titles: " - Remastered 2011",
-/// " (feat. Someone)", " [Live]".
+/// " (feat. Someone)", " [Live]", and what video sites add: "(Official
+/// Video)", "[Lyrics]", "| Official Audio".
 pub fn clean_title(title: &str) -> String {
-    const NOISE: [&str; 9] = ["remaster", "feat.", "ft.", "featuring", "live", "version", "edit", "mono", "stereo"];
+    // Whole words only (and a few word starts: "Remastered", "Lyrics"), so
+    // "(Birthday)", "Oliver" or "(Without You)" stay.
+    const STARTS: [&str; 8] =
+        ["remaster", "featuring", "version", "official", "lyric", "visuali", "explicit", "stereo"];
+    const WORDS: [&str; 14] =
+        ["feat", "ft", "live", "edit", "edited", "mono", "audio", "video", "hd", "4k", "hq", "mv", "with", "mix"];
     let noisy = |s: &str| {
         let s = s.to_lowercase();
-        NOISE.iter().any(|n| s.contains(n))
+        s.split(|c: char| !c.is_alphanumeric())
+            .any(|w| !w.is_empty() && (STARTS.iter().any(|n| w.starts_with(n)) || WORDS.contains(&w)))
     };
     let mut t = title.trim().to_string();
-    if let Some((head, tail)) = t.split_once(" - ") {
-        if noisy(tail) {
-            t = head.to_string();
+    // "Song | Official Video": what follows a bar is the site's.
+    if let Some((head, _)) = t.split_once(" | ") {
+        if !head.trim().is_empty() {
+            t = head.trim().to_string();
         }
     }
     for (open, close) in [('(', ')'), ('[', ']')] {
@@ -218,6 +269,12 @@ pub fn clean_title(title: &str) -> String {
                 break;
             }
             t = format!("{}{}", &t[..i], &t[i + j + 1..]);
+        }
+    }
+    // Then a decoration after a dash: "Song - Remastered 2011".
+    if let Some((head, tail)) = t.trim_end().rsplit_once(" - ") {
+        if noisy(tail) {
+            t = head.to_string();
         }
     }
     let t = t.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -407,6 +464,36 @@ mod tests {
         assert_eq!(clean_title("Song (feat. X) [Live]"), "Song");
         assert_eq!(clean_title("Song (Part 2)"), "Song (Part 2)");
         assert_eq!(clean_title("Live - Forever"), "Live - Forever", "only decorations go");
+        assert_eq!(clean_title("Song (Official Music Video)"), "Song");
+        assert_eq!(clean_title("Song [Lyrics] | Official Audio"), "Song");
+        assert_eq!(clean_title("Song - Remastered 2011"), "Song");
+        assert_eq!(clean_title("Happy Birthday (Birthday Song)"), "Happy Birthday (Birthday Song)", "whole words only");
+        assert_eq!(clean_title("Song (Without You)"), "Song (Without You)");
+        assert_eq!(clean_artist("The Band - Topic"), "The Band");
+        assert_eq!(clean_artist("TheBandVEVO"), "TheBand");
+        assert_eq!(clean_artist("Ann, Bob & Cat"), "Ann");
+        assert_eq!(clean_artist("Ann feat. Bob"), "Ann");
+        assert_eq!(
+            clean_artist("Simon & Garfunkel"),
+            "Simon",
+            "a duo searches as its first name; the free-text search still has both"
+        );
+        // A video named "Artist - Song" under a channel's name.
+        let v = Track {
+            title: "The Band - Song (Official Video)".into(),
+            artist: "Some Channel".into(),
+            album: String::new(),
+            duration: Some(200),
+            file: None,
+        };
+        assert_eq!(
+            search_urls(&v),
+            [
+                "https://lrclib.net/api/search?track_name=The+Band+-+Song&artist_name=Some+Channel",
+                "https://lrclib.net/api/search?track_name=Song&artist_name=The+Band",
+                "https://lrclib.net/api/search?q=Some+Channel+The+Band+Song",
+            ]
+        );
         assert_eq!(track(None).key(), Track { title: " hey & ho".into(), ..track(Some(3)) }.key());
     }
 

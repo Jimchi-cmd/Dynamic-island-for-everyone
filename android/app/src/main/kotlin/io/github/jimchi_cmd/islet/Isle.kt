@@ -545,7 +545,14 @@ object Isle {
 
     private fun fetchLyrics(title: String, artist: String, duration: Long, song: String) {
         onMediaWorker {
-            val found = Net.get(Lyrics.lrclibUrl(title, artist, duration))?.let { Lyrics.fromLrclib(it) }
+            // The exact song first, then searches with the names tidied.
+            var found: Lyrics? = null
+            for (url in Lyrics.lrclibLookups(title, artist, duration)) {
+                if (lyricsFor != song) break
+                val body = Net.get(url) ?: continue
+                found = if ("/search?" in url) Lyrics.fromSearch(body, duration) else Lyrics.fromLrclib(body)
+                if (found != null) break
+            }
             post {
                 if (lyricsFor == song) {
                     lyrics = found?.takeIf { it.lines.isNotEmpty() }
