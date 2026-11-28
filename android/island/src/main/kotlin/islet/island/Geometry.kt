@@ -78,8 +78,8 @@ class Geometry(
 
     fun box(scene: Scene): Box = when (scene) {
         Scene.Hidden -> centered(idleWidth * 0.6, idleHeight * 0.6, idleHeight)
-        // Under the status bar, the time is the status bar's own: the pill stays round the camera.
-        Scene.Idle -> centered(idleWidth + if (idleClock && !popsDown) 2 * (clockWing + clockExtra * k) else 0.0, idleHeight, idleHeight / 2)
+        // The time left of the camera and the battery right of it, never over it.
+        Scene.Idle -> centered(idleWidth + if (idleClock) 2 * (clockWing + clockExtra * k) else 0.0, idleHeight, idleHeight / 2)
         is Scene.Compact -> if (popsDown) {
             // Narrow round the camera (an icon each side), its words in a row under the status bar.
             val rows = DROP_TEXT + if (lyricsRow && scene.live is Live.Music) LYRICS_ROW else 0.0

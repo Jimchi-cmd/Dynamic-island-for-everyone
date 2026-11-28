@@ -411,9 +411,11 @@ class IslandTest {
         assertEquals(compact.h + Geometry.LYRICS_ROW, sung.h, "the lyrics under the words")
         // A second activity waits beside the words, under the status bar.
         assertEquals(down.belowStatusBar, down.bubble(compact).y)
-        // The empty island's clock is the status bar's own.
-        assertEquals(idle, Geometry(411.0, cam, popsDown = true, idleClock = true).box(Scene.Idle))
-        assertTrue(Geometry(411.0, cam, idleClock = true).box(Scene.Idle).w > idle.w)
+        // The empty island's clock keeps its room beside the camera (many phones
+        // hide the status bar's own time round the camera), so it never sits over it.
+        val clock = Geometry(411.0, cam, popsDown = true, idleClock = true).box(Scene.Idle)
+        assertEquals(Geometry(411.0, cam, idleClock = true).box(Scene.Idle), clock)
+        assertTrue(clock.w >= idle.w + 2 * 40.0, "a wing each side of the camera: ${clock.w}")
         // Cards are as before.
         assertEquals(side.box(Scene.Expanded(music)), down.box(Scene.Expanded(music)))
     }
