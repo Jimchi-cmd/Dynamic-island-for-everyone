@@ -4,6 +4,9 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Changed
+- Phone: **Stay clear of the status bar** is now on by default (it was "Grow downward", for pop-ups only). The small island stays narrow round the camera, an icon each side, with its words (the song, a timer, a call's time, a download's percentage) and the lyrics in a row under the status bar, so Samsung's and Android's own icons no longer sit on top of it. The clock beside the camera is left to the status bar's own. Switch it off in What it shows to get the wide island back.
+
 ### Fixed
 - Synced lyrics are found for many more songs, on the phone and the computer: titles lose what players and video sites add ("(Official Video)", "[Lyrics]", "| Official Audio", " - Remastered 2011"), artists lose "- Topic", "VEVO" and featured names, a video named "Artist - Song" is looked up as that song, and a free-text search is the last try. The phone used to try only the exact title and artist. Lyrics still come from LRCLIB, the open lyrics database: the other sources of synced lyrics are paid or private.
 - Phone: calls from apps that use Android's call style (Snapchat, and others) show **Incoming call** with a red decline and a green answer button, instead of "Calling…" and two grey phone buttons: Islet reads Android's own word on whether the call is ringing and its own answer, decline and hang-up actions. Buttons whose labels it doesn't know follow Android's order (decline, then answer).

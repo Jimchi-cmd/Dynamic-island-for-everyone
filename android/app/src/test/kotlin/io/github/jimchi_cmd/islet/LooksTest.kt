@@ -105,6 +105,49 @@ class LooksTest {
     }
 
     @Test
+    fun pictures_clear_of_the_status_bar() {
+        // Set ISLET_SHOTS to a folder to save the small island growing downward.
+        val dir = System.getenv("ISLET_SHOTS") ?: return
+        val v = fresh()
+        val dm = ctx.resources.displayMetrics
+        File(dir).mkdirs()
+        fun shot(name: String) {
+            v.update()
+            v.settle()
+            repeat(30) {
+                org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(16))
+                v.draw(Canvas(Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888)))
+            }
+            val bmp = Bitmap.createBitmap(dm.widthPixels, (110 * dm.density).toInt(), Bitmap.Config.ARGB_8888)
+            bmp.eraseColor(0xff2b2b33.toInt())
+            v.draw(Canvas(bmp))
+            File(dir, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        val p = Isle.prefs
+        p.popsDown = true
+        p.idleClock = true
+        shot("down-idle")
+        p.lyrics = true
+        Isle.artColor = 0xffe24070.toInt()
+        Isle.island.put(Live.Music("Midnight Drive", "The Example Band", "Player", true, 215_000, 46_000, SystemClock.elapsedRealtime()))
+        Isle.lyrics = Lyrics.parse("[00:40.00]Headlights on the empty road\n")
+        shot("down-music-lyrics")
+        Isle.lyrics = null
+        p.lyrics = false
+        shot("down-music")
+        Isle.island.put(Live.Timer("Focus", Isle.now() + 600_000, 1_500_000, null, false))
+        shot("down-two")
+        Isle.island.all.forEach { Isle.island.remove(it.id) }
+        Isle.island.put(Live.Call("note:c", "Sam", "Phone", false, Isle.now() - 65_000))
+        shot("down-call")
+        Isle.island.all.forEach { Isle.island.remove(it.id) }
+        Isle.island.put(Live.Progress("note:d", "file.zip", "Files", 40))
+        shot("down-download")
+        Isle.island.all.forEach { Isle.island.remove(it.id) }
+        Isle.onChange = null
+    }
+
+    @Test
     fun pictures() {
         // Set ISLET_SHOTS to a folder to save how each looks.
         val dir = System.getenv("ISLET_SHOTS") ?: return
@@ -125,6 +168,7 @@ class LooksTest {
             File(dir, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         val p = Isle.prefs
+        p.popsDown = false
         p.idleClock = true
         Isle.battery = 82
         // The small music pill with its lyrics row.

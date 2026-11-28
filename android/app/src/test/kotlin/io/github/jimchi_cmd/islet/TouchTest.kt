@@ -75,6 +75,8 @@ class TouchTest {
         Isle.island.all.forEach { Isle.island.remove(it.id) }
         Isle.island.close(0)
         Isle.island.dismissPop(0)
+        // The sideways layout: the clock beside the camera widens the pill.
+        Isle.prefs.popsDown = false
         Isle.prefs.idleClock = true
         val w = IslandWindow(ctx, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
         val v = w.view
@@ -88,6 +90,7 @@ class TouchTest {
         assertTrue("the pill narrows to the new size ($wide → $narrow)", narrow < wide - 40)
         assertEquals(w.geometry().box(Scene.Idle), v.drawnBox())
         Isle.prefs.idleClock = true
+        Isle.prefs.popsDown = true
     }
 
     @Test

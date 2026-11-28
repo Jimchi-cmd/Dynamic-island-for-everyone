@@ -402,8 +402,19 @@ class IslandTest {
         assertTrue(note.y >= idle.bottom, "below the camera's pill: ${note.y} vs ${idle.bottom}")
         assertTrue(note.w > 300)
         assertEquals(side.box(Scene.Popped(Pop.Note("k", "Chat", "Sam", "Hi", emptyList(), 1))).h, note.h)
-        // Nothing else changes.
-        assertEquals(side.box(Scene.Compact(music, null)), down.box(Scene.Compact(music, null)))
+        // The small island too: narrow round the camera, its words in a row under it.
+        val compact = down.box(Scene.Compact(music, null))
+        assertTrue(compact.w < side.box(Scene.Compact(music, null)).w && compact.w <= 160, "narrow: ${compact.w}")
+        assertEquals(idle.y, compact.y)
+        assertEquals(idle.h + Geometry.DROP_TEXT, compact.h)
+        val sung = Geometry(411.0, cam, popsDown = true, lyricsRow = true).box(Scene.Compact(music, null))
+        assertEquals(compact.h + Geometry.LYRICS_ROW, sung.h, "the lyrics under the words")
+        // A second activity waits beside the words, under the status bar.
+        assertEquals(down.belowStatusBar, down.bubble(compact).y)
+        // The empty island's clock is the status bar's own.
+        assertEquals(idle, Geometry(411.0, cam, popsDown = true, idleClock = true).box(Scene.Idle))
+        assertTrue(Geometry(411.0, cam, idleClock = true).box(Scene.Idle).w > idle.w)
+        // Cards are as before.
         assertEquals(side.box(Scene.Expanded(music)), down.box(Scene.Expanded(music)))
     }
 

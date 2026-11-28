@@ -78,8 +78,13 @@ class Geometry(
 
     fun box(scene: Scene): Box = when (scene) {
         Scene.Hidden -> centered(idleWidth * 0.6, idleHeight * 0.6, idleHeight)
-        Scene.Idle -> centered(idleWidth + if (idleClock) 2 * (clockWing + clockExtra * k) else 0.0, idleHeight, idleHeight / 2)
-        is Scene.Compact -> if (lyricsRow && scene.live is Live.Music) {
+        // Under the status bar, the time is the status bar's own: the pill stays round the camera.
+        Scene.Idle -> centered(idleWidth + if (idleClock && !popsDown) 2 * (clockWing + clockExtra * k) else 0.0, idleHeight, idleHeight / 2)
+        is Scene.Compact -> if (popsDown) {
+            // Narrow round the camera (an icon each side), its words in a row under the status bar.
+            val rows = DROP_TEXT + if (lyricsRow && scene.live is Live.Music) LYRICS_ROW else 0.0
+            centered(compactDropWidth, idleHeight + rows * k, 22.0 * k)
+        } else if (lyricsRow && scene.live is Live.Music) {
             centered(idleWidth + 2 * wing + 60 * k, idleHeight + LYRICS_ROW * k, idleHeight / 2)
         } else {
             centered(idleWidth + 2 * wing, idleHeight, idleHeight / 2)
@@ -109,6 +114,9 @@ class Geometry(
         is Pop.Level -> centered(dropWidth, idleHeight + DROP_LEVEL * k, idleHeight / 2)
         else -> centered(dropWidth, idleHeight + DROP_ROWS * k, idleHeight / 2)
     }
+
+    /** The small island's width when it grows downward: an icon each side of the camera. */
+    val compactDropWidth get() = maxOf(idleWidth, COMPACT_DROP_WIDTH * k)
 
     /** A dropped pop-up's width: the camera's pill, or a little wider for its words. */
     val dropWidth get() = maxOf(idleWidth, DROP_WIDTH * k)
@@ -153,12 +161,17 @@ class Geometry(
         const val DROP_WIDTH = 150.0
         const val DROP_ROWS = 46.0
         const val DROP_LEVEL = 30.0
+
+        /** The small island growing downward: its width, and its row of words under the camera (dp). */
+        const val COMPACT_DROP_WIDTH = 140.0
+        const val DROP_TEXT = 28.0
     }
 
     /** The second activity's round bubble, right of the pill. */
     fun bubble(pill: Box): Box {
         val d = minOf(pill.h, idleHeight)
         val x = minOf(pill.right + 6, screenWidth - 6 - d)
-        return Box(x, pill.y, d, d, d / 2)
+        // Growing downward, the second activity waits beside the words, under the status bar.
+        return Box(x, if (popsDown) belowStatusBar else pill.y, d, d, d / 2)
     }
 }

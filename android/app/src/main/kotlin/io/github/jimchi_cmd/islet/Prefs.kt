@@ -68,9 +68,13 @@ class Prefs(context: Context) {
         get() = p.getString("language", "auto") ?: "auto"
         set(v) = p.edit().putString("language", v).apply()
 
-    /** Pop-ups grow down from the camera, clear of the status bar's clock and icons. */
+    /**
+     * Clear of the status bar (on unless switched off): the small island stays
+     * narrow round the camera with its words under the status bar, and pop-ups
+     * grow down from the camera, so the phone's own icons never sit on Islet.
+     */
     var popsDown: Boolean
-        get() = flag("pops_down", false)
+        get() = flag("pops_down", true)
         set(v) = set("pops_down", v)
 
     /** "black", "tinted" (a dark shade of the accent colour), or "glass": frosted, with a light rim. */

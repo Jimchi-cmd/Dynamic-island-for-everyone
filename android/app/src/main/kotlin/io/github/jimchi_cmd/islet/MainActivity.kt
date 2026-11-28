@@ -633,7 +633,7 @@ class MainActivity : AppCompatActivity() {
             Sensors.refresh()
         })
         val pops = kit.card(col, T.t("Pop-ups"))
-        pops.add(kit.toggleRow(T.t("Grow downward"), T.t("Pop-ups drop down from the camera instead of spreading sideways, and notifications open under the status bar, so its clock and battery stay in view."), prefs.popsDown) { prefs.popsDown = it; changed() })
+        pops.add(kit.toggleRow(T.t("Stay clear of the status bar"), T.t("The island stays narrow round the camera and shows its words just under the status bar, and pop-ups and notifications drop below it, so the phone's own icons never sit on top of it."), prefs.popsDown) { prefs.popsDown = it; changed() })
         pops.add(kit.toggleRow(T.t("Notifications"), T.t("On the lock screen only the app's name shows."), prefs.popNotes) { prefs.popNotes = it })
         val lengths = listOf("brief" to T.t("Brief (2 s)"), "normal" to T.t("Normal (3 s)"), "long" to T.t("Long (5 s)"))
         pops.add(kit.valueRow(

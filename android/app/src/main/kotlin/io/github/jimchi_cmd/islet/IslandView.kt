@@ -841,7 +841,71 @@ class IslandView(context: Context, private val window: IslandWindow) : View(cont
 
     // ---- Compact ------------------------------------------------------------------------
 
+    /**
+     * The small island growing downward (clear of the status bar): an icon
+     * left of the camera and the playing bars or a ring right of it, the
+     * words in a row under the status bar, and the lyrics under them.
+     */
+    private fun drawCompactDropped(c: Canvas, live: Live, whole: RectF) {
+        // The island itself (a second activity's bubble may sit beside it).
+        val box = RectF(whole.left, whole.top, minOf(whole.right, whole.left + (geometry.compactDropWidth * dp).toFloat()), whole.bottom)
+        val h = (geometry.idleHeight * dp).toFloat()
+        val cy = box.top + h / 2
+        val lx = box.left + h * 0.55f
+        val rx = box.right - h * 0.55f
+        val now = Isle.now()
+        val row = (Geometry.DROP_TEXT * dp).toFloat()
+        val ty = box.top + h + row / 2 + 4 * dp
+        val max = box.width() - 24 * dp
+        fun words(text: String, colour: Int) = write(c, text, box.centerX(), ty, 13f, colour, bold = true, max = max, align = Paint.Align.CENTER)
+        when (live) {
+            is Live.Music -> {
+                if (!bitmap(c, Isle.art, lx - 10 * dp, cy - 10 * dp, 20f, 5f) && !drawable(c, Isle.playerIcon, lx, cy, 18f)) icon(c, Icon.Music, lx, cy, 15f, white)
+                bars(c, rx + 4 * dp, cy, 14f, Isle.artColor?.let { it or 0xff000000.toInt() } ?: white, live.playing)
+                words(live.title, white)
+                if (box.height() > h + row + 8 * dp) lyricsRow(c, box, box.top + h + row)
+            }
+            is Live.Call -> {
+                icon(c, Icon.Phone, lx, cy, 14f, green)
+                bars(c, rx + 4 * dp, cy, 14f, green, true)
+                words(if (live.since > 0) Format.elapsed(now - live.since) else live.name, green)
+            }
+            is Live.Navigation -> {
+                val extra = Isle.extras[live.id.removePrefix("note:")]
+                if (!drawable(c, extra?.icon, lx, cy, 18f)) icon(c, Icon.Arrow, lx, cy, 15f, green)
+                words(live.title, green)
+            }
+            is Live.Timer -> {
+                icon(c, Icon.Timer, lx, cy, 15f, orange)
+                words(Format.clock(live.left(now)), orange)
+            }
+            is Live.Countdown -> {
+                icon(c, Icon.Timer, lx, cy, 15f, orange)
+                words(Format.clock(live.endsAt - now), orange)
+            }
+            is Live.Stopwatch -> {
+                icon(c, Icon.Stopwatch, lx, cy, 15f, orange)
+                words(Format.elapsed(live.elapsed(now)), orange)
+            }
+            is Live.Event -> {
+                icon(c, Icon.Calendar, lx, cy, 14f, red)
+                words(Format.until(live.startsAt - now), white)
+            }
+            is Live.Progress -> {
+                val extra = Isle.extras[live.id.removePrefix("note:")]
+                if (!drawable(c, extra?.let { Isle.appIcon(it.pkg) }, lx, cy, 16f)) icon(c, Icon.Download, lx, cy, 15f, blue)
+                ring(c, rx, cy, 7f, eased(live.id, live.percent), blue)
+                words(if (live.percent >= 0) "${live.percent}%" else live.title, blue)
+            }
+            is Live.Lesson -> {
+                icon(c, Icon.Book, lx, cy, 15f, cyan)
+                words(if (live.started(now)) Format.clock(live.endsAt - now) else Format.until(live.startsAt - now), cyan)
+            }
+        }
+    }
+
     private fun drawCompact(c: Canvas, live: Live, box: RectF) {
+        if (geometry.popsDown) return drawCompactDropped(c, live, box)
         // The pill's own row (a lyrics row may hang below it).
         val h = minOf(box.height(), (geometry.idleHeight * dp).toFloat())
         val cy = box.top + h / 2
