@@ -485,7 +485,7 @@ object Isle {
                     artFromSong = true
                 }
                 fresh || art == null -> {
-                    art = mediaPictures[pkg]?.takeIf { it.first == title }?.second
+                    art = mediaPictures[pkg]?.takeIf { islet.island.Covers.sameSong(it.first, title) }?.second
                     artColor = art?.let { colourOf(it) }
                     artFromSong = false
                     // A cover the player keeps as a file: read it off the main thread.
@@ -581,7 +581,12 @@ object Isle {
         val u = Uri.parse(uri)
         if (u.scheme !in setOf("content", "file", "android.resource")) return null
         return try {
-            app.contentResolver.openInputStream(u)?.use { android.graphics.BitmapFactory.decodeStream(it) }
+            // Covers are often 3000 px; reading one whole took long enough to
+            // show the new song before its cover. Read it at about the size shown.
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            app.contentResolver.openInputStream(u)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = islet.island.Covers.sampleSize(bounds.outWidth, bounds.outHeight, 160) }
+            app.contentResolver.openInputStream(u)?.use { android.graphics.BitmapFactory.decodeStream(it, null, opts) }
         } catch (e: Exception) {
             null
         }
@@ -612,7 +617,7 @@ object Isle {
                 if (mediaPictures.size > 6) mediaPictures.remove(mediaPictures.keys.first { it != pkg })
                 // The playing song has no cover of its own and this picture is for it: use it.
                 val m = island.get("music") as? Live.Music
-                if (controller?.packageName == pkg && !artFromSong && m != null && m.title == title) {
+                if (controller?.packageName == pkg && !artFromSong && m != null && islet.island.Covers.sameSong(m.title, title)) {
                     art = small
                     artColor = colour
                     changed()

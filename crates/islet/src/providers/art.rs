@@ -127,9 +127,97 @@ pub fn dominant_colour(rgba: &[u8]) -> [u8; 3] {
     [(s[0] / d) as u8, (s[1] / d) as u8, (s[2] / d) as u8]
 }
 
+/// The cover of the song playing, read again while it is missing. Players
+/// often name a new song before its cover is ready, or still hand over the
+/// last song's cover for a moment: that must not stick for the whole song.
+#[cfg_attr(not(test), allow(dead_code))]
+#[derive(Default)]
+pub struct ArtCache {
+    key: String,
+    img: Option<ArtImage>,
+    tries: u8,
+    hash: Option<u64>,
+    /// The previous song's cover, to spot it handed over again.
+    before: Option<u64>,
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+impl ArtCache {
+    /// How many times a missing cover is read before giving up on it.
+    pub const TRIES: u8 = 6;
+
+    /// Whether the cover for `key` (the song) should be read now.
+    pub fn wants(&self, key: &str) -> bool {
+        self.key != key || (self.img.is_none() && self.tries < Self::TRIES)
+    }
+
+    /// The cover for `key` now.
+    pub fn get(&self, key: &str) -> Option<ArtImage> {
+        if self.key == key {
+            self.img.clone()
+        } else {
+            None
+        }
+    }
+
+    /// The bytes just read for `key` (None: there were none): the cover to show.
+    pub fn got(&mut self, key: &str, bytes: Option<&[u8]>) -> Option<ArtImage> {
+        use std::hash::{Hash, Hasher};
+        if self.key != key {
+            self.before = self.hash.or(self.before);
+            *self = Self { key: key.to_string(), before: self.before, ..Self::default() };
+        }
+        self.tries = self.tries.saturating_add(1);
+        let bytes = bytes.filter(|b| !b.is_empty())?;
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        bytes.hash(&mut h);
+        let h = h.finish();
+        if Some(h) == self.before {
+            // The last song's cover, handed over again: not this song's yet.
+            return None;
+        }
+        self.img = decode(bytes);
+        self.hash = self.img.as_ref().map(|_| h);
+        self.img.clone()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn png(r: u8) -> Vec<u8> {
+        let mut pm = Pixmap::new(4, 4).unwrap();
+        pm.fill(tiny_skia::Color::from_rgba8(r, 10, 10, 255));
+        pm.encode_png().unwrap()
+    }
+
+    #[test]
+    fn a_late_cover_is_read_again_and_a_stale_one_ignored() {
+        let mut c = ArtCache::default();
+        let (one, two) = (png(200), png(20));
+        assert!(c.wants("song 1"));
+        assert!(c.got("song 1", Some(&one)).is_some());
+        assert!(!c.wants("song 1"), "found: kept");
+        // The next song is named before its cover is ready…
+        assert!(c.wants("song 2"));
+        assert!(c.got("song 2", None).is_none());
+        assert!(c.wants("song 2"), "missing: read again");
+        // …and the player still hands over the last song's cover for a moment.
+        assert!(c.got("song 2", Some(&one)).is_none(), "the last song's cover isn't this one's");
+        assert!(c.get("song 2").is_none());
+        assert!(c.wants("song 2"));
+        // Then the real one.
+        assert_eq!(c.got("song 2", Some(&two)).map(|a| a.dominant[0] < 100), Some(true));
+        assert!(!c.wants("song 2"));
+        assert!(c.get("song 2").is_some());
+        assert!(c.get("song 1").is_none());
+        // A song with no cover at all is given up on after a few tries.
+        for _ in 0..ArtCache::TRIES {
+            c.got("song 3", None);
+        }
+        assert!(!c.wants("song 3"));
+    }
 
     #[test]
     fn photos_shrink_and_keep_their_shape() {

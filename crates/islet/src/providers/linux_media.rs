@@ -107,7 +107,7 @@ impl Player {
 struct State {
     /// Keyed by unique bus name (":1.42"), which is what signals carry.
     players: HashMap<String, Player>,
-    art: Option<(String, Option<ArtImage>)>,
+    art: art::ArtCache,
 }
 
 impl State {
@@ -121,10 +121,9 @@ impl State {
     }
 
     fn art_for(&mut self, url: &str) -> Option<ArtImage> {
-        if let Some((cached, img)) = &self.art {
-            if cached == url {
-                return img.clone();
-            }
+        // Read again while missing: a player may write the file a moment after naming the song.
+        if !self.art.wants(url) {
+            return self.art.get(url);
         }
         let bytes = match local_path(url) {
             Some(p) => std::fs::read(p).ok(),
@@ -134,9 +133,7 @@ impl State {
             }
             None => None,
         };
-        let img = bytes.and_then(|b| art::decode(&b));
-        self.art = Some((url.to_string(), img.clone()));
-        img
+        self.art.got(url, bytes.as_deref())
     }
 
     fn report(&mut self) -> Report {

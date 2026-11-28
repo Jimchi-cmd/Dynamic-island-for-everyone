@@ -9,7 +9,7 @@
 //! session's thumbnail stream (local; nothing is downloaded).
 
 use super::{art, debug_log, Sink};
-use islet_core::activity::{ArtImage, MediaCaps, MediaCommand, MediaInfo, Report};
+use islet_core::activity::{MediaCaps, MediaCommand, MediaInfo, Report};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{SystemTime, UNIX_EPOCH};
 use windows::Foundation::TypedEventHandler;
@@ -66,7 +66,7 @@ fn read_thumbnail(
 }
 
 struct Reader {
-    art: Option<(String, Option<ArtImage>)>,
+    art: art::ArtCache,
 }
 
 impl Reader {
@@ -79,14 +79,14 @@ impl Reader {
         let (title, artist, album) =
             (props.Title()?.to_string(), props.Artist()?.to_string(), props.AlbumTitle()?.to_string());
 
+        // The cover is read again while it is missing or still the last song's
+        // (players name a new song before its cover is ready).
         let key = format!("{title}\u{1f}{artist}\u{1f}{album}");
-        let art = match &self.art {
-            Some((k, img)) if *k == key => img.clone(),
-            _ => {
-                let img = read_thumbnail(&props).and_then(|b| art::decode(&b));
-                self.art = Some((key, img.clone()));
-                img
-            }
+        let art = if self.art.wants(&key) {
+            let bytes = read_thumbnail(&props);
+            self.art.got(&key, bytes.as_deref())
+        } else {
+            self.art.get(&key)
         };
 
         // Timeline values are as of LastUpdatedTime; bring them up to now.
@@ -175,7 +175,7 @@ fn run(sink: Sink, tx: Sender<Msg>, rx: Receiver<Msg>) -> windows::core::Result<
         }))?;
     }
     let mut sub: Option<Subscription> = None;
-    let mut reader = Reader { art: None };
+    let mut reader = Reader { art: art::ArtCache::default() };
     let _ = tx.send(Msg::SessionChanged);
     while let Ok(first) = rx.recv() {
         // Events arrive in bursts (track change = several); handle them once.
