@@ -4,6 +4,8 @@ All notable changes are listed here. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+## [0.11.3] - 2026-11-28
+
 ### Changed
 - Phone: **Stay clear of the status bar** is now on by default (it was "Grow downward", for pop-ups only). The small island stays narrow round the camera, an icon each side, with its words (the song, a timer, a call's time, a download's percentage) and the lyrics in a row under the status bar, so Samsung's and Android's own icons no longer sit on top of it. The clock beside the camera is left to the status bar's own. Switch it off in What it shows to get the wide island back.
 
